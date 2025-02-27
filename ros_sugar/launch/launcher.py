@@ -210,7 +210,7 @@ class Launcher:
         # Parse provided Events/Actions
         if events_actions and self.__enable_monitoring:
             # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
-            self.__rewrite_actions_for_components(components, events_actions)
+            self.__rewrite_actions_for_components(self._components, events_actions)
 
         # Configure components from config_file
         for component in components:
@@ -282,9 +282,19 @@ class Launcher:
                         raise InvalidAction(
                             f"Invalid action for condition '{condition.name}'. Action component '{action_object}' is unknown or not added to Launcher"
                         )
-                    self.__update_dict_list(
-                        self._components_actions, serialized_condition, action
-                    )
+                    if action.lifecycle_action:
+                        # lifecycle action to parse from the launcher
+                        self.__update_dict_list(
+                            self._ros_actions, condition.name, action
+                        )
+                        if not self._internal_events:
+                            self._internal_events = [condition]
+                        elif condition not in self._internal_events:
+                            self._internal_events.append(condition)
+                    else:
+                        self.__update_dict_list(
+                            self._components_actions, serialized_condition, action
+                        )
                 elif isinstance(action, Action) and action.monitor_action:
                     # Action to execute through the monitor
                     self.__update_dict_list(
@@ -477,7 +487,7 @@ class Launcher:
                     entities_dict[event_name].append(action)
 
                 # Check action type
-                elif action.component_action and nodes_in_processes:
+                elif action.lifecycle_action:
                     # Re-parse action for component related actions
                     entities = self._get_action_launch_entity(action)
                     if isinstance(entities, list):

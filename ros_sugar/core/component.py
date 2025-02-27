@@ -689,7 +689,6 @@ class BaseComponent(lifecycle.Node):
         """
         if not self.__events or not self.__actions:
             return
-
         self.__event_listeners = []
         for event, actions in zip(self.__events, self.__actions):
             # Register action to event callback to get executed on trigger
@@ -1785,7 +1784,6 @@ class BaseComponent(lifecycle.Node):
         """
         return get_methods_with_decorator(self, decorator_name="component_action")
 
-    @component_action
     def start(self) -> bool:
         """
         Start the component - trigger_activate
@@ -1814,7 +1812,6 @@ class BaseComponent(lifecycle.Node):
         self.trigger_activate()
         return True
 
-    @component_action
     def stop(self) -> bool:
         """
         Stop the component - trigger_deactivate
@@ -1838,7 +1835,6 @@ class BaseComponent(lifecycle.Node):
         self.trigger_deactivate()
         return True
 
-    @component_action
     def reconfigure(self, new_config: Any, keep_alive: bool = False) -> bool:
         """
         Reconfigure the component - cleanup->stop->trigger_configure->start
@@ -1887,7 +1883,6 @@ class BaseComponent(lifecycle.Node):
             self.trigger_activate()
         return True
 
-    @component_action
     def restart(self, wait_time: Optional[float] = None) -> bool:
         """
         Restart the component - stop->start
@@ -1920,7 +1915,6 @@ class BaseComponent(lifecycle.Node):
         self.trigger_activate()
         return True
 
-    @component_action
     def set_param(
         self, param_name: str, new_value: Any, keep_alive: bool = True
     ) -> bool:
@@ -1950,7 +1944,6 @@ class BaseComponent(lifecycle.Node):
             raise
         return True
 
-    @component_action
     def set_params(
         self, params_names: List[str], new_values: List, keep_alive: bool = True
     ) -> bool:

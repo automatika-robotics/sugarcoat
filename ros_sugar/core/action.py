@@ -62,6 +62,7 @@ class Action:
             None  # contains the name of the component action as a string
         )
         self._is_monitor_action: bool = False
+        self._is_lifecycle_action: bool = False
         self._function = method
         self._args = args
         self._kwargs = kwargs if kwargs else {}
@@ -209,6 +210,10 @@ class Action:
     @property
     def monitor_action(self) -> bool:
         return self._is_monitor_action
+
+    @property
+    def lifecycle_action(self) -> bool:
+        return self._is_lifecycle_action
 
     @property
     def dictionary(self) -> Dict:
