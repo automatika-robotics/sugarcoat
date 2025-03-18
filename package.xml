@@ -19,10 +19,12 @@
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>python3-attrs</depend>
   <depend>python3-numpy</depend>
   <depend>python3-opencv</depend>
   <depend>python3-jinja2</depend>
   <depend>python3-msgpack</depend>
+  <depend>python3-msgpack-numpy</depend>
   <depend>python3-setproctitle</depend>
 
   <test_depend>ament_cmake_pytest</test_depend>

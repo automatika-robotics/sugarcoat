@@ -44,7 +44,7 @@ A [Component](https://automatika-robotics.github.io/ros-sugar/design/component.h
 
 Install python dependencies using pip as follows:
 
-`pip install 'attrs>=23.2.0' msgpack-numpy numpy-quaternion`
+`pip install 'attrs>=23.2.0' numpy-quaternion`
 
 For ROS versions >= 'humble', you can install ROS Sugar with your package manager. For example on Ubuntu:
 
