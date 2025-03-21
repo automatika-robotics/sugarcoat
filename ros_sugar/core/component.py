@@ -15,6 +15,7 @@ from rclpy.utilities import try_shutdown
 import rclpy.callback_groups as ros_callback_groups
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy import lifecycle
+from rclpy.lifecycle.node import TransitionCallbackReturn, LifecycleState
 from rclpy.publisher import Publisher as ROSPublisher
 from rclpy.subscription import Subscription
 from rclpy.client import Client
@@ -2260,13 +2261,13 @@ class BaseComponent(lifecycle.Node):
         :rtype: lifecycle.TransitionCallbackReturn
         """
         try:
+            self.destroy_timer(self.__fallbacks_check_timer)
             self.deactivate()
             # Declare transition
             self.get_logger().info(
                 f"Node '{self.get_name()}' is in state '{state.label}'. Transitioning to 'inactive'"
             )
 
-            self.destroy_timer(self.__fallbacks_check_timer)
             self.health_status.set_healthy()
 
             # Call custom method
@@ -2386,3 +2387,65 @@ class BaseComponent(lifecycle.Node):
         Method called on cleanup to overwrite with custom cleanup
         """
         pass
+
+    #NOTE: The following two methods added to add the fix from https://github.com/ros2/rclpy/pull/1319 merged into rolling on Dec 13, 2024. To be removed once backported to iron/humble/jazzy
+    def __execute_transition_callback(
+        self, current_state_id: int, previous_state: LifecycleState
+    ) -> TransitionCallbackReturn:
+        cb = self._callbacks.get(current_state_id, None)
+        if cb is None:
+            return TransitionCallbackReturn.SUCCESS
+        try:
+            ret = cb(previous_state)
+            return ret
+        except Exception as e:
+            self.get_logger().error(f"Error executing state transition callback: {e}")
+            return TransitionCallbackReturn.ERROR
+
+    def _LifecycleNodeMixin__on_change_state(
+        self,
+        req,
+        resp
+    ):
+        """
+        Overrides LifecycleNode ___on_change_state to avoid raising rcl_lifecycle error when 'change_state" service fails which otherwise would kill the process
+
+        :param req: Lifecycle change state request
+        :type req: lifecycle_msgs.srv.ChangeState.Request
+        :param resp: Lifecycle change state response
+        :type resp: lifecycle_msgs.srv.ChangeState.Response
+
+        """
+        # Check if node is initialized
+        if not self._state_machine.initialized:
+            self.get_logger().error("Internal error: got service request while lifecycle state machine is not initialized.")
+            resp.success = False
+            return resp
+
+        transition_id = req.transition.id
+
+        # modification
+        available_transition_ids = [t[0] for t in self._state_machine.available_transitions]
+        self.get_logger().debug(f"Available transitions for {self.node_name}: {available_transition_ids}, Requested {transition_id}")
+
+        if transition_id not in available_transition_ids:
+              self.get_logger().warn(f"Invalid transition requested for for node {self.node_name}.")
+              resp.success = False
+              return resp
+
+        initial_state = self._state_machine.current_state
+        initial_state = LifecycleState(state_id=initial_state[0], label=initial_state[1])
+        self._state_machine.trigger_transition_by_id(transition_id, True)
+
+        cb_return_code = self.__execute_transition_callback(
+            self._state_machine.current_state[0], initial_state)
+        self._state_machine.trigger_transition_by_label(cb_return_code.to_label(), True)
+
+        if cb_return_code == TransitionCallbackReturn.ERROR:
+            # Now we're in the errorprocessing state, trigger the on_error callback
+            # and transition again based on the return code.
+            error_cb_ret_code = self.__execute_transition_callback(
+                self._state_machine.current_state[0], initial_state)
+            self._state_machine.trigger_transition_by_label(error_cb_ret_code.to_label(), True)
+        resp.success = cb_return_code == TransitionCallbackReturn.SUCCESS
+        return resp
