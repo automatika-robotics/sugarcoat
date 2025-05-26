@@ -85,7 +85,7 @@ class TFListener:
         """
         if self.got_transform:
             rot = self.transform.transform.rotation
-            return np.array([rot.w, rot.x, rot.y, rot.z], dtype=np.float32)
+            return np.array([rot.x, rot.y, rot.z, rot.w], dtype=np.float32)
         return None
 
     @property
