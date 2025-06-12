@@ -4,6 +4,7 @@ from typing import Union, Optional
 from attrs import define, field
 from rclpy import qos
 import rclpy.callback_groups as ros_callback_groups
+from rclpy.logging import LoggingSeverity
 
 from . import base_validators
 from .base_attrs import BaseAttrs
@@ -196,6 +197,29 @@ def _convert_runtype_to_enum(
         raise ValueError(f"Unsupported ComponentRunTime value '{value}'")
 
 
+def _convert_logging_severity_to_enum(
+    value: Union[LoggingSeverity, str],
+) -> LoggingSeverity:
+    """
+    Converter for ComponentRunType to set the value from strings
+
+    :param value: Runtype value
+    :type value: Union[ComponentRunType, str]
+
+    :raises ValueError: If string value is not one of the ComponentRunType Enum values
+
+    :return: Enum value
+    :rtype: ComponentRunType
+    """
+    if isinstance(value, LoggingSeverity):
+        return value
+    if isinstance(value, str):
+        for value_enum in LoggingSeverity:
+            if value_enum.name.lower() == value.lower():
+                return value_enum
+        raise ValueError(f"Unsupported Logging Severity Value '{value}'")
+
+
 def _get_str_from_callbackgroup(
     callback_group: Union[str, ros_callback_groups.CallbackGroup],
 ) -> Optional[str]:
@@ -235,6 +259,14 @@ class BaseComponentConfig(BaseConfig):
 
     fallback_rate: float = field(
         default=100.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
+    )
+
+    log_level: Union[str, LoggingSeverity] = field(
+        default=LoggingSeverity.INFO, converter=_convert_logging_severity_to_enum
+    )
+
+    rclpy_log_level: Union[str, LoggingSeverity] = field(
+        default=LoggingSeverity.WARN, converter=_convert_logging_severity_to_enum
     )
 
     run_type: Union[ComponentRunType, str] = field(
