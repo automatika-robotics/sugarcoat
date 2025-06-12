@@ -701,7 +701,7 @@ class Launcher:
             namespace=self._namespace,
             name=component.node_name,
             output="screen",
-            log_level=component.config.log_level,
+            log_level=logging.get_logging_severity_from_string(component.config.log_level),
         )
         self._launch_group.append(component_action)
 

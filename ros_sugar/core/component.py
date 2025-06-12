@@ -180,7 +180,7 @@ class BaseComponent(lifecycle.Node):
         To init the node with rclpy and activate default services
         """
         # Apply Logging Level
-        rclpy_logging.set_logger_level(self.node_name, self.config.log_level)
+        rclpy_logging.set_logger_level(self.node_name, rclpy_logging.get_logging_severity_from_string(self.config.log_level))
         # Activate Node
         lifecycle.Node.__init__(self, self.node_name, *args, **kwargs)
         self.get_logger().info(

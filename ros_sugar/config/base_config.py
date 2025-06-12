@@ -197,9 +197,9 @@ def _convert_runtype_to_enum(
         raise ValueError(f"Unsupported ComponentRunTime value '{value}'")
 
 
-def _convert_logging_severity_to_enum(
+def _convert_logging_severity_to_str(
     value: Union[LoggingSeverity, str],
-) -> LoggingSeverity:
+) -> str:
     """
     Converter for ComponentRunType to set the value from strings
 
@@ -212,11 +212,12 @@ def _convert_logging_severity_to_enum(
     :rtype: ComponentRunType
     """
     if isinstance(value, LoggingSeverity):
-        return value
+        return LoggingSeverity.name.lower()
     if isinstance(value, str):
+        # Validate string value
         for value_enum in LoggingSeverity:
             if value_enum.name.lower() == value.lower():
-                return value_enum
+                return value
         raise ValueError(f"Unsupported Logging Severity Value '{value}'")
 
 
@@ -262,11 +263,11 @@ class BaseComponentConfig(BaseConfig):
     )
 
     log_level: Union[str, LoggingSeverity] = field(
-        default=LoggingSeverity.INFO, converter=_convert_logging_severity_to_enum
+        default=LoggingSeverity.INFO, converter=_convert_logging_severity_to_str
     )
 
     rclpy_log_level: Union[str, LoggingSeverity] = field(
-        default=LoggingSeverity.WARN, converter=_convert_logging_severity_to_enum
+        default=LoggingSeverity.WARN, converter=_convert_logging_severity_to_str
     )
 
     run_type: Union[ComponentRunType, str] = field(
