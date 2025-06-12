@@ -150,7 +150,7 @@ audio_topic = Topic(name="voice", msg_type="Audio")
 image_topic = Topic(name="camera/rgb", msg_type="Image")
 
 # Init your components
-my_component = AwesomeComponent(component_name='test_component', inputs=[map_topic, image_topic], outputs=[audio_topic])
+my_component = AwesomeComponent(component_name='awesome_component', inputs=[map_topic, image_topic], outputs=[audio_topic])
 
 # Create your events
 low_battery = OnLess(

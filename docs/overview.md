@@ -1,11 +1,14 @@
-![Logo](_static/ROS_SUGAR_DARK.png)
+<div>
+  <img src="_static/ROS_SUGAR_LIGHT.png" class="only-light" />
+  <img src="_static/ROS_SUGAR_DARK.png" class="only-dark" />
+</div>
 
 # ROS Sugar 🍬
 
 ROS SUGAR 🍬 provides a whole lot of syntactic sugar for creating multinode ROS2 event-driven systems and management using an intuitive Python API.
 
 - Learn more about the [**design concepts**](design/index.md) in ROS Sugar 📚
-- Learn how to [**create your own ROS2 package**](use.md) using ROS Sugar 🚀
+- Learn how to [**create your own ROS2 package**](advanced/use.md) using ROS Sugar 🚀
 
 ## Overview
 

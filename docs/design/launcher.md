@@ -75,6 +75,8 @@ launcher = Launcher(
     multiprocessing=True,
 )
 
+launcher.add_pkg(components=[my_component], ros_log_level="warn")
+
 # If any component fails -> restart it with unlimited retries
 launcher.on_component_fail(action_name="restart")
 

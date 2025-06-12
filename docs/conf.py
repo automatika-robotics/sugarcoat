@@ -17,6 +17,7 @@ release = version
 extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.doctest",
+    "sphinx_design",
     "sphinx_copybutton",  # install with `pip install sphinx-copybutton`
     "autodoc2",  # install with `pip install sphinx-autodoc2`
     "myst_parser",  # install with `pip install myst-parser`
@@ -70,8 +71,8 @@ html_static_path = ["_static"]
 
 html_theme_options = {
     "logo": {
-        "image_light": "_static/ROS_SUGAR_DARK.png",
-        "image_dark": "_static/ROS_SUGAR.png",
+        "image_light": "_static/ROS_SUGAR_LIGHT.png",
+        "image_dark": "_static/ROS_SUGAR_DARK.png",
     },
     "icon_links": [
         {

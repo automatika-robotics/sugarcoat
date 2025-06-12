@@ -2,9 +2,19 @@
 title: ROS Sugar Documentation
 ---
 
+
 ```{include} overview.md
 
 ```
+
+```{toctree}
+:maxdepth: 1
+:caption: Overview
+
+overview
+why
+```
+
 
 ```{toctree}
 :maxdepth: 1
@@ -24,13 +34,8 @@ design/monitor
 :maxdepth: 1
 :caption: Using ROS Sugar
 
-use
-```
-
-```{toctree}
-:maxdepth: 1
-:caption: Advanced
-
+advanced/use
+advanced/srvs
 advanced/types
 ```
 
