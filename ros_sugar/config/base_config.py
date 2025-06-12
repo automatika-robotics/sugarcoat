@@ -212,7 +212,7 @@ def _convert_logging_severity_to_str(
     :rtype: ComponentRunType
     """
     if isinstance(value, LoggingSeverity):
-        return LoggingSeverity.name.lower()
+        return value.name.lower()
     if isinstance(value, str):
         # Validate string value
         for value_enum in LoggingSeverity:
