@@ -104,6 +104,7 @@ def image_pre_processing(img) -> np.ndarray:
 
     if img.encoding == "yuv422_yuy2":
         np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_YUYV)
+        np_arr = cv2.cvtColor(np_arr, cv2.COLOR_BGR2RGB)
 
     # handle bgr
     rgb = cv2.cvtColor(np_arr, cv2.COLOR_BGR2RGB) if "bgr" in img.encoding else np_arr
