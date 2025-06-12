@@ -17,7 +17,6 @@ release = version
 extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.doctest",
-    "sphinx_design",
     "sphinx_copybutton",  # install with `pip install sphinx-copybutton`
     "autodoc2",  # install with `pip install sphinx-autodoc2`
     "myst_parser",  # install with `pip install myst-parser`
