@@ -5,45 +5,46 @@ ROS Sugar is a modern, intuitive alternative to ROS2 Launch, designed to **strea
 
 ## 🚀 Advantages of Using ROS Sugar
 
-### 1. Intuitive Python API with Event-Driven Architecture
+**1. Intuitive Python API with Event-Driven Architecture**
 - Design systems using **event-driven paradigms** — natively supported with Events and Actions.
 - Trigger `Component` behaviors like start/stop/reconfigure at runtime with minimal overhead.
 
 
-### 3. Abstraction Over ROS2 Primitives
+**2. Abstraction Over ROS2 Primitives**
 - Forget boilerplate — ROS Sugar **abstracts away repetitive tasks** like:
   - Creating publishers, subscribers, services, and clients.
   - Type checking and validation.
 - The developer can focus on logic implementation, not plumbing.
 
 
-### 4. ROS2 Nodes Reimagined as Components
+**3. ROS2 Nodes Reimagined as Components**
 - Each `Component` is a self-contained execution unit augmenting a traditional ROS node with:
   - Configurable Inputs/Outputs.
   - Defined Fallbacks for fault-tolerant behavior.
   - Integrated Health Status tracking.
 
 
-### 5. Built-in Health Monitoring
+**4. Built-in Health Monitoring**
 - Each component continuously updates its **Health Status** and can execute its own **Fallbacks**.
 - Internal `Monitor` tracks components and responds to failures via Events/Actions.
 - Reduces the need for writing custom watchdogs or error-handling routines.
 
 
-### 6. Runtime Dynamism and Flexibility
+**5. Runtime Dynamism and Flexibility**
 - Dynamically:
   - Start/stop components.
   - Modify configurations.
   - Trigger transitions or actions — all during runtime using defined Events and Actions.
 
 
-### 7. Multithreaded & Multiprocess Execution
+**6. Multithreaded & Multi-process Execution**
 - `Launcher` supports both multi-threaded and multi-process component execution.
 - Adapt to performance or isolation needs without changing component logic.
 
 ---
 
-## Native ROS2 Launch vs. ROS Sugar
+## Standard ROS2 vs. ROS Sugar
+
 
 ### 🔧 Basic Launch and System Architecture
 
@@ -53,9 +54,9 @@ ROS Sugar is a modern, intuitive alternative to ROS2 Launch, designed to **strea
 | **No native Lifecycle Node Integration**. Manual lifecycle transition implementation is required. | **Built-in lifecycle automation** for all Components with native support. |
 | **Clunky Launch Composition**. Including other launch files is verbose and hard to modularize. | **Easily reusable components and launch configurations** through simple Python imports. |
 
-#### Example: Creating and launching a minimal node:
+#### Example: Creating a minimal node:
 
-1- Without ROS Sugar:
+1- Creating a simple publisher:
 
 
 ```{code-block} python
@@ -173,14 +174,10 @@ if __name__ == '__main__':
     my_launcher.bringup()
 ```
 
-
----
-
 ### ⚙️ Runtime and Developer Experience
 
-| **ROS2 Launch** | **ROS Sugar** |
+| **Standard ROS2** | **With ROS Sugar** |
 |------------------|----------------|
 | **Low Runtime Flexibility**. Limited behaviors for starting or stopping nodes dynamically during runtime | **Full dynamic launch** with easy transitions during runtime using the event-based design |
 | **Limited event-based behaviors**. No interface to configure event behaviors from runtime system information | Supports ROS2 launch events with an **additional interfaces to configure events based on any Topic information during runtime** |
 | **Steep learning curve** with limited examples in the docs | **Intuitive Pythonic interface** with full developer docs, tutorials, and API references. |
-

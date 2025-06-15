@@ -35,20 +35,20 @@ Many supported message types in ros_sugar come with pre-defined callback and pub
   - `float`
   - `float`
 
-* - **[Float64Float64MultiArray](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
-  - std_msgs
-  - Not implemented
-  - `numpy.ndarray`
-
 * - **[Float32MultiArray](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
   - std_msgs
-  - Not implemented
-  - `numpy.ndarray`
+  - `numpy.ndarray[float]`
+  - `numpy.ndarray[float]`
 
 * - **[Float64](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
   - std_msgs
   - `float`
   - `float`
+
+* - **[Float64MultiArray](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
+  - std_msgs
+  - `numpy.ndarray[float]`
+  - `numpy.ndarray[float]`
 
 * - **[Point](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
   - geometry_msgs
@@ -78,7 +78,13 @@ Many supported message types in ros_sugar come with pre-defined callback and pub
 * - **[Image](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
   - sensor_msgs
   - `numpy.ndarray`
+  - `sensor_msgs.msg.Image | numpy.ndarray`
+
+
+* - **[CompressedImage](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
+  - sensor_msgs
   - `numpy.ndarray`
+  - `sensor_msgs.msg.CompressedImage | numpy.ndarray`
 
 * - **[Audio](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
   - sensor_msgs
@@ -99,6 +105,11 @@ Many supported message types in ros_sugar come with pre-defined callback and pub
   - nav_msgs
   - `nav_msgs.msg.Path`
   - `nav_msgs.msg.Path`
+
+* - **[MapMetaData](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
+  - nav_msgs
+  - `Dict`
+  - `nav_msgs.msg.MapMetaData`
 
 * - **[OccupancyGrid](../apidocs/ros_sugar/ros_sugar.io.supported_types.md/#classes)**
   - nav_msgs

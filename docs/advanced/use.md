@@ -1,12 +1,14 @@
 # Creating your ROS2 package using ROS Sugar
 
-:::{note} Before building your own package based on ROS Sugar, familiarize yourself with the basic [design concepts](./design/index.md)
+
+:::{tip} To see detailed examples on packages created using ROS Sugar, check out [Kompass](https://automatika-robotics.github.io/kompass/) and [ROS Agents](https://automatika-robotics.github.io/ros-agents/)
 :::
 
-:::{tip} To see detailed examples on packages created using ROS Sugar, check out [Kompass](https://automatikarobotics.com/kompass/) and [ROS Agents](https://automatikarobotics.com/agents/)
+:::{note} Before building your own package based on ROS Sugar, you can check out all the basic design concepts [here](./design/index.md)
 :::
 
-1- Start by creating a new ROS2 python package. (see instruction [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html))
+
+1- Start by creating a standard ROS2 python package. (see instruction [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html))
 
 ```bash
 ros2 pkg create --build-type ament_python --license Apache-2.0 my-awesome-pkg
@@ -19,7 +21,7 @@ cd my-awesome-pkg\my_awesome_pkg
 touch awesome_component.py
 ```
 
-3- Setup your component configuration by extending `BaseComponentConfig` based on [attrs]() package:
+3- Setup your component configuration by extending `BaseComponentConfig` based on [attrs](https://www.attrs.org/en/stable/) package:
 
 ```python
 from attrs import field, define
@@ -70,7 +72,7 @@ class AwesomeComponent(BaseComponent):
 
     def _execution_step(self):
         """
-        Main execution step
+        The execution step is the main (timed) functional unit in the component. Gets called automatically at every loop step (with a frequency of 'self.config.loop_rate').
         """
         super()._execution_step()
         # Add your main execution step here, to be executed at each loop step for timed components
