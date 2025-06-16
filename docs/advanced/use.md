@@ -1,12 +1,10 @@
 # Creating your ROS2 package using ROS Sugar
 
-
 :::{tip} To see detailed examples on packages created using ROS Sugar, check out [Kompass](https://automatika-robotics.github.io/kompass/) and [ROS Agents](https://automatika-robotics.github.io/ros-agents/)
 :::
 
 :::{note} Before building your own package based on ROS Sugar, you can check out all the basic design concepts [here](../design/concepts_overview.md)
 :::
-
 
 1- Start by creating a standard ROS2 python package. (see instruction [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html))
 
@@ -41,7 +39,6 @@ class AwesomeConfig(BaseComponentConfig):
 ```
 
 4- Initialize your component by inheriting from `BaseComponent` class. Next, you can code the exact desired functionality in your component. (Refer to the [BaseComponent](../apidocs/ros_sugar/ros_sugar.core.component.md/#classes) API docs for more details on the available methods)
-
 
 ```python
 from ros_sugar.core import ComponentFallbacks, BaseComponent

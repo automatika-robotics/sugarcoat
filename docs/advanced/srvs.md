@@ -1,4 +1,4 @@
-# Components Default Services
+# Default Services In ROS Sugar Components
 
 In addition to the standard [ROS2 Lifecycle Node](https://github.com/ros2/demos/blob/rolling/lifecycle/README.rst) services, ROS Sugar Components provide a powerful set of built-in services for live reconfiguration. These services allow you to dynamically adjust inputs, outputs, and parameters on-the-fly, making it easier to respond to changing runtime conditions or trigger intelligent behavior in response to events. Like any ROS2 services, they can be called from other Nodes or with the ROS2 CLI, and can also be called programmatically as part of an action sequence or event-driven workflow in the launch script.
 

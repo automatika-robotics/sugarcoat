@@ -36,6 +36,7 @@ design/monitor
 :caption: Using ROS Sugar
 
 advanced/use
+advanced/create_service
 advanced/srvs
 advanced/types
 ```
