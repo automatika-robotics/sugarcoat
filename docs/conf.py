@@ -32,14 +32,11 @@ autodoc2_packages = [
         ],
     },
 ]
-
 autodoc2_module_all_regexes = [r"core\*"]
-
 autodoc2_hidden_objects = ["private", "dunder", "undoc"]
-
 autodoc2_class_docstring = "both"  # bug in autodoc2, should be `merge`
-
 autodoc2_render_plugin = "myst"
+
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
@@ -60,13 +57,15 @@ myst_enable_extensions = [
     "substitution",
     "tasklist",
 ]
-language = "en"
 myst_html_meta = {
     "google-site-verification": "cQVj-BaADcGVOGB7GOvfbkgJjxni10C2fYWCZ03jOeo"
 }
+myst_heading_anchors = 7  # to remove cross reference errors with md
 
+language = "en"
 html_theme = "sphinx_book_theme"  # install with `pip install sphinx-book-theme`
 html_static_path = ["_static"]
+html_favicon = "_static/favicon.png"
 
 html_theme_options = {
     "logo": {

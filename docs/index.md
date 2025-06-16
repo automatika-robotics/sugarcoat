@@ -20,6 +20,7 @@ why
 :maxdepth: 1
 :caption: Design Concepts
 
+design/concepts_overview
 design/component
 design/topics
 design/status
