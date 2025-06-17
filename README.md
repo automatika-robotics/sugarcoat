@@ -37,7 +37,7 @@ A [Component](https://automatika-robotics.github.io/sugarcoat/design/component.h
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/_static/images/diagrams/multi_process_dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/_static/images/diagrams/multi_process_light.png">
-  <img alt="Multi-process execution" src="docs/_static/images/diagrams/multi_process_light.png" width="60%">
+  <img alt="Multi-process execution" src="docs/_static/images/diagrams/multi_process_light.png" width="80%">
 </picture>
 </p>
 
