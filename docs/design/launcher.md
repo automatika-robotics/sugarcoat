@@ -4,19 +4,35 @@
 
 Launcher starts a pre-configured component or a set of components as ROS2 nodes using multi-threaded or multi-process execution. Launcher spawns an internal [Monitor](./monitor.md) node in a separate thread in both execution types.
 
-:::{figure-md} fig-multi-thread
-
-<img src="../_static/images/diagrams/multi_threaded_light.png" alt="Multi-threaded execution" width="500px">
+```{figure} /_static/images/diagrams/multi_threaded_dark.png
+:class: only-dark
+:alt: multi-threaded
+:align: center
 
 Multi-threaded execution
-:::
+```
+```{figure} /_static/images/diagrams/multi_threaded_light.png
+:class: only-light
+:alt: multi-threaded
+:align: center
 
-:::{figure-md} fig-multi-process
+Multi-threaded execution
+```
 
-<img src="../_static/images/diagrams/multi_process_light.png" alt="Multi-process execution" width="500px">
+```{figure} /_static/images/diagrams/multi_process_dark.png
+:class: only-dark
+:alt: multi-process
+:align: center
 
 Multi-process execution
-:::
+```
+```{figure} /_static/images/diagrams/multi_process_light.png
+:class: only-light
+:alt: multi-process
+:align: center
+
+Multi-process execution
+```
 
 Launcher can also manage a set of Events-Actions through its internal Monitor node (See Monitor class).
 
@@ -27,7 +43,7 @@ When initializing the Launcher, you can:
 - Enable/Disable events monitoring
 
 
-You can add components to the launcher by using '[add_pkg](../apidocs/ros_sugar/ros_sugar.launch.launcher.md/#classes)' method to pass any number of components from the same ROS2 package created using ROS Sugar primitives. When adding components from a new package you can configure:
+You can add components to the launcher by using '[add_pkg](../apidocs/ros_sugar/ros_sugar.launch.launcher.md/#classes)' method to pass any number of components from the same ROS2 package created using Sugarcoat primitives. When adding components from a new package you can configure:
 
 - Enable/Disable multi-processing, if disabled the components are launched in threads
 - Select to activate one, many or all components on start (lifecycle nodes activation)
@@ -74,6 +90,8 @@ launcher = Launcher(
     activate_all_components_on_start=True,
     multiprocessing=True,
 )
+
+launcher.add_pkg(components=[my_component], ros_log_level="warn")
 
 # If any component fails -> restart it with unlimited retries
 launcher.on_component_fail(action_name="restart")

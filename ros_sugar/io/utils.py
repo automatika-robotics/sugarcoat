@@ -1,10 +1,79 @@
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 from nav_msgs.msg import Odometry
 from quaternion import quaternion
 import cv2
 import std_msgs.msg as std_msg
+
+
+def _process_encoding(encoding: str) -> Tuple[np.dtype, int]:
+    """
+    Returns dtype and number of channels from encoding
+    """
+    encoding = encoding.lower()
+
+    # Define mapping from encoding to (dtype, channels)
+    encoding_map = {
+        # RGB/BGR family
+        "rgb8": (np.uint8, 3),
+        "rgba8": (np.uint8, 4),
+        "rgb16": (np.uint16, 3),
+        "rgba16": (np.uint16, 4),
+        "bgr8": (np.uint8, 3),
+        "bgra8": (np.uint8, 4),
+        "bgr16": (np.uint16, 3),
+        "bgra16": (np.uint16, 4),
+        # Mono
+        "mono8": (np.uint8, 1),
+        "mono16": (np.uint16, 1),
+        # Bayer – typically raw single-channel
+        "bayer_rggb8": (np.uint8, 1),
+        "bayer_bggr8": (np.uint8, 1),
+        "bayer_gbrg8": (np.uint8, 1),
+        "bayer_grbg8": (np.uint8, 1),
+        "bayer_rggb16": (np.uint16, 1),
+        "bayer_bggr16": (np.uint16, 1),
+        "bayer_gbrg16": (np.uint16, 1),
+        "bayer_grbg16": (np.uint16, 1),
+        # CvMat types
+        "8uc1": (np.uint8, 1),
+        "8uc2": (np.uint8, 2),
+        "8uc3": (np.uint8, 3),
+        "8uc4": (np.uint8, 4),
+        "8sc1": (np.int8, 1),
+        "8sc2": (np.int8, 2),
+        "8sc3": (np.int8, 3),
+        "8sc4": (np.int8, 4),
+        "16uc1": (np.uint16, 1),
+        "16uc2": (np.uint16, 2),
+        "16uc3": (np.uint16, 3),
+        "16uc4": (np.uint16, 4),
+        "16sc1": (np.int16, 1),
+        "16sc2": (np.int16, 2),
+        "16sc3": (np.int16, 3),
+        "16sc4": (np.int16, 4),
+        "32sc1": (np.int32, 1),
+        "32sc2": (np.int32, 2),
+        "32sc3": (np.int32, 3),
+        "32sc4": (np.int32, 4),
+        "32fc1": (np.float32, 1),
+        "32fc2": (np.float32, 2),
+        "32fc3": (np.float32, 3),
+        "32fc4": (np.float32, 4),
+        "64fc1": (np.float64, 1),
+        "64fc2": (np.float64, 2),
+        "64fc3": (np.float64, 3),
+        "64fc4": (np.float64, 4),
+        "yuv422": (np.uint8, 2),
+    }
+
+    if encoding not in encoding_map:
+        if "yuv422" in encoding:
+            return encoding_map["yuv422"]
+        raise ValueError(f"Unsupported encoding: {encoding}")
+
+    return encoding_map[encoding]
 
 
 def image_pre_processing(img) -> np.ndarray:
@@ -16,19 +85,26 @@ def image_pre_processing(img) -> np.ndarray:
     :returns:   Image as an numpy array
     :rtype:     Numpy array
     """
-    if img.encoding == "yuv422_yuy2":
-        np_arr = np.asarray(img.data, dtype="uint8").reshape((img.height, img.width, 2))
-        np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_YUYV)
-
-    # discard alpha channels if present
-    elif "a" in img.encoding:
-        np_arr = np.asarray(img.data, dtype="uint8").reshape((
+    dtype, num_channels = _process_encoding(img.encoding)
+    if num_channels > 1:
+        np_arr = np.asarray(img.data, dtype=dtype).reshape((
             img.height,
             img.width,
-            4,
+            num_channels,
+        ))
+    # discard alpha channels if present
+    elif num_channels == 4:
+        np_arr = np.asarray(img.data, dtype=dtype).reshape((
+            img.height,
+            img.width,
+            num_channels,
         ))[:, :, :3]
     else:
-        np_arr = np.asarray(img.data, dtype="uint8").reshape((img.height, img.width, 3))
+        np_arr = np.asarray(img.data, dtype=dtype).reshape((img.height, img.width))
+
+    if img.encoding == "yuv422_yuy2":
+        np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_YUYV)
+        np_arr = cv2.cvtColor(np_arr, cv2.COLOR_BGR2RGB)
 
     # handle bgr
     rgb = cv2.cvtColor(np_arr, cv2.COLOR_BGR2RGB) if "bgr" in img.encoding else np_arr
@@ -206,16 +282,16 @@ def _parse_array_type(arr: np.ndarray, ros_msg_cls: type) -> np.ndarray:
     :return: Parsed data
     :rtype: np.ndarray
     """
-    if ros_msg_cls==std_msg.Float32MultiArray:
+    if ros_msg_cls == std_msg.Float32MultiArray:
         arr = arr.astype(np.float32)
-    elif ros_msg_cls==std_msg.Float64MultiArray:
+    elif ros_msg_cls == std_msg.Float64MultiArray:
         arr = arr.astype(np.float64)
-    elif ros_msg_cls==std_msg.Int16MultiArray:
-            arr = arr.astype(np.int16)
-    elif ros_msg_cls==std_msg.Int32MultiArray:
-            arr = arr.astype(np.int32)
-    elif ros_msg_cls==std_msg.Int64MultiArray:
-            arr = arr.astype(np.int64)
+    elif ros_msg_cls == std_msg.Int16MultiArray:
+        arr = arr.astype(np.int16)
+    elif ros_msg_cls == std_msg.Int32MultiArray:
+        arr = arr.astype(np.int32)
+    elif ros_msg_cls == std_msg.Int64MultiArray:
+        arr = arr.astype(np.int64)
     return arr
 
 

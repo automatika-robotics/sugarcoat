@@ -1,12 +1,12 @@
-# Creating your ROS2 package using ROS Sugar
+# Creating your ROS2 package using Sugarcoat
 
-:::{note} Before building your own package based on ROS Sugar, familiarize yourself with the basic [design concepts](./design/index.md)
+:::{tip} To see detailed examples on packages created using Sugarcoat, check out [Kompass](https://automatika-robotics.github.io/kompass/) and [EmbodiedAgents](https://automatika-robotics.github.io/embodied-agents/)
 :::
 
-:::{tip} To see detailed examples on packages created using ROS Sugar, check out [Kompass](https://automatikarobotics.com/kompass/) and [ROS Agents](https://automatikarobotics.com/agents/)
+:::{note} Before building your own package based on Sugarcoat, you can check out all the basic design concepts [here](../design/concepts_overview.md)
 :::
 
-1- Start by creating a new ROS2 python package. (see instruction [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html))
+1- Start by creating a standard ROS2 python package. (see instruction [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html))
 
 ```bash
 ros2 pkg create --build-type ament_python --license Apache-2.0 my-awesome-pkg
@@ -19,7 +19,7 @@ cd my-awesome-pkg\my_awesome_pkg
 touch awesome_component.py
 ```
 
-3- Setup your component configuration by extending `BaseComponentConfig` based on [attrs]() package:
+3- Setup your component configuration by extending `BaseComponentConfig` based on [attrs](https://www.attrs.org/en/stable/) package:
 
 ```python
 from attrs import field, define
@@ -38,8 +38,7 @@ class AwesomeConfig(BaseComponentConfig):
     extra_flag: bool = field(default=True)
 ```
 
-4- Initialize your component by inheriting from `BaseComponent` class. Next, you can code the exact desired functionality in your component. (Refer to the [BaseComponent](./apidocs/ros_sugar/ros_sugar.core.component.md/#classes) API docs for more details on the available methods)
-
+4- Initialize your component by inheriting from `BaseComponent` class. Next, you can code the exact desired functionality in your component. (Refer to the [BaseComponent](../apidocs/ros_sugar/ros_sugar.core.component.md/#classes) API docs for more details on the available methods)
 
 ```python
 from ros_sugar.core import ComponentFallbacks, BaseComponent
@@ -70,7 +69,7 @@ class AwesomeComponent(BaseComponent):
 
     def _execution_step(self):
         """
-        Main execution step
+        The execution step is the main (timed) functional unit in the component. Gets called automatically at every loop step (with a frequency of 'self.config.loop_rate').
         """
         super()._execution_step()
         # Add your main execution step here, to be executed at each loop step for timed components
@@ -78,16 +77,16 @@ class AwesomeComponent(BaseComponent):
 
 5- Follow the previous method to create any number of functional units in your package.
 
-6- To use your components with ROS Sugar Launcher in multi-threaded execution, jump to step 11. To Setup multi-process execution check step 7.
+6- To use your components with Sugarcoat Launcher in multi-threaded execution, jump to step 11. To Setup multi-process execution check step 7.
 
-7- Next, to use your components with ROS Sugar Launcher in multi-process execution you need to create an entry point for the ROS2 package.
+7- Next, to use your components with Sugarcoat Launcher in multi-process execution you need to create an entry point for the ROS2 package.
 
 ```bash
 cd my-awesome-pkg\my_awesome_pkg
 touch executable.py
 ```
 
-8- Import your component and their configuration classes and get the `executable_main` from `ros_sugar`:
+8- Import your component and their configuration classes and get the `executable_main` from `ros_sugar` (Sugarcoat):
 
 ```python
 #!/usr/bin/env python3
@@ -123,7 +122,7 @@ setup(
     zip_safe=True,
     maintainer="Cyberdyne Systems",
     maintainer_email="contact@cyberdynesystems.com",
-    description="My awesome ROS2 sugar package",
+    description="My awesome ROS2 sugarcoated package",
     entry_points={
         "console_scripts": console_scripts,
     },
@@ -132,10 +131,10 @@ setup(
 
 10- Build your ROS2 package with colcon (instructions [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html#build-a-package))
 
-11- Now you can use and launch your awesome new package with ROS sugar launcher using a simple python script:
+11- Now you can use and launch your awesome new package with Sugarcoat launcher using a simple python script:
 
 ```{code-block} python
-:caption: Using ros_sugar Launcher with your awesome package
+:caption: Using Sugarcoat Launcher with your awesome package
 :linenos:
 
 from my_awesome_pkg.awesome_component import AwesomeComponent, AwesomeConfig
@@ -150,7 +149,7 @@ audio_topic = Topic(name="voice", msg_type="Audio")
 image_topic = Topic(name="camera/rgb", msg_type="Image")
 
 # Init your components
-my_component = AwesomeComponent(component_name='test_component', inputs=[map_topic, image_topic], outputs=[audio_topic])
+my_component = AwesomeComponent(component_name='awesome_component', inputs=[map_topic, image_topic], outputs=[audio_topic])
 
 # Create your events
 low_battery = OnLess(

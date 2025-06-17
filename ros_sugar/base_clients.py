@@ -22,10 +22,10 @@ class ServiceClientConfig(BaseAttrs):
     srv_type: type = field()
     name: str = field()
     timeout_secs: float = field(
-        default=1.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
+        default=30.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
     )  # timeout after calling the service
     attempt_period_secs: float = field(
-        default=0.1, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
+        default=1.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
     )  # time period to attempt to call the service again
 
 
@@ -38,10 +38,10 @@ class ActionClientConfig(BaseAttrs):
     action_type: type = field()
     name: str = field()
     timeout_secs: float = field(
-        default=1.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
+        default=30.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
     )  # timeout after calling the action
     attempt_period_secs: float = field(
-        default=0.1, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
+        default=1.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
     )  # time period to attempt to call the action again
     feedback_check_period: float = field(
         default=0.05, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)

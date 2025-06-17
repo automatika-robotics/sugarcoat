@@ -30,7 +30,7 @@ Actions are defined with:
 
 ## Available Defined Actions:
 
-ROS Sugar comes with a set of pre-defined component level actions and system level actions
+Sugarcoat comes with a set of pre-defined component level actions and system level actions
 
 ### Component-level Actions:
 - stop: Deactivate the lifecycle Component
@@ -64,7 +64,7 @@ In the previous examples ComponentActions are defined with fixed arguments, howe
 
 We configure an `event_parser` using a parsing `Callable` and an `output_mapping: str`. This allows us to add a method that will be executed before the main action executable. The returned value from the method will be passed to the action executable as a keyword argument using the `output_mapping`.
 
-Let's see how this can work in a small example: We will take the example used in [Kompass tutorial]() where a `send_action_goal` action is used to send a ROS2 ActionServer goal by parsing a value from a published topic.
+Let's see how this can work in a small example: We will take the example used in [Kompass tutorial](https://automatika-robotics.github.io/kompass/tutorials/events_actions.html) where a `send_action_goal` action is used to send a ROS2 ActionServer goal by parsing a value from a published topic.
 
 First we define the action that sends the action server goal:
 

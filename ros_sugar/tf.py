@@ -1,7 +1,7 @@
 """ROS TF Listener"""
 
 from typing import Optional
-
+import numpy as np
 from attrs import define, field
 from rclpy.logging import get_logger
 from rclpy.time import Time
@@ -60,6 +60,33 @@ class TFListener:
         # result
         self.transform = None
         self.got_transform = False
+
+
+    @property
+    def translation(self) -> Optional[np.ndarray]:
+        """
+        Getter of transform listener TF translation as numpy array
+
+        :return: Translation vector
+        :rtype: Optional[np.ndarray]
+        """
+        if self.got_transform:
+            trans = self.transform.transform.translation
+            return np.array([trans.x, trans.y, trans.z], dtype=np.float32)
+        return None
+
+    @property
+    def rotation(self) -> Optional[np.ndarray]:
+        """
+        Getter of transform listener TF rotation as numpy array
+
+        :return: Rotation Quaternion vector
+        :rtype: Optional[np.ndarray]
+        """
+        if self.got_transform:
+            rot = self.transform.transform.rotation
+            return np.array([rot.x, rot.y, rot.z, rot.w], dtype=np.float32)
+        return None
 
     @property
     def tf_buffer(self):

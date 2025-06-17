@@ -6,14 +6,17 @@ import json
 import socket
 from omegaconf import OmegaConf
 from abc import abstractmethod
+import threading
 from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple
 from functools import wraps
 
+from rclpy import logging as rclpy_logging
 from rclpy.action.server import ActionServer, CancelResponse, GoalResponse
 from rclpy.utilities import try_shutdown
 import rclpy.callback_groups as ros_callback_groups
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy import lifecycle
+from rclpy.lifecycle.node import TransitionCallbackReturn, LifecycleState
 from rclpy.publisher import Publisher as ROSPublisher
 from rclpy.subscription import Subscription
 from rclpy.client import Client
@@ -39,7 +42,6 @@ from .fallbacks import ComponentFallbacks, Fallback
 from .status import Status
 from ..utils import (
     camel_to_snake_case,
-    component_action,
     component_fallback,
     get_methods_with_decorator,
     log_srv,
@@ -164,6 +166,11 @@ class BaseComponent(lifecycle.Node):
             str, Dict
         ] = {}  # Dictionary of user defined algorithms configuration
 
+        # Main goal handle (to execute one goal at a time)
+        # TODO add config parameter (one goal vs goal queue)
+        self._main_goal_handle = None
+        self._main_goal_lock = threading.Lock()
+
         # To use without launcher -> Init the ROS2 node directly
         if self.config.use_without_launcher:
             self.rclpy_init_node(component_name, **kwargs)
@@ -172,6 +179,9 @@ class BaseComponent(lifecycle.Node):
         """
         To init the node with rclpy and activate default services
         """
+        # Apply Logging Level
+        rclpy_logging.set_logger_level(self.node_name, rclpy_logging.get_logging_severity_from_string(self.config.log_level))
+        # Activate Node
         lifecycle.Node.__init__(self, self.node_name, *args, **kwargs)
         self.get_logger().info(
             f"LIFECYCLE NODE {self.get_name()} STARTED AND REQUIRES CONFIGURATION"
@@ -283,7 +293,10 @@ class BaseComponent(lifecycle.Node):
             algo_config.from_dict(config_dict)
         elif self._config_file:
             # configure directly from YAML if available
-            algo_config.from_yaml(self._config_file, nested_root_name=f"{self.node_name}.{algo_config_name.partition('Config')[0]}")
+            algo_config.from_yaml(
+                self._config_file,
+                nested_root_name=f"{self.node_name}.{algo_config_name.partition('Config')[0]}",
+            )
         return algo_config
 
     # Managing Inputs/Outputs
@@ -604,7 +617,9 @@ class BaseComponent(lifecycle.Node):
         Destroys all action servers
         """
         # Destroy node main Server if runtype is action server
-        if self.run_type == ComponentRunType.ACTION_SERVER and hasattr(self, "action_server"):
+        if self.run_type == ComponentRunType.ACTION_SERVER and hasattr(
+            self, "action_server"
+        ):
             self.action_server.destroy()
 
     def destroy_all_action_clients(self):
@@ -683,7 +698,6 @@ class BaseComponent(lifecycle.Node):
         """
         if not self.__events or not self.__actions:
             return
-
         self.__event_listeners = []
         for event, actions in zip(self.__events, self.__actions):
             # Register action to event callback to get executed on trigger
@@ -1198,6 +1212,7 @@ class BaseComponent(lifecycle.Node):
         :return: ACCEPT
         :rtype: rclpy.action.GoalResponse
         """
+        # Cancel any ongoing action
         self.get_logger().info("Received goal request")
         return GoalResponse.ACCEPT
 
@@ -1205,8 +1220,14 @@ class BaseComponent(lifecycle.Node):
         """
         Main component action server callback when handle is accepted
         """
-        self.get_logger().info("Goal accepted")
-        goal_handle.execute()
+        with self._main_goal_lock:
+            if self._main_goal_handle is not None and self._main_goal_handle.is_active:
+                # Abort the existing goal
+                self.get_logger().info("Aborting previous goal")
+                self._main_goal_handle.abort()
+            self._main_goal_handle = goal_handle
+            self.get_logger().info("Goal accepted")
+            self._main_goal_handle.execute()
 
     def _main_action_cancel_callback(self, _):
         """Main component action server callback when handle is canceled
@@ -1772,7 +1793,6 @@ class BaseComponent(lifecycle.Node):
         """
         return get_methods_with_decorator(self, decorator_name="component_action")
 
-    @component_action
     def start(self) -> bool:
         """
         Start the component - trigger_activate
@@ -1801,7 +1821,6 @@ class BaseComponent(lifecycle.Node):
         self.trigger_activate()
         return True
 
-    @component_action
     def stop(self) -> bool:
         """
         Stop the component - trigger_deactivate
@@ -1825,7 +1844,6 @@ class BaseComponent(lifecycle.Node):
         self.trigger_deactivate()
         return True
 
-    @component_action
     def reconfigure(self, new_config: Any, keep_alive: bool = False) -> bool:
         """
         Reconfigure the component - cleanup->stop->trigger_configure->start
@@ -1874,7 +1892,6 @@ class BaseComponent(lifecycle.Node):
             self.trigger_activate()
         return True
 
-    @component_action
     def restart(self, wait_time: Optional[float] = None) -> bool:
         """
         Restart the component - stop->start
@@ -1907,7 +1924,6 @@ class BaseComponent(lifecycle.Node):
         self.trigger_activate()
         return True
 
-    @component_action
     def set_param(
         self, param_name: str, new_value: Any, keep_alive: bool = True
     ) -> bool:
@@ -1937,7 +1953,6 @@ class BaseComponent(lifecycle.Node):
             raise
         return True
 
-    @component_action
     def set_params(
         self, params_names: List[str], new_values: List, keep_alive: bool = True
     ) -> bool:
@@ -2254,13 +2269,13 @@ class BaseComponent(lifecycle.Node):
         :rtype: lifecycle.TransitionCallbackReturn
         """
         try:
+            self.destroy_timer(self.__fallbacks_check_timer)
             self.deactivate()
             # Declare transition
             self.get_logger().info(
                 f"Node '{self.get_name()}' is in state '{state.label}'. Transitioning to 'inactive'"
             )
 
-            self.destroy_timer(self.__fallbacks_check_timer)
             self.health_status.set_healthy()
 
             # Call custom method
@@ -2380,3 +2395,75 @@ class BaseComponent(lifecycle.Node):
         Method called on cleanup to overwrite with custom cleanup
         """
         pass
+
+    # NOTE: The following two methods added to add the fix from https://github.com/ros2/rclpy/pull/1319 merged into rolling on Dec 13, 2024. To be removed once backported to iron/humble/jazzy
+    def __execute_transition_callback(
+        self, current_state_id: int, previous_state: LifecycleState
+    ) -> TransitionCallbackReturn:
+        cb = self._callbacks.get(current_state_id, None)
+        if cb is None:
+            return TransitionCallbackReturn.SUCCESS
+        try:
+            ret = cb(previous_state)
+            return ret
+        except Exception as e:
+            self.get_logger().error(f"Error executing state transition callback: {e}")
+            return TransitionCallbackReturn.ERROR
+
+    def _LifecycleNodeMixin__on_change_state(self, req, resp):
+        """
+        Overrides LifecycleNode ___on_change_state to avoid raising rcl_lifecycle error when 'change_state" service fails which otherwise would kill the process
+
+        :param req: Lifecycle change state request
+        :type req: lifecycle_msgs.srv.ChangeState.Request
+        :param resp: Lifecycle change state response
+        :type resp: lifecycle_msgs.srv.ChangeState.Response
+
+        """
+        # Check if node is initialized
+        if not self._state_machine.initialized:
+            self.get_logger().error(
+                "Internal error: got service request while lifecycle state machine is not initialized."
+            )
+            resp.success = False
+            return resp
+
+        transition_id = req.transition.id
+
+        # modification
+        available_transition_ids = [
+            t[0] for t in self._state_machine.available_transitions
+        ]
+        self.get_logger().debug(
+            f"Available transitions for {self.node_name}: {available_transition_ids}, Requested {transition_id}"
+        )
+
+        if transition_id not in available_transition_ids:
+            self.get_logger().warn(
+                f"Invalid transition requested for for node {self.node_name}."
+            )
+            resp.success = False
+            return resp
+
+        initial_state = self._state_machine.current_state
+        initial_state = LifecycleState(
+            state_id=initial_state[0], label=initial_state[1]
+        )
+        self._state_machine.trigger_transition_by_id(transition_id, True)
+
+        cb_return_code = self.__execute_transition_callback(
+            self._state_machine.current_state[0], initial_state
+        )
+        self._state_machine.trigger_transition_by_label(cb_return_code.to_label(), True)
+
+        if cb_return_code == TransitionCallbackReturn.ERROR:
+            # Now we're in the errorprocessing state, trigger the on_error callback
+            # and transition again based on the return code.
+            error_cb_ret_code = self.__execute_transition_callback(
+                self._state_machine.current_state[0], initial_state
+            )
+            self._state_machine.trigger_transition_by_label(
+                error_cb_ret_code.to_label(), True
+            )
+        resp.success = cb_return_code == TransitionCallbackReturn.SUCCESS
+        return resp

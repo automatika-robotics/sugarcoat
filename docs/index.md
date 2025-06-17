@@ -1,6 +1,7 @@
 ---
-title: ROS Sugar Documentation
+title: Sugarcoat Documentation
 ---
+
 
 ```{include} overview.md
 
@@ -8,8 +9,18 @@ title: ROS Sugar Documentation
 
 ```{toctree}
 :maxdepth: 1
+:caption: Overview
+
+overview
+why
+```
+
+
+```{toctree}
+:maxdepth: 1
 :caption: Design Concepts
 
+design/concepts_overview
 design/component
 design/topics
 design/status
@@ -22,15 +33,11 @@ design/monitor
 
 ```{toctree}
 :maxdepth: 1
-:caption: Using ROS Sugar
+:caption: Using Sugarcoat
 
-use
-```
-
-```{toctree}
-:maxdepth: 1
-:caption: Advanced
-
+advanced/use
+advanced/create_service
+advanced/srvs
 advanced/types
 ```
 
