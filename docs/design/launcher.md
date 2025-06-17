@@ -4,19 +4,35 @@
 
 Launcher starts a pre-configured component or a set of components as ROS2 nodes using multi-threaded or multi-process execution. Launcher spawns an internal [Monitor](./monitor.md) node in a separate thread in both execution types.
 
-:::{figure-md} fig-multi-thread
-
-<img src="../_static/images/diagrams/multi_threaded_light.png" alt="Multi-threaded execution" width="500px">
+```{figure} /_static/images/diagrams/multi_threaded_dark.png
+:class: only-dark
+:alt: multi-threaded
+:align: center
 
 Multi-threaded execution
-:::
+```
+```{figure} /_static/images/diagrams/multi_threaded_light.png
+:class: only-light
+:alt: multi-threaded
+:align: center
 
-:::{figure-md} fig-multi-process
+Multi-threaded execution
+```
 
-<img src="../_static/images/diagrams/multi_process_light.png" alt="Multi-process execution" width="500px">
+```{figure} /_static/images/diagrams/multi_process_dark.png
+:class: only-dark
+:alt: multi-process
+:align: center
 
 Multi-process execution
-:::
+```
+```{figure} /_static/images/diagrams/multi_process_light.png
+:class: only-light
+:alt: multi-process
+:align: center
+
+Multi-process execution
+```
 
 Launcher can also manage a set of Events-Actions through its internal Monitor node (See Monitor class).
 
