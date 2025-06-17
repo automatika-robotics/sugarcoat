@@ -6,12 +6,20 @@ A Component is the main execution unit, every Component is equivalent to a [ROS2
 - [Health Status](#health-status)
 - [Fallbacks](#fallbacks)
 
-:::{figure-md} fig-comp
-
-<img src="../_static/images/diagrams/component_light.png" alt="Base Component" width="700px">
+```{figure} /_static/images/diagrams/component_dark.png
+:class: only-dark
+:alt: component
+:align: center
 
 Component Structure
-:::
+```
+```{figure} /_static/images/diagrams/component_light.png
+:class: only-light
+:alt: component
+:align: center
+
+Component Structure
+```
 
 Each Component must serve one main functionality which can be executed in different modes or [ComponentRunType](../apidocs/ros_sugar/ros_sugar.config.base_config.md/#classes) (Example below), additionally the Component can offer any number of additional services.
 
