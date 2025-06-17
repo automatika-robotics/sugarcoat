@@ -26,9 +26,6 @@
   <depend>python3-msgpack</depend>
   <depend>python3-msgpack-numpy</depend>
   <depend>python3-setproctitle</depend>
-  <!-- ROS Dep based dependencies -->
-  <depend>python-attrs-pip</depend>
-  <depend>python-numpy-quaternion-pip</depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>ament_index_python</test_depend>
@@ -36,6 +33,9 @@
   <test_depend>launch</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>python3-pytest</test_depend>
+  <!-- ROS Dep based dependencies -->
+  <test_depend>python-attrs-pip</test_depend>
+  <test_depend>python-numpy-quaternion-pip</test_depend>
 
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>

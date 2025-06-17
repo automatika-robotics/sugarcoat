@@ -1,7 +1,8 @@
 <div>
-  <img src="_static/ROS_SUGAR_LIGHT.png" class="only-light" />
-  <img src="_static/ROS_SUGAR_DARK.png" class="only-dark" />
+  <img src="_static/SUGARCOAT_LIGHT.png" class="only-light" />
+  <img src="_static/SUGARCOAT_DARK.png" class="only-dark" />
 </div>
+<br>
 
 # Sugarcoat 🍬
 

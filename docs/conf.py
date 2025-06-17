@@ -69,8 +69,8 @@ html_favicon = "_static/favicon.png"
 
 html_theme_options = {
     "logo": {
-        "image_light": "_static/ROS_SUGAR_LIGHT.png",
-        "image_dark": "_static/ROS_SUGAR_DARK.png",
+        "image_light": "_static/SUGARCOAT_LIGHT.png",
+        "image_dark": "_static/SUGARCOAT_DARK.png",
     },
     "icon_links": [
         {
