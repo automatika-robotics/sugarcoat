@@ -20,12 +20,16 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>python3-attrs</depend>
+  <depend>python3-attrs</depend>
   <depend>python3-numpy</depend>
   <depend>python3-opencv</depend>
   <depend>python3-jinja2</depend>
   <depend>python3-msgpack</depend>
   <depend>python3-msgpack-numpy</depend>
   <depend>python3-setproctitle</depend>
+  <!-- ROS Dep based dependencies -->
+  <depend>python-attrs-pip</depend>
+  <depend>python-numpy-quaternion-pip</depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>ament_index_python</test_depend>
