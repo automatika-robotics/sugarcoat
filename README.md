@@ -4,7 +4,7 @@
   <img alt="Sugarcoat Logo." src="docs/_static/ROS_SUGAR_DARK.png"  width="50%">
 </picture>
 
-ROS SUGAR 🍬 is a meta-framework that provides a whole lot of syntactic sugar for creating event-driven multinode systems in ROS2, using an intuitive Python API.
+Sugarcoat 🍬 is a meta-framework that provides a whole lot of syntactic sugar for creating event-driven multinode systems in ROS2, using an intuitive Python API.
 
 - Learn more about the [**design concepts**](https://automatika-robotics.github.io/sugarcoat/design/index.html) in Sugarcoat 📚
 - Learn how to [**create your own ROS2 package**](https://automatika-robotics.github.io/sugarcoat/use.html) using Sugarcoat 🚀
@@ -12,7 +12,7 @@ ROS SUGAR 🍬 is a meta-framework that provides a whole lot of syntactic sugar 
 ## Packages created using Sugarcoat
 
 - [**Kompass**](https://automatikarobotics.com/kompass/): a framework for building robust and comprehensive event-driven navigation stacks using an easy-to-use and intuitive Python API
-- [**ROS Agents**](https://automatika-robotics.github.io/ros-agents/): a fully-loaded framework for creating interactive embodied agents that can understand, remember, and act upon contextual information from their environment.
+- [**Embodied Agents**](https://automatika-robotics.github.io/embodied-agents/): a fully-loaded framework for creating interactive physical agents that can understand, remember, and act upon contextual information from their environment.
 
 ## Overview
 
