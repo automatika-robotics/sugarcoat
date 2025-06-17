@@ -23,7 +23,7 @@ def _get_username():
 
 DEFAULT_SERVICE = {
     "Unit": {
-        "Description": "ROS Sugar Service",
+        "Description": "Sugarcoat Service",
         "After": "multi-user.target",
     },
     "Service": {
@@ -31,7 +31,7 @@ DEFAULT_SERVICE = {
         "Restart": "on-failure",
         "RestartSec": "3s",
         "User": _get_username(),
-        "Environment": "PYTHONUNBUFFERED=1"
+        "Environment": "PYTHONUNBUFFERED=1",
     },
     "Install": {
         "WantedBy": "default.target",
@@ -67,17 +67,19 @@ def _write_systemd_config(
 def install_service(
     service_file_path: str,
     service_name: str,
-    service_description: Optional[str] = "ROS Sugar Description",
+    service_description: Optional[str] = "Sugarcoat Description",
     services_enable: bool = True,
     install_path: str = "/etc/systemd/system",
     source_workspace_path: Optional[str] = None,
-    restart_time: str = '3s',
+    restart_time: str = "3s",
 ):
     """
     Installs a python script as a systemd service
     """
     if not Path(service_file_path).is_file():
-        raise FileNotFoundError(f"Cannot find the specified python script at {service_file_path}")
+        raise FileNotFoundError(
+            f"Cannot find the specified python script at {service_file_path}"
+        )
     service_file_path = str(Path(service_file_path).absolute())
 
     logging.info(f"Installing {service_name} service...")
@@ -142,8 +144,12 @@ def install_service(
         )
 
     logging.info(f"Successfully installed {service_name} service to {install_path}")
-    logging.info(f"You can start the service by running the following (service will start automatically after a restart):\n\n`systemctl start {service_name}`\n")
-    logging.info(f"After enabling, the logs can be viewed as follows:\n\n`journalctl --unit {service_name}`")
+    logging.info(
+        f"You can start the service by running the following (service will start automatically after a restart):\n\n`systemctl start {service_name}`\n"
+    )
+    logging.info(
+        f"After enabling, the logs can be viewed as follows:\n\n`journalctl --unit {service_name}`"
+    )
 
 
 def main():
@@ -166,8 +172,8 @@ def main():
     parser.add_argument(
         "--service-description",
         type=str,
-        default="ROS Sugar Service",
-        help="Plain language description of the service. Defaults to ROS Sugar Description.",
+        default="Sugarcoat Service",
+        help="Plain language description of the service. Defaults to Sugarcoat Description.",
     )
 
     parser.add_argument(
@@ -194,7 +200,7 @@ def main():
     parser.add_argument(
         "--restart-time",
         type=str,
-        default='3s',
+        default="3s",
         help="Time in seconds (as a string e.g. 2s) to wait before restarting the service if it fails. Default is 3s",
     )
 

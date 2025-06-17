@@ -30,7 +30,7 @@ Actions are defined with:
 
 ## Available Defined Actions:
 
-ROS Sugar comes with a set of pre-defined component level actions and system level actions
+Sugarcoat comes with a set of pre-defined component level actions and system level actions
 
 ### Component-level Actions:
 - stop: Deactivate the lifecycle Component

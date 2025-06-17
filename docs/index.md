@@ -1,5 +1,5 @@
 ---
-title: ROS Sugar Documentation
+title: Sugarcoat Documentation
 ---
 
 
@@ -33,7 +33,7 @@ design/monitor
 
 ```{toctree}
 :maxdepth: 1
-:caption: Using ROS Sugar
+:caption: Using Sugarcoat
 
 advanced/use
 advanced/create_service

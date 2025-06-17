@@ -1,6 +1,6 @@
 # Supported ROS2 Messages
 
-ROS Sugar components create automatic subscribers and callbacks to all inputs and publishers to all outputs.
+Sugarcoat components create automatic subscribers and callbacks to all inputs and publishers to all outputs.
 
 ```{tip}
 Access all callbacks in a `BaseComponent` in `self.callbacks: Dict[str, GenericCallback]` and get the topic incoming message using `get_ouput` method in the [`GenericCallback`](../apidocs/ros_sugar/ros_sugar.io.callbacks.md#classes) class

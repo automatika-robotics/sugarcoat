@@ -1,9 +1,9 @@
-# Creating your ROS2 package using ROS Sugar
+# Creating your ROS2 package using Sugarcoat
 
-:::{tip} To see detailed examples on packages created using ROS Sugar, check out [Kompass](https://automatika-robotics.github.io/kompass/) and [ROS Agents](https://automatika-robotics.github.io/ros-agents/)
+:::{tip} To see detailed examples on packages created using Sugarcoat, check out [Kompass](https://automatika-robotics.github.io/kompass/) and [ROS Agents](https://automatika-robotics.github.io/ros-agents/)
 :::
 
-:::{note} Before building your own package based on ROS Sugar, you can check out all the basic design concepts [here](../design/concepts_overview.md)
+:::{note} Before building your own package based on Sugarcoat, you can check out all the basic design concepts [here](../design/concepts_overview.md)
 :::
 
 1- Start by creating a standard ROS2 python package. (see instruction [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html))
@@ -77,9 +77,9 @@ class AwesomeComponent(BaseComponent):
 
 5- Follow the previous method to create any number of functional units in your package.
 
-6- To use your components with ROS Sugar Launcher in multi-threaded execution, jump to step 11. To Setup multi-process execution check step 7.
+6- To use your components with Sugarcoat Launcher in multi-threaded execution, jump to step 11. To Setup multi-process execution check step 7.
 
-7- Next, to use your components with ROS Sugar Launcher in multi-process execution you need to create an entry point for the ROS2 package.
+7- Next, to use your components with Sugarcoat Launcher in multi-process execution you need to create an entry point for the ROS2 package.
 
 ```bash
 cd my-awesome-pkg\my_awesome_pkg

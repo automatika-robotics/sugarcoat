@@ -27,7 +27,7 @@ When initializing the Launcher, you can:
 - Enable/Disable events monitoring
 
 
-You can add components to the launcher by using '[add_pkg](../apidocs/ros_sugar/ros_sugar.launch.launcher.md/#classes)' method to pass any number of components from the same ROS2 package created using ROS Sugar primitives. When adding components from a new package you can configure:
+You can add components to the launcher by using '[add_pkg](../apidocs/ros_sugar/ros_sugar.launch.launcher.md/#classes)' method to pass any number of components from the same ROS2 package created using Sugarcoat primitives. When adding components from a new package you can configure:
 
 - Enable/Disable multi-processing, if disabled the components are launched in threads
 - Select to activate one, many or all components on start (lifecycle nodes activation)

@@ -1,6 +1,6 @@
 # Topics
 
-ROS Sugar provides classes to configure a ROS2 topics as a Component Input/Output.
+Sugarcoat provides classes to configure a ROS2 topics as a Component Input/Output.
 
 ## Topic Configuration Class
 
