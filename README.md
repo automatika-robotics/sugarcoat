@@ -1,8 +1,9 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/_static/SUGARCOAT_DARK.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/_static/SUGARCOAT_LIGHT.png">
-  <img alt="Sugarcoat Logo" src="docs/_static/ROS_SUGAR_DARK.png"  width="50%">
+  <img alt="Sugarcoat Logo" src="docs/_static/SUGARCOAT_DARK.png"  width="50%">
 </picture>
+<br/><br/>
 
 Sugarcoat 🍬 is a meta-framework that provides a whole lot of syntactic sugar for creating event-driven multinode systems in ROS2, using an intuitive Python API.
 
@@ -12,7 +13,7 @@ Sugarcoat 🍬 is a meta-framework that provides a whole lot of syntactic sugar 
 ## Packages created using Sugarcoat
 
 - [**Kompass**](https://automatikarobotics.com/kompass/): a framework for building robust and comprehensive event-driven navigation stacks using an easy-to-use and intuitive Python API
-- [**Embodied Agents**](https://automatika-robotics.github.io/embodied-agents/): a fully-loaded framework for creating interactive physical agents that can understand, remember, and act upon contextual information from their environment.
+- [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/): a fully-loaded framework for creating interactive physical agents that can understand, remember, and act upon contextual information from their environment.
 
 ## Overview
 
@@ -73,4 +74,4 @@ Sugarcoat is made available under the MIT license. Details can be found in the [
 
 ## Contributions
 
-ROS Agents has been developed in collaboration between [Automatika Robotics](https://automatikarobotics.com/) and [Inria](https://inria.fr/). Contributions from the community are most welcome.
+Sugarcoat has been developed in collaboration between [Automatika Robotics](https://automatikarobotics.com/) and [Inria](https://inria.fr/). Contributions from the community are most welcome.

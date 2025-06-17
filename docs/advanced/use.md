@@ -1,6 +1,6 @@
 # Creating your ROS2 package using Sugarcoat
 
-:::{tip} To see detailed examples on packages created using Sugarcoat, check out [Kompass](https://automatika-robotics.github.io/kompass/) and [ROS Agents](https://automatika-robotics.github.io/ros-agents/)
+:::{tip} To see detailed examples on packages created using Sugarcoat, check out [Kompass](https://automatika-robotics.github.io/kompass/) and [EmbodiedAgents](https://automatika-robotics.github.io/embodied-agents/)
 :::
 
 :::{note} Before building your own package based on Sugarcoat, you can check out all the basic design concepts [here](../design/concepts_overview.md)
