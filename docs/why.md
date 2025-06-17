@@ -53,9 +53,11 @@ Sugarcoat is designed to **streamline development** and **reduce boilerplate** w
 | **No native Lifecycle Node Integration**. Manual lifecycle transition implementation is required. | **Built-in lifecycle automation** for all Components with native support.                                     |
 | **Clunky Launch Composition**. Including other launch files is verbose and hard to modularize.    | **Easily reusable components and launch configurations** through simple Python imports.                       |
 
-#### Example: Creating a minimal node:
+### Example: Creating a minimal node:
 
-1- Creating a simple publisher:
+The following example shows a comparison of what creating a minimal node and its usage looks like in ROS2 and in Sugarcoat.
+
+#### Creating a simple publisher in ROS2:
 
 ```{code-block} python
 :caption: ROS2 Simple Publisher (example from [ROS docs](https://docs.ros.org/en/foxy/Tutorials/Beginner-Client-Libraries/Writing-A-Simple-Py-Publisher-And-Subscriber.html))
@@ -119,7 +121,7 @@ def generate_launch_description():
     ])
 ```
 
-2- Using Sugarcoat:
+#### Using Sugarcoat:
 
 ```{code-block} python
 :caption: Simple Publisher with Sugarcoat (minimal_node.py)

@@ -67,3 +67,32 @@ Multi-process execution
 
 - [**Kompass**](https://automatikarobotics.com/kompass/): a framework for building robust and comprehensive event-driven navigation stacks using an easy-to-use and intuitive Python API
 - [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/): a fully-loaded framework for creating interactive embodied agents that can understand, remember, and act upon contextual information from their environment.
+
+## Installation
+
+Install python dependencies using pip as follows:
+
+`pip install 'attrs>=23.2.0' numpy-quaternion`
+
+For ROS versions >= 'humble', you can install Sugarcoat with your package manager. For example on Ubuntu:
+
+`sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
+
+Alternatively, grab your favorite deb package from the [release page](https://github.com/automatika-robotics/sugarcoat/releases) and install it as follows:
+
+`sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
+
+## Building from source
+
+```shell
+mkdir -p ros-sugar-ws/src
+cd ros-sugar-ws/src
+git clone https://github.com/automatika-robotics/sugarcoat && cd ..
+pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy numpy-quaternion setproctitle
+colcon build
+source install/setup.bash
+```
+
+## Contributions
+
+Sugarcoat has been developed in collaboration between [Automatika Robotics](https://automatikarobotics.com/) and [Inria](https://inria.fr/). Contributions from the community are most welcome.

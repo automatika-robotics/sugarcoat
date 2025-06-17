@@ -53,7 +53,7 @@ For ROS versions >= 'humble', you can install Sugarcoat with your package manage
 
 Alternatively, grab your favorite deb package from the [release page](https://github.com/automatika-robotics/sugarcoat/releases) and install it as follows:
 
-`sudo dpkg -i ros-$ROS_DISTRO-sugar_$version$DISTRO_$ARCHITECTURE.deb`
+`sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
 
 ## Building from source
 
