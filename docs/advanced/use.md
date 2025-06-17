@@ -86,7 +86,7 @@ cd my-awesome-pkg\my_awesome_pkg
 touch executable.py
 ```
 
-8- Import your component and their configuration classes and get the `executable_main` from `ros_sugar`:
+8- Import your component and their configuration classes and get the `executable_main` from `ros_sugar` (Sugarcoat):
 
 ```python
 #!/usr/bin/env python3
@@ -122,7 +122,7 @@ setup(
     zip_safe=True,
     maintainer="Cyberdyne Systems",
     maintainer_email="contact@cyberdynesystems.com",
-    description="My awesome ROS2 sugar package",
+    description="My awesome ROS2 sugarcoated package",
     entry_points={
         "console_scripts": console_scripts,
     },
@@ -131,10 +131,10 @@ setup(
 
 10- Build your ROS2 package with colcon (instructions [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html#build-a-package))
 
-11- Now you can use and launch your awesome new package with ROS sugar launcher using a simple python script:
+11- Now you can use and launch your awesome new package with Sugarcoat launcher using a simple python script:
 
 ```{code-block} python
-:caption: Using ros_sugar Launcher with your awesome package
+:caption: Using Sugarcoat Launcher with your awesome package
 :linenos:
 
 from my_awesome_pkg.awesome_component import AwesomeComponent, AwesomeConfig

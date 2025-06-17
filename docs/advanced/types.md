@@ -10,7 +10,7 @@ Access all callbacks in a `BaseComponent` in `self.callbacks: Dict[str, GenericC
 Access all publishers in a `BaseComponent` in `self.publishers_dict: Dict[str, Publisher]` and publish a new message to the topic using `publish` method in the [`Publisher`](../apidocs/ros_sugar/ros_sugar.io.publisher.md#classes) class
 ```
 
-Many supported message types in ros_sugar come with pre-defined callback and publisher classes to convert ROS2 messages to Python types. Below is a list of supported messages and the types accepted by their publishers `publish` method and returned by their callback `get_output` method:
+Many supported message types in Sugarcoat come with pre-defined callback and publisher classes to convert ROS2 messages to Python types. Below is a list of supported messages and the types accepted by their publishers `publish` method and returned by their callback `get_output` method:
 
 ```{list-table}
 :widths: 10 30 15 20
