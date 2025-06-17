@@ -1,7 +1,7 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/ROS_SUGAR.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/ROS_SUGAR_LIGHT.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/_static/ROS_SUGAR_DARK.png">
-  <img alt="Sugarcoat Logo." src="docs/_static/ROS_SUGAR_DARK.png"  width="50%">
+  <img alt="Sugarcoat Logo" src="docs/_static/ROS_SUGAR_DARK.png"  width="50%">
 </picture>
 
 Sugarcoat 🍬 is a meta-framework that provides a whole lot of syntactic sugar for creating event-driven multinode systems in ROS2, using an intuitive Python API.
