@@ -1,6 +1,6 @@
 # Why ROS Sugar?
 
-ROS Sugar is a modern, intuitive alternative to ROS2 Launch, designed to **streamline development** and **reduce boilerplate**. Designed with modern software engineering principles, it transforms how developers build, manage, and orchestrate complex ROS applications. With **intuitive Python APIs**, **built-in runtime control**, **health monitoring**, and minimal boilerplate, ROS Sugar lets you focus on the logic that matters — not the glue code. Whether you're building scalable robotic systems or iterating fast on prototypes, ROS Sugar gives you the tools to move faster, write cleaner code, and ship more reliable robots.
+ROS Sugar is a designed to **streamline development** and **reduce boilerplate** why developing ROS2 packages and nodes. Designed with modern software engineering principles, it transforms how developers build, manage, and orchestrate complex ROS applications. With **intuitive Python APIs**, **built-in runtime control**, **health monitoring**, and minimal boilerplate, ROS Sugar lets you focus on the logic that matters — not the glue code. Whether you're building scalable robotic systems or iterating fast on prototypes, ROS Sugar gives you the tools to move faster, write cleaner code, and ship more reliable robots.
 
 
 ## 🚀 Advantages of Using ROS Sugar
@@ -48,7 +48,7 @@ ROS Sugar is a modern, intuitive alternative to ROS2 Launch, designed to **strea
 
 ### 🔧 Basic Launch and System Architecture
 
-| **ROS2 Launch** | **ROS Sugar** |
+| **ROS2 Launch** | **With ROS Sugar** |
 |------------------|----------------|
 | ROS2 Launch files are powerful but **verbose**, and and **hard to maintain** for large projects | ROS Sugar builds on top of ROS2 Launch with **simplified Pythonic syntax** that is easy to debug and maintain |
 | **No native Lifecycle Node Integration**. Manual lifecycle transition implementation is required. | **Built-in lifecycle automation** for all Components with native support. |
