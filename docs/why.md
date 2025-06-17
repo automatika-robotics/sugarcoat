@@ -1,12 +1,12 @@
 # Why Sugarcoat?
 
-Sugarcoat is a designed to **streamline development** and **reduce boilerplate** why developing ROS2 packages and nodes. Designed with modern software engineering principles, it transforms how developers build, manage, and orchestrate complex ROS applications. With **intuitive Python APIs**, **built-in runtime control**, **health monitoring**, and minimal boilerplate, Sugarcoat lets you focus on the logic that matters — not the glue code. Whether you're building scalable robotic systems or iterating fast on prototypes, Sugarcoat gives you the tools to move faster, write cleaner code, and ship more reliable robots.
+Sugarcoat is designed to **streamline development** and **reduce boilerplate** while developing ROS2 packages and nodes. Designed with modern software engineering principles, it transforms how developers build, manage, and orchestrate complex ROS applications. With **intuitive Python APIs**, **built-in runtime control**, **health monitoring**, and minimal boilerplate, Sugarcoat lets you focus on the logic that matters — not the glue code. Whether you're building scalable robotic systems or iterating fast on prototypes, Sugarcoat gives you the tools to move faster, write cleaner code, and ship more reliable robots.
 
 ## 🚀 Advantages of Using Sugarcoat
 
 **1. Intuitive Python API with Event-Driven Architecture**
 
-- Design systems using **event-driven paradigms** — natively supported with Events and Actions.
+- Design systems using the **event-driven paradigm** — natively supported with Events and Actions.
 - Trigger `Component` behaviors like start/stop/reconfigure at runtime with minimal overhead.
 
 **2. Abstraction Over ROS2 Primitives**
@@ -21,7 +21,7 @@ Sugarcoat is a designed to **streamline development** and **reduce boilerplate**
 - Each `Component` is a self-contained execution unit augmenting a traditional ROS node with:
   - Configurable Inputs/Outputs.
   - Defined Fallbacks for fault-tolerant behavior.
-  - Integrated Health Status tracking.
+  - Integrated Lifecycle Management and Health Status tracking.
 
 **4. Built-in Health Monitoring**
 
@@ -155,7 +155,7 @@ class MinimalPublisher(BaseComponent):
 ```
 
 ```{code-block} python
-:caption: ros_sugar_minimal_launch.py
+:caption: sugarcoat_minimal_launch.py
 :linenos:
 
 from my_package_name.minimal_node import MinimalPublisher
