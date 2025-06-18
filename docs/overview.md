@@ -25,6 +25,7 @@ A [Component](./design/component.md) is the main execution unit in Sugarcoat, ea
 
 Component Structure
 ```
+
 ```{figure} /_static/images/diagrams/component_light.png
 :class: only-light
 :alt: component
@@ -40,6 +41,7 @@ Component Structure
 
 Multi-threaded execution
 ```
+
 ```{figure} /_static/images/diagrams/multi_threaded_light.png
 :class: only-light
 :alt: multi-threaded
@@ -55,6 +57,7 @@ Multi-threaded execution
 
 Multi-process execution
 ```
+
 ```{figure} /_static/images/diagrams/multi_process_light.png
 :class: only-light
 :alt: multi-process
@@ -83,7 +86,7 @@ Alternatively, for older versions of ROS2 grab your favorite deb package from th
 `sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
 
 ## Building from source
-l
+
 ```shell
 mkdir -p ros-sugar-ws/src
 cd ros-sugar-ws/src
