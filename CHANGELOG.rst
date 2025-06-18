@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.3.0 (2025-06-18)
+------------------
 * (chore) Updates installation instructions and CI
 * (fix) Removes NoneType from types for compatibility with python < 3.10
 * (fix) Add missing pyyaml dependency
