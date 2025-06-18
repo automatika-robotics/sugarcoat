@@ -1,5 +1,4 @@
 import json
-from types import NoneType
 from typing import (
     Any,
     Callable,
@@ -278,7 +277,7 @@ class BaseAttrs:
                 )
             elif isinstance(item, Dict):
                 serialized_list.append(self.__dict_to_serialized_dict(item))
-            elif type(item) not in [float, int, str, bool, NoneType]:
+            elif type(item) not in [float, int, str, bool, type(None)]:
                 serialized_list.append(str(item))
             else:
                 serialized_list.append(item)
@@ -303,7 +302,7 @@ class BaseAttrs:
                 dictionary[name] = tuple(self.__list_to_serialized_list(list(value)))
             elif isinstance(value, Dict):
                 dictionary[name] = self.__dict_to_serialized_dict(value)
-            elif type(value) not in [float, int, str, bool, NoneType]:
+            elif type(value) not in [float, int, str, bool, type(None)]:
                 dictionary[name] = str(value)
         return dictionary
 
