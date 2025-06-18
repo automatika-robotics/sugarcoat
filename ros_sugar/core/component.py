@@ -43,6 +43,7 @@ from .status import Status
 from ..utils import (
     camel_to_snake_case,
     component_fallback,
+    component_action,
     get_methods_with_decorator,
     log_srv,
 )
@@ -1821,6 +1822,7 @@ class BaseComponent(lifecycle.Node):
         self.trigger_activate()
         return True
 
+    @component_action
     def stop(self) -> bool:
         """
         Stop the component - trigger_deactivate
@@ -1844,6 +1846,7 @@ class BaseComponent(lifecycle.Node):
         self.trigger_deactivate()
         return True
 
+    @component_action
     def reconfigure(self, new_config: Any, keep_alive: bool = False) -> bool:
         """
         Reconfigure the component - cleanup->stop->trigger_configure->start
@@ -1892,6 +1895,7 @@ class BaseComponent(lifecycle.Node):
             self.trigger_activate()
         return True
 
+    @component_action
     def restart(self, wait_time: Optional[float] = None) -> bool:
         """
         Restart the component - stop->start
@@ -1924,6 +1928,7 @@ class BaseComponent(lifecycle.Node):
         self.trigger_activate()
         return True
 
+    @component_action
     def set_param(
         self, param_name: str, new_value: Any, keep_alive: bool = True
     ) -> bool:
@@ -1953,6 +1958,7 @@ class BaseComponent(lifecycle.Node):
             raise
         return True
 
+    @component_action
     def set_params(
         self, params_names: List[str], new_values: List, keep_alive: bool = True
     ) -> bool:
