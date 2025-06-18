@@ -5,6 +5,8 @@
 </picture>
 <br/><br/>
 
+🇨🇳  [简体中文](docs/README.zh.md) | 🇯🇵  [日本語](docs/README.ja.md)
+
 Sugarcoat 🍬 is a meta-framework that provides a whole lot of syntactic sugar for creating event-driven multinode systems in ROS2, using an intuitive Python API.
 
 - Learn more about the [**design concepts**](https://automatika-robotics.github.io/sugarcoat/design/index.html) in Sugarcoat 📚
