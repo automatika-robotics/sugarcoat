@@ -47,21 +47,21 @@ Install python dependencies using pip as follows:
 
 `pip install 'attrs>=23.2.0' numpy-quaternion`
 
-For ROS versions >= 'humble', you can install Sugarcoat with your package manager. For example on Ubuntu:
+For ROS versions >= 'jazzy', you can install Sugarcoat with your package manager. For example on Ubuntu:
 
 `sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
 
-Alternatively, grab your favorite deb package from the [release page](https://github.com/automatika-robotics/sugarcoat/releases) and install it as follows:
+Alternatively, for older versions of ROS2 grab your favorite deb package from the [release page](https://github.com/automatika-robotics/sugarcoat/releases) and install it as follows:
 
 `sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
 
 ## Building from source
-
+l
 ```shell
 mkdir -p ros-sugar-ws/src
 cd ros-sugar-ws/src
 git clone https://github.com/automatika-robotics/sugarcoat && cd ..
-pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy numpy-quaternion setproctitle
+pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy numpy-quaternion setproctitle pyyaml toml
 colcon build
 source install/setup.bash
 ```
