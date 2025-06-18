@@ -1,5 +1,4 @@
 import json
-# from types import NoneType, GenericAlias
 from typing import (
     Any,
     Callable,
@@ -14,8 +13,10 @@ from typing import (
 from copy import deepcopy
 import numpy as np
 from attrs import asdict, define, fields_dict
-from attrs import Attribute, has as attrs_has
-from omegaconf import OmegaConf
+from attrs import Attribute
+import yaml
+import toml
+import os
 
 
 def skip_no_init(a: Attribute, _) -> bool:
@@ -197,61 +198,50 @@ class BaseAttrs:
                     )
                 setattr(self, key, value)
 
-    def from_yaml(
+    def _select_nested_config(cls, config: Dict[str, Any], key_path: Optional[str]) -> Dict[str, Any]:
+        if not key_path:
+            return config
+        keys = key_path.split(".")
+        for key in keys:
+            config = config.get(key, {})
+        return config
+
+    def from_file(
         self,
         file_path: str,
         nested_root_name: Union[str, None] = None,
         get_common: bool = False,
-    ) -> None:
+    ) -> bool:
         """
-        Update class attributes from yaml
+        Update class attributes from yaml, json, or toml
 
-        :param file_path: Path to config file (.yaml)
-        :type file_path: str
+        :param file_path: Path to config file (.yaml, .json, .toml)
         :param nested_root_name: Nested root name for the config, defaults to None
-        :type nested_root_name: str | None, optional
+        :param get_common: Whether to get extra config root (for merging), defaults to False
         """
-        # Load the YAML file
-        raw_config = OmegaConf.load(file_path)
+        ext: str = os.path.splitext(file_path)[1].lower()
 
-        # check for root name if given
-        if nested_root_name:
-            config = OmegaConf.select(raw_config, nested_root_name)
-            if get_common:
-                extra_config = OmegaConf.select(raw_config, "/**")
+        with open(file_path, "r", encoding="utf-8") as f:
+            if ext in [".yaml", ".yml"]:
+                raw_config: Dict[str, Any] = yaml.safe_load(f)
+            elif ext == ".json":
+                raw_config = json.load(f)
+            elif ext == ".toml":
+                raw_config = toml.load(f)
             else:
-                extra_config = None
-        else:
-            config = raw_config
-            extra_config = None
+                raise ValueError(f"Unsupported config format: {ext}")
 
-        for attr in self.__attrs_attrs__:
-            # Check in config
-            if hasattr(config, attr.name):
-                attr_value = getattr(self, attr.name)
-                # Check to handle nested config
-                if attrs_has(attr.type):
-                    root_name = f"{nested_root_name}.{attr.name}"
+        # Extract specific and common config sections
+        config = self._select_nested_config(raw_config, nested_root_name)
+        extra_config = self._select_nested_config(raw_config, "/**") if get_common else {}
 
-                    attr_value.from_yaml(file_path, root_name)
+        if not config and not extra_config:
+            return False
 
-                    setattr(self, attr.name, attr_value)
-                else:
-                    setattr(self, attr.name, getattr(config, attr.name))
-
-            # Check in the common config if present
-            elif extra_config:
-                if hasattr(extra_config, attr.name):
-                    attr_value = getattr(self, attr.name)
-                    # Check to handle nested config
-                    if attrs_has(attr.type):
-                        root_name = f"/**.{attr.name}"
-
-                        attr_value.from_yaml(file_path, root_name)
-
-                        setattr(self, attr.name, attr_value)
-                    else:
-                        setattr(self, attr.name, getattr(extra_config, attr.name))
+        merged_config = {**extra_config, **config}
+        # Set attributes from final merged config
+        self.from_dict(merged_config)
+        return True
 
     def to_json(self) -> Union[str, bytes, bytearray]:
         """
@@ -383,7 +373,7 @@ class BaseAttrs:
         :param attr_value: Attribute value
         :type attr_value: Any
 
-        :raises AttributeError: If class does not containe attribute with given name
+        :raises AttributeError: If class does not contain attribute with given name
         :raises TypeError: If class attribute with given name if of different type
 
         :return: If attribute value is updated

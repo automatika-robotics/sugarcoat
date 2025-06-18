@@ -10,7 +10,7 @@ from automatika_ros_sugar.msg import ComponentStatus
 from automatika_ros_sugar.srv import (
     ChangeParameter,
     ChangeParameters,
-    ConfigureFromYaml,
+    ConfigureFromFile,
     ReplaceTopic,
 )
 
@@ -93,7 +93,7 @@ class Monitor(Node):
             str, base_clients.ServiceClientHandler
         ] = {}
         self._topic_change_srv_client: Dict[str, base_clients.ServiceClientHandler] = {}
-        self._configure_from_yaml_srv_client: Dict[
+        self._configure_from_file_srv_client: Dict[
             str, base_clients.ServiceClientHandler
         ] = {}
         self._main_srv_clients: Dict[str, base_clients.ServiceClientHandler] = {}
@@ -213,7 +213,7 @@ class Monitor(Node):
         - Change a component parameter
         - Change a set of component parameters
         - Replace a topic
-        - Reconfigure component from yaml file
+        - Reconfigure component from file
 
         :param component_name: Name of the component (ROS node name)
         :type component_name: str
@@ -244,11 +244,11 @@ class Monitor(Node):
             )
         )
 
-        self._configure_from_yaml_srv_client[component_name] = (
+        self._configure_from_file_srv_client[component_name] = (
             base_clients.ServiceClientHandler(
                 client_node=self,
-                srv_type=ConfigureFromYaml,
-                srv_name=f"{component_name}/configure_from_yaml",
+                srv_type=ConfigureFromFile,
+                srv_name=f"{component_name}/configure_from_file",
             )
         )
 
@@ -282,11 +282,11 @@ class Monitor(Node):
                     request_msg, executor=self.executor
                 )
             else:
-                # For string send a configure from yaml request
-                request_msg_yaml = ConfigureFromYaml.Request()
-                request_msg_yaml.path_to_file = new_config
-                self._configure_from_yaml_srv_client[component.node_name].send_request(
-                    request_msg_yaml, executor=self.executor
+                # For string send a configure from file request
+                request_msg_file = ConfigureFromFile.Request()
+                request_msg_file.path_to_file = new_config
+                self._configure_from_file_srv_client[component.node_name].send_request(
+                    request_msg_file, executor=self.executor
                 )
         except Exception as e:
             self.get_logger().error(

@@ -30,7 +30,7 @@ set(service_files
 
   "srv/ChangeParameter.srv"
   "srv/ChangeParameters.srv"
-  "srv/ConfigureFromYaml.srv"
+  "srv/ConfigureFromFile.srv"
   "srv/ReplaceTopic.srv"
   "srv/ExecuteMethod.srv"
 )

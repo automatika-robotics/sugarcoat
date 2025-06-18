@@ -3,8 +3,9 @@
 import os
 import time
 import json
+import yaml
+import toml
 import socket
-from omegaconf import OmegaConf
 from abc import abstractmethod
 import threading
 from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple
@@ -27,7 +28,7 @@ from automatika_ros_sugar.msg import ComponentStatus
 from automatika_ros_sugar.srv import (
     ChangeParameter,
     ChangeParameters,
-    ConfigureFromYaml,
+    ConfigureFromFile,
     ReplaceTopic,
     ExecuteMethod,
 )
@@ -76,7 +77,7 @@ class BaseComponent(lifecycle.Node):
         :type outputs: Optional[Sequence[Topic]], optional
         :param config: Component config, defaults to None
         :type config: Optional[BaseComponentConfig], optional
-        :param config_file: Path to YAML configuration file, defaults to None
+        :param config_file: Path to configuration file (yaml, json, toml), defaults to None
         :type config_file: Optional[str], optional
         :param callback_group: Main callback group, defaults to None
         :type callback_group: rclpy.callback_groups.CallbackGroup, optional
@@ -293,8 +294,8 @@ class BaseComponent(lifecycle.Node):
             config_dict = self.algorithms_config[algo_config_name]
             algo_config.from_dict(config_dict)
         elif self._config_file:
-            # configure directly from YAML if available
-            algo_config.from_yaml(
+            # configure directly from file if available
+            algo_config.from_file(
                 self._config_file,
                 nested_root_name=f"{self.node_name}.{algo_config_name.partition('Config')[0]}",
             )
@@ -452,14 +453,14 @@ class BaseComponent(lifecycle.Node):
 
     def configure(self, config_file: Optional[str] = None):
         """
-        Configure component from yaml file
+        Configure component from configuration file
 
-        :param config_file: Path to file
+        :param config_file: Path to file with configuration (yaml, json or toml), defaults to None
         :type config_file: str
         """
         config_file = config_file or self._config_file
         if config_file:
-            self.config_from_yaml(config_file)
+            self.config_from_file(config_file)
 
         # Init any global node variables
         self.init_variables()
@@ -633,25 +634,37 @@ class BaseComponent(lifecycle.Node):
         """destroy_all_service_clients."""
         pass
 
-    def config_from_yaml(self, config_file: str):
+    def config_from_file(self, config_file: str):
         """
-        Configure component from yaml file
+        Configure component from file
 
-        :param config_file: Path to file
+        :param config_file: Path to configuration file (yaml, json or toml)
         :type config_file: str
         """
-        self.config.from_yaml(
+        self.config.from_file(
             config_file, nested_root_name=self.node_name, get_common=True
         )
-        # Update algorithms config from Yaml
+        # Update algorithms config from file
         if self.algorithms_config:
-            # Load the YAML file
-            raw_config = OmegaConf.load(config_file)
-            for algo_name, algo_conf in self._algorithms_config.items():
-                config = OmegaConf.select(
-                    raw_config, f"{self.node_name}.{algo_name.partition('Config')[0]}"
-                )
+            # Load the file
+            ext: str = os.path.splitext(config_file)[1].lower()
 
+            with open(config_file, "r", encoding="utf-8") as f:
+                if ext in [".yaml", ".yml"]:
+                    raw_config: Dict[str, Any] = yaml.safe_load(f)
+                elif ext == ".json":
+                    raw_config = json.load(f)
+                elif ext == ".toml":
+                    raw_config = toml.load(f)
+                else:
+                    raise ValueError(f"Unsupported config format: {ext}")
+
+            for algo_name, algo_conf in self._algorithms_config.items():
+                config = raw_config
+                for key in [self.node_name, algo_name.partition("Config")[0]]:
+                    config = config.get(key, {})
+                if not config:
+                    continue
                 for item_key in algo_conf.keys():
                     if hasattr(config, item_key):
                         algo_conf[item_key] = getattr(config, item_key)
@@ -1309,9 +1322,9 @@ class BaseComponent(lifecycle.Node):
                 callback_group=MutuallyExclusiveCallbackGroup(),
             ),
             self.create_service(
-                srv_type=ConfigureFromYaml,
-                srv_name=f"{self.get_name()}/configure_from_yaml",
-                callback=self._configure_from_yaml_srv_callback,
+                srv_type=ConfigureFromFile,
+                srv_name=f"{self.get_name()}/configure_from_file",
+                callback=self._configure_from_file_srv_callback,
                 callback_group=MutuallyExclusiveCallbackGroup(),
             ),
             # Run component method
@@ -1325,18 +1338,18 @@ class BaseComponent(lifecycle.Node):
 
     # EVENTS/ACTIONS RELATED SERVICES
     @log_srv
-    def _configure_from_yaml_srv_callback(
-        self, request: ConfigureFromYaml.Request, response: ConfigureFromYaml.Response
-    ) -> ConfigureFromYaml.Response:
+    def _configure_from_file_srv_callback(
+        self, request: ConfigureFromFile.Request, response: ConfigureFromFile.Response
+    ) -> ConfigureFromFile.Response:
         """
-        Configure the component from yaml service callback
+        Configure the component from file service callback
 
         :param request: _description_
-        :type request: ConfigureFromYaml.Request
+        :type request: ConfigureFromFile.Request
         :param response: _description_
-        :type response: ConfigureFromYaml.Response
+        :type response: ConfigureFromFile.Response
         :return: _description_
-        :rtype: ConfigureFromYaml.Response
+        :rtype: ConfigureFromFile.Response
         """
         try:
             # Reconfigure and restart the node

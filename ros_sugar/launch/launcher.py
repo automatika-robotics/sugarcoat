@@ -68,7 +68,7 @@ class Launcher:
 
     ## Available options:
     - Provide a ROS2 namespace to all the components
-    - Provide a YAML config file.
+    - Provide a config file.
     - Enable/Disable events monitoring
 
     Launcher forwards all the provided Events to its internal Monitor, when the Monitor detects an Event trigger it emits an InternalEvent back to the Launcher. Execution of the Action is done directly by the Launcher or a request is forwarded to the Monitor depending on the selected run method (multi-processes or multi-threaded).
@@ -89,7 +89,7 @@ class Launcher:
 
         :param namespace: ROS2 namespace for all the nodes, defaults to ""
         :type namespace: str, optional
-        :param config_file: Path to Yaml configuration file, defaults to None
+        :param config_file: Path to configuration file, defaults to None
         :type config_file: str | None, optional
         :param enable_monitoring: Enable components health status monitoring, defaults to True
         :type enable_monitoring: bool, optional
@@ -223,7 +223,7 @@ class Launcher:
                 component.config.log_level = ros_log_level
             if self._config_file:
                 component._config_file = self._config_file
-                component.config_from_yaml(self._config_file)
+                component.config_from_file(self._config_file)
 
     def _setup_component_events_handlers(self, comp: BaseComponent):
         """Parse a component events/actions from the overall components actions
@@ -737,9 +737,9 @@ class Launcher:
         component_name: str | None = None,
     ):
         """
-        Configure components managed by the Orchestrator
+        Configure components managed by the Launcher
 
-        :param config_file: Path to configuration file (yaml)
+        :param config_file: Path to configuration file (yaml, json ot toml)
         :type config_file: str
         :param component_name: Configure one component with given name, defaults to None
         :type component_name: str | None, optional
@@ -749,12 +749,12 @@ class Launcher:
         if component_name:
             for component in self._components:
                 if component.node_name == component_name:
-                    component.config_from_yaml(config_file)
+                    component.config_from_file(config_file)
             return
 
         # If no component is specified -> configure all components
         for component in self._components:
-            component.config_from_yaml(config_file)
+            component.config_from_file(config_file)
 
     def add_py_executable(self, path_to_executable: str, name: str = "python3"):
         """

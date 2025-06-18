@@ -227,7 +227,7 @@ class ComponentActions:
 
         :param component: Component
         :type component: BaseComponent
-        :param new_config: Component config class or path to YAML config file
+        :param new_config: Component config class or path to config file
         :type new_config: Union[str, object]
         :param keep_alive: To keep the component running when reconfiguring, defaults to False
         :type keep_alive: bool, optional
@@ -245,7 +245,7 @@ class ComponentActions:
             new_config, component.config.__class__
         ):
             raise TypeError(
-                f"Incompatible config type '{type(new_config)}'. Cannot reconfigure {component.node_name}. config should be either a '{component.config.__class__}' instance or 'str' with path to YAML config file"
+                f"Incompatible config type '{type(new_config)}'. Cannot reconfigure {component.node_name}. config should be either a '{component.config.__class__}' instance or 'str' with path to valid config file (yaml, json, toml)"
             )
         # Action with an empty callable
         stack_action = Action(method=lambda *_: None, kwargs=kwargs)

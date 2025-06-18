@@ -32,7 +32,7 @@ def _parse_args() -> Tuple[argparse.Namespace, List[str]]:
     )
 
     parser.add_argument(
-        "--config_file", type=str, help="Path to configuration YAML file"
+        "--config_file", type=str, help="Path to configuration file (yaml, json, toml)"
     )
     parser.add_argument(
         "--events", type=str, help="Events to be monitored by the component"
@@ -197,7 +197,7 @@ def executable_main(*, list_of_components: List[Type], list_of_configs: List[Typ
 
     config = _parse_component_config(args, list_of_configs)
 
-    # Get Yaml config file if provided
+    # Get config file if provided
     config_file = args.config_file or None
 
     # Init the component

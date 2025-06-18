@@ -93,17 +93,17 @@ Lets change multiple parameters at once for our `AwesomeComponent` with restarti
 ros2 service call /awesome_component/update_config_parameters automatika_ros_sugar/srv/ChangeParameters "{names: ['loop_rate', 'fallback_rate'], values: ['1', '10'], keep_alive: false}"
 ```
 
-## Reconfiguring the Component from a given YAML file
-The `ConfigureFromYaml` service lets you reconfigure an entire component from a YAML configuration file while the node is online. This is useful for applying scenario-specific settings, or restoring saved configurations—all in a single operation.
+## Reconfiguring the Component from a given file
+The `ConfigureFromFile` service lets you reconfigure an entire component from a YAML, JSON or TOML configuration file while the node is online. This is useful for applying scenario-specific settings, or restoring saved configurations—all in a single operation.
 
-- **Service Name: /{component_name}/configure_from_yaml**
-- **Service Type: [automatika_ros_sugar/srv/ConfigureFromYaml](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ConfigureFromYaml.srv)**
+- **Service Name: /{component_name}/configure_from_file**
+- **Service Type: [automatika_ros_sugar/srv/ConfigureFromFile](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ConfigureFromFile.srv)**
 
 ### 📥 Request
 
 | Field          | Type     | Description                                                                                                                 |
 | -------------- | -------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `path_to_file` | `string` | Absolute path to the YAML file containing the parameters under the component name.              |
+| `path_to_file` | `string` | Absolute path to the file containing the parameters under the component name.              |
 | `keep_alive`   | `bool`   | If `true`, keeps the component active during the update. If `false`, deactivates before applying changes, then reactivates. |
 
 
@@ -111,7 +111,7 @@ The `ConfigureFromYaml` service lets you reconfigure an entire component from a 
 
 | Field       | Type     | Description                                                |
 | ----------- | -------- | ---------------------------------------------------------- |
-| `success`   | `bool`   | Indicates whether the yaml re-configuration update was successful. |
+| `success`   | `bool`   | Indicates whether the file re-configuration update was successful. |
 | `error_msg` | `string` | If failed, provides a descriptive error message.           |
 
 
