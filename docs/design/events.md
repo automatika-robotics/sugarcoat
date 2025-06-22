@@ -5,33 +5,51 @@ Events are created to alert a robot software stack to any dynamic change at runt
 Events are used by matching them to 'Actions'; an Action is meant to be executed at runtime once the Event is triggered.
 
 ## Available Events:
+- [OnAny](#onany-event)
 - [OnEqual](#onequal-event)
 - [OnDifferent](#ondifferent-event)
 - [OnChange](#onchange-event)
 - [OnChangeEqual](#onchangeequal-event)
 - [OnGreater](#ongreater-event)
 - [OnLess](#onless-event)
+- [OnContainsAll](#oncontainsall-event)
+- [OnContainsAny](#oncontainsany-event)
+
+## OnAny Event
+
+OnEqual Event is triggered whenever a message is published to the event topic, regardless of the value.
+
+*Example usage scenario:*
+- Event when a message is published to the clicked point topic in RVIZ to trigger a corresponding planning and/or control action:
+
+```python
+from ros_sugar.events import OnAny
+from ros_sugar.io import Topic
+
+# On any clicked point
+event_clicked_point = event.OnAny(
+    "rviz_goal",
+    Topic(name="/clicked_point", msg_type="PointStamped"),
+)
+```
 
 ## OnEqual Event
 
 OnEqual Event is triggered when a given topic attribute value is equal to a given trigger value.
 
 *Example usage scenario:*
-- Event when the detection id (object type) in an object detection topic is equal to a specific object (to raise an event on detecting another robot, a human, etc.)
+- Event when the Component encountered an algorithm failure
 
 ```python
 from ros_sugar.events import OnEqual
 from ros_sugar.io import Topic
-from vision_msgs.msg import Detection2D
+from automatika_ros_sugar.msg import ComponentStatus
 
-example_person_id_from_db : int = 3
-
-# Raise event as long as a person is detected
-person_detected = OnEqual(
-    "person_detected",
-    Topic(name="/person_detection", msg_type=Detection2D),
-    example_person_id_from_db,
-    ("results", "id"),
+algorithm_failure_event = OnEqual(
+    "algorithm_failure",
+    Topic(name="/status_topic_name", msg_type=ComponentStatus),
+    ComponentStatus.STATUS_FAILURE_ALGORITHM_LEVEL,  # we can also add `1` here without importing the msg
+    "status",
 )
 ```
 
@@ -123,3 +141,27 @@ low_battery = OnLess(
     ("data")
 )
 ```
+
+## OnContainsAll Event
+
+OnContainsAll Event is triggered when the topic attribute value contains **all** elements of a given set of trigger values. This applied to attributes of type `list`.
+
+*Example usage scenario:*
+- Event triggered when a health status topic provides all given components as the error source.
+
+```python
+from ros_sugar.events import OnContainsAll
+from ros_sugar.io import Topic
+
+components_names = ["component_1", "component_2", "component_3"]
+all_failure_event = OnContainsAll(
+    "all_failure",
+    Topic(name="/status_topic_name", msg_type="ComponentStatus"),
+    components_names,
+    "src_components",
+)
+```
+
+## OnContainsAny Event
+
+OnContainsAny Event is triggered when the topic attribute value contains **any** element from a given set of trigger values. This applied to attributes of type `list`.
