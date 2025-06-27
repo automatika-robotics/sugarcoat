@@ -45,7 +45,7 @@ Sugarcoat は、使いやすく、フォールバックと耐障害性を内蔵�
 
 ## インストール
 
-ROS のバージョンが `'humble'` 以上の場合、パッケージマネージャーを使って Sugarcoat をインストールできます。たとえば、Ubuntu では以下のように実行します：
+ROS のバージョンが _humble_ 以上の場合、パッケージマネージャーを使って Sugarcoat をインストールできます。たとえば、Ubuntu では以下のように実行します：
 
 `sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
 

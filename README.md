@@ -45,7 +45,7 @@ A [Component](https://automatika-robotics.github.io/sugarcoat/design/component.h
 
 ## Installation
 
-For ROS versions >= 'humble', you can install Sugarcoat with your package manager. For example on Ubuntu:
+For ROS versions >= _humble_, you can install Sugarcoat with your package manager. For example on Ubuntu:
 
 `sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
 
