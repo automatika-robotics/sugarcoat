@@ -47,7 +47,7 @@ Sugarcoat 专为 ROS2 开发者而设计，他们希望创建易于使用、内�
 
 使用 pip 安装 Python 依赖项，如下所示：
 
-`pip install 'attrs>=23.2.0' numpy-quaternion`
+`pip install 'attrs>=23.2.0'`
 
 对于 ROS 版本 >= 'humble'，您可以使用包管理器安装 Sugarcoat。例如在 Ubuntu 上：
 
@@ -63,7 +63,7 @@ Sugarcoat 专为 ROS2 开发者而设计，他们希望创建易于使用、内�
 mkdir -p ros-sugar-ws/src
 cd ros-sugar-ws/src
 git clone https://github.com/automatika-robotics/sugarcoat && cd ..
-pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy numpy-quaternion setproctitle pyyaml toml
+pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy setproctitle pyyaml toml
 colcon build
 source install/setup.bash
 ```

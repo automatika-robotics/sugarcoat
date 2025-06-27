@@ -75,7 +75,7 @@ Multi-process execution
 
 Install python dependencies using pip as follows:
 
-`pip install 'attrs>=23.2.0' numpy-quaternion`
+`pip install 'attrs>=23.2.0'`
 
 For ROS versions >= 'humble', you can install Sugarcoat with your package manager. For example on Ubuntu:
 
@@ -91,7 +91,7 @@ Alternatively, grab your favorite deb package from the [release page](https://gi
 mkdir -p ros-sugar-ws/src
 cd ros-sugar-ws/src
 git clone https://github.com/automatika-robotics/sugarcoat && cd ..
-pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy numpy-quaternion setproctitle pyyaml toml
+pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy setproctitle pyyaml toml
 colcon build
 source install/setup.bash
 ```

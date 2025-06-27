@@ -50,7 +50,7 @@ Sugarcoat は、使いやすく、フォールバックと耐障害性を内蔵�
 
 pip を使用して Python の依存関係を次のようにインストールします。
 
-`pip install 'attrs>=23.2.0' numpy-quaternion`
+`pip install 'attrs>=23.2.0'`
 
 ROS バージョン >= 'humble' の場合、パッケージマネージャーを使用して Sugarcoat をインストールできます。例えば Ubuntu では：
 
@@ -67,7 +67,7 @@ ROS バージョン >= 'humble' の場合、パッケージマネージャーを
 mkdir -p ros-sugar-ws/src
 cd ros-sugar-ws/src
 git clone https://github.com/automatika-robotics/sugarcoat && cd ..
-pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy numpy-quaternion setproctitle pyyaml toml
+pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy setproctitle pyyaml toml
 colcon build
 source install/setup.bash
 ````
