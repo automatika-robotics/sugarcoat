@@ -1,4 +1,5 @@
 """Launcher"""
+
 from __future__ import annotations
 import os
 import inspect
@@ -701,7 +702,9 @@ class Launcher:
             namespace=self._namespace,
             name=component.node_name,
             output="screen",
-            log_level=logging.get_logging_severity_from_string(component.config.log_level),
+            log_level=logging.get_logging_severity_from_string(
+                component.config.log_level
+            ),
         )
         self._launch_group.append(component_action)
 
@@ -818,6 +821,7 @@ class Launcher:
         # SET PROCESS NAME (if setproctitle is available)
         try:
             import setproctitle
+
             setproctitle.setproctitle(logger.name)
         except ImportError:
             pass
@@ -831,9 +835,7 @@ class Launcher:
         for idx, component in enumerate(self._components):
             pkg_name, executable_name = self._pkg_executable[idx]
             if pkg_name and executable_name:
-                self._setup_component_in_process(
-                    component, pkg_name, executable_name
-                )
+                self._setup_component_in_process(component, pkg_name, executable_name)
             else:
                 self._setup_component_in_thread(component)
 

@@ -182,13 +182,15 @@ class BaseComponent(lifecycle.Node):
         To init the node with rclpy and activate default services
         """
         # Apply Logging Level
-        rclpy_logging.set_logger_level(self.node_name, rclpy_logging.get_logging_severity_from_string(self.config.log_level))
+        rclpy_logging.set_logger_level(
+            self.node_name,
+            rclpy_logging.get_logging_severity_from_string(self.config.log_level),
+        )
         # Activate Node
         lifecycle.Node.__init__(self, self.node_name, *args, **kwargs)
         self.get_logger().info(
             f"LIFECYCLE NODE {self.get_name()} STARTED AND REQUIRES CONFIGURATION"
         )
-        self._create_default_services()
 
     def is_node_initialized(self) -> bool:
         """Checks if the rclpy Node is initialized
@@ -546,6 +548,16 @@ class BaseComponent(lifecycle.Node):
         """
         Services creation
         """
+        if (
+            not hasattr(self, "_maintain_default_services")
+            or not self._maintain_default_services
+        ):
+            # Default services were not maintained during a restart or never created
+            self._create_default_services()
+        if hasattr(self, "_maintain_default_services"):
+            # Reset the flag
+            self._maintain_default_services = False
+
         if self.run_type != ComponentRunType.SERVER:
             return
         if not self.service_type:
@@ -611,6 +623,13 @@ class BaseComponent(lifecycle.Node):
         # Destroy node main Server if runtype is server
         if self.run_type == ComponentRunType.SERVER:
             self.destroy_service(self.server)
+        if (
+            hasattr(self, "_maintain_default_services")
+            and self._maintain_default_services
+        ):
+            # Do not destroy default services
+            return
+
         for srv in self._default_services:
             self.destroy_service(srv)
 
@@ -1447,6 +1466,8 @@ class BaseComponent(lifecycle.Node):
         keep_alive = request.keep_alive
 
         if not keep_alive:
+            # Set the flag so the default services are not destroyed or re-created
+            self._maintain_default_services = True
             # Stop the component
             self.stop()
 
@@ -1454,15 +1475,21 @@ class BaseComponent(lifecycle.Node):
             param_name, param_str_value
         )
 
+        if not keep_alive:
+            # start again
+            self.start()
+
         if not error_msg:
             response.success = True
         else:
             response.success = False
             response.error_msg = error_msg
 
-        if not keep_alive:
-            # start again
-            self.start()
+        while not self.lifecycle_state == 3:
+            self.get_logger().warn(
+                f"Component {self.node_name} is not in ACTIVE state. Waiting for it to become active again.",
+                once=True,
+            )
 
         return response
 
@@ -1487,6 +1514,8 @@ class BaseComponent(lifecycle.Node):
         keep_alive = request.keep_alive
 
         if not keep_alive:
+            # Set the flag so the default services are not destroyed or re-created
+            self._maintain_default_services = True
             # Stop the component
             self.stop()
 
@@ -1807,6 +1836,23 @@ class BaseComponent(lifecycle.Node):
         """
         return get_methods_with_decorator(self, decorator_name="component_action")
 
+    def __wait_for_node_start(self) -> bool:
+        """Executes a waiting loop until the node is discoverable in ROS
+
+        :return: If node is active
+        :rtype: bool
+        """
+        timeout = 0.0
+        # Wait until node is actually up and active
+        while timeout < self.config.wait_for_restart_time:
+            all_nodes = self.get_node_names()
+            if self.node_name in all_nodes:
+                self.get_logger().info(f"Node {self.node_name} is successfully started")
+                break
+            time.sleep(1 / self.config.loop_rate)
+            timeout += 1 / self.config.loop_rate
+        return timeout < self.config.wait_for_restart_time
+
     def start(self) -> bool:
         """
         Start the component - trigger_activate
@@ -1829,11 +1875,11 @@ class BaseComponent(lifecycle.Node):
                 "Waiting for ongoing transition to end before executing new transition",
                 once=True,
             )
-            pass
 
         # configured and inactive
         self.trigger_activate()
-        return True
+
+        return self.__wait_for_node_start()
 
     @component_action
     def stop(self) -> bool:
@@ -1843,20 +1889,24 @@ class BaseComponent(lifecycle.Node):
         :return: If the component is stopped
         :rtype: bool
         """
-        current_state = self.lifecycle_state
-
-        if current_state in [1, 2, 4]:
+        if self.lifecycle_state in [1, 2, 4]:
             # Already not active
             return True
 
-        while current_state > 4:
+        while self.lifecycle_state > 4:
             self.get_logger().warn(
                 "Waiting for ongoing transition to end before executing new transition",
                 once=True,
             )
-            pass
 
         self.trigger_deactivate()
+
+        while self.lifecycle_state not in [1, 2, 4]:
+            self.get_logger().warn(
+                "Waiting for node to be completely stopped",
+                once=True,
+            )
+
         return True
 
     @component_action
@@ -1899,13 +1949,14 @@ class BaseComponent(lifecycle.Node):
                 "Waiting for ongoing transition to end before executing new transition",
                 once=True,
             )
-            pass
 
         # configure and go to configure (or active if the component was already active)
         self.trigger_configure()
 
         if initial_state >= 3:
             self.trigger_activate()
+            return self.__wait_for_node_start()
+
         return True
 
     @component_action
@@ -1929,7 +1980,6 @@ class BaseComponent(lifecycle.Node):
                 "Waiting for ongoing transition to end before executing new transition",
                 once=True,
             )
-            pass
 
         if wait_time:
             self.get_logger().warn(
@@ -1939,7 +1989,7 @@ class BaseComponent(lifecycle.Node):
 
         # not configured -> configure and start
         self.trigger_activate()
-        return True
+        return self.__wait_for_node_start()
 
     @component_action
     def set_param(
@@ -2183,7 +2233,8 @@ class BaseComponent(lifecycle.Node):
         Component fallback defined to only broadcast the current state so it is handled by an external manager.
         Used as the default fallback strategy for any system (external) failure
         """
-        if hasattr(self, "health_status_publisher"):
+        # If node is active publish status
+        if hasattr(self, "health_status_publisher") and self.lifecycle_state == 3:
             self.health_status_publisher.publish(self.health_status())
 
     # LIFECYCLE ON TRANSITIONS CUSTOM METHODS

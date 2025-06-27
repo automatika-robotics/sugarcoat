@@ -198,7 +198,9 @@ class BaseAttrs:
                     )
                 setattr(self, key, value)
 
-    def _select_nested_config(cls, config: Dict[str, Any], key_path: Optional[str]) -> Dict[str, Any]:
+    def _select_nested_config(
+        cls, config: Dict[str, Any], key_path: Optional[str]
+    ) -> Dict[str, Any]:
         if not key_path:
             return config
         keys = key_path.split(".")
@@ -233,7 +235,9 @@ class BaseAttrs:
 
         # Extract specific and common config sections
         config = self._select_nested_config(raw_config, nested_root_name)
-        extra_config = self._select_nested_config(raw_config, "/**") if get_common else {}
+        extra_config = (
+            self._select_nested_config(raw_config, "/**") if get_common else {}
+        )
 
         if not config and not extra_config:
             return False
@@ -362,7 +366,23 @@ class BaseAttrs:
             obj_class = obj_to_set
             obj_to_set = getattr(obj_to_set, name_to_set)
 
-        return fields_dict(obj_class.__class__)[name_to_set].type
+        complex_type = fields_dict(obj_class.__class__)[name_to_set].type
+
+        # Extract the simple type
+        SIMPLE_TYPES = {int, float, str, bool}
+        origin = get_origin(complex_type)
+        args = get_args(complex_type)
+
+        # If it's directly a simple type
+        if complex_type in SIMPLE_TYPES:
+            return complex_type
+
+        # If it's a Union (including Optional)
+        if origin is Union:
+            for arg in args:
+                if arg in SIMPLE_TYPES:
+                    return arg
+        return None  # No simple type found
 
     def update_value(self, attr_name: str, attr_value: Any) -> bool:
         """

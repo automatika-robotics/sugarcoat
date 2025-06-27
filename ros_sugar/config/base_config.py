@@ -245,14 +245,26 @@ class BaseComponentConfig(BaseConfig):
     """
     Component configuration parameters
 
-    :param use_without_launcher: To use the component without the Launcher. When True it initializes a ROS node on component init
+    :param use_without_launcher: To use the component without the Launcher. When True, it initializes a ROS node on component init.
     :type use_without_launcher: bool
-    :param layer_id: Component layer ID. Refers to the component 'start' or 'activate' priority. Zero is equivalent to no-priority
-    :type layer_id: int
-    :param fallback_rate: Rate (Hz) in which the component checks for Fallbacks and executes actions if a failure is detected
+
+    :param fallback_rate: Rate (Hz) at which the component checks for fallbacks and executes actions if a failure is detected.
     :type fallback_rate: float
-    :param run_type: Component run type
-    :type run_type: ComponentRunType
+
+    :param log_level: Logging level for the component's internal logs. Can be a string or `LoggingSeverity` enum.
+    :type log_level: Union[str, LoggingSeverity]
+
+    :param rclpy_log_level: Logging level for rclpy (ROS client library) logs. Can be a string or `LoggingSeverity` enum.
+    :type rclpy_log_level: Union[str, LoggingSeverity]
+
+    :param run_type: Component run type, e.g., TIMED or EVENT. Can be a string or `ComponentRunType` enum.
+    :type run_type: Union[ComponentRunType, str]
+
+    :param _callback_group: (Optional) Callback group used by the component. Can be a string or `ros_callback_groups.CallbackGroup` instance.
+    :type _callback_group: Optional[Union[ros_callback_groups.CallbackGroup, str]]
+
+    :param wait_for_restart_time: Time (in seconds) the component waits for a node to come back online after restart. Used to avoid infinite restart loops. Recommended to use a high value.
+    :type wait_for_restart_time: float
     """
 
     use_without_launcher: bool = field(default=False)
@@ -281,3 +293,8 @@ class BaseComponentConfig(BaseConfig):
     _callback_group: Optional[Union[ros_callback_groups.CallbackGroup, str]] = field(
         default=None, converter=_get_str_from_callbackgroup, alias="_callback_group"
     )
+
+    wait_for_restart_time: float = field(
+        default=6000.0,
+        validator=base_validators.in_range(min_value=10.0, max_value=1e9),
+    )  # Component wait time for node to come back online after restart (used to avoid infinite loops). Recommended to use a high value

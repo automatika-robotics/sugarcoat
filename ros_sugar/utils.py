@@ -8,6 +8,7 @@ from rclpy.lifecycle import Node as LifecycleNode
 from launch import LaunchContext
 from launch.actions import OpaqueFunction
 import os
+import logging
 
 # Get ROS distro
 __installed_distro = os.environ.get("ROS_DISTRO", "").lower()
@@ -75,7 +76,7 @@ def action_handler(function: Callable):
         :param kw:
         """
         return_type = inspect.signature(function).return_annotation
-        if return_type is not SomeEntitiesType and return_type != 'SomeEntitiesType':
+        if return_type is not SomeEntitiesType and return_type != "SomeEntitiesType":
             raise TypeError(
                 f"Action handlers must return launch event handlers 'launch.some_entities_type.SomeEntitiesType'. Method '{function.__name__}' cannot have '@action_handler' decorator"
             )
@@ -121,11 +122,12 @@ def component_action(function: Callable, active: bool = False):
             if not active or self._state_machine.current_state[1] == "active":
                 return function(*args, **kwargs)
             else:
-                raise RuntimeError(
+                logging.getLogger("Sugarcoat").error(
                     f"Cannot use component action method '{function.__name__}' without activating the Component"
                 )
+                return None
         else:
-            raise RuntimeError(
+            logging.getLogger("Sugarcoat").error(
                 f"Cannot use component action method '{function.__name__}' without initializing rclpy and the Component"
             )
 
@@ -165,11 +167,12 @@ def component_fallback(function: Callable):
             ]:
                 return function(*args, **kwargs)
             else:
-                raise RuntimeError(
+                logging.getLogger("Sugarcoat").error(
                     f"{self._state_machine.current_state[1]} Cannot use component fallback method '{function.__name__}' without activating or configuring the Component"
                 )
+                return None
         else:
-            raise RuntimeError(
+            logging.getLogger("Sugarcoat").error(
                 f"Cannot use component action method '{function.__name__}' without initializing rclpy and the Component"
             )
 

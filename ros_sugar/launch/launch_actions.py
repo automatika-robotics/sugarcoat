@@ -4,7 +4,6 @@ from typing import List, Optional, Union
 
 import launch
 import rclpy
-import rclpy.lifecycle
 from launch import event_handlers
 from launch.action import Action as ROSAction
 from launch_ros.actions import Node as NodeLaunchAction
