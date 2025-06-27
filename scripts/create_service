@@ -12,13 +12,7 @@ from configparser import ConfigParser
 
 
 def _get_username():
-    try:
-        username = os.environ["SUDO_USER"]
-        if username:
-            return username
-    except KeyError:
-        pass
-    return getpass.getuser()
+    return os.environ.get("SUDO_USER") or getpass.getuser()
 
 
 DEFAULT_SERVICE = {
@@ -50,6 +44,7 @@ def _write_systemd_config(
 ):
     """Write systemd service and add correct permissions"""
     output_file_path = install_path / filename
+    temp_path = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="w", encoding="utf-8", newline="\n", delete=False
@@ -57,11 +52,17 @@ def _write_systemd_config(
             service_config.write(temp_service_file, space_around_delimiters=False)
             temp_path = Path(temp_service_file.name)
 
-        subprocess.run(["sudo", "mv", str(temp_path), output_file_path], check=True)
-        subprocess.run(["sudo", "chmod", "644", output_file_path], check=True)
-        subprocess.run(["sudo", "chown", "0:0", output_file_path], check=True)
-    except Exception:
-        logging.error("Error occured while writing service file")
+        subprocess.run(
+            ["sudo", "mv", str(temp_path), str(output_file_path)], check=True
+        )
+        subprocess.run(["sudo", "chmod", "644", str(output_file_path)], check=True)
+        subprocess.run(["sudo", "chown", "0:0", str(output_file_path)], check=True)
+    except (subprocess.CalledProcessError, IOError) as e:
+        logging.error(f"Error occurred while writing service file: {e}")
+        raise
+    finally:
+        if temp_path and temp_path.exists():
+            os.remove(temp_path)
 
 
 def install_service(
@@ -124,6 +125,13 @@ def install_service(
     # Check service name and add .service to it
     if not service_name.endswith(".service"):
         service_name += ".service"
+
+    # Check if service already exists
+    service_path = Path(install_path) / service_name
+    if service_path.exists():
+        logging.warning(
+            f"Service '{service_name}' already exists in {install_path}. It will be overwritten."
+        )
 
     logging.info(f"Installing service file to {install_path} ...")
     _write_systemd_config(service_config, service_name, Path(install_path))
