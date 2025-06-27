@@ -73,10 +73,6 @@ Multi-process execution
 
 ## Installation
 
-Install python dependencies using pip as follows:
-
-`pip install 'attrs>=23.2.0'`
-
 For ROS versions >= 'humble', you can install Sugarcoat with your package manager. For example on Ubuntu:
 
 `sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
@@ -84,6 +80,10 @@ For ROS versions >= 'humble', you can install Sugarcoat with your package manage
 Alternatively, grab your favorite deb package from the [release page](https://github.com/automatika-robotics/sugarcoat/releases) and install it as follows:
 
 `sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
+
+If the attrs version from your package manager is < 23.2, install it using pip as follows:
+
+`pip install 'attrs>=23.2.0'`
 
 ## Building from source
 

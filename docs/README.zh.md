@@ -45,17 +45,17 @@ Sugarcoat 专为 ROS2 开发者而设计，他们希望创建易于使用、内�
 
 ## 安装
 
-使用 pip 安装 Python 依赖项，如下所示：
-
-`pip install 'attrs>=23.2.0'`
-
-对于 ROS 版本 >= 'humble'，您可以使用包管理器安装 Sugarcoat。例如在 Ubuntu 上：
+对于 ROS 版本大于等于 `'humble'` 的用户，可以通过包管理器安装 Sugarcoat。例如，在 Ubuntu 上：
 
 `sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
 
-或者，从[发布页面](https://github.com/automatika-robotics/sugarcoat/releases)获取您喜欢的 deb 包，然后按如下方式安装：
+或者，也可以从 [发布页面](https://github.com/automatika-robotics/sugarcoat/releases) 下载你喜欢的 deb 安装包，并使用以下命令进行安装：
 
 `sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
+
+如果你使用的包管理器中的 attrs 版本小于 23.2，请使用 pip 安装如下：
+
+`pip install 'attrs>=23.2.0'`
 
 ## 从源代码构建
 
