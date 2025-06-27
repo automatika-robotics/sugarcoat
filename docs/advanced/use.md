@@ -181,5 +181,5 @@ launcher.add_pkg(
 launcher.on_component_fail(action_name="restart")
 
 # Bring up the system
-launcher.bringup(ros_log_level="info", introspect=False)
+launcher.bringup(introspect=False)
 ```
