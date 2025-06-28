@@ -209,7 +209,7 @@ class StdMsgArrayCallback(GenericCallback):
     def __init__(self, input_topic, node_name: Optional[str] = None) -> None:
         super().__init__(input_topic, node_name)
 
-    def _get_output(self, **_) -> np.ndarray:
+    def _get_output(self, **_) -> Optional[np.ndarray]:
         """
         Gets std_msg data
         """
