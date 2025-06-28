@@ -36,7 +36,7 @@ class TFListener:
     def __init__(
         self,
         tf_config: Optional[TFListenerConfig] = None,
-        node_name: Optional[str] = "",
+        node_name: str = "",
     ) -> None:
         """
         Sets up a transform listener in ros
@@ -61,7 +61,6 @@ class TFListener:
         self.transform = None
         self.got_transform = False
 
-
     @property
     def translation(self) -> Optional[np.ndarray]:
         """
@@ -73,6 +72,9 @@ class TFListener:
         if self.got_transform:
             trans = self.transform.transform.translation
             return np.array([trans.x, trans.y, trans.z], dtype=np.float32)
+        get_logger(self.node_name).debug(
+            "Did not get transform. Not applying translation"
+        )
         return None
 
     @property
@@ -86,6 +88,9 @@ class TFListener:
         if self.got_transform:
             rot = self.transform.transform.rotation
             return np.array([rot.x, rot.y, rot.z, rot.w], dtype=np.float32)
+        get_logger(self.node_name).debug(
+            "Did not get transform. Not applying rotation"
+        )
         return None
 
     @property
@@ -100,7 +105,7 @@ class TFListener:
 
     def set_listener(self, tf_listener: TransformListener):
         """
-        Set the TF listener creqted in the node
+        Set the TF listener created in the node
 
         :param tf_listener: Node transform listener
         :type tf_listener: TransformListener
