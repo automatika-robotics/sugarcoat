@@ -13,11 +13,20 @@ import logging
 # Get ROS distro
 __installed_distro = os.environ.get("ROS_DISTRO", "").lower()
 
-if __installed_distro in ["humble", "galactic", "foxy"]:
-    # Get some_action_type for older distributions
-    from launch.some_actions_type import SomeActionsType as SomeEntitiesType
-else:
-    from launch.some_entities_type import SomeEntitiesType
+try:
+    if __installed_distro in ["humble", "galactic", "foxy"]:
+        # Get some_action_type for older distributions
+        from launch.some_actions_type import SomeActionsType as SomeEntitiesType
+    else:
+        from launch.some_entities_type import SomeEntitiesType
+except ModuleNotFoundError as e:
+    raise ModuleNotFoundError(
+        "Could not determine correct ROS version. Make sure ROS_DISTRO variable is set and ROS_DISTRO is >= `humble`"
+    ) from e
+
+
+# logger for utils
+logger = logging.getLogger("Sugarcoat")
 
 
 class IncompatibleSetup(Exception):
@@ -86,7 +95,6 @@ def action_handler(function: Callable):
     return _wrapper
 
 
-# TODO: Use active flag in the decorator correctly by creating a decorator factory
 def component_action(function: Callable, active: bool = False):
     """
     Decorator for components actions
@@ -122,12 +130,12 @@ def component_action(function: Callable, active: bool = False):
             if not active or self._state_machine.current_state[1] == "active":
                 return function(*args, **kwargs)
             else:
-                logging.getLogger("Sugarcoat").error(
+                logger.error(
                     f"Cannot use component action method '{function.__name__}' without activating the Component"
                 )
                 return None
         else:
-            logging.getLogger("Sugarcoat").error(
+            logger.error(
                 f"Cannot use component action method '{function.__name__}' without initializing rclpy and the Component"
             )
 
@@ -167,12 +175,12 @@ def component_fallback(function: Callable):
             ]:
                 return function(*args, **kwargs)
             else:
-                logging.getLogger("Sugarcoat").error(
+                logger.error(
                     f"{self._state_machine.current_state[1]} Cannot use component fallback method '{function.__name__}' without activating or configuring the Component"
                 )
                 return None
         else:
-            logging.getLogger("Sugarcoat").error(
+            logger.error(
                 f"Cannot use component action method '{function.__name__}' without initializing rclpy and the Component"
             )
 

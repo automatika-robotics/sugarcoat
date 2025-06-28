@@ -1,10 +1,13 @@
 from functools import partial
-from typing import Any, List, Union
+from typing import Any, List, Union, Callable
 
 import numpy as np
 
 
-def gt(value: Union[int, float]):
+Validator = Callable[[Any, Any, Any], None]
+
+
+def gt(value: Union[int, float]) -> Validator:
     """
     Validates that field is greater than value
 
@@ -17,7 +20,7 @@ def gt(value: Union[int, float]):
     return partial(__gt, ref_value=value)
 
 
-def lt(value: Union[int, float]):
+def lt(value: Union[int, float]) -> Validator:
     """
     Validates that field is lesser than value
 
@@ -30,7 +33,7 @@ def lt(value: Union[int, float]):
     return partial(__lt, ref_value=value)
 
 
-def in_(values: List):
+def in_(values: List) -> Validator:
     """
     Validates that value is in a given list
 
@@ -43,7 +46,7 @@ def in_(values: List):
     return partial(__in_, values=values)
 
 
-def list_contained_in(values: List):
+def list_contained_in(values: List) -> Validator:
     """
     Validates that all elements in a given list are in values
 
@@ -56,7 +59,7 @@ def list_contained_in(values: List):
     return partial(__list_contained_in, values=values)
 
 
-def in_range(min_value: Union[float, int], max_value: Union[float, int]):
+def in_range(min_value: Union[float, int], max_value: Union[float, int]) -> Validator:
     """
     Validates that a given value is within range
 
@@ -75,7 +78,7 @@ def in_range_discretized(
     step: Union[float, int],
     min_value: Union[float, int],
     max_value: Union[float, int],
-):
+) -> Validator:
     """
     Validates that a given value is within range with a given step
 
