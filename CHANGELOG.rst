@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.3.1 (2025-06-28)
+------------------
 * (refactor) Corrects type hint in callbacks
 * (refactor) Adds type hints to validators
 * (refactor) Minor improvements and typo correction
