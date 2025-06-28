@@ -13,11 +13,20 @@ import logging
 # Get ROS distro
 __installed_distro = os.environ.get("ROS_DISTRO", "").lower()
 
-if __installed_distro in ["humble", "galactic", "foxy"]:
-    # Get some_action_type for older distributions
-    from launch.some_actions_type import SomeActionsType as SomeEntitiesType
-else:
-    from launch.some_entities_type import SomeEntitiesType
+try:
+    if __installed_distro in ["humble", "galactic", "foxy"]:
+        # Get some_action_type for older distributions
+        from launch.some_actions_type import SomeActionsType as SomeEntitiesType
+    else:
+        from launch.some_entities_type import SomeEntitiesType
+except ModuleNotFoundError as e:
+    raise ModuleNotFoundError(
+        "Could not determine correct ROS version. Make sure ROS_DISTRO variable is set and ROS_DISTRO is >= `humble`"
+    ) from e
+
+
+# logger for utils
+logger = logging.getLogger("Sugarcoat")
 
 
 class IncompatibleSetup(Exception):
@@ -86,54 +95,58 @@ def action_handler(function: Callable):
     return _wrapper
 
 
-# TODO: Use active flag in the decorator correctly by creating a decorator factory
-def component_action(function: Callable, active: bool = False):
+def component_action(active: bool = False):
     """
-    Decorator for components actions
-    Verifies that the function is a valid Component method, returns a boolean or None, and that the Component is active
+    Decorator factory for component actions.
+    Verifies that the method is a valid LifecycleNode method, returns bool or None,
+    and optionally ensures the component is active.
 
-    :param function:
-    :type function: Callable
+    :param active: Whether the component must be in an active state to run the method.
+    :type active: bool
+    :return: Decorator
+    :rtype: Callable
     """
 
-    @wraps(function)
-    def _wrapper(*args, **kwargs):
-        """_wrapper.
-        :param a:
-        :param kw:
-        """
-        if not args:
-            raise TypeError(f"'{function.__name__}' is not a valid Component method")
+    def decorator(function: Callable):
+        @wraps(function)
+        def _wrapper(*args, **kwargs):
+            if not args:
+                raise TypeError(
+                    f"'{function.__name__}' is not a valid Component method"
+                )
 
-        self = args[0]
-        if not isinstance(self, LifecycleNode):
-            raise TypeError(f"'{function.__name__}' is not a valid Component method")
+            self = args[0]
+            if not isinstance(self, LifecycleNode):
+                raise TypeError(
+                    f"'{function.__name__}' is not a valid Component method"
+                )
 
-        # Check return type
-        return_type = inspect.signature(function).return_annotation
-        if return_type is not bool and return_type:
-            raise TypeError(
-                f"Action methods must return boolean or None. Method '{function.__name__}' cannot have '@component_action' decorator"
-            )
+            # Check return type
+            return_type = inspect.signature(function).return_annotation
+            if return_type is not bool and return_type is not None:
+                raise TypeError(
+                    f"Action methods must return boolean or None. Method '{function.__name__}' cannot have '@component_action' decorator"
+                )
 
-        # Check Component is active
-        if rclpy_is_ok() and hasattr(self, "_state_machine"):
-            # check for active flag and if the flag is True, check lifecycle_state is 3 i.e. active
-            if not active or self._state_machine.current_state[1] == "active":
-                return function(*args, **kwargs)
+            # Check if rclpy is initialized and component has a state machine
+            if rclpy_is_ok() and hasattr(self, "_state_machine"):
+                current_state = self._state_machine.current_state[1]
+                if not active or current_state == "active":
+                    return function(*args, **kwargs)
+                else:
+                    logger.error(
+                        f"Cannot use component action method '{function.__name__}' when Component is not active (current state: {current_state})"
+                    )
+                    return None
             else:
-                logging.getLogger("Sugarcoat").error(
-                    f"Cannot use component action method '{function.__name__}' without activating the Component"
+                logger.error(
+                    f"Cannot use component action method '{function.__name__}' without initializing rclpy and the Component"
                 )
                 return None
-        else:
-            logging.getLogger("Sugarcoat").error(
-                f"Cannot use component action method '{function.__name__}' without initializing rclpy and the Component"
-            )
 
-    _wrapper.__name__ = function.__name__
+        return _wrapper
 
-    return _wrapper
+    return decorator
 
 
 def component_fallback(function: Callable):
@@ -167,12 +180,12 @@ def component_fallback(function: Callable):
             ]:
                 return function(*args, **kwargs)
             else:
-                logging.getLogger("Sugarcoat").error(
+                logger.error(
                     f"{self._state_machine.current_state[1]} Cannot use component fallback method '{function.__name__}' without activating or configuring the Component"
                 )
                 return None
         else:
-            logging.getLogger("Sugarcoat").error(
+            logger.error(
                 f"Cannot use component action method '{function.__name__}' without initializing rclpy and the Component"
             )
 
