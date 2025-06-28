@@ -2,6 +2,23 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (refactor) Corrects type hint in callbacks
+* (refactor) Adds type hints to validators
+* (refactor) Minor improvements and typo correction
+* (refactor) Resolves todo in component actions for active flag and adds default logger for module
+* (chore) Updates service creation script with better error handling
+* (docs) Updates installation instructions
+* (refactor) Removes numpy-quaternion from dependencies and implements rotations using numpy
+* (docs) Updates logo icon and adds 'config from file' page to docs
+* (fix) Adds wait for node activation after restart and fixes optional arguments parsing in Component
+* (docs) Updates events docs
+* (docs) Adds international readmes
+* (chore) Removes pip based test dependencies for ROS build farm
+* (docs) Updates readme
+* Contributors: ahr, mkabtoul
+
 0.3.0 (2025-06-18)
 ------------------
 * (chore) Updates installation instructions and CI
