@@ -148,7 +148,7 @@ def _np_quaternion_conjugate(q: np.ndarray) -> np.ndarray:
     return np.array([w, -x, -y, -z])
 
 
-def rotate_vector_by_quaternion(q: np.ndarray, v: List[float]) -> List[float]:
+def _rotate_vector_by_quaternion(q: np.ndarray, v: List[float]) -> List[float]:
     """
     Rotate a 3D vector v by a quaternion q.
 
@@ -162,46 +162,27 @@ def rotate_vector_by_quaternion(q: np.ndarray, v: List[float]) -> List[float]:
     return rotated_vq[1:].tolist()
 
 
-def get_pose_target_in_reference_frame(
-    reference_position: np.ndarray,
-    reference_orientation: np.ndarray,
-    target_position: np.ndarray,
-    target_orientation: np.ndarray,
-) -> np.ndarray:
+def _transform_pose(position: np.ndarray, orientation: np.ndarray, reference_position: np.ndarray, reference_orientation: np.ndarray) -> np.ndarray:
     """
-    Computes a target pose with respect to a reference pose, both given in a common coordinates frame
+    Transforms a pose from a local frame to a global frame using a reference pose.
+    Equivalent to: global_pose = reference_pose * local_pose
 
-    :param reference_position: Position of reference in common frame [x, y, z]
-    :type reference_position: np.ndarray
-    :param reference_orientation: Orientation quaternion of reference in common frame (qw, qx, qy, qz)
-    :type reference_orientation: np.ndarray
-    :param target_position: Position of target in common frame [x, y, z]
-    :type target_position: np.ndarray
-    :param target_orientation: Orientation quaternion of target in common frame (qw, qx, qy, qz)
-    :type target_orientation: np.ndarray
-
-    :return: Position and orientation quaternion of target in reference frame [x, y, z, qw, qx, qy, qz]
-    :rtype: np.ndarray
+    :param pose: PoseData in local frame
+    :type pose: PoseData
+    :param reference_pose: PoseData of local frame in global frame
+    :type reference_pose: PoseData
+    :return: PoseData in global frame
+    :rtype: PoseData
     """
-    orientation_target_in_ref = (
-        _np_quaternion_conjugate(reference_orientation) * target_orientation
-    )
-    position_target_in_ref = rotate_vector_by_quaternion(
-        _np_quaternion_conjugate(reference_orientation),
-        (target_position - reference_position).tolist(),
-    )
+    rotated_position = _rotate_vector_by_quaternion(reference_orientation, position.tolist())
+    translated_position = reference_position + np.array(rotated_position)
 
-    target_pose_in_ref = np.array([
-        position_target_in_ref[0],
-        position_target_in_ref[1],
-        position_target_in_ref[2],
-        orientation_target_in_ref[0],
-        orientation_target_in_ref[1],
-        orientation_target_in_ref[2],
-        orientation_target_in_ref[3],
+    combined_orientation = _np_quaternion_multiply(reference_orientation, orientation)
+
+    return np.array([
+        *translated_position,
+        *combined_orientation
     ])
-
-    return target_pose_in_ref
 
 
 def _get_position_from_odom(odom_msg: Odometry) -> np.ndarray:
@@ -272,30 +253,8 @@ def odom_from_frame1_to_frame2(
     :return:    pose of target in frame 2
     :rtype:     PoseData
     """
-    pose_2_origin = Odometry()
-
-    pose_2_in_1 = get_pose_target_in_reference_frame(
-        reference_position=_get_position_from_odom(pose_1_in_2),
-        reference_orientation=_get_orientation_from_odom(pose_1_in_2),
-        target_position=_get_position_from_odom(pose_2_origin),
-        target_orientation=_get_orientation_from_odom(pose_2_origin),
-    )
-
-    pose_target_in_2 = get_pose_target_in_reference_frame(
-        reference_position=pose_2_in_1[:3],
-        reference_orientation=np.array([
-            pose_2_in_1[3],
-            pose_2_in_1[4],
-            pose_2_in_1[5],
-            pose_2_in_1[6],
-        ]),
-        target_position=_get_position_from_odom(pose_target_in_1),
-        target_orientation=_get_orientation_from_odom(pose_target_in_1),
-    )
-    target_odom = _get_odom_from_ndarray(pose_target_in_2)
-
-    return target_odom
-
+    transformed_pose = _transform_pose(_get_position_from_odom(pose_target_in_1), _get_orientation_from_odom(pose_target_in_1), _get_position_from_odom(pose_1_in_2), _get_orientation_from_odom(pose_1_in_2))
+    return _get_odom_from_ndarray(transformed_pose)
 
 def _parse_array_type(arr: np.ndarray, ros_msg_cls: type) -> np.ndarray:
     """Parses a numpy array to the data type of an std_msg
