@@ -1,0 +1,677 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta content="cQVj-BaADcGVOGB7GOvfbkgJjxni10C2fYWCZ03jOeo" name="google-site-verification" />
+
+    <title>Converting a Sugarcoat Python Script into a systemd Service &#8212; Sugarcoat 0.3.1 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=8eace815" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=385a908f"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'advanced/create_service';</script>
+    <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/advanced/create_service.html" />
+    <link rel="icon" href="../_static/favicon.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Default Services In Sugarcoat Components" href="srvs.html" />
+    <link rel="prev" title="Creating your ROS2 package using Sugarcoat" href="use.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/SUGARCOAT_LIGHT.png" class="logo__image only-light" alt="Sugarcoat 0.3.1 documentation - Home"/>
+    <script>document.write(`<img src="../_static/SUGARCOAT_DARK.png" class="logo__image only-dark" alt="Sugarcoat 0.3.1 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://automatikarobotics.com/" title="Automatika" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><img src="../_static/automatika-logo.png" class="icon-link-image" alt="Automatika"/></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/automatika-robotics/sugarcoat" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/B9ZU6qjzND" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Overview</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Sugarcoat 🍬</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Design Concepts</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../design/concepts_overview.html">Concepts Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/component.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/topics.html">Topics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/status.html">Health Status</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/events.html">Events</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/actions.html">Actions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/launcher.html">Launcher</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/monitor.html">Monitor</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Using Sugarcoat</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Converting a Sugarcoat Python Script into a systemd Service</a></li>
+<li class="toctree-l1"><a class="reference internal" href="srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Don’t Like YAML? We’ve Got You 😎</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">References</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../apidocs/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component_actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component_actions</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.events.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.events</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/blob/main/docs/advanced/create_service.md?plain=1" target="_blank"
+   class="btn btn-sm btn-source-file-button dropdown-item"
+   title="Show source"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-code"></i>
+  </span>
+<span class="btn__text-container">Show source</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/edit/main/docs/advanced/create_service.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/issues/new?title=Issue%20on%20page%20%2Fadvanced/create_service.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/advanced/create_service.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Converting a Sugarcoat Python Script into a systemd Service</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#arguments">Arguments</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#example">Example</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#full-command-usage">Full Command Usage</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#positional-arguments">Positional Arguments</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#optional-arguments">Optional Arguments</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-this-does">What This Does</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="converting-a-sugarcoat-python-script-into-a-systemd-service">
+<h1>Converting a Sugarcoat Python Script into a systemd Service<a class="headerlink" href="#converting-a-sugarcoat-python-script-into-a-systemd-service" title="Link to this heading">#</a></h1>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Sugarcoat packages can be easily launched as <code class="docutils literal notranslate"><span class="pre">systemd</span></code> services using the <code class="docutils literal notranslate"><span class="pre">create_service</span></code> tool provided with the package.</p>
+</div>
+<p>Once you have a Python script written for your Sugarcoat-based package (lets call it <code class="docutils literal notranslate"><span class="pre">my_awesome_system.py</span></code>), you can install it as a systemd service with the following command:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>run<span class="w"> </span>automatika_ros_sugar<span class="w"> </span>create_service<span class="w"> </span>&lt;path-to-python-script&gt;<span class="w"> </span>&lt;service-name&gt;
+</pre></div>
+</div>
+<section id="arguments">
+<h2>Arguments<a class="headerlink" href="#arguments" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&lt;path-to-python-script&gt;</span></code>: The full path to your Sugarcoat Python script (e.g., <code class="docutils literal notranslate"><span class="pre">/path/to/my_awesome_system.py</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&lt;service-name&gt;</span></code>: The name of the systemd service (do <strong>not</strong> include the <code class="docutils literal notranslate"><span class="pre">.service</span></code> extension).</p></li>
+</ul>
+</section>
+<section id="example">
+<h2>Example<a class="headerlink" href="#example" title="Link to this heading">#</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>run<span class="w"> </span>automatika_ros_sugar<span class="w"> </span>create_service<span class="w"> </span>~/ros2_ws/my_awesome_system.py<span class="w"> </span>my_awesome_service
+</pre></div>
+</div>
+<p>This command will install and optionally enable a <code class="docutils literal notranslate"><span class="pre">systemd</span></code> service named <code class="docutils literal notranslate"><span class="pre">my_awesome_service.service</span></code>.</p>
+</section>
+<section id="full-command-usage">
+<h2>Full Command Usage<a class="headerlink" href="#full-command-usage" title="Link to this heading">#</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>usage: create_service [-h] [--service-description SERVICE_DESCRIPTION]
+                      [--install-path INSTALL_PATH]
+                      [--source-workspace-path SOURCE_WORKSPACE_PATH]
+                      [--no-enable] [--restart-time RESTART_TIME]
+                      service_file_path service_name
+</pre></div>
+</div>
+<p>Install a Python script as a systemd service.</p>
+<section id="positional-arguments">
+<h3>Positional Arguments<a class="headerlink" href="#positional-arguments" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">service_file_path</span></code></strong>: Path to the Python script you want to install as a service.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">service_name</span></code></strong>: Name of the systemd service (without <code class="docutils literal notranslate"><span class="pre">.service</span></code> extension).</p></li>
+</ul>
+</section>
+<section id="optional-arguments">
+<h3>Optional Arguments<a class="headerlink" href="#optional-arguments" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">-h,</span> <span class="pre">--help</span></code>: Show the help message and exit.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--service-description</span> <span class="pre">SERVICE_DESCRIPTION</span></code>: Human-readable description of the service. Defaults to <code class="docutils literal notranslate"><span class="pre">&quot;Sugarcoat</span> <span class="pre">Description&quot;</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--install-path</span> <span class="pre">INSTALL_PATH</span></code>: Directory to install the systemd service file. Defaults to <code class="docutils literal notranslate"><span class="pre">/etc/systemd/system</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--source-workspace-path</span> <span class="pre">SOURCE_WORKSPACE_PATH</span></code>: Path to the ROS workspace <code class="docutils literal notranslate"><span class="pre">setup</span></code> script. If omitted, it auto-detects the active ROS distribution.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--no-enable</span></code>: Skip enabling the service after installation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--restart-time</span> <span class="pre">RESTART_TIME</span></code>: Time to wait before restarting the service if it fails (e.g., <code class="docutils literal notranslate"><span class="pre">3s</span></code>). Default is <code class="docutils literal notranslate"><span class="pre">3s</span></code>.</p></li>
+</ul>
+</section>
+</section>
+<section id="what-this-does">
+<h2>What This Does<a class="headerlink" href="#what-this-does" title="Link to this heading">#</a></h2>
+<p>This command:</p>
+<ol class="arabic simple">
+<li><p>Creates a <code class="docutils literal notranslate"><span class="pre">.service</span></code> file for <code class="docutils literal notranslate"><span class="pre">systemd</span></code>.</p></li>
+<li><p>Installs it in the specified or default location.</p></li>
+<li><p>Sources the appropriate ROS environment.</p></li>
+<li><p>Optionally enables and starts the service immediately.</p></li>
+</ol>
+<p>Once installed, you can manage the service using standard <code class="docutils literal notranslate"><span class="pre">systemd</span></code> commands:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>my_awesome_service
+sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>my_awesome_service
+sudo<span class="w"> </span>systemctl<span class="w"> </span>stop<span class="w"> </span>my_awesome_service
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>my_awesome_service
+</pre></div>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>This is ideal for deploying Sugarcoat components in production environments or embedded systems where automatic startup and restart behavior is critical.</p>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="use.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Creating your ROS2 package using Sugarcoat</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="srvs.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Default Services In Sugarcoat Components</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#arguments">Arguments</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#example">Example</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#full-command-usage">Full Command Usage</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#positional-arguments">Positional Arguments</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#optional-arguments">Optional Arguments</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-this-does">What This Does</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By Automatika Robotics
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2025, Automatika Robotics.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
