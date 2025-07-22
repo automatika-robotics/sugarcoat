@@ -362,6 +362,63 @@ class OnChangeContainsAll(Event):
             self.trigger = False
 
 
+class OnChangeNotContain(Event):
+    """
+    OnChangeNotContain Event
+    """
+
+    def __init__(
+        self,
+        event_name: str,
+        event_source: Union[Topic, str, Dict],
+        trigger_value: List,
+        nested_attributes: Union[str, List[str]],
+        **kwargs,
+    ) -> None:
+        """__init__.
+
+        :param event_name:
+        :type event_name: str
+        :param event_source:
+        :type event_source: Union[Topic, str, Dict]
+        :param trigger_value:
+        :type trigger_value: Union[float, int, bool, str, List]
+        :param attrs:
+        :rtype: None
+        """
+        # passing trigger_value as zero as it will not be used in this event
+        super().__init__(
+            event_name, event_source, trigger_value, nested_attributes, **kwargs
+        )
+        self._previous_event_value = None
+
+    def callback(self, msg) -> None:
+        """
+        Overrides Event callback to save previous event value for OnChange comparison
+
+        :param msg: Event topic message
+        :type msg: Any
+        """
+        if hasattr(self, "_event_value"):
+            self._previous_event_value = self._event_value.value
+        return super().callback(msg)
+
+    def _update_trigger(self) -> None:
+        """
+        Set trigger  to True if reference value is NOT contained in the event value after being contained in the previous event value
+        """
+        if self._previous_event_value is not None:
+            if (
+                isinstance(self.trigger_ref_value, List)
+                and any(val in self._previous_event_value for val in self.trigger_ref_value)
+                and not any(val in self._event_value for val in self.trigger_ref_value)
+            ):
+                self.trigger = True
+            else:
+                self.trigger = False
+        else:
+            self.trigger = False
+
 class OnContainsAny(Event):
     """
     OnContainsAny Event is triggered when a given topic attribute value contains one of the given trigger list value.
@@ -450,7 +507,7 @@ class OnChangeContainsAny(Event):
         if self._previous_event_value is not None:
             if (
                 isinstance(self.trigger_ref_value, List)
-                and self._event_value != self._previous_event_value
+                and not any(val in self._previous_event_value for val in self.trigger_ref_value)
                 and any(val in self._event_value for val in self.trigger_ref_value)
             ):
                 self.trigger = True
