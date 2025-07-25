@@ -2,7 +2,6 @@
 
 from typing import Any, Union, Optional, List
 import base64
-
 import numpy as np
 
 # GEOMETRY MSGS SUPPORTED ROS TYPES
@@ -102,7 +101,6 @@ def add_additional_datatypes(types: List[type]) -> None:
     global _additional_types
     # Create a dictionary for quick lookup of existing classes by name
     type_dict = {t.__name__: t for t in _additional_types}
-    import logging
 
     for new_class in types:
         if new_class.__name__ in type_dict:
@@ -501,16 +499,16 @@ class Pose(SupportedType):
             raise ValueError(
                 f"Cannot convert given value '{output}' to a ROS Pose message"
             )
-        msg.pose.position.x = output[0]
-        msg.pose.position.y = output[1]
-        msg.pose.position.z = output[2]
+        msg.position.x = output[0]
+        msg.position.y = output[1]
+        msg.position.z = output[2]
 
         # Check for orientation
         if output.shape[0] == 7:
-            msg.pose.orientation.w = output[3]
-            msg.pose.orientation.x = output[4]
-            msg.pose.orientation.y = output[5]
-            msg.pose.orientation.z = output[6]
+            msg.orientation.w = output[3]
+            msg.orientation.x = output[4]
+            msg.orientation.y = output[5]
+            msg.orientation.z = output[6]
         return msg
 
 
