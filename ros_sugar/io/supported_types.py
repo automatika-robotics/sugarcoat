@@ -336,7 +336,7 @@ class Audio(SupportedType):
             output = base64.b64decode(output)
 
         msg = ByteMultiArray()
-        msg.data = output
+        msg.data = [bytes([b]) for b in output]
         return msg
 
 
