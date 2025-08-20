@@ -1,5 +1,6 @@
 """ROS Publishers"""
 
+from rclpy.clock import Clock, ClockType
 from typing import Any, Callable, Optional, Union, List
 from socket import socket
 
@@ -9,7 +10,6 @@ from rclpy.logging import get_logger
 from rclpy.publisher import Publisher as ROSPublisher
 
 from std_msgs.msg import Header
-from builtin_interfaces.msg import Time
 
 # patch msgpack for numpy arrays
 m_pack.patch()
@@ -91,7 +91,6 @@ class Publisher:
         output: Any,
         *args,
         frame_id: Optional[str] = None,
-        time_stamp: Optional[Time] = None,
         **kwargs,
     ) -> None:
         """
@@ -118,13 +117,15 @@ class Publisher:
                     output = pre_output
             msg = self.output_topic.msg_type.convert(output, *args, **kwargs)
             if msg:
-                if (frame_id or time_stamp) and not hasattr(msg, "header"):
+                if frame_id and not hasattr(msg, "header"):
                     get_logger(self.node_name).warn(
                         f"Cannot add a header to non-stamped message of type '{type(msg)}'"
                     )
-                elif frame_id or time_stamp:
+                elif hasattr(msg, "header"):
                     # Add a header
                     msg.header = Header()
                     msg.header.frame_id = frame_id or ""
-                    msg.header.stamp = time_stamp or Time()
+                    msg.header.stamp = (
+                        Clock(clock_type=ClockType.ROS_TIME).now().to_msg()
+                    )
                 self._publisher.publish(msg)
