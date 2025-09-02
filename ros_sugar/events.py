@@ -68,7 +68,7 @@ def json_to_events_list(
 
 class OnAny(Event):
     def __init__(
-        self, event_name: str, event_source: Union[Topic, str, Dict], **kwargs
+        self, event_name: str, event_source: Union[Topic, str, Dict], **_
     ) -> None:
         """__init__.
 
@@ -410,7 +410,9 @@ class OnChangeNotContain(Event):
         if self._previous_event_value is not None:
             if (
                 isinstance(self.trigger_ref_value, List)
-                and any(val in self._previous_event_value for val in self.trigger_ref_value)
+                and any(
+                    val in self._previous_event_value for val in self.trigger_ref_value
+                )
                 and not any(val in self._event_value for val in self.trigger_ref_value)
             ):
                 self.trigger = True
@@ -418,6 +420,7 @@ class OnChangeNotContain(Event):
                 self.trigger = False
         else:
             self.trigger = False
+
 
 class OnContainsAny(Event):
     """
@@ -507,7 +510,9 @@ class OnChangeContainsAny(Event):
         if self._previous_event_value is not None:
             if (
                 isinstance(self.trigger_ref_value, List)
-                and not any(val in self._previous_event_value for val in self.trigger_ref_value)
+                and not any(
+                    val in self._previous_event_value for val in self.trigger_ref_value
+                )
                 and any(val in self._event_value for val in self.trigger_ref_value)
             ):
                 self.trigger = True
