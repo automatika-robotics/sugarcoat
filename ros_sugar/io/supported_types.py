@@ -477,7 +477,7 @@ class Pose(SupportedType):
     callback = callbacks.PoseCallback
 
     @classmethod
-    def convert(cls, output: np.ndarray, frame_id=None, ros_time=None, **_) -> ROSPose:
+    def convert(cls, output: np.ndarray, **_) -> ROSPose:
         """ROS message converter function for datatype Point.
 
         :param output:
