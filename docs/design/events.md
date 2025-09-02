@@ -14,6 +14,9 @@ Events are used by matching them to 'Actions'; an Action is meant to be executed
 - [OnLess](#onless-event)
 - [OnContainsAll](#oncontainsall-event)
 - [OnContainsAny](#oncontainsany-event)
+- [OnChangeContainsAll](#onchangecontainsall-event)
+- [OnChangeNotContain](#onchangenotcontain-event)
+- [OnChangeContainsAny](#onchangecontainsany-event)
 
 ## OnAny Event
 
@@ -164,4 +167,13 @@ all_failure_event = OnContainsAll(
 
 ## OnContainsAny Event
 
-OnContainsAny Event is triggered when the topic attribute value contains **any** element from a given set of trigger values. This applied to attributes of type `list`.
+OnContainsAny Event is triggered when the topic attribute value contains **any** element from a given set of trigger values. This applies to attributes of type `list`.
+
+## OnChangeContainsAll Event
+OnChangeContainsAll Event is a combination of OnChange and OnContainsAll events. This event is triggered when the topic attribute value contains **all** element from a given set of trigger values, after not containing all of it in a previous message. This applies to attributes of type `list`.
+
+## OnChangeNotContain Event
+OnChangeContainsAll Event is the inverse of OnChangeContainsAll event.
+
+## OnChangeContainsAny Event
+OnChangeContainsAll Event is a combination of OnChange and OnContainsAll events. This event is triggered when the topic attribute value contains **any** element from a given set of trigger values, after not containing any of it in a previous message. This applies to attributes of type `list`.
