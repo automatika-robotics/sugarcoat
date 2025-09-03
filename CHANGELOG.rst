@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.3.2 (2025-09-03)
+------------------
 * (docs) Updates events docs with new classes
 * (feature) Adds ros time automatically to stamped messages in publisher
 * (fix) Fixes error in publishing audio msgs as byte arrays
