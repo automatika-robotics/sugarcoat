@@ -1,7 +1,6 @@
 """Event"""
 
 import json
-import threading
 import time
 import logging
 from abc import abstractmethod
@@ -378,7 +377,6 @@ class Event:
 
         self._processed_once: bool = False
 
-
     @property
     def under_processing(self) -> bool:
         """If event is triggered and associated action is getting executed
@@ -386,8 +384,6 @@ class Event:
         :return: Event under processing flag
         :rtype: bool
         """
-        if hasattr(self, "_delay_timer"):
-            return not self._delay_timer.done
         return self.__under_processing
 
     @under_processing.setter
