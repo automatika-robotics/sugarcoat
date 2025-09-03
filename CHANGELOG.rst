@@ -2,6 +2,18 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (docs) Updates events docs with new classes
+* (feature) Adds ros time automatically to stamped messages in publisher
+* (fix) Fixes error in publishing audio msgs as byte arrays
+* (fix) Fixes Pose publisher converter
+* (fix) Fixes event handle once and delay options
+* (fix) Fixes condition for OnChange event trigger
+* (feature) Adds events for contains any/all plus change in value
+* (fix) Fixes error in geomerty transformation util
+* Contributors: ahr, mkabtoul
+
 0.3.1 (2025-06-28)
 ------------------
 * (refactor) Corrects type hint in callbacks
