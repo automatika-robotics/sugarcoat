@@ -2,7 +2,6 @@
 
 from typing import Any, Union, Optional, List
 import base64
-
 import numpy as np
 
 # GEOMETRY MSGS SUPPORTED ROS TYPES
@@ -24,7 +23,6 @@ from sensor_msgs.msg import Image as ROSImage, CompressedImage as ROSCompressedI
 from sensor_msgs.msg import LaserScan as ROSLaserScan
 
 # STD_MSGS SUPPORTED ROS TYPES
-from std_msgs.msg import Header
 from std_msgs.msg import ByteMultiArray
 from std_msgs.msg import String as ROSString
 from std_msgs.msg import Bool as ROSBool
@@ -102,7 +100,6 @@ def add_additional_datatypes(types: List[type]) -> None:
     global _additional_types
     # Create a dictionary for quick lookup of existing classes by name
     type_dict = {t.__name__: t for t in _additional_types}
-    import logging
 
     for new_class in types:
         if new_class.__name__ in type_dict:
@@ -338,7 +335,7 @@ class Audio(SupportedType):
             output = base64.b64decode(output)
 
         msg = ByteMultiArray()
-        msg.data = output
+        msg.data = [bytes([b]) for b in output]
         return msg
 
 
@@ -391,7 +388,6 @@ class OccupancyGrid(SupportedType):
         output: np.ndarray,
         resolution: float,
         origin: Optional[ROSPose] = None,
-        msg_header: Optional[Header] = None,
         **_,
     ) -> ROSOccupancyGrid:
         """ROS message converter function for datatype OccupancyGrid.
@@ -405,7 +401,6 @@ class OccupancyGrid(SupportedType):
             raise TypeError("OccupancyGrid data must be a 2D array")
 
         msg = ROSOccupancyGrid()
-        msg.header = msg_header if msg_header else Header()
 
         # Set MetaData
         msg.info = ROSMapMetaData()
@@ -455,7 +450,7 @@ class PointStamped(SupportedType):
 
     @classmethod
     def convert(
-        cls, output: np.ndarray, frame_id=None, ros_time=None, **_
+        cls, output: np.ndarray, **_
     ) -> ROSPointStamped:
         """ROS message converter function for datatype Point.
 
@@ -465,12 +460,6 @@ class PointStamped(SupportedType):
         :rtype: ROSPointStamped
         """
         msg = ROSPointStamped()
-        msg_header = Header()
-        if frame_id:
-            msg_header.frame_id = frame_id
-        if ros_time:
-            msg_header.stamp = ros_time
-        msg.header = msg_header
         if output.shape[0] < 3:
             raise ValueError(
                 f"Cannot convert given value '{output}' to a ROS PointStamped message"
@@ -488,7 +477,7 @@ class Pose(SupportedType):
     callback = callbacks.PoseCallback
 
     @classmethod
-    def convert(cls, output: np.ndarray, frame_id=None, ros_time=None, **_) -> ROSPose:
+    def convert(cls, output: np.ndarray, **_) -> ROSPose:
         """ROS message converter function for datatype Point.
 
         :param output:
@@ -501,16 +490,16 @@ class Pose(SupportedType):
             raise ValueError(
                 f"Cannot convert given value '{output}' to a ROS Pose message"
             )
-        msg.pose.position.x = output[0]
-        msg.pose.position.y = output[1]
-        msg.pose.position.z = output[2]
+        msg.position.x = output[0]
+        msg.position.y = output[1]
+        msg.position.z = output[2]
 
         # Check for orientation
         if output.shape[0] == 7:
-            msg.pose.orientation.w = output[3]
-            msg.pose.orientation.x = output[4]
-            msg.pose.orientation.y = output[5]
-            msg.pose.orientation.z = output[6]
+            msg.orientation.w = output[3]
+            msg.orientation.x = output[4]
+            msg.orientation.y = output[5]
+            msg.orientation.z = output[6]
         return msg
 
 
@@ -522,7 +511,7 @@ class PoseStamped(SupportedType):
 
     @classmethod
     def convert(
-        cls, output: np.ndarray, frame_id=None, ros_time=None, **_
+        cls, output: np.ndarray, **_
     ) -> ROSPoseStamped:
         """ROS message converter function for datatype Point.
 
@@ -532,12 +521,6 @@ class PoseStamped(SupportedType):
         :rtype: ROSPoseStamped
         """
         msg = ROSPoseStamped()
-        msg_header = Header()
-        if frame_id:
-            msg_header.frame_id = frame_id
-        if ros_time:
-            msg_header.stamp = ros_time
-        msg.header = msg_header
         if output.shape[0] < 3:
             raise ValueError(
                 f"Cannot convert given value '{output}' to a ROS PoseStamped message"

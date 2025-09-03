@@ -1,7 +1,6 @@
 """Event"""
 
 import json
-import threading
 import time
 import logging
 from abc import abstractmethod
@@ -14,30 +13,6 @@ import numpy as np
 from ..io.topic import Topic
 from .action import Action
 from ..utils import SomeEntitiesType
-
-
-class Timer:
-    """Class to start a timer in a new thread and raise a done flag when timer is done"""
-
-    def __init__(self, duration: float):
-        """Init timer with durations (seconds)
-
-        :param duration: Timer duration (sec)
-        :type duration: float
-        """
-        self._duration = duration
-        self.done: bool = False
-
-    def start(self):
-        """Start the timer"""
-        self.done = False
-        timer_thread = threading.Thread(target=self._run)
-        timer_thread.start()
-
-    def _run(self):
-        """Sets done to true after timer duration expires"""
-        time.sleep(self._duration)
-        self.done = True
 
 
 def _access_attribute(obj: Any, nested_attributes: List[str]):
@@ -353,6 +328,8 @@ class Event:
         :raises TypeError: If the provided nested_attributes cannot be accessed in the Topic message type
         """
         self.__name = event_name
+        self._handle_once: bool = handle_once
+        self._keep_event_delay: float = keep_event_delay
         # Init the event from the json values
         if isinstance(event_source, str):
             self.json = event_source
@@ -398,10 +375,7 @@ class Event:
 
         self.__under_processing = False
 
-        self._handle_once: bool = handle_once
         self._processed_once: bool = False
-
-        self._keep_event_delay: float = keep_event_delay
 
     @property
     def under_processing(self) -> bool:
@@ -410,8 +384,6 @@ class Event:
         :return: Event under processing flag
         :rtype: bool
         """
-        if hasattr(self, "_delay_timer"):
-            return not self._delay_timer.done
         return self.__under_processing
 
     @under_processing.setter
@@ -550,12 +522,11 @@ class Event:
         if self.trigger and not self.under_processing:
             self.under_processing = True
             self._call_on_trigger(msg=msg, trigger=self._event_value)
-            self.under_processing = False
             self._processed_once = True
             # If a delay is provided start a timer and set the event under_processing flag to False only when the delay expires
             if self._keep_event_delay:
-                self._delay_timer = Timer(duration=self._keep_event_delay)
-                self._delay_timer.start()
+                time.sleep(self._keep_event_delay)
+            self.under_processing = False
 
     def register_method(self, method_name: str, method: Callable[..., Any]) -> None:
         """
