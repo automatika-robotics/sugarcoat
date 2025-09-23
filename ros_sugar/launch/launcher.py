@@ -45,6 +45,7 @@ from ..core.action import Action
 from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
+from ..core.ui_node import UINode
 from .launch_actions import ComponentLaunchAction
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
 
@@ -85,6 +86,7 @@ class Launcher:
         config_file: Optional[str] = None,
         enable_monitoring: bool = True,
         activation_timeout: Optional[float] = None,
+        enable_ui: bool = False,
     ) -> None:
         """Initialize launcher to manager components launch in ROS2
 
@@ -96,6 +98,8 @@ class Launcher:
         :type enable_monitoring: bool, optional
         :param activation_timeout: Timeout (seconds) for waiting on ROS2 nodes to come up for activation, defaults to None
         :type activation_timeout: float, optional
+        :param enable_client: If True, launches a separate client executable, defaults to False
+        :type enable_client: bool, optional
         """
         # Make sure RCLPY in initialized
         if not rclpy.ok():
@@ -110,6 +114,7 @@ class Launcher:
         self._config_file: Optional[str] = config_file
         self.__enable_monitoring: bool = enable_monitoring
         self._launch_group = []
+        self._enable_ui = enable_ui
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
@@ -473,7 +478,7 @@ class Launcher:
             component=comp,
         )
 
-    def _setup_internal_events_handlers(self, nodes_in_processes: bool = True) -> None:
+    def _setup_internal_events_handlers(self) -> None:
         """Sets up the launch handlers for all internal events.
 
         :param nodes_in_processes:
@@ -600,7 +605,33 @@ class Launcher:
         )
         self._description.add_action(exit_all_event_handler)
 
-        self._setup_internal_events_handlers(nodes_in_processes)
+        self._setup_internal_events_handlers()
+
+    def _setup_ui_node(self) -> None:
+        """Adds a node to communicate between launched components and web client
+
+        :param nodes_in_processes: If nodes are being launched in separate processes, defaults to True
+        :type nodes_in_processes: bool, optional
+        """
+        logger.info("UI enabled. Setting up ui node.")
+
+        # Setup the client node
+        component_configs = {comp.node_name: comp.config for comp in self._components}
+
+        ui_node = UINode(component_configs)
+        arguments = ui_node.launch_cmd_args + ["--ros-args", "--log-level", "debug"]
+
+        ui_node = NodeLaunchAction(
+            package="automatika_ros_sugar",
+            exec_name="web_client_node",
+            namespace=self._namespace,
+            name="web_client_node",
+            executable="web_client_node",
+            output="screen",
+            arguments=arguments,
+        )
+
+        self._launch_group.append(ui_node)
 
     def __listen_for_external_processing(self, sock: socket.socket, func: Callable):
         # Block to accept connections
@@ -838,6 +869,10 @@ class Launcher:
                 self._setup_component_in_process(component, pkg_name, executable_name)
             else:
                 self._setup_component_in_thread(component)
+
+        # Create UI node if enabled
+        if self._enable_ui:
+            self._setup_ui_node()
 
         group_action = GroupAction(self._launch_group)
 
