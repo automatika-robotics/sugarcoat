@@ -521,12 +521,8 @@ class Launcher:
             )
             self._description.add_action(internal_events_handler)
 
-    def _setup_monitor_node(self, nodes_in_processes: bool = True) -> None:
-        """Adds a node to monitor all the launched components and their events
-
-        :param nodes_in_processes: If nodes are being launched in separate processes, defaults to True
-        :type nodes_in_processes: bool, optional
-        """
+    def _setup_monitor_node(self) -> None:
+        """Adds a node to monitor all the launched components and their events"""
         # Update internal events
         if self._internal_events:
             self._internal_event_names = [ev.name for ev in self._internal_events]
@@ -618,15 +614,17 @@ class Launcher:
         # Setup the client node
         component_configs = {comp.node_name: comp.config for comp in self._components}
 
-        ui_node = UINode(component_configs)
-        arguments = ui_node.launch_cmd_args + ["--ros-args", "--log-level", "debug"]
+        ui_node = UINode(component_configs=component_configs)
+        ui_node._update_cmd_args_list()
+        self.__component_names_to_activate_on_start_mp.append(ui_node.node_name)
+        arguments = ui_node.launch_cmd_args + ["--ros-args", "--log-level", "info"]
 
-        ui_node = NodeLaunchAction(
+        ui_node = LifecycleNodeLaunchAction(
             package="automatika_ros_sugar",
-            exec_name="web_client_node",
+            exec_name=ui_node.node_name,
             namespace=self._namespace,
-            name="web_client_node",
-            executable="web_client_node",
+            name=ui_node.node_name,
+            executable="ui_node_executable",
             output="screen",
             arguments=arguments,
         )
@@ -857,6 +855,10 @@ class Launcher:
         except ImportError:
             pass
 
+        # Create UI node if enabled
+        if self._enable_ui:
+            self._setup_ui_node()
+
         self._setup_monitor_node()
 
         for component in self._components:
@@ -869,10 +871,6 @@ class Launcher:
                 self._setup_component_in_process(component, pkg_name, executable_name)
             else:
                 self._setup_component_in_thread(component)
-
-        # Create UI node if enabled
-        if self._enable_ui:
-            self._setup_ui_node()
 
         group_action = GroupAction(self._launch_group)
 

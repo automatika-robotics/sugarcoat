@@ -55,7 +55,7 @@ DESTINATION lib/${PROJECT_NAME}
 
 # Backend UI node executable
 install(PROGRAMS
-scripts/create_service
+scripts/ui_node_executable
 DESTINATION lib/${PROJECT_NAME}
 )
 
