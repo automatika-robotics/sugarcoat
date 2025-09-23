@@ -385,7 +385,7 @@ class OccupancyGrid(SupportedType):
     @classmethod
     def convert(
         cls,
-        output: np.ndarray,
+        output: Union[np.ndarray, ROSOccupancyGrid],
         resolution: float,
         origin: Optional[ROSPose] = None,
         **_,
@@ -397,6 +397,9 @@ class OccupancyGrid(SupportedType):
         :param _:
         :rtype: ROSOccupancyGrid
         """
+        if isinstance(output, ROSOccupancyGrid):
+            return output
+
         if not len(output.shape) == 2:
             raise TypeError("OccupancyGrid data must be a 2D array")
 
