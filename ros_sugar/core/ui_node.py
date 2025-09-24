@@ -10,7 +10,13 @@ class UINodeConfig(BaseComponentConfig):
 
 
 class UINode(BaseComponent):
-    def __init__(self, component_name : str = "ui_node" , component_configs: Optional[Dict[str, BaseComponentConfig]] = None, config : Optional[UINodeConfig] = None, **kwargs):
+    def __init__(
+        self,
+        component_name: str = "ui_node",
+        component_configs: Optional[Dict[str, BaseComponentConfig]] = None,
+        config: Optional[UINodeConfig] = None,
+        **kwargs,
+    ):
         logging.info(f"Starting UI Node with components: {component_configs}")
         config = config or UINodeConfig()
         if component_configs:
