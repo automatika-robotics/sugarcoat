@@ -1,12 +1,12 @@
 from typing import Dict, Optional
-import logging
 import os
-from attr import field, Factory
+from attr import define, field, Factory
 from .component import BaseComponent, BaseComponentConfig
 
 
+@define
 class UINodeConfig(BaseComponentConfig):
-    components: Dict[str, BaseComponentConfig] = field(default=Factory(Dict))
+    components: Dict[str, Dict] = field(default=Factory(dict))
 
 
 class UINode(BaseComponent):
@@ -17,10 +17,18 @@ class UINode(BaseComponent):
         config: Optional[UINodeConfig] = None,
         **kwargs,
     ):
-        logging.info(f"Starting UI Node with components: {component_configs}")
         config = config or UINodeConfig()
         if component_configs:
-            config.components = component_configs
+            comp_configs_fields = {
+                comp_name: conf.get_fields_info()
+                for comp_name, conf in component_configs.items()
+            }
+            for comp_name in comp_configs_fields:
+                for field in comp_configs_fields[comp_name]:
+                    comp_configs_fields[comp_name][field]["value"] = getattr(
+                        component_configs[comp_name], field, None
+                    )
+            config.components = comp_configs_fields
 
         super().__init__(
             component_name=f"{component_name}_{os.getpid()}", config=config, **kwargs
@@ -30,4 +38,4 @@ class UINode(BaseComponent):
         """
         Main execution of the component, executed at each timer tick with rate 'loop_rate' from config
         """
-        logging.info("UI Node execution step")
+        pass
