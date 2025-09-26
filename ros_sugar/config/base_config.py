@@ -1,7 +1,8 @@
 """Config Classes for Components and Topics"""
 
 from enum import Enum
-from typing import Union, Optional
+from typing import Union, Optional, Dict, Any
+import functools
 
 from attrs import define, field
 from rclpy import qos
@@ -12,6 +13,17 @@ from . import base_validators
 from .base_attrs import BaseAttrs
 
 __all__ = ["QoSConfig", "BaseComponentConfig", "BaseConfig", "ComponentRunType"]
+
+
+# mapping base_validator function names to ui friendly operation names
+FUNC_NAME_MAP = {
+    "__gt": "greater_than",
+    "__lt": "less_than",
+    "__in_": "in",
+    "__list_contained_in": "list_contained_in",
+    "__in_range_validator": "in_range",
+    "__in_range_discretized_validator": "in_range_discretized",
+}
 
 
 def _get_enum_value(enm_val):
@@ -298,3 +310,77 @@ class BaseComponentConfig(BaseConfig):
         default=6000.0,
         validator=base_validators.in_range(min_value=10.0, max_value=1e9),
     )  # Component wait time for node to come back online after restart (used to avoid infinite loops). Recommended to use a high value
+
+    @staticmethod
+    def _parse_validator(validator: object) -> Dict[str, Optional[Any]]:
+        """
+        Introspects an attrs validator object to extract its parameters.
+
+        :param validator: The validator object to parse.
+        :return: A dictionary with the validator's name and parameters.
+        """
+        validator_name = validator.__class__.__name__
+
+        # Handle attrs built-in range validators (gt, ge, lt, le)
+        if hasattr(validator, "bound"):
+            op_name = {
+                "_GreaterThenValidator": "greater_than",
+                "_GreaterEqualValidator": "greater_or_equal",
+                "_LessThenValidator": "less_than",
+                "_LessEqualValidator": "less_or_equal",
+            }.get(validator_name, "bound")
+            return {op_name: validator.bound}
+
+        # Handle functions of base_validators
+        if isinstance(validator, functools.partial):
+            func = validator.func
+            func_name = func.__name__
+            # ensure function is from base_validator
+            if hasattr(base_validators, func_name):
+                # map name to standard name
+                op_name = FUNC_NAME_MAP.get(func_name, func_name)
+                # collect bounds/parameters
+                bounds = {}
+                # keyword args in partial
+                bounds.update(validator.keywords or {})
+                return {op_name: bounds}
+
+        # Fallback for unknown validators
+        return {"unknown": "unknown"}
+
+    @classmethod
+    def get_fields_info(cls) -> Dict[str, Dict[str, Any]]:
+        """
+        Returns a dictionary with metadata about each field in the class.
+
+        This includes the field's name, type annotation, and parsed validator info.
+
+        :return: A dictionary where keys are field names and values are dicts
+                 of metadata.
+        """
+        fields_info = {}
+        # Iterate over all attributes defined by attrs
+        for attr_field in cls.__attrs_attrs__:
+            if (
+                attr_field in BaseComponentConfig.__attrs_attrs__
+                or attr_field.name.startswith("_")
+            ):
+                continue
+            validators_list = []
+            # Check if a validator exists for the field
+            if attr_field.validator:
+                # A validator can be a single callable or a list/tuple of them
+                # if they are wrapped in attrs.validators.and_()
+                # Check for composite validators (like and_())
+                if hasattr(attr_field.validator, "validators"):
+                    for v in attr_field.validator.validators:
+                        validators_list.append(cls._parse_validator(v))
+
+                else:  # It's a single validator
+                    validators_list.append(cls._parse_validator(attr_field.validator))
+
+            fields_info[attr_field.name] = {
+                "type": attr_field.type,
+                "validators": validators_list,
+            }
+        return fields_info
