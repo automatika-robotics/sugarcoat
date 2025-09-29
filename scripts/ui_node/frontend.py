@@ -20,6 +20,7 @@ class FHApp:
             logging.warning("No component configs provided to the UI")
 
         # Create settings UI
+        self.configs = configs
         self.settings = self._create_settings_ui(configs)
 
     def get_app(self):
@@ -120,7 +121,7 @@ class FHApp:
         """Creates a Div for component settings from a dictionary."""
         main_container = Div()
 
-        all_component_divs = []
+        all_component_forms = []
         for component_name, component_settings in settings.items():
             component_div = Div("settings", cl="p-4 border rounded-lg my-4")
             settings_grid = Div(cls="grid grid-cols-2 gap-4")
@@ -131,11 +132,19 @@ class FHApp:
             settings_grid(*ui_elements)
 
             component_div(
-                H3(component_name, cls="text-xl font-bold mb-2"), settings_grid
+                H3(component_name, cls="text-xl font-bold mb-2"),
+                Form(
+                    Input(name="component_name", type="hidden", value=component_name),
+                    settings_grid,
+                    Button("Submit", hx_post="/settings/submit", hx_target="#main"),
+                    # ws_send=True,
+                    # hx_ext="ws",
+                    # ws_connect="/ws_settings",
+                    id=component_name
+                ),
             )
-            all_component_divs.append(component_div)
-        main_container(*all_component_divs)
-
+            all_component_forms.append(component_div)
+        main_container(*all_component_forms)
         return main_container
 
     def _get_current_time(self):
@@ -149,7 +158,7 @@ class FHApp:
 
     async def on_conn(self, send):
         """When a client connects, register its callback."""
-        pass
+        logging.info("I am CONNECTING BITCHES")
 
     # -- UI elements --
     def ChatMessage(self, text, msg_class, label, timestamp):
@@ -178,18 +187,17 @@ class FHApp:
         return Div(message, cl=msg_class)
 
     def get_settings(self):
+        """Get components settings"""
         return self.settings
 
+    def update_settings(self):
+        """Update components settings"""
+        pass
+
     def get_main_page(self):
-        # The audio recording script remains, as it requires browser APIs.
+        """Serves the main page of the UI"""
         return Titled(
             "EMOS WebView",
-            Div(
-                Div(id="notifications"),
-                Form(Input(id="msg", placeholder="Something"), id="form", ws_send=True),
-                hx_ext="ws",
-                ws_connect="/ws",
-            ),
             Div(
                 Button(
                     "Settings",
@@ -200,4 +208,6 @@ class FHApp:
                 ),
                 id="modal-container",
             ),
+            Div(id="result"),
+            id="main",
         )
