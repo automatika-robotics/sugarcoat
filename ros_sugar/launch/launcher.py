@@ -39,6 +39,7 @@ from rclpy import logging
 from rclpy.lifecycle.managed_entity import ManagedEntity
 
 from . import logger
+from ..io import Topic
 from ..core.action import LogInfo
 from ..config.base_config import ComponentRunType
 from ..core.action import Action
@@ -87,6 +88,8 @@ class Launcher:
         enable_monitoring: bool = True,
         activation_timeout: Optional[float] = None,
         enable_ui: bool = False,
+        ui_input_topics: Optional[List[Topic]] = None,
+        ui_output_topics: Optional[List[Topic]] = None,
     ) -> None:
         """Initialize launcher to manager components launch in ROS2
 
@@ -115,6 +118,8 @@ class Launcher:
         self.__enable_monitoring: bool = enable_monitoring
         self._launch_group = []
         self._enable_ui = enable_ui
+        self._ui_input_topics = ui_input_topics
+        self._ui_output_topics = ui_output_topics
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
@@ -614,7 +619,11 @@ class Launcher:
         # Setup the client node
         component_configs = {comp.node_name: comp.config for comp in self._components}
 
-        ui_node = UINode(component_configs=component_configs)
+        ui_node = UINode(
+            inputs=self._ui_input_topics,
+            outputs=self._ui_output_topics,
+            component_configs=component_configs,
+        )
         ui_node._update_cmd_args_list()
         self.__component_names_to_activate_on_start_mp.append(ui_node.node_name)
         arguments = ui_node.launch_cmd_args + ["--ros-args", "--log-level", "info"]
