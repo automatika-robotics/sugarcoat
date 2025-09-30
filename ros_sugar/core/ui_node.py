@@ -12,7 +12,7 @@ from automatika_ros_sugar.srv import ChangeParameters
 @define
 class UINodeConfig(BaseComponentConfig):
     inputs: Dict[str, SupportedType] = field(default=Factory(dict))
-    ouputs: Dict[str, SupportedType] = field(default=Factory(dict))
+    outputs: Dict[str, SupportedType] = field(default=Factory(dict))
     components: Dict[str, Dict] = field(default=Factory(dict))
 
 
