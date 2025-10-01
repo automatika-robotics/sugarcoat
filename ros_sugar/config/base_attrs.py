@@ -8,8 +8,12 @@ from typing import (
     get_args,
     List,
     get_origin,
+    Literal,
+    Type,
     _GenericAlias,
 )
+import functools
+import logging
 from copy import deepcopy
 import numpy as np
 from attrs import asdict, define, fields_dict
@@ -17,6 +21,18 @@ from attrs import Attribute
 import yaml
 import toml
 import os
+import enum
+from . import base_validators
+
+# mapping base_validator function names to ui friendly operation names
+FUNC_NAME_MAP = {
+    "__gt": "greater_than",
+    "__lt": "less_than",
+    "__in_": "in",
+    "__list_contained_in": "list_contained_in",
+    "__in_range_validator": "in_range",
+    "__in_range_discretized_validator": "in_range_discretized",
+}
 
 
 def skip_no_init(a: Attribute, _) -> bool:
@@ -426,3 +442,106 @@ class BaseAttrs:
             )
         setattr(obj_class, name_to_set, attr_value)
         return True
+
+    @staticmethod
+    def _parse_validator(validator: object) -> Dict[str, Optional[Any]]:
+        """
+        Introspects an attrs validator object to extract its parameters.
+
+        :param validator: The validator object to parse.
+        :return: A dictionary with the validator's name and parameters.
+        """
+        validator_name = validator.__class__.__name__
+
+        # Handle attrs built-in range validators (gt, ge, lt, le)
+        if hasattr(validator, "bound"):
+            op_name = {
+                "_GreaterThenValidator": "greater_than",
+                "_GreaterEqualValidator": "greater_or_equal",
+                "_LessThenValidator": "less_than",
+                "_LessEqualValidator": "less_or_equal",
+            }.get(validator_name, "bound")
+            return {op_name: validator.bound}
+
+        # Handle functions of base_validators
+        if isinstance(validator, functools.partial):
+            func = validator.func
+            func_name = func.__name__
+            # ensure function is from base_validator
+            if hasattr(base_validators, func_name):
+                # map name to standard name
+                op_name = FUNC_NAME_MAP.get(func_name, func_name)
+                # collect bounds/parameters
+                bounds = {}
+                # keyword args in partial
+                bounds.update(validator.keywords or {})
+                return {op_name: bounds}
+
+        # Fallback for unknown validators
+        return {"unknown": "unknown"}
+
+    def get_fields_info(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Returns a dictionary with metadata about each field in the class.
+
+        This includes the field's name, type annotation, and parsed validator info.
+
+        :return: A dictionary where keys are field names and values are dicts
+                 of metadata.
+        """
+        fields_info = {}
+        # Iterate over all attributes defined by attrs
+        for attr_field in self.__attrs_attrs__:
+            logging.info(f"Looping got {attr_field.name}, {attr_field.type}")
+            if (
+                attr_field.name.startswith("_")
+            ):
+                continue
+            validators_list = []
+            # Check if a validator exists for the field
+            if attr_field.validator:
+                # A validator can be a single callable or a list/tuple of them
+                # if they are wrapped in attrs.validators.and_()
+                # Check for composite validators (like and_())
+                if hasattr(attr_field.validator, "validators"):
+                    for v in attr_field.validator.validators:
+                        validators_list.append(self._parse_validator(v))
+
+                else:  # It's a single validator
+                    validators_list.append(self._parse_validator(attr_field.validator))
+            parsed_type = attr_field.type
+            # Check and handle Union/Optional types:
+            if self.__is_union_type(attr_field.type):
+                args = get_args(attr_field.type)
+                # Execlude simple optional types
+                if len(args) == 2 and type(None) in args:
+                    logging.info("Got optional")
+                    continue
+                logging.info("Got Union type")
+                parsed_type = []
+                # Parse Enum to Literal
+                parsed_enum = None
+                for val_type in args:
+                    if not issubclass(val_type, enum.Enum):
+                        parsed_type.append(val_type)
+                    else:
+                        parsed_enum = Literal[*(member.value for member in val_type)]
+                # If an enum is parsed pass only the literal type
+                parsed_type = parsed_enum or parsed_type
+
+            if type(attr_field.type) is type and issubclass(attr_field.type, BaseAttrs):
+                val : BaseAttrs = getattr(self, attr_field.name)
+                logging.info(f"Setting up Nested for  {attr_field.name}")
+                fields_info[attr_field.name] = {
+                    "type": "BaseAttrs",
+                    "validators": [],
+                    "value": val.get_fields_info(),
+                }
+                return fields_info
+
+            fields_info[attr_field.name] = {
+                "type": parsed_type,
+                "validators": validators_list,
+                "value": getattr(self, attr_field.name),
+            }
+        return fields_info

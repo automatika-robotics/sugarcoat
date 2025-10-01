@@ -34,12 +34,6 @@ class UINode(BaseComponent):
                 comp_name: conf.get_fields_info()
                 for comp_name, conf in component_configs.items()
             }
-            # get passed values from config and replace them in UI configs
-            for comp_name in comp_configs_fields:
-                for field in comp_configs_fields[comp_name]:
-                    comp_configs_fields[comp_name][field]["value"] = getattr(
-                        component_configs[comp_name], field, None
-                    )
             config.components = comp_configs_fields
 
         # clients for config update
