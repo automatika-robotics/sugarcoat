@@ -149,7 +149,7 @@ class BaseComponent(lifecycle.Node):
         self.__fallbacks = fallbacks
         self.__fallbacks_giveup: bool = False
 
-        if self.config.use_without_launcher:
+        if self.config._use_without_launcher:
             # Create default services for changing config/inputs/outputs during runtime
             self._create_default_services()
 
@@ -174,7 +174,7 @@ class BaseComponent(lifecycle.Node):
         self._main_goal_lock = threading.Lock()
 
         # To use without launcher -> Init the ROS2 node directly
-        if self.config.use_without_launcher:
+        if self.config._use_without_launcher:
             self.rclpy_init_node(component_name, **kwargs)
 
     def rclpy_init_node(self, *args, **kwargs):
@@ -418,6 +418,9 @@ class BaseComponent(lifecycle.Node):
         """
         Create required subscriptions, publications, timers, ... etc. to activate the node
         """
+        # Init any global node variables
+        self.init_variables()
+
         self.create_all_subscribers()
 
         self.create_all_publishers()
@@ -463,9 +466,6 @@ class BaseComponent(lifecycle.Node):
         config_file = config_file or self._config_file
         if config_file:
             self.config_from_file(config_file)
-
-        # Init any global node variables
-        self.init_variables()
 
     # CREATION AND DESTRUCTION METHODS
     def init_variables(self):
@@ -1470,6 +1470,8 @@ class BaseComponent(lifecycle.Node):
             self._maintain_default_services = True
             # Stop the component
             self.stop()
+            self.trigger_cleanup()
+            self.trigger_configure()
 
         error_msg = self._update_config_param_from_str_value(
             param_name, param_str_value
@@ -1518,6 +1520,8 @@ class BaseComponent(lifecycle.Node):
             self._maintain_default_services = True
             # Stop the component
             self.stop()
+            self.trigger_cleanup()
+            self.trigger_configure()
 
         response.success = []
         response.error_msg = []
@@ -1924,13 +1928,12 @@ class BaseComponent(lifecycle.Node):
         """
         self.get_logger().warn("Reconfiguring component...")
 
-        # set new config as params attr
-        if isinstance(new_config, str):
-            self.configure(config_file=new_config)
-        elif isinstance(new_config, self.config.__class__):
-            self.config = new_config
-
         if keep_alive:
+            # set new config as params attr
+            if isinstance(new_config, str):
+                self.configure(config_file=new_config)
+            elif isinstance(new_config, self.config.__class__):
+                self.config = new_config
             return True
 
         initial_state = self.lifecycle_state
@@ -1949,6 +1952,12 @@ class BaseComponent(lifecycle.Node):
                 "Waiting for ongoing transition to end before executing new transition",
                 once=True,
             )
+
+        # set new config as params attr
+        if isinstance(new_config, str):
+            self._config_file = new_config
+        elif isinstance(new_config, self.config.__class__):
+            self.config = new_config
 
         # configure and go to configure (or active if the component was already active)
         self.trigger_configure()
