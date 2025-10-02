@@ -86,30 +86,7 @@ def main():
                     ),
                 )
             if data["type"] == "Image" or data["type"] == "CompressedImage":
-                try:
-                    # Encode image as JPEG
-                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-                    result, buffer = cv2.imencode(
-                        ".jpg", data["payload"], encode_param
-                    )
-                    if not result:
-                        logging.error("Failed to encode image to JPEG format.")
-                        await send(
-                            elements.update_logging_card(
-                                fh.outputs_log,
-                                "Failed to encode image to JPEG format",
-                                txt_type="error",
-                            ),
-                        )
-
-                    # Convert to base64
-                    jpg_as_text = base64.b64encode(buffer).decode("utf-8")
-                    logging.info("Received image")
-                    # TODO: Display image here
-                    await send(elements.make_image(jpg_as_text))
-
-                except Exception as e:
-                    logging.error(f"Failed to encode image frame: {e}")
+                await send(elements.make_image(data["payload"]))
 
             if data["type"] == "error":
                 await send(

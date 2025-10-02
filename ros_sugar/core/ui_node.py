@@ -2,11 +2,12 @@ from typing import Dict, Optional, Sequence, Any, Callable
 import threading
 import asyncio
 import os
+import base64
+import cv2
 from attr import define, field, Factory
 from .component import BaseComponent, BaseComponentConfig
 from .. import base_clients
 from ..io.topic import Topic
-from ..io.supported_types import Image, CompressedImage
 from automatika_ros_sugar.srv import ChangeParameters
 
 
@@ -86,7 +87,32 @@ class UINode(BaseComponent):
         self.websocket_callback = websocket_callback
 
         def _topic_callback(*, topic, output, **_):
-            payload = {"type": topic.msg_type.__name__, "payload": output}
+            topic_type = topic.msg_type.__name__
+            if topic_type in ["Image", "CompressedImage"]:
+                try:
+                    # Encode image as JPEG
+                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+                    result, buffer = cv2.imencode(".jpg", output, encode_param)
+                    if not result:
+                        self.get_logger().error(
+                            "Failed to encode image to JPEG format."
+                        )
+                        payload = {
+                            "type": "error",
+                            "payload": "Failed to encode image to JPEG format",
+                        }
+                    else:
+                        # Convert to base64
+                        jpg_as_text = base64.b64encode(buffer).decode("utf-8")
+                        payload = {"type": topic_type, "payload": jpg_as_text}
+                except Exception:
+                    payload = {
+                        "type": "error",
+                        "payload": "Failed to encode image to JPEG format",
+                    }
+
+            else:
+                payload = {"type": topic_type, "payload": output}
             asyncio.run_coroutine_threadsafe(
                 self.websocket_callback(payload), self.loop
             )
