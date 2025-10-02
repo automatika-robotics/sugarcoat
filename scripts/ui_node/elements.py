@@ -1,4 +1,7 @@
 from typing import List, Dict, Any
+
+from ros_sugar.io.supported_types import String
+
 try:
     from fasthtml.common import *
     from monsterui.all import *
@@ -9,15 +12,39 @@ except ModuleNotFoundError as e:
     ) from e
 
 
-def nonvalidated_input(setting_name: str, value: Any, field_type: str, type_args):
+def input_topic_card(topic_name: str, topic_type: type):
+    if topic_type is String:
+        return Input(name=topic_name, placeholder="String data...", type="text")
+
+
+def _styled_logging_text(text: str):
+    return (DivLAligned(f"> {text}", cls="whitespace-pre-wrap ml-2 p-2"))
+
+
+def create_logging_card():
+    output_card = Card(
+        cls="overflow-y-auto h-96",
+        id="outputs-log",
+        header=CardTitle("Log"),
+    )
+    return output_card(_styled_logging_text("Starting log..."))
+
+
+def update_logging_card(logging_card, new_text: str):
+    """Update logging card"""
+    return logging_card(
+            _styled_logging_text(new_text),
+            id="outputs-log"
+    )
+
+
+def nonvalidated_config(setting_name: str, value: Any, field_type: str, type_args):
     if field_type == "bool":
         # The 'checked' attribute is a boolean flag, so it doesn't need a value
         return LabelSwitch(label=setting_name, id=setting_name, checked=bool(value))
 
     elif field_type in ["str", "unknown"]:
-        return LabelInput(
-            label=setting_name, id=setting_name, type="text", value=value
-        )
+        return LabelInput(label=setting_name, id=setting_name, type="text", value=value)
 
     elif field_type in ["int", "float"]:
         return LabelInput(
@@ -26,10 +53,7 @@ def nonvalidated_input(setting_name: str, value: Any, field_type: str, type_args
 
     elif field_type == "literal":
         return LabelSelect(
-            map(Option, type_args),
-            id=setting_name,
-            label=setting_name,
-            value=value
+            map(Option, type_args), id=setting_name, label=setting_name, value=value
         )
 
     # TODO: handle BaseAttrs
@@ -47,7 +71,7 @@ def nonvalidated_input(setting_name: str, value: Any, field_type: str, type_args
     )
 
 
-def validated_input(setting_name: str, value: Any, attrs_validators: List[Dict]):
+def validated_config(setting_name: str, value: Any, attrs_validators: List[Dict]):
     validator = attrs_validators[0]
     validator_name = list(validator.keys())[0]
     validator_props = validator[validator_name]

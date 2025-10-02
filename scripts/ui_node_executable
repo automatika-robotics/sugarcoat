@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-import threading
-import argparse
-import json
+from typing import Dict
 import logging
+import threading
+import base64
+import cv2
+import uvicorn
 from ros_sugar.core.ui_node import UINode, UINodeConfig
 from ros_sugar.launch.executable import setup_component, run_component
 
-import uvicorn
 from ui_node.frontend import FHApp
+import ui_node.elements as elements
 
 
 def main():
@@ -18,22 +20,19 @@ def main():
     logging.info("Starting UI Node executable")
 
     logging.info("Setting up UI node with component configs in UI Node")
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config",
-        type=json.loads,
-        required=True,
-    )
-    args, _ = parser.parse_known_args()
-    component_configs = args.config.get("components", {})
-
-    fh = FHApp(component_configs)
-    app, _ = fh.get_app()
 
     # Start UI helper ROS node in a separate thread
     ros_node: UINode = setup_component(
         list_of_components=[UINode], list_of_configs=[UINodeConfig]
-        )  # type: ignore
+    )  # type: ignore
+
+    component_configs = ros_node.config.components
+
+    fh = FHApp(
+        component_configs, ros_node.out_topics, ros_node.in_topics
+    )  # inputs and outputs are reversed
+    app, _ = fh.get_app()
+
     ros_thread = threading.Thread(
         target=run_component,
         args=[ros_node],
@@ -48,22 +47,79 @@ def main():
         return fh.get_main_page()
 
     @app.get("/settings/show")
-    def settings_show():
+    def settings_show(session):
+        fh.toasting("somemsg", session)
         return fh.get_settings()
 
     @app.post("/settings/submit")
     async def settings_submit(request):
+        # update config
+        # update UI
         form_data = await request.form()
         result = ros_node.update_configs(dict(form_data.items()))
         success = all(result.success)
         if not success:
             errors = [e for e in result.error_msg if e]
-        # fh.update_settings()
         return fh.get_main_page()
 
-    @app.ws("/ws_settings", conn=fh.on_conn, disconn=fh.on_disconn)
-    async def ws_settings(data: dict, send):
+    # -- WS handling --
+    async def on_disconn(self, send):
+        """When a client disconnects, unregister its callback."""
+        pass
+
+    async def on_conn(self, send):
+        """When a client connects, register its callback."""
+        logging.info("CONNECTING Websocket...")
+
+        # Callback function for ROS node
+        async def websocket_callback(data: Dict):
+            # Recieve json style data from node and pass to UI with send
+            if data["type"] == "String":
+                await send(
+                    elements.update_logging_card(
+                        fh.outputs_log, f"Robot: {data['payload']}"
+                    ),
+                )
+            if data["type"] == "Image" or data["type"] == "CompressedImage":
+                try:
+                    # Encode image as JPEG
+                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+                    result, buffer = cv2.imencode(".jpg", data["payload"], encode_param)
+                    if not result:
+                        logging.error("Failed to encode image to JPEG format.")
+                        await send(
+                            elements.update_logging_card(
+                                fh.outputs_log,
+                                "Error: Failed to encode image to JPEG format",
+                            ),
+                        )
+
+                    # Convert to base64
+                    jpg_as_text = base64.b64encode(buffer).decode("utf-8")
+                    logging.info("Received image")
+                    # TODO: Display image here
+
+                except Exception as e:
+                    self.get_logger().error(f"Failed to encode image frame: {e}")
+
+            if data["type"] == "error":
+                await send(
+                    elements.update_logging_card(
+                        fh.outputs_log, f"Error: {data['payload']}"
+                    ),
+                )
+
+        ros_node.attach_websocket_callback(websocket_callback)
+
+    @app.ws("/ws", conn=on_conn, disconn=on_disconn)
+    async def ws(data, send):
+        """WS route for input/output communication with ROS UI Node"""
+
         logging.info(f"Data: {data}")
+        for key, val in data.items():
+            if isinstance(val, str):
+                ros_node.publish_data(topic_name=key, data=val)
+                return elements.update_logging_card(fh.outputs_log, f"User: {val}")
 
     uvicorn.run(app, host="0.0.0.0", port=5001)
 

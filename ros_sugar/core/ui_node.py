@@ -1,18 +1,16 @@
 from typing import Dict, Optional, Sequence, Any, Callable
+import threading
 import asyncio
 import os
 from attr import define, field, Factory
 from .component import BaseComponent, BaseComponentConfig
 from .. import base_clients
 from ..io.topic import Topic
-from ..io.supported_types import SupportedType
 from automatika_ros_sugar.srv import ChangeParameters
 
 
 @define
 class UINodeConfig(BaseComponentConfig):
-    inputs: Dict[str, SupportedType] = field(default=Factory(dict))
-    outputs: Dict[str, SupportedType] = field(default=Factory(dict))
     components: Dict[str, Dict] = field(default=Factory(dict))
 
 
@@ -41,20 +39,21 @@ class UINode(BaseComponent):
             str, base_clients.ServiceClientHandler
         ] = {}
 
-        config.inputs = (
-            {topic.name: topic.msg_type for topic in inputs} if inputs else {}
-        )
-        config.outputs = (
-            {topic.name: topic.msg_type for topic in outputs} if outputs else {}
-        )
-
         # Set websocket callback
-        self.websocket_callback: Callable = websocket_callback or (lambda _: asyncio.sleep(0))
+        self.websocket_callback: Callable = websocket_callback or (
+            lambda _: asyncio.sleep(0)
+        )
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
+            import logging
+
+            logging.info("Running loop here")
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
+            self.loop_thread = threading.Thread(
+                target=self.loop.run_forever, daemon=True
+            )
 
         super().__init__(
             component_name=f"{component_name}_{os.getpid()}",
@@ -67,8 +66,9 @@ class UINode(BaseComponent):
         self.config: UINodeConfig
 
     def custom_on_activate(self):
-        # Setup settings updater clients
+        """Custom activation configuration"""
 
+        # Setup settings updater clients
         if self.config.components:
             for component_name in self.config.components:
                 self._update_parameters_srv_client[component_name] = (
@@ -78,6 +78,23 @@ class UINode(BaseComponent):
                         srv_name=f"{component_name}/update_config_parameters",
                     )
                 )
+
+        # Start loop thread if necessary
+        if hasattr(self, "loop_thread"):
+            self.loop_thread.start()
+
+    def attach_websocket_callback(self, websocket_callback: Callable):
+        self.websocket_callback = websocket_callback
+
+        def _topic_callback(output, topic, **_):
+            payload = {"type": topic.msg_type.__name__, "payload": output}
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_callback(payload), self.loop
+            )
+
+        # Attach callback function
+        for callback in self.callbacks.values():
+            callback.on_callback_execute(_topic_callback)
 
     def update_configs(self, new_configs: Dict):
         self.get_logger().info("Updating configs")
@@ -98,16 +115,15 @@ class UINode(BaseComponent):
         """
         Publish data to input topics if any
         """
-        if self.config.inputs and topic_name in self.config.inputs:
-            if self.count_subscribers(topic_name) == 0:
-                error_msg = f'Error: No subscribers found for the topic "{self.audio_trigger}". Please check the topic name in settings.'
-                self.get_logger().error(error_msg)
-                payload = {"type": "error", "payload": error_msg}
-                asyncio.run_coroutine_threadsafe(
-                    self.websocket_callback(payload), self.loop
-                )
-                return
-            self.publishers_dict[topic_name].publish(output=data)
+        if self.count_subscribers(topic_name) == 0:
+            error_msg = f'Error: No subscribers found for the topic "{topic_name}". Please check the topic name in settings.'
+            self.get_logger().error(error_msg)
+            payload = {"type": "error", "payload": error_msg}
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_callback(payload), self.loop
+            )
+            return
+        self.publishers_dict[topic_name].publish(output=data)
 
     def _execution_step(self):
         """
