@@ -64,11 +64,11 @@ def main():
         return fh.get_main_page()
 
     # -- WS handling --
-    async def on_disconn(self, send):
+    async def on_disconn(session):
         """When a client disconnects, unregister its callback."""
-        pass
+        fh.toasting("Disconnected from the robot. Check if the recipe is running or refresh the page", session, toast_type="success")
 
-    async def on_conn(self, send):
+    async def on_conn(send):
         """When a client connects, register its callback."""
         logging.info("CONNECTING Websocket...")
 

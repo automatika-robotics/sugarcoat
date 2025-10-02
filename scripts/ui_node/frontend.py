@@ -43,8 +43,8 @@ class FHApp:
         return self.app, self.rt
 
     # -- Utility Functions --
-    def toasting(self, msg, session):
-        add_toast(session, f"{msg}", "success")
+    def toasting(self, msg, session, toast_type="info"):
+        add_toast(session, f"{msg}", toast_type)
         return self.get_main_page()
 
     def _create_ui_element(self, setting_name, setting_details):
