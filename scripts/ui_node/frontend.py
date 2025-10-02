@@ -45,7 +45,6 @@ class FHApp:
     # -- Utility Functions --
     def toasting(self, msg, session, toast_type="info"):
         add_toast(session, f"{msg}", toast_type)
-        return self.get_main_page()
 
     def _create_ui_element(self, setting_name, setting_details):
         """Creates a UI element based on the setting's type and validators."""
@@ -239,4 +238,5 @@ class FHApp:
                 id="main",
                 cls="pt-2 pb-2",
             ),
+            id="main",
         )
