@@ -47,6 +47,7 @@ class GenericCallback:
         self._frame_id: Optional[str] = None
 
         self._extra_callback: Optional[Callable] = None
+        self._get_processed: bool = True  # utilized only if extra callback is set
         self._subscriber: Optional[Subscription] = None
         self._post_processors: Optional[List[Union[Callable, socket]]] = None
 
@@ -76,13 +77,14 @@ class GenericCallback:
         """
         self._subscriber = subscriber
 
-    def on_callback_execute(self, callback: Callable) -> None:
+    def on_callback_execute(self, callback: Callable, get_processed=True) -> None:
         """Attach a method to be executed on topic callback
 
         :param callback:
         :type callback: Callable
         """
         self._extra_callback = callback
+        self._get_processed = get_processed
 
     def callback(self, msg) -> None:
         """
@@ -98,9 +100,13 @@ class GenericCallback:
             self._frame_id = msg.header.frame_id
 
         if self._extra_callback:
-            self._extra_callback(
-                msg=msg, topic=self.input_topic, output=self.get_output()
-            )
+            if self._get_processed:
+                self._extra_callback(
+                    msg=msg, topic=self.input_topic, output=self.get_output()
+                )
+            else:
+                # Get output would have to be called by the calling method
+                self._extra_callback(msg=msg, topic=self.input_topic)
 
     def add_post_processors(self, processors: List[Union[Callable, socket]]):
         """Add a post processor for callback message
