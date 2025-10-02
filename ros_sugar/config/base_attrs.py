@@ -525,7 +525,8 @@ class BaseAttrs:
                     if not issubclass(val_type, enum.Enum):
                         parsed_type.append(val_type)
                     else:
-                        parsed_enum = Literal[*(member.value for member in val_type)]
+                        values = [member.value for member in val_type]
+                        parsed_enum = f"Literal{values}"
                 # If an enum is parsed pass only the literal type
                 parsed_type = parsed_enum or parsed_type
 
