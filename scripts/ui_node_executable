@@ -4,6 +4,7 @@ import logging
 import threading
 import base64
 import cv2
+import numpy as np
 import uvicorn
 from ros_sugar.core.ui_node import UINode, UINodeConfig
 from ros_sugar.launch.executable import setup_component, run_component
@@ -84,7 +85,9 @@ def main():
                 try:
                     # Encode image as JPEG
                     encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-                    result, buffer = cv2.imencode(".jpg", data["payload"], encode_param)
+                    result, buffer = cv2.imencode(
+                        ".jpg", data["payload"], encode_param
+                    )
                     if not result:
                         logging.error("Failed to encode image to JPEG format.")
                         await send(

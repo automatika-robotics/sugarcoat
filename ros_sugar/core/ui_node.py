@@ -6,6 +6,7 @@ from attr import define, field, Factory
 from .component import BaseComponent, BaseComponentConfig
 from .. import base_clients
 from ..io.topic import Topic
+from ..io.supported_types import Image, CompressedImage
 from automatika_ros_sugar.srv import ChangeParameters
 
 
@@ -46,9 +47,6 @@ class UINode(BaseComponent):
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
-            import logging
-
-            logging.info("Running loop here")
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
             self.loop_thread = threading.Thread(
@@ -84,9 +82,10 @@ class UINode(BaseComponent):
             self.loop_thread.start()
 
     def attach_websocket_callback(self, websocket_callback: Callable):
+        """Adds websocket callback to listeners of outputs"""
         self.websocket_callback = websocket_callback
 
-        def _topic_callback(output, topic, **_):
+        def _topic_callback(*, topic, output, **_):
             payload = {"type": topic.msg_type.__name__, "payload": output}
             asyncio.run_coroutine_threadsafe(
                 self.websocket_callback(payload), self.loop
