@@ -275,6 +275,7 @@ class ImageCallback(GenericCallback):
                 get_logger(self.node_name).error(
                     f"Fixed path {input_topic.fixed} provided for Image topic is not a valid file path"
                 )
+        self.encoding = None
 
     def _get_output(self, **_) -> Optional[np.ndarray]:
         """
@@ -289,8 +290,10 @@ class ImageCallback(GenericCallback):
         if isinstance(self.msg, np.ndarray):
             return self.msg
         else:
-            # pre-process in case of weird encodings and reshape ROS topic
-            return utils.image_pre_processing(self.msg)
+            if not self.encoding:
+                self.encoding = utils.process_encoding(self.msg.encoding)
+            # pre-process and reshape
+            return utils.image_pre_processing(self.msg, *self.encoding)
 
 
 class CompressedImageCallback(ImageCallback):
@@ -311,8 +314,10 @@ class CompressedImageCallback(ImageCallback):
         if isinstance(self.msg, np.ndarray):
             return self.msg
         else:
-            # pre-process in case of weird encodings and reshape ROS topic
-            return utils.read_compressed_image(self.msg)
+            if not self.encoding:
+                self.encoding = utils.parse_format(self.msg.format)
+            # pre-process
+            return utils.read_compressed_image(self.msg, self.encoding)
 
 
 class TextCallback(GenericCallback):
