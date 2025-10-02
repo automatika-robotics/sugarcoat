@@ -81,7 +81,7 @@ class FHApp:
         """Creates cards for Input Topics"""
 
         input_divs = []
-        inputs_container = Card(H3("Inputs"), cls="p-4")
+        inputs_container = Card(H3("Inputs"), cls=CardT.secondary)
         for inp in inputs:
             input_divs.append(
                 Card(
@@ -98,7 +98,7 @@ class FHApp:
                         ),
                         id=f"{inp.name}-form",
                     ),
-                    cls="p-4",
+                    cls="m-2",
                     id=inp.name,
                 )
             )
@@ -196,10 +196,9 @@ class FHApp:
     def get_main_page(self):
         """Serves the main page of the UI"""
         self.settings = self._create_component_settings_ui(self.configs)
-        return Titled(
-            "EMOS WebView",
+        return Container(
             Main(
-                Div(
+                Grid(
                     # ThemePicker(
                     #     color=False,
                     #     radii=False,
@@ -208,20 +207,36 @@ class FHApp:
                     #     mode=True,
                     #     cls="p-4",
                     # ),
-                    self.inputs,
-                    self.outputs_log,
-                    Button(
-                        "Settings",
-                        id="settings-button",
-                        hx_get="/settings/show",
-                        hx_target="#modal-container",
-                        hx_swap="innerHTML",
+                    Div(
+                        Card(H3("Log"), self.outputs_log, cls=f"{CardT.secondary}"),
+                    ),
+                    Div(
+                        Card(
+                            H3("Image"),
+                            Img(
+                                cls="h-96", style="object-fit:cover;", id="image-card"
+                            ),
+                            cls=f"{CardT.secondary}",
+                        ),
+                    ),
+                    Div(self.inputs, cls="col-span-full"),
+                    Div(
+                        Button(
+                            "Settings",
+                            id="settings-button",
+                            hx_get="/settings/show",
+                            hx_target="#modal-container",
+                            hx_swap="innerHTML",
+                        ),
+                        cls="col-span-full",
                     ),
                     hx_ext="ws",
                     ws_connect="/ws",
                     id="modal-container",
+                    cols=2,
                 ),
                 Div(id="result"),
                 id="main",
+                cls="pt-2 pb-2",
             ),
         )

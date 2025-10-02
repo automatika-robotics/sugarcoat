@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
+from copy import copy
+import time
 from typing import Dict
 import logging
 import threading
 import base64
 import cv2
-import numpy as np
 import uvicorn
 from ros_sugar.core.ui_node import UINode, UINodeConfig
 from ros_sugar.launch.executable import setup_component, run_component
@@ -75,10 +76,13 @@ def main():
         # Callback function for ROS node
         async def websocket_callback(data: Dict):
             # Recieve json style data from node and pass to UI with send
+            # Get the output log before adding the robot loading dots
+            global current_output_log
+            fh.outputs_log = current_output_log
             if data["type"] == "String":
                 await send(
                     elements.update_logging_card(
-                        fh.outputs_log, f"Robot: {data['payload']}"
+                        fh.outputs_log, f"{data['payload']}", txt_type="robot"
                     ),
                 )
             if data["type"] == "Image" or data["type"] == "CompressedImage":
@@ -93,7 +97,8 @@ def main():
                         await send(
                             elements.update_logging_card(
                                 fh.outputs_log,
-                                "Error: Failed to encode image to JPEG format",
+                                "Failed to encode image to JPEG format",
+                                txt_type="error",
                             ),
                         )
 
@@ -101,14 +106,15 @@ def main():
                     jpg_as_text = base64.b64encode(buffer).decode("utf-8")
                     logging.info("Received image")
                     # TODO: Display image here
+                    await send(elements.make_image(jpg_as_text))
 
                 except Exception as e:
-                    self.get_logger().error(f"Failed to encode image frame: {e}")
+                    logging.error(f"Failed to encode image frame: {e}")
 
             if data["type"] == "error":
                 await send(
                     elements.update_logging_card(
-                        fh.outputs_log, f"Error: {data['payload']}"
+                        fh.outputs_log, f"{data['payload']}", txt_type="error"
                     ),
                 )
 
@@ -122,7 +128,12 @@ def main():
         for key, val in data.items():
             if isinstance(val, str):
                 ros_node.publish_data(topic_name=key, data=val)
-                return elements.update_logging_card(fh.outputs_log, f"User: {val}")
+                await send(elements.update_logging_card(fh.outputs_log, f"{val}", txt_type="user"))
+                # Copy the output log before adding the robot loading dots
+                global current_output_log
+                current_output_log = copy(fh.outputs_log)
+                # Send the robot loading dots
+                return elements.update_logging_card_with_loading(fh.outputs_log)
 
     uvicorn.run(app, host="0.0.0.0", port=5001)
 

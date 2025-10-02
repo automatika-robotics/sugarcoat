@@ -17,24 +17,68 @@ def input_topic_card(topic_name: str, topic_type: type):
         return Input(name=topic_name, placeholder="String data...", type="text")
 
 
-def _styled_logging_text(text: str):
-    return (DivLAligned(f"> {text}", cls="whitespace-pre-wrap ml-2 p-2"))
+def _styled_logging_text(text: str, txt_type: str = "info"):
+    new_txt = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2")
+    if txt_type == "alert":
+        new_txt(Strong(f">>> {text}", cls=f"{TextT.lg} text-green-500"))
+    elif txt_type == "error":
+        new_txt(
+            Strong(
+                f">>> ERROR: {text}!",
+                cls=f"{TextT.lg} text-red-500",
+            )
+        )
+    elif txt_type == "warn":
+        new_txt(
+            Strong(
+                f">>> WARNNING: {text}!",
+                cls=f"{TextT.lg} text-orange-500",
+            )
+        )
+    elif txt_type == "user":
+        new_txt(
+            Strong("> User: ", cls=f"{TextT.medium} text-blue-500"),
+            P(f"{text}"),
+        )
+    elif txt_type == "robot":
+        new_txt(
+            Strong("> Robot: ", cls=f"{TextT.medium} font-bold text-purple-500"),
+            P(f"{text}"),
+        )
+    elif txt_type == "info":
+        new_txt(Strong(f"> {text}"))
+    return new_txt
 
 
 def create_logging_card():
     output_card = Card(
         cls="overflow-y-auto h-96",
         id="outputs-log",
-        header=CardTitle("Log"),
     )
-    return output_card(_styled_logging_text("Starting log..."))
+    return output_card(_styled_logging_text("Log Started ...", txt_type="alert"))
 
 
-def update_logging_card(logging_card, new_text: str):
+def update_logging_card(logging_card, text: str, txt_type: str = "info"):
+    return logging_card(_styled_logging_text(text, txt_type))
+
+
+def update_logging_card_with_loading(logging_card):
     """Update logging card"""
     return logging_card(
-            _styled_logging_text(new_text),
-            id="outputs-log"
+        DivLAligned(
+            Strong("> Robot: ", cls=f"{TextT.medium} font-bold text-purple-500"),
+            Loading(cls=(LoadingT.dots, LoadingT.md)),
+            cls="whitespace-pre-wrap ml-2 p-2",
+        )
+    )
+
+
+def make_image(new_data):
+    return Img(
+        src=f"data:image/jpeg;base64,{new_data}",
+        id="image-card",
+        cls="h-96",
+        style="object-fit:cover;",
     )
 
 
