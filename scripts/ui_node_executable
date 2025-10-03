@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 from copy import copy
-import time
 from typing import Dict
 import logging
 import threading
-import base64
-import cv2
 import uvicorn
 from ros_sugar.core.ui_node import UINode, UINodeConfig
 from ros_sugar.launch.executable import setup_component, run_component

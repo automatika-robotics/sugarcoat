@@ -24,8 +24,15 @@ class FHApp:
     ):
         # --- Application Setup ---
         # Get theme from MonsterUI
-        hdrs = Theme.red.headers()
-        self.app, self.rt = fast_app(hdrs=hdrs, exts="ws")
+        hdrs = (
+            Theme.red.headers(),
+            Script(
+                src="https://unpkg.com/idiomorph@0.7.3/dist/idiomorph-ext.min.js",
+                integrity="sha384-szktAZju9fwY15dZ6D2FKFN4eZoltuXiHStNDJWK9+FARrxJtquql828JzikODob",
+                crossorigin="anonymous",
+            ),
+        )
+        self.app, self.rt = fast_app(hdrs=hdrs, exts=["ws", "morph"])
         setup_toasts(self.app)
 
         if not configs:
@@ -92,11 +99,11 @@ class FHApp:
                             Button(
                                 "Submit",
                                 cls=ButtonT.primary,
-                                ws_send=True,
                                 hx_target="#outputs-log",
                             ),
                         ),
                         id=f"{inp.name}-form",
+                        ws_send=True,
                     ),
                     cls="m-2",
                     id=inp.name,
@@ -131,8 +138,6 @@ class FHApp:
                             Button(
                                 "Submit",
                                 cls=ButtonT.primary,
-                                hx_post="/settings/submit",
-                                hx_target="#main",
                             ),
                             Button(
                                 "Close",
@@ -144,6 +149,8 @@ class FHApp:
                             cls="gap-2",
                         )
                     ),
+                    hx_post="/settings/submit",
+                    hx_target="#main",
                     id=component_name,
                 ),
                 DivCentered(id="notification"),
@@ -213,7 +220,7 @@ class FHApp:
                     Div(
                         Card(
                             H3("Image"),
-                            Img(id="image-card"),
+                            Img(id="image-card", hx_swap="morph:innerHTML"),
                             cls=f"{CardT.secondary}",
                         ),
                     ),

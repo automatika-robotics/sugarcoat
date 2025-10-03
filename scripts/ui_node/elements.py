@@ -14,7 +14,12 @@ except ModuleNotFoundError as e:
 
 def input_topic_card(topic_name: str, topic_type: type):
     if topic_type is String:
-        return Input(name=topic_name, placeholder="String data...", type="text")
+        return Input(
+            name=topic_name,
+            placeholder="String data...",
+            type="text",
+            required=True,
+        )
 
 
 def _styled_logging_text(text: str, txt_type: str = "info"):
