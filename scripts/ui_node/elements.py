@@ -78,7 +78,7 @@ def make_image(new_data):
         src=f"data:image/jpeg;base64,{new_data}",
         id="image-card",
         cls="h-96",
-        style="object-fit:cover;",
+        hx_swap_oob=True
     )
 
 

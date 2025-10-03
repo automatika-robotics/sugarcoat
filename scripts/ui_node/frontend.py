@@ -25,7 +25,7 @@ class FHApp:
         # --- Application Setup ---
         # Get theme from MonsterUI
         hdrs = Theme.red.headers()
-        self.app, self.rt = fast_app(hdrs=hdrs, exts="ws", live=True)
+        self.app, self.rt = fast_app(hdrs=hdrs, exts="ws")
         setup_toasts(self.app)
 
         if not configs:
@@ -36,6 +36,7 @@ class FHApp:
         self.settings = self._create_component_settings_ui(configs)
         self.inputs = self._create_input_topics_ui(in_topics)
         self.outputs = self._create_output_topics_ui(out_topics)
+
         self.outputs_log = elements.create_logging_card()
 
     def get_app(self):
@@ -212,9 +213,7 @@ class FHApp:
                     Div(
                         Card(
                             H3("Image"),
-                            Img(
-                                cls="h-96", style="object-fit:cover;", id="image-card"
-                            ),
+                            Img(id="image-card"),
                             cls=f"{CardT.secondary}",
                         ),
                     ),
@@ -229,14 +228,15 @@ class FHApp:
                         ),
                         cls="col-span-full",
                     ),
-                    hx_ext="ws",
-                    ws_connect="/ws",
                     id="modal-container",
                     cols=2,
                 ),
                 Div(id="result"),
                 id="main",
                 cls="pt-2 pb-2",
+                # connect to the websocket
+                hx_ext="ws",
+                ws_connect="/ws",
             ),
             id="main",
         )

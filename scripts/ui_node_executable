@@ -67,7 +67,11 @@ def main():
     # -- WS handling --
     async def on_disconn(session):
         """When a client disconnects, unregister its callback."""
-        fh.toasting("Disconnected from the robot. Check if the recipe is running or refresh the page", session, toast_type="success")
+        fh.toasting(
+            "Disconnected from the robot. Check if the recipe is running or refresh the page",
+            session,
+            toast_type="success",
+        )
 
     async def on_conn(send):
         """When a client connects, register its callback."""
@@ -94,18 +98,20 @@ def main():
                         fh.outputs_log, f"{data['payload']}", txt_type="error"
                     ),
                 )
-
         ros_node.attach_websocket_callback(websocket_callback)
 
     @app.ws("/ws", conn=on_conn, disconn=on_disconn)
     async def ws(data, send):
         """WS route for input/output communication with ROS UI Node"""
 
-        logging.info(f"Data: {data}")
         for key, val in data.items():
             if isinstance(val, str):
                 ros_node.publish_data(topic_name=key, data=val)
-                await send(elements.update_logging_card(fh.outputs_log, f"{val}", txt_type="user"))
+                await send(
+                    elements.update_logging_card(
+                        fh.outputs_log, f"{val}", txt_type="user"
+                    )
+                )
                 # Copy the output log before adding the robot loading dots
                 global current_output_log
                 current_output_log = copy(fh.outputs_log)
