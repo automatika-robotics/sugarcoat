@@ -24,7 +24,6 @@ class UINode(BaseComponent):
         component_name: str = "ui_node",
         component_configs: Optional[Dict[str, BaseComponentConfig]] = None,
         config: Optional[UINodeConfig] = None,
-        websocket_callback: Optional[Callable] = None,
         **kwargs,
     ):
         config = config or UINodeConfig()
@@ -42,9 +41,7 @@ class UINode(BaseComponent):
         ] = {}
 
         # Set websocket callback
-        self.websocket_callback: Callable = websocket_callback or (
-            lambda _: asyncio.sleep(0)
-        )
+        self.websocket_callback: Callable = lambda _: asyncio.sleep(0)
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -82,44 +79,58 @@ class UINode(BaseComponent):
         if hasattr(self, "loop_thread"):
             self.loop_thread.start()
 
+    def attach_streaming_callback(self, stream_callback: Callable):
+        """Adds websocket callback to listeners of outputs"""
+
+        def _topic_callback(*, topic, output, **_):
+            topic_type = topic.msg_type.__name__
+            try:
+                # Encode image as JPEG
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+                result, buffer = cv2.imencode(".jpg", output, encode_param)
+                if not result:
+                    self.get_logger().error("Failed to encode image to JPEG format.")
+                    payload = {
+                        "type": "error",
+                        "payload": "Failed to encode image to JPEG format",
+                    }
+                else:
+                    # Convert to base64
+                    jpg_as_text = base64.b64encode(buffer).decode("utf-8")
+                    payload = {"type": topic_type, "payload": jpg_as_text}
+            except Exception:
+                payload = {
+                    "type": "error",
+                    "payload": "Failed to encode image to JPEG format",
+                }
+
+            asyncio.run_coroutine_threadsafe(
+                stream_callback(payload), self.loop
+            )
+
+        # Attach callback function
+        for callback in self.callbacks.values():
+            if callback.input_topic.msg_type.__name__ in ["Image", "CompressedImage"]:
+                callback.on_callback_execute(_topic_callback)
+
     def attach_websocket_callback(self, websocket_callback: Callable):
         """Adds websocket callback to listeners of outputs"""
         self.websocket_callback = websocket_callback
 
         def _topic_callback(*, topic, output, **_):
             topic_type = topic.msg_type.__name__
-            if topic_type in ["Image", "CompressedImage"]:
-                try:
-                    # Encode image as JPEG
-                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-                    result, buffer = cv2.imencode(".jpg", output, encode_param)
-                    if not result:
-                        self.get_logger().error(
-                            "Failed to encode image to JPEG format."
-                        )
-                        payload = {
-                            "type": "error",
-                            "payload": "Failed to encode image to JPEG format",
-                        }
-                    else:
-                        # Convert to base64
-                        jpg_as_text = base64.b64encode(buffer).decode("utf-8")
-                        payload = {"type": topic_type, "payload": jpg_as_text}
-                except Exception:
-                    payload = {
-                        "type": "error",
-                        "payload": "Failed to encode image to JPEG format",
-                    }
-
-            else:
-                payload = {"type": topic_type, "payload": output}
+            payload = {"type": topic_type, "payload": output}
             asyncio.run_coroutine_threadsafe(
-                self.websocket_callback(payload), self.loop
+                websocket_callback(payload), self.loop
             )
 
         # Attach callback function
         for callback in self.callbacks.values():
-            callback.on_callback_execute(_topic_callback)
+            if callback.input_topic.msg_type.__name__ not in [
+                "Image",
+                "CompressedImage",
+            ]:
+                callback.on_callback_execute(_topic_callback)
 
     def update_configs(self, new_configs: Dict):
         self.get_logger().info("Updating configs")

@@ -41,17 +41,19 @@ def main():
 
     # Routes for the app backend
     @app.get("/")
-    def main_page():
+    def _():
         """Serves the main application page."""
         return fh.get_main_page()
 
     @app.get("/settings/show")
-    def settings_show(session):
+    def _(session):
+        """Show the settings tabs"""
         fh.toasting("somemsg", session)
         return fh.get_settings()
 
     @app.post("/settings/submit")
-    async def settings_submit(request):
+    async def _(request):
+        """Update Settings"""
         # update config
         # update UI
         form_data = await request.form()
@@ -62,8 +64,24 @@ def main():
         return fh.get_main_page()
 
     # -- WS handling --
+    async def log_data(send, data, error=False):
+        """Send data to text log"""
+
+        if error:
+            await send(
+                elements.update_logging_card(
+                    fh.outputs_log, f"{data['payload']}", txt_type="error"
+                )
+            )
+        else:
+            await send(
+                elements.update_logging_card(
+                    fh.outputs_log, f"{data['payload']}", txt_type="robot"
+                )
+            )
+
     async def on_disconn(session):
-        """When a client disconnects, unregister its callback."""
+        """Message for disconnection"""
         fh.toasting(
             "Disconnected from the robot. Check if the recipe is running or refresh the page",
             session,
@@ -81,24 +99,15 @@ def main():
             global current_output_log
             fh.outputs_log = current_output_log
             if data["type"] == "String":
-                await send(
-                    elements.update_logging_card(
-                        fh.outputs_log, f"{data['payload']}", txt_type="robot"
-                    ),
-                )
-            if data["type"] == "Image" or data["type"] == "CompressedImage":
-                await send(elements.make_image(data["payload"]))
+                await log_data(send, data)
 
             if data["type"] == "error":
-                await send(
-                    elements.update_logging_card(
-                        fh.outputs_log, f"{data['payload']}", txt_type="error"
-                    ),
-                )
+                await log_data(send, data, error=True)
+
         ros_node.attach_websocket_callback(websocket_callback)
 
     @app.ws("/ws", conn=on_conn, disconn=on_disconn)
-    async def ws(data, send):
+    async def _(data, send):
         """WS route for input/output communication with ROS UI Node"""
 
         for key, val in data.items():
@@ -114,6 +123,26 @@ def main():
                 current_output_log = copy(fh.outputs_log)
                 # Send the robot loading dots
                 return elements.update_logging_card_with_loading(fh.outputs_log)
+
+    async def on_conn_stream(ws, send):
+        """When a client connects, register its callback."""
+        logging.info("CONNECTING Streaming Websocket...")
+
+        # Callback function for ROS node
+        async def stream_callback(data: Dict):
+            if data["type"] == "Image" or data["type"] == "CompressedImage":
+                await ws.send_json(data)
+
+            if data["type"] == "error":
+                await log_data(send, data, error=True)
+
+        ros_node.attach_streaming_callback(stream_callback)
+
+    @app.ws("/ws_stream", conn=on_conn_stream)
+    async def _():
+        """WS route for input/output communication with ROS UI Node"""
+        # No stream going to the ROS Node
+        pass
 
     uvicorn.run(app, host="0.0.0.0", port=5001)
 

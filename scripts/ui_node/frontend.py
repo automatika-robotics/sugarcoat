@@ -31,6 +31,10 @@ class FHApp:
                 integrity="sha384-szktAZju9fwY15dZ6D2FKFN4eZoltuXiHStNDJWK9+FARrxJtquql828JzikODob",
                 crossorigin="anonymous",
             ),
+            Script(
+                src="custom.js",
+                # type="module"
+            ),
         )
         self.app, self.rt = fast_app(hdrs=hdrs, exts=["ws", "morph"])
         setup_toasts(self.app)
@@ -44,7 +48,9 @@ class FHApp:
         self.inputs = self._create_input_topics_ui(in_topics)
         self.outputs = self._create_output_topics_ui(out_topics)
 
+        # persistent elements
         self.outputs_log = elements.create_logging_card()
+        self.image_view = Img(name="video-frame", src='', cls="h-96")
 
     def get_app(self):
         """Get the FastHTML app"""
@@ -220,7 +226,7 @@ class FHApp:
                     Div(
                         Card(
                             H3("Image"),
-                            Img(id="image-card", hx_swap="morph:innerHTML"),
+                            self.image_view,
                             cls=f"{CardT.secondary}",
                         ),
                     ),

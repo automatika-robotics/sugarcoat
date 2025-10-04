@@ -78,15 +78,6 @@ def update_logging_card_with_loading(logging_card):
     )
 
 
-def make_image(new_data):
-    return Img(
-        src=f"data:image/jpeg;base64,{new_data}",
-        id="image-card",
-        cls="h-96",
-        hx_swap_oob=True
-    )
-
-
 def nonvalidated_config(setting_name: str, value: Any, field_type: str, type_args):
     if field_type == "bool":
         # The 'checked' attribute is a boolean flag, so it doesn't need a value
