@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 
-from ros_sugar.io.supported_types import String
+from ros_sugar.io.supported_types import String, Image, CompressedImage
 
 try:
     from fasthtml.common import *
@@ -20,6 +20,11 @@ def input_topic_card(topic_name: str, topic_type: type):
             type="text",
             required=True,
         )
+
+
+def output_topic_card(topic_name: str, topic_type: type):
+    if topic_type in [Image, CompressedImage]:
+        return Img(id=topic_name, name="video-frame", src="", cls="h-96")
 
 
 def _styled_logging_text(text: str, txt_type: str = "info"):

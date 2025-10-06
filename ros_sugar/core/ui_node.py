@@ -97,16 +97,18 @@ class UINode(BaseComponent):
                 else:
                     # Convert to base64
                     jpg_as_text = base64.b64encode(buffer).decode("utf-8")
-                    payload = {"type": topic_type, "payload": jpg_as_text}
+                    payload = {
+                        "type": topic_type,
+                        "payload": jpg_as_text,
+                        "topic": topic.name,
+                    }
             except Exception:
                 payload = {
                     "type": "error",
                     "payload": "Failed to encode image to JPEG format",
                 }
 
-            asyncio.run_coroutine_threadsafe(
-                stream_callback(payload), self.loop
-            )
+            asyncio.run_coroutine_threadsafe(stream_callback(payload), self.loop)
 
         # Attach callback function
         for callback in self.callbacks.values():
@@ -120,9 +122,7 @@ class UINode(BaseComponent):
         def _topic_callback(*, topic, output, **_):
             topic_type = topic.msg_type.__name__
             payload = {"type": topic_type, "payload": output}
-            asyncio.run_coroutine_threadsafe(
-                websocket_callback(payload), self.loop
-            )
+            asyncio.run_coroutine_threadsafe(websocket_callback(payload), self.loop)
 
         # Attach callback function
         for callback in self.callbacks.values():

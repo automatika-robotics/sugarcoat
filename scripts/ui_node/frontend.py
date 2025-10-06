@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 
+from ros_sugar.io.supported_types import String
 from ros_sugar.io.topic import Topic
 from .utils import parse_type
 from . import elements
@@ -31,9 +32,9 @@ class FHApp:
                 integrity="sha384-szktAZju9fwY15dZ6D2FKFN4eZoltuXiHStNDJWK9+FARrxJtquql828JzikODob",
                 crossorigin="anonymous",
             ),
+            # TODO: Get install location
             Script(
                 src="custom.js",
-                # type="module"
             ),
         )
         self.app, self.rt = fast_app(hdrs=hdrs, exts=["ws", "morph"])
@@ -50,7 +51,6 @@ class FHApp:
 
         # persistent elements
         self.outputs_log = elements.create_logging_card()
-        self.image_view = Img(name="video-frame", src='', cls="h-96")
 
     def get_app(self):
         """Get the FastHTML app"""
@@ -119,7 +119,16 @@ class FHApp:
 
     def _create_output_topics_ui(self, outputs: Sequence[Topic]):
         """Creates cards for Output Topics"""
-        pass
+
+        output_divs = []
+        outputs_container = Card(H3("Outputs"), cls=CardT.secondary)
+        for out in outputs:
+            if out.msg_type == String:
+                continue  # String is displayed in log
+            output_divs.append(
+                Card(H4(out.name), elements.output_topic_card(out.name, out.msg_type))
+            )
+        return outputs_container(*output_divs)
 
     def _create_component_settings_ui(self, settings: Dict):
         """Creates a Div for component settings from a dictionary."""
@@ -223,13 +232,7 @@ class FHApp:
                     Div(
                         Card(H3("Log"), self.outputs_log, cls=f"{CardT.secondary}"),
                     ),
-                    Div(
-                        Card(
-                            H3("Image"),
-                            self.image_view,
-                            cls=f"{CardT.secondary}",
-                        ),
-                    ),
+                    Div(self.outputs),
                     Div(self.inputs, cls="col-span-full"),
                     Div(
                         Button(

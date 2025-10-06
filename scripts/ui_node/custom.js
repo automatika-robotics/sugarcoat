@@ -15,7 +15,8 @@ ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
 
     // only images received here
-    videoFrame[0].src = 'data:image/jpeg;base64,' + data.payload;
+    const target = Array.from(videoFrame).find(img => img.id === data.topic);
+    target.src = 'data:image/jpeg;base64,' + data.payload;
 };
 
 ws.onerror = (error) => {
