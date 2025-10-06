@@ -64,21 +64,14 @@ def main():
         return fh.get_main_page()
 
     # -- WS handling --
-    async def log_data(send, data, error=False):
+    async def log_data(send, data, data_src):
         """Send data to text log"""
 
-        if error:
-            await send(
-                elements.update_logging_card(
-                    fh.outputs_log, f"{data['payload']}", txt_type="error"
-                )
+        await send(
+            elements.update_logging_card(
+                fh.outputs_log, f"{data['payload']}", output_src=data_src
             )
-        else:
-            await send(
-                elements.update_logging_card(
-                    fh.outputs_log, f"{data['payload']}", txt_type="robot"
-                )
-            )
+        )
 
     async def on_disconn(session):
         """Message for disconnection"""
@@ -96,13 +89,11 @@ def main():
         async def websocket_callback(data: Dict):
             # Recieve json style data from node and pass to UI with send
             # Get the output log before adding the robot loading dots
-            global current_output_log
-            fh.outputs_log = current_output_log
+            fh.outputs_log.children = fh.outputs_log.children[:-1]
             if data["type"] == "String":
-                await log_data(send, data)
-
-            if data["type"] == "error":
-                await log_data(send, data, error=True)
+                await log_data(send, data, data_src="robot")
+            else:
+                await log_data(send, data, data_src=data["type"])
 
         ros_node.attach_websocket_callback(websocket_callback)
 
@@ -115,12 +106,9 @@ def main():
                 ros_node.publish_data(topic_name=key, data=val)
                 await send(
                     elements.update_logging_card(
-                        fh.outputs_log, f"{val}", txt_type="user"
+                        fh.outputs_log, f"{val}", output_src="user"
                     )
                 )
-                # Copy the output log before adding the robot loading dots
-                global current_output_log
-                current_output_log = copy(fh.outputs_log)
                 # Send the robot loading dots
                 return elements.update_logging_card_with_loading(fh.outputs_log)
 
@@ -132,9 +120,8 @@ def main():
         async def stream_callback(data: Dict):
             if data["type"] == "Image" or data["type"] == "CompressedImage":
                 await ws.send_json(data)
-
-            if data["type"] == "error":
-                await log_data(send, data, error=True)
+            else:
+                await log_data(send, data, data_src=data["type"])
 
         ros_node.attach_streaming_callback(stream_callback)
 

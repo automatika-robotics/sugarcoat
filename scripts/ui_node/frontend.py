@@ -225,6 +225,23 @@ class FHApp:
         """Serves the main page of the UI"""
         self.settings = self._create_component_settings_ui(self.configs)
         return Container(
+            NavBar(
+                Button(
+                    "Components Settings",
+                    id="settings-button",
+                    hx_get="/settings/show",
+                    hx_target="#modal-container",
+                    hx_swap="innerHTML",
+                    cls=ButtonT.primary,
+                ),
+                brand=DivLAligned(
+                    Img(
+                        src="https://automatikarobotics.com/Emos_dark.png",
+                        style="width:6vw",
+                    )
+                ),
+                cls="p-2",
+            ),
             Main(
                 Grid(
                     # ThemePicker(
@@ -240,16 +257,6 @@ class FHApp:
                     ),
                     Div(self.outputs),
                     Div(self.inputs, cls="col-span-full"),
-                    Div(
-                        Button(
-                            "Settings",
-                            id="settings-button",
-                            hx_get="/settings/show",
-                            hx_target="#modal-container",
-                            hx_swap="innerHTML",
-                        ),
-                        cls="col-span-full",
-                    ),
                     id="modal-container",
                     cols=2,
                 ),

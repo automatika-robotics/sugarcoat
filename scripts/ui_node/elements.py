@@ -27,37 +27,81 @@ def output_topic_card(topic_name: str, topic_type: type):
         return Img(id=topic_name, name="video-frame", src="", cls="h-96")
 
 
-def _styled_logging_text(text: str, txt_type: str = "info"):
+def _styled_logging_text(text: str, output_src: str = "info"):
     new_txt = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2")
-    if txt_type == "alert":
+    if output_src == "alert":
         new_txt(Strong(f">>> {text}", cls=f"{TextT.lg} text-green-500"))
-    elif txt_type == "error":
+    elif output_src == "error":
         new_txt(
             Strong(
                 f">>> ERROR: {text}!",
                 cls=f"{TextT.lg} text-red-500",
             )
         )
-    elif txt_type == "warn":
+    elif output_src == "warn":
         new_txt(
             Strong(
                 f">>> WARNNING: {text}!",
                 cls=f"{TextT.lg} text-orange-500",
             )
         )
-    elif txt_type == "user":
+    elif output_src == "user":
         new_txt(
             Strong("> User: ", cls=f"{TextT.medium} text-blue-500"),
             P(f"{text}"),
         )
-    elif txt_type == "robot":
+    elif output_src == "robot":
         new_txt(
             Strong("> Robot: ", cls=f"{TextT.medium} font-bold text-purple-500"),
             P(f"{text}"),
         )
-    elif txt_type == "info":
+    elif output_src == "info":
         new_txt(Strong(f"> {text}"))
     return new_txt
+
+
+def _styled_logging_audio(output, output_src: str = "info"):
+    audio_div = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2")
+    new_audio = Audio(
+        src=output,
+        type="audio/wav",
+        controls=True,
+        style="border-radius:0.5rem;outline:none;",
+    )
+    if output_src == "alert":
+        audio_div(
+            Strong(">>>", cls=f"{TextT.lg} text-green-500"),
+            new_audio,
+        )
+    elif output_src == "error":
+        audio_div(
+            Strong(
+                ">>> ERROR:",
+                cls=f"{TextT.lg} text-red-500",
+            ),
+            new_audio,
+        )
+    elif output_src == "warn":
+        audio_div(
+            Strong(
+                ">>> WARNNING:",
+                cls=f"{TextT.lg} text-orange-500",
+            ),
+            new_audio,
+        )
+    elif output_src == "user":
+        audio_div(
+            Strong("> User: ", cls=f"{TextT.medium} text-blue-500"),
+            new_audio,
+        )
+    elif output_src == "robot":
+        audio_div(
+            Strong("> Robot: ", cls=f"{TextT.medium} font-bold text-purple-500"),
+            new_audio,
+        )
+    elif output_src == "info":
+        audio_div(Strong(">"), new_audio)
+    return audio_div
 
 
 def create_logging_card():
@@ -65,11 +109,15 @@ def create_logging_card():
         cls="overflow-y-auto h-96",
         id="outputs-log",
     )
-    return output_card(_styled_logging_text("Log Started ...", txt_type="alert"))
+    return output_card(_styled_logging_text("Log Started ...", output_src="alert"))
 
 
-def update_logging_card(logging_card, text: str, txt_type: str = "info"):
-    return logging_card(_styled_logging_text(text, txt_type))
+def update_logging_card(
+    logging_card, output: str, output_src: str = "info", is_audio: bool = False
+):
+    if is_audio:
+        return logging_card(_styled_logging_audio(output, output_src))
+    return logging_card(_styled_logging_text(output, output_src))
 
 
 def update_logging_card_with_loading(logging_card):
