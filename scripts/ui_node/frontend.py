@@ -34,6 +34,11 @@ class FHApp:
         static_files = static_files_abs.relative_to(BASE_DIR).as_posix()
         hdrs = (
             Theme.red.headers(),
+            Link(
+                rel="stylesheet",
+                href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css",
+                type="text/css",
+            ),
             Script(
                 src="https://unpkg.com/idiomorph@0.7.3/dist/idiomorph-ext.min.js",
                 integrity="sha384-szktAZju9fwY15dZ6D2FKFN4eZoltuXiHStNDJWK9+FARrxJtquql828JzikODob",
@@ -103,24 +108,7 @@ class FHApp:
         inputs_container = Card(H3("Inputs"), cls=CardT.secondary)
         for inp in inputs:
             input_divs.append(
-                Card(
-                    H4(inp.name),
-                    Form(cls="space-y-4")(
-                        elements.input_topic_card(inp.name, inp.msg_type),
-                        DivCentered(
-                            Button(
-                                "Submit",
-                                cls=ButtonT.primary,
-                                hx_target="#outputs-log",
-                            ),
-                        ),
-                        id=f"{inp.name}-form",
-                        ws_send=True,
-                        hx_on__ws_after_send=f"this.{inp.name}.value=''; return false;",
-                    ),
-                    cls="m-2",
-                    id=inp.name,
-                )
+                elements.input_topic_card(inp.name, inp.msg_type),
             )
         return inputs_container(*input_divs)
 

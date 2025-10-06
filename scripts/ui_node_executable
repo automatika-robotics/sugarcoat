@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from typing import Dict
+from pathlib import Path
+import base64
 import logging
 import threading
 import uvicorn
@@ -22,10 +24,10 @@ def main():
         list_of_components=[UINode], list_of_configs=[UINodeConfig]
     )  # type: ignore
 
-    component_configs = ros_node.config.components
+    ros_node_config = ros_node.config
 
     fh = FHApp(
-        component_configs, ros_node.out_topics, ros_node.in_topics
+        ros_node_config.components, ros_node.out_topics, ros_node.in_topics
     )  # inputs and outputs are reversed
     app, _ = fh.get_app()
 
@@ -59,17 +61,17 @@ def main():
         if not success:
             (fh.toasting(e, session, "error") for e in result.error_msg if e)
         else:
-            fh.toasting('Settings changed successfully', session, 'success')
+            fh.toasting("Settings changed successfully", session, "success")
         return fh.get_main_page()
 
     # -- WS handling --
-    async def log_data(send, data, data_src, is_audio=False):
+    async def log_data(send, data: str, data_src: str, is_audio: bool = False):
         """Send data to log"""
 
         await send(
             elements.update_logging_card(
                 fh.outputs_log,
-                f"{data['payload']}",
+                data,
                 output_src=data_src,
                 is_audio=is_audio,
             )
@@ -85,16 +87,17 @@ def main():
 
     async def on_conn(send):
         """When a client connects, register its callback."""
-        logging.info("CONNECTING Websocket...")
 
         # Callback function for ROS node
         async def websocket_callback(data: Dict):
             # Recieve json style data from node and pass to UI with send
-            if data["type"] in ["String", "Audio"]:
+            if data["type"] in ["String", "Audio"] and data["payload"]:
                 is_audio = True if data["type"] == "Audio" else False
-                await log_data(send, data, data_src="robot", is_audio=is_audio)
+                await log_data(
+                    send, data["payload"], data_src="robot", is_audio=is_audio
+                )
             else:
-                await log_data(send, data, data_src=data["type"])
+                await log_data(send, data["payload"], data_src=data["type"])
 
         ros_node.attach_websocket_callback(websocket_callback)
 
@@ -104,41 +107,78 @@ def main():
 
         for key, val in data.items():
             if isinstance(val, str):
+                await log_data(send, val, data_src="user")
                 ros_node.publish_data(topic_name=key, data=val)
-                await send(
-                    elements.update_logging_card(
-                        fh.outputs_log, f"{val}", output_src="user"
-                    )
-                )
+
                 # Send the robot loading dots
                 return elements.update_logging_card_with_loading(fh.outputs_log)
 
     async def on_conn_stream(ws, send):
         """When a client connects, register its callback."""
-        logging.info("CONNECTING Streaming Websocket...")
 
         # Callback function for ROS node
         async def stream_callback(data: Dict):
             if data["type"] == "Image" or data["type"] == "CompressedImage":
                 await ws.send_json(data)
             else:
-                await log_data(send, data, data_src=data["type"])
+                await log_data(send, data["payload"], data_src=data["type"])
 
         ros_node.attach_streaming_callback(stream_callback)
 
-    @app.ws("/ws_stream", conn=on_conn_stream)
+    @app.ws("/ws_stream", conn=on_conn_stream, disconn=on_disconn)
     async def _(data, send):
         """WS route for input/output communication with ROS UI Node"""
-        logging.info(f"Received on streaming: {data}")
         # Only handle audio data
-        if data["type"] == "audio":
-            logging.info("Received message: audio bytes")
-            import base64
+        if data["type"] == "audio" and data["payload"]:
+            try:
+                await log_data(send, data["payload"], data_src="user", is_audio=True)
+                audio_bytes = base64.b64decode(data["payload"])
+                ros_node.publish_data(topic_name=data["topic"], data=audio_bytes)
+            except RuntimeError:
+                logging.warning("Runtime error when sending audio")
 
-            audio_bytes = base64.b64decode(data["payload"])
-            ros_node.publish_data(topic_name=data["key"], data=data["val"])
+            # Send the robot loading dots
+            return elements.update_logging_card_with_loading(fh.outputs_log)
 
-    uvicorn.run(app, host="0.0.0.0", port=5001)
+    # Check if SSL certificates exist
+    if not (
+        Path(ros_node_config.ssl_keyfile).exists()
+        and Path(ros_node_config.ssl_certificate).exists()
+    ):
+        logging.info("\n" + "=" * 80)
+        logging.info("WARNING: SSL certificates (key.pem, cert.pem) not found.")
+        logging.info(
+            "Microphone access will not work when accessing from another machine."
+        )
+        logging.info(
+            "To enable microphone over the network, generate certificates by running"
+        )
+        logging.info("the following command:")
+        logging.info(
+            '\nopenssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes -subj "/CN=localhost"\n'
+        )
+        logging.info(
+            "And give the path to the certificates to the launcher.enable_ui method"
+        )
+        logging.info("=" * 80 + "\n")
+        key_file = None
+        certificate_file = None
+        protocol = "http"
+    else:
+        key_file = ros_node_config.ssl_keyfile
+        certificate_file = ros_node_config.ssl_certificate
+        protocol = "https"
+
+    logging.info(
+        f"Access the recipe UI at: {protocol}://<IP_ADDRESS_OF_THE_ROBOT>:{ros_node_config.port}"
+    )
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=ros_node_config.port,
+        ssl_keyfile=key_file,
+        ssl_certfile=certificate_file,
+    )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,4 @@
 const videoFrame = document.getElementsByName('video-frame');
-const recordButton = document.getElementById('record-button');
 
 // Establish WebSocket connection (protocol aware)
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -39,86 +38,84 @@ let isRecording = false;
 let recordingIndicatorEl = null; // reference to the indicator message in DOM
 
 
-if (recordButton) {
-    recordButton.addEventListener("click", async () => {
-        recordButton.classList.toggle("recording");
+async function startAudioRecording(button) {
+    console.log("In audio recordin")
+    button.classList.toggle("recording");
 
-        if (isRecording) {
-            mediaRecorder.stop();
-            recordButton.innerHTML = `<i class="fa fa-microphone"></i>`;
-        } else {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                audioChunks = [];
+    if (isRecording) {
+        mediaRecorder.stop();
+        button.innerHTML = `<i class="fa fa-microphone"></i>`;
+    } else {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
 
-                mediaRecorder.onstart = () => {
-                    isRecording = true;
-                    recordButton.innerHTML = `<i class="fa fa-stop"></i> <span>Stop</span> <span class="record-tooltip">End Recording</span>`;
-                    // Add "Recording..." indicator to chat
-                    //     recordingIndicatorEl = addMessage("🎙 Recording...", "user-message recording-indicator", "You", getCurrentTime());
-                };
+            mediaRecorder.onstart = () => {
+                isRecording = true;
+                button.innerHTML = `<i class="fa fa-stop"></i> <span>Stop</span> <span class="record-tooltip">End Recording</span>`;
+                // Add "Recording..." indicator to chat
+                // recordingIndicatorEl = addMessage("🎙 Recording...", "user-message recording-indicator", "You", getCurrentTime());
+            };
 
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        audioChunks.push(event.data);
-                    }
-                };
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
 
-                mediaRecorder.onstop = async () => {
-                    isRecording = false;
+            mediaRecorder.onstop = async () => {
+                isRecording = false;
 
+                // if (recordingIndicatorEl) {
+                //     recordingIndicatorEl.querySelector('.message').textContent = "🎙 Processing...";
+                // }
+
+                if (audioChunks.length === 0) {
+                    if (recordingIndicatorEl) recordingIndicatorEl.remove();
+                    console.error("No Audio recorded.");
+                    // addErrorMessage("No audio was recorded. Please try again.");
+                    // button.innerHTML = `<i class="fa fa-microphone"></i> <span class="record-tooltip">Record</span>`;
+                    return;
+                }
+
+                const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+
+                // Process the audio to the correct format - 16000 Hz Mono
+                try {
+                    const resampledBlob = await processAudio(audioBlob, 16000);
+                    const audioUrl = URL.createObjectURL(resampledBlob);
+
+                    // Replace indicator with audio message
                     // if (recordingIndicatorEl) {
-                    //     recordingIndicatorEl.querySelector('.message').textContent = "🎙 Processing...";
+                    //     recordingIndicatorEl.remove(); // remove indicator bubble
+                    //     recordingIndicatorEl = null;
                     // }
+                    // addAudioMessage(audioUrl, "user-message", "You", getCurrentTime());
 
-                    if (audioChunks.length === 0) {
-                        if (recordingIndicatorEl) recordingIndicatorEl.remove();
-                        console.error("No Audio recorded.")
-                        // addErrorMessage("No audio was recorded. Please try again.");
-                        // recordButton.innerHTML = `<i class="fa fa-microphone"></i> <span class="record-tooltip">Record</span>`;
-                        return;
-                    }
+                    const reader = new FileReader();
+                    reader.readAsDataURL(resampledBlob); // Use the resampled blob
+                    reader.onloadend = () => {
+                        const base64Audio = reader.result.split(",")[1];
+                        if (base64Audio) {
+                            ws_stream.send(JSON.stringify({ type: "audio", payload: base64Audio, topic: button.id}));
+                        }
+                    };
+                } catch (error) {
+                    console.error("Failed to process audio:", error);
+                    if (recordingIndicatorEl) recordingIndicatorEl.remove();
+                    // addErrorMessage("Error: Could not process recorded audio.");
+                }
 
-                    const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+                button.innerHTML = `<i class="fa fa-microphone"></i> <span class="record-tooltip">Record</span>`;
+            };
 
-                    // Process the audio to the correct format - 16000 Hz Mono
-                    try {
-                        const resampledBlob = await processAudio(audioBlob, 16000);
-
-                        const audioUrl = URL.createObjectURL(resampledBlob);
-
-                        // Replace indicator with audio message
-                        // if (recordingIndicatorEl) {
-                        //     recordingIndicatorEl.remove(); // remove indicator bubble
-                        //     recordingIndicatorEl = null;
-                        // }
-                        // addAudioMessage(audioUrl, "user-message", "You", getCurrentTime());
-
-                        const reader = new FileReader();
-                        reader.readAsDataURL(resampledBlob); // Use the resampled blob
-                        reader.onloadend = () => {
-                            const base64Audio = reader.result.split(",")[1];
-                            if (base64Audio) {
-                                ws_stream.send(JSON.stringify({ type: "audio", payload: base64Audio }));
-                            }
-                        };
-                    } catch (error) {
-                        console.error("Failed to process audio:", error);
-                        if (recordingIndicatorEl) recordingIndicatorEl.remove();
-                        addErrorMessage("Error: Could not process recorded audio.");
-                    }
-
-                    recordButton.innerHTML = `<i class="fa fa-microphone"></i> <span class="record-tooltip">Record</span>`;
-                };
-
-                mediaRecorder.start();
-            } catch (error) {
-                console.error("Error accessing microphone:", error);
-                // addErrorMessage("Error: Could not access the microphone. Please grant permission.");
-            }
+            mediaRecorder.start();
+        } catch (error) {
+            console.error("Error accessing microphone:", error);
+            // addErrorMessage("Error: Could not access the microphone. Please grant permission.");
         }
-    });
+    }
 };
 
 // Create a single AudioContext to be reused

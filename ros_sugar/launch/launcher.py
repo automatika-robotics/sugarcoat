@@ -46,7 +46,7 @@ from ..core.action import Action
 from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
-from ..core.ui_node import UINode
+from ..core.ui_node import UINode, UINodeConfig
 from .launch_actions import ComponentLaunchAction
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
 
@@ -87,9 +87,6 @@ class Launcher:
         config_file: Optional[str] = None,
         enable_monitoring: bool = True,
         activation_timeout: Optional[float] = None,
-        enable_ui: bool = False,
-        ui_input_topics: Optional[List[Topic]] = None,
-        ui_output_topics: Optional[List[Topic]] = None,
     ) -> None:
         """Initialize launcher to manager components launch in ROS2
 
@@ -117,9 +114,7 @@ class Launcher:
         self._config_file: Optional[str] = config_file
         self.__enable_monitoring: bool = enable_monitoring
         self._launch_group = []
-        self._enable_ui = enable_ui
-        self._ui_input_topics = ui_input_topics
-        self._ui_output_topics = ui_output_topics
+        self._enable_ui = False
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
@@ -235,6 +230,24 @@ class Launcher:
             if self._config_file:
                 component._config_file = self._config_file
                 component.config_from_file(self._config_file)
+
+    def enable_ui(
+        self,
+        inputs: Optional[List[Topic]] = None,
+        outputs: Optional[List[Topic]] = None,
+        port: int = 5001,
+        ssl_keyfile_path: str = "key.pem",
+        ssl_certificate_path: str = "cert.pem",
+    ):
+        self._enable_ui = True
+        self._ui_input_topics = inputs
+        self._ui_output_topics = outputs
+
+        self._ui_node_config: UINodeConfig = UINodeConfig(
+            port=port,
+            ssl_keyfile=ssl_keyfile_path,
+            ssl_certificate=ssl_certificate_path,
+        )
 
     def _setup_component_events_handlers(self, comp: BaseComponent):
         """Parse a component events/actions from the overall components actions
@@ -620,6 +633,7 @@ class Launcher:
         component_configs = {comp.node_name: comp.config for comp in self._components}
 
         ui_node = UINode(
+            config=self._ui_node_config,
             inputs=self._ui_input_topics,
             outputs=self._ui_output_topics,
             component_configs=component_configs,

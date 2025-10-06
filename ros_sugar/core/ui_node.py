@@ -14,19 +14,21 @@ from automatika_ros_sugar.srv import ChangeParameters
 @define
 class UINodeConfig(BaseComponentConfig):
     components: Dict[str, Dict] = field(default=Factory(dict))
+    port: int = field(default=5001)
+    ssl_keyfile: str = field(default='key.pem')
+    ssl_certificate: str = field(default='cert.pem')
 
 
 class UINode(BaseComponent):
     def __init__(
         self,
+        config: UINodeConfig,
         inputs: Optional[Sequence[Topic]] = None,
         outputs: Optional[Sequence[Topic]] = None,
         component_name: str = "ui_node",
         component_configs: Optional[Dict[str, BaseComponentConfig]] = None,
-        config: Optional[UINodeConfig] = None,
         **kwargs,
     ):
-        config = config or UINodeConfig()
         if component_configs:
             # create UI specific configs for components
             comp_configs_fields = {
@@ -156,7 +158,7 @@ class UINode(BaseComponent):
         Publish data to input topics if any
         """
         if self.count_subscribers(topic_name) == 0:
-            error_msg = f'Error: No subscribers found for the topic "{topic_name}". Please check the topic name in settings.'
+            error_msg = f'No subscribers found for the topic "{topic_name}". Please check the topic name in your recipe'
             self.get_logger().error(error_msg)
             payload = {"type": "error", "payload": error_msg}
             asyncio.run_coroutine_threadsafe(

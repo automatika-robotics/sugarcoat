@@ -1,6 +1,11 @@
 from typing import List, Dict, Any
 
-from ros_sugar.io.supported_types import String, Image, CompressedImage
+from ros_sugar.io.supported_types import (
+    String,
+    Image,
+    CompressedImage,
+    Audio as SugarAudio,
+)
 
 try:
     from fasthtml.common import *
@@ -13,13 +18,34 @@ except ModuleNotFoundError as e:
 
 
 def input_topic_card(topic_name: str, topic_type: type):
+    card = Card(
+        H4(topic_name),
+        cls="m-2",
+        id=topic_name,
+    )
     if topic_type is String:
-        return Input(
-            name=topic_name,
-            placeholder="String data...",
-            type="text",
-            required=True,
-            autocomplete="off",
+        return card(
+            Form(cls="space-y-4")(
+                Input(
+                    name=topic_name,
+                    placeholder="String data...",
+                    type="text",
+                    required=True,
+                    autocomplete="off",
+                    hx_target="#outputs-log",
+                ),
+                id=f"{topic_name}-form",
+                ws_send=True,
+                hx_on__ws_after_send=f"this.{topic_name}.value=''; return false;",
+            ),
+        )
+    if topic_type is SugarAudio:
+        return card(
+            Button(
+                UkIcon("mic"),
+                id=topic_name,
+                onclick="startAudioRecording(this)",
+            )
         )
 
 
