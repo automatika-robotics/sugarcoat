@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from ros_sugar.io.supported_types import String
+from ros_sugar.io.supported_types import String, Audio as SugarAudio
 from ros_sugar.io.topic import Topic
 from .utils import parse_type
 from . import elements
@@ -116,6 +116,7 @@ class FHApp:
                         ),
                         id=f"{inp.name}-form",
                         ws_send=True,
+                        hx_on__ws_after_send=f"this.{inp.name}.value=''; return false;",
                     ),
                     cls="m-2",
                     id=inp.name,
@@ -129,7 +130,7 @@ class FHApp:
         output_divs = []
         outputs_container = Card(H3("Outputs"), cls=CardT.secondary)
         for out in outputs:
-            if out.msg_type == String:
+            if out.msg_type in [String, SugarAudio]:
                 continue  # String is displayed in log
             output_divs.append(
                 Card(H4(out.name), elements.output_topic_card(out.name, out.msg_type))
@@ -223,7 +224,10 @@ class FHApp:
 
     def get_main_page(self):
         """Serves the main page of the UI"""
+        # Create settings on refresh
         self.settings = self._create_component_settings_ui(self.configs)
+
+        # Serve main page
         return Container(
             NavBar(
                 Button(

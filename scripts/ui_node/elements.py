@@ -19,6 +19,7 @@ def input_topic_card(topic_name: str, topic_type: type):
             placeholder="String data...",
             type="text",
             required=True,
+            autocomplete="off",
         )
 
 
@@ -27,81 +28,53 @@ def output_topic_card(topic_name: str, topic_type: type):
         return Img(id=topic_name, name="video-frame", src="", cls="h-96")
 
 
+LOG_STYLES = {
+    "alert": {"prefix": ">>>", "cls": f"{TextT.lg} text-green-500"},
+    "error": {"prefix": ">>> ERROR:", "cls": f"{TextT.lg} text-red-500"},
+    "warn": {"prefix": ">>> WARNNING:", "cls": f"{TextT.lg} text-orange-500"},
+    "user": {"prefix": "> User:", "cls": f"{TextT.medium} text-blue-500"},
+    "robot": {"prefix": "> Robot:", "cls": f"{TextT.medium} font-bold text-purple-500"},
+}
+# Default style for "info" or any other unspecified source
+DEFAULT_STYLE = {"prefix": ">", "cls": ""}
+
+
 def _styled_logging_text(text: str, output_src: str = "info"):
-    new_txt = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2")
-    if output_src == "alert":
-        new_txt(Strong(f">>> {text}", cls=f"{TextT.lg} text-green-500"))
-    elif output_src == "error":
-        new_txt(
-            Strong(
-                f">>> ERROR: {text}!",
-                cls=f"{TextT.lg} text-red-500",
-            )
-        )
-    elif output_src == "warn":
-        new_txt(
-            Strong(
-                f">>> WARNNING: {text}!",
-                cls=f"{TextT.lg} text-orange-500",
-            )
-        )
-    elif output_src == "user":
-        new_txt(
-            Strong("> User: ", cls=f"{TextT.medium} text-blue-500"),
-            P(f"{text}"),
-        )
-    elif output_src == "robot":
-        new_txt(
-            Strong("> Robot: ", cls=f"{TextT.medium} font-bold text-purple-500"),
-            P(f"{text}"),
-        )
-    elif output_src == "info":
-        new_txt(Strong(f"> {text}"))
-    return new_txt
+    """Builds a styled text log component."""
+    container = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2")
+    style = LOG_STYLES.get(output_src, DEFAULT_STYLE)
+
+    if output_src in ["user", "robot"]:
+        prefix_element = Strong(style["prefix"] + " ", cls=style["cls"])
+        content_element = P(f"{text}")
+        container(prefix_element, content_element)
+    # All other types have the text inside the main Strong tag
+    else:
+        full_text = f"{style['prefix']} {text}"
+        if output_src in ["error", "warn"]:
+            full_text += "!"  # Add the original exclamation mark
+
+        container(Strong(full_text, cls=style["cls"]))
+
+    return container
 
 
 def _styled_logging_audio(output, output_src: str = "info"):
-    audio_div = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2")
-    new_audio = Audio(
-        src=output,
+    """Builds a styled audio log component."""
+    container = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2")
+    style = LOG_STYLES.get(output_src, DEFAULT_STYLE)
+
+    audio_element = Audio(
+        src=f"data:audio/wav;base64,{output}",
         type="audio/wav",
         controls=True,
         style="border-radius:0.5rem;outline:none;",
     )
-    if output_src == "alert":
-        audio_div(
-            Strong(">>>", cls=f"{TextT.lg} text-green-500"),
-            new_audio,
-        )
-    elif output_src == "error":
-        audio_div(
-            Strong(
-                ">>> ERROR:",
-                cls=f"{TextT.lg} text-red-500",
-            ),
-            new_audio,
-        )
-    elif output_src == "warn":
-        audio_div(
-            Strong(
-                ">>> WARNNING:",
-                cls=f"{TextT.lg} text-orange-500",
-            ),
-            new_audio,
-        )
-    elif output_src == "user":
-        audio_div(
-            Strong("> User: ", cls=f"{TextT.medium} text-blue-500"),
-            new_audio,
-        )
-    elif output_src == "robot":
-        audio_div(
-            Strong("> Robot: ", cls=f"{TextT.medium} font-bold text-purple-500"),
-            new_audio,
-        )
-    elif output_src == "info":
-        audio_div(Strong(">"), new_audio)
-    return audio_div
+
+    prefix_element = Strong(style["prefix"] + " ", cls=style["cls"])
+    container(prefix_element, audio_element)
+
+    return container
 
 
 def create_logging_card():
@@ -112,9 +85,20 @@ def create_logging_card():
     return output_card(_styled_logging_text("Log Started ...", output_src="alert"))
 
 
+def remove_child_from_logging_card(logging_card, target_id="loading-dots"):
+    """Remove the last child in logging_card.children with a matching id."""
+    children = logging_card.children
+
+    for i in range(len(children) - 1, -1, -1):
+        if getattr(children[i], "id", None) == target_id:
+            logging_card.children = children[:i] + children[i + 1 :]
+            break
+
+
 def update_logging_card(
     logging_card, output: str, output_src: str = "info", is_audio: bool = False
 ):
+    remove_child_from_logging_card(logging_card)
     if is_audio:
         return logging_card(_styled_logging_audio(output, output_src))
     return logging_card(_styled_logging_text(output, output_src))
@@ -127,6 +111,8 @@ def update_logging_card_with_loading(logging_card):
             Strong("> Robot: ", cls=f"{TextT.medium} font-bold text-purple-500"),
             Loading(cls=(LoadingT.dots, LoadingT.md)),
             cls="whitespace-pre-wrap ml-2 p-2",
+            id="loading-dots",
+            name="loading-dots",
         )
     )
 

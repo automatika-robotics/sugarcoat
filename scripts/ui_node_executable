@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from copy import copy
 from typing import Dict
 import logging
 import threading
@@ -17,8 +16,6 @@ def main():
     Used to start a node using Launcher
     """
     logging.info("Starting UI Node executable")
-
-    logging.info("Setting up UI node with component configs in UI Node")
 
     # Start UI helper ROS node in a separate thread
     ros_node: UINode = setup_component(
@@ -46,30 +43,35 @@ def main():
         return fh.get_main_page()
 
     @app.get("/settings/show")
-    def _(session):
+    def _():
         """Show the settings tabs"""
-        fh.toasting("somemsg", session)
         return fh.get_settings()
 
     @app.post("/settings/submit")
-    async def _(request):
+    async def _(request, session):
         """Update Settings"""
         # update config
         # update UI
         form_data = await request.form()
         result = ros_node.update_configs(dict(form_data.items()))
         success = all(result.success)
+        logging.info(f"RESULT : {result}")
         if not success:
-            errors = [e for e in result.error_msg if e]
+            (fh.toasting(e, session, "error") for e in result.error_msg if e)
+        else:
+            fh.toasting('Settings changed successfully', session, 'success')
         return fh.get_main_page()
 
     # -- WS handling --
-    async def log_data(send, data, data_src):
-        """Send data to text log"""
+    async def log_data(send, data, data_src, is_audio=False):
+        """Send data to log"""
 
         await send(
             elements.update_logging_card(
-                fh.outputs_log, f"{data['payload']}", output_src=data_src
+                fh.outputs_log,
+                f"{data['payload']}",
+                output_src=data_src,
+                is_audio=is_audio,
             )
         )
 
@@ -78,7 +80,7 @@ def main():
         fh.toasting(
             "Disconnected from the robot. Check if the recipe is running or refresh the page",
             session,
-            toast_type="success",
+            toast_type="error",
         )
 
     async def on_conn(send):
@@ -88,10 +90,9 @@ def main():
         # Callback function for ROS node
         async def websocket_callback(data: Dict):
             # Recieve json style data from node and pass to UI with send
-            # Get the output log before adding the robot loading dots
-            fh.outputs_log.children = fh.outputs_log.children[:-1]
-            if data["type"] == "String":
-                await log_data(send, data, data_src="robot")
+            if data["type"] in ["String", "Audio"]:
+                is_audio = True if data["type"] == "Audio" else False
+                await log_data(send, data, data_src="robot", is_audio=is_audio)
             else:
                 await log_data(send, data, data_src=data["type"])
 
@@ -126,10 +127,16 @@ def main():
         ros_node.attach_streaming_callback(stream_callback)
 
     @app.ws("/ws_stream", conn=on_conn_stream)
-    async def _():
+    async def _(data, send):
         """WS route for input/output communication with ROS UI Node"""
-        # No stream going to the ROS Node
-        pass
+        logging.info(f"Received on streaming: {data}")
+        # Only handle audio data
+        if data["type"] == "audio":
+            logging.info("Received message: audio bytes")
+            import base64
+
+            audio_bytes = base64.b64decode(data["payload"])
+            ros_node.publish_data(topic_name=data["key"], data=data["val"])
 
     uvicorn.run(app, host="0.0.0.0", port=5001)
 

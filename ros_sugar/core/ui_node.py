@@ -121,7 +121,11 @@ class UINode(BaseComponent):
 
         def _topic_callback(*, topic, output, **_):
             topic_type = topic.msg_type.__name__
+            if topic_type == "Audio":
+                # Encode audio bytes to base64 to send as a JSON string
+                output = base64.b64encode(output).decode("utf-8")
             payload = {"type": topic_type, "payload": output}
+
             asyncio.run_coroutine_threadsafe(websocket_callback(payload), self.loop)
 
         # Attach callback function
