@@ -17,41 +17,58 @@ except ModuleNotFoundError as e:
     ) from e
 
 
+def _in_string_element(topic_name: str):
+    """FastHTML element for input String type"""
+    return (
+        Form(cls="space-y-4")(
+            Input(
+                name=topic_name,
+                placeholder="String data...",
+                type="text",
+                required=True,
+                autocomplete="off",
+                hx_target="#outputs-log",
+            ),
+            id=f"{topic_name}-form",
+            ws_send=True,
+            hx_on__ws_after_send=f"this.{topic_name}.value=''; return false;",
+        ),
+    )
+
+
+def _in_audio_element(topic_name: str):
+    """FastHTML element for input Audio type"""
+    return Button(
+        UkIcon("mic"),
+        id=topic_name,
+        onclick="startAudioRecording(this)",
+    )
+
+
+def _out_image_element(topic_name: str):
+    """FastHTML element for output Image/CompressedImage type"""
+    return Img(id=topic_name, name="video-frame", src="", cls="h-96")
+
+
+_INPUT_ELEMENTS: Dict = {String: _in_string_element, SugarAudio: _in_audio_element}
+
+_OUTPUT_ELEMENTS: Dict = {
+    Image: _out_image_element,
+    CompressedImage: _out_image_element,
+}
+
+
 def input_topic_card(topic_name: str, topic_type: type):
     card = Card(
         H4(topic_name),
         cls="m-2",
         id=topic_name,
     )
-    if topic_type is String:
-        return card(
-            Form(cls="space-y-4")(
-                Input(
-                    name=topic_name,
-                    placeholder="String data...",
-                    type="text",
-                    required=True,
-                    autocomplete="off",
-                    hx_target="#outputs-log",
-                ),
-                id=f"{topic_name}-form",
-                ws_send=True,
-                hx_on__ws_after_send=f"this.{topic_name}.value=''; return false;",
-            ),
-        )
-    if topic_type is SugarAudio:
-        return card(
-            Button(
-                UkIcon("mic"),
-                id=topic_name,
-                onclick="startAudioRecording(this)",
-            )
-        )
+    return card(_INPUT_ELEMENTS[topic_type](topic_name))
 
 
 def output_topic_card(topic_name: str, topic_type: type):
-    if topic_type in [Image, CompressedImage]:
-        return Img(id=topic_name, name="video-frame", src="", cls="h-96")
+    return _OUTPUT_ELEMENTS[topic_type](topic_name)
 
 
 LOG_STYLES = {
