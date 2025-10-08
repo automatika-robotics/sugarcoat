@@ -6,6 +6,7 @@ from ros_sugar.io.supported_types import (
     CompressedImage,
     Audio as SugarAudio,
 )
+from .utils import parse_type
 
 try:
     from fasthtml.common import *
@@ -59,6 +60,14 @@ _OUTPUT_ELEMENTS: Dict = {
 
 
 def input_topic_card(topic_name: str, topic_type: type):
+    """Creates a UI element for an input topic
+
+    :param topic_name: Topic name
+    :type topic_name: str
+    :param topic_type: Topic message type
+    :type topic_type: type
+    :return: Input topic UI element
+    """
     card = Card(
         H4(topic_name),
         cls="m-2",
@@ -68,7 +77,97 @@ def input_topic_card(topic_name: str, topic_type: type):
 
 
 def output_topic_card(topic_name: str, topic_type: type):
+    """Creates a UI element for an output topic
+
+    :param topic_name: Topic name
+    :type topic_name: str
+    :param topic_type: Topic message type
+    :type topic_type: type
+    :return: Output topic UI element
+    """
     return _OUTPUT_ELEMENTS[topic_type](topic_name)
+
+
+def settings_ui_element(setting_name: str, setting_details: dict):
+    """Creates a UI element based on the setting's type and validators
+
+    :param setting_name: Config parameter name
+    :type setting_name: str
+    :param setting_details: Details of the parsed config
+    :type setting_details: dict
+
+    :return: Setting parameter UI element
+    """
+    field_type, type_args = parse_type(setting_details.get("type", ""))
+    validators = setting_details.get("validators", [])
+    value = setting_details.get("value")
+
+    # Handle validators first
+    if validators:
+        return validated_config(
+            setting_name=setting_name, value=value, attrs_validators=validators
+        )
+
+    return nonvalidated_config(
+        setting_name=setting_name,
+        value=value,
+        field_type=field_type,
+        type_args=type_args,
+    )
+
+
+def component_settings_div(component_name: str, settings_col_cls: str, ui_elements):
+    """Creates a UI element for a component to show and update the config parameters
+
+    :param component_name: Name of the component (ROS2 node name)
+    :type component_name: str
+    :param settings_col_cls: UI Div columns span in the display grid
+    :type settings_col_cls: str
+    :param ui_elements: A set ot UI elements for each parameter in the component config
+    :type ui_elements: List
+    :return: Component config UI element
+    """
+    component_div = Card(
+        cls=f"p-4 {settings_col_cls}",
+    )
+    settings_grid = Grid(*ui_elements, cols=4, cls="space-y-3 gap-4 p-4")
+    _loading_content = DivHStacked(
+        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending")
+    )
+    return component_div(
+        H3(component_name),
+        Form(cls="space-y-4")(
+            Input(name="component_name", type="hidden", value=component_name),
+            settings_grid,
+            DivCentered(
+                Grid(
+                    Button(
+                        "Submit",
+                        cls=ButtonT.primary,
+                        hx_post="/settings/submit",
+                        hx_target="#main",
+                        hx_on__before_request=f"""
+                        this.innerHTML = `{_loading_content}`;
+                        this.disabled = true;
+                        """,
+                    ),
+                    Button(
+                        "Close",
+                        cls=ButtonT.secondary,
+                        hx_get="/",
+                        hx_target="#main",
+                    ),
+                    cols=2,
+                    cls="gap-2",
+                )
+            ),
+            id=component_name,
+        ),
+        DivCentered(id="notification"),
+        header=Div(
+            CardTitle(component_name),
+        ),
+    )
 
 
 LOG_STYLES = {

@@ -3,7 +3,6 @@ from datetime import datetime
 
 from ros_sugar.io.supported_types import String, Audio as SugarAudio
 from ros_sugar.io.topic import Topic
-from .utils import parse_type
 from . import elements
 
 try:
@@ -45,7 +44,6 @@ class FHApp:
             ),
         )
         self.app, self.rt = fast_app(hdrs=hdrs, exts=["ws", "morph"])
-        setup_toasts(self.app)
 
         if not configs:
             logging.warning("No component configs provided to the UI")
@@ -56,6 +54,7 @@ class FHApp:
         self.inputs = self._create_input_topics_ui(in_topics)
         self.outputs = self._create_output_topics_ui(out_topics)
         self.toggle_settings = False
+        setup_toasts(self.app)
 
         # persistent elements
         self.outputs_log = elements.create_logging_card()
@@ -68,30 +67,30 @@ class FHApp:
     def _main(self):
         if not self.toggle_settings:
             return Main(
-                    Grid(
-                        # ThemePicker(
-                        #     color=False,
-                        #     radii=False,
-                        #     shadows=False,
-                        #     font=False,
-                        #     mode=True,
-                        #     cls="p-4",
-                        # ),
-                        Div(
-                            Card(H3("Log"), self.outputs_log, cls=f"{CardT.secondary}"),
-                        ),
-                        Div(self.outputs),
-                        Div(self.inputs, cls="col-span-full"),
-                        id="modal-container",
-                        cols=2,
+                Grid(
+                    # ThemePicker(
+                    #     color=False,
+                    #     radii=False,
+                    #     shadows=False,
+                    #     font=False,
+                    #     mode=True,
+                    #     cls="p-4",
+                    # ),
+                    Div(
+                        Card(H3("Log"), self.outputs_log, cls=f"{CardT.secondary}"),
                     ),
-                    Div(id="result"),
-                    id="main",
-                    cls="pt-2 pb-2",
-                    # connect to the websocket
-                    hx_ext="ws",
-                    ws_connect="/ws",
-                )
+                    Div(self.outputs),
+                    Div(self.inputs, cls="col-span-full"),
+                    id="modal-container",
+                    cols=2,
+                ),
+                Div(id="result"),
+                id="main",
+                cls="pt-2 pb-2",
+                # connect to the websocket
+                hx_ext="ws",
+                ws_connect="/ws",
+            )
         return self.settings
 
     def get_app(self):
@@ -99,27 +98,12 @@ class FHApp:
         return self.app, self.rt
 
     # -- Utility Functions --
-    def toasting(self, msg, session, toast_type="info"):
-        add_toast(session, f"{msg}", toast_type)
-
-    def _create_ui_element(self, setting_name, setting_details):
-        """Creates a UI element based on the setting's type and validators."""
-        field_type, type_args = parse_type(setting_details.get("type", ""))
-        validators = setting_details.get("validators", [])
-        value = setting_details.get("value")
-
-        # Handle validators first
-        if validators:
-            return elements.validated_config(
-                setting_name=setting_name, value=value, attrs_validators=validators
-            )
-
-        return elements.nonvalidated_config(
-            setting_name=setting_name,
-            value=value,
-            field_type=field_type,
-            type_args=type_args,
-        )
+    def toasting(self, msg, session, toast_type="info", duration: int = 5000):
+        session["duration"] = duration
+        dismiss = (
+            duration >= 20000
+        )  # Id duration is more than 20seconds -> activate dismiss by default
+        add_toast(session, f"{msg}", toast_type, dismiss)
 
     # TODO: Create nested ui element
     # def _create_nested_attrs_ui(self, nested_value_name, nested_value):
@@ -158,6 +142,7 @@ class FHApp:
 
     def _create_component_settings_ui(self, settings: Dict):
         """Creates a Div for component settings from a dictionary."""
+        # Parse number of grid columns and column span based on the number of components
         if len(settings) > 2:
             grid_num_cols = 2
             item_col_cls = "col-1"
@@ -172,48 +157,23 @@ class FHApp:
 
         all_component_forms = []
         for count, (component_name, component_settings) in enumerate(settings.items()):
-            component_div = Card(
-                cls=f"p-4 {item_col_cls if count < len(settings) - 1 else last_col_cls}",
-            )
+            # Create an element per config parameter
             ui_elements = [
                 DivLAligned(
-                    self._create_ui_element(setting_name, setting_details),
+                    elements.settings_ui_element(setting_name, setting_details),
                 )
                 for setting_name, setting_details in component_settings.items()
             ]
-            settings_grid = Grid(*ui_elements, cols=4, cls="space-y-3 gap-4 p-4")
-
-            component_div(
-                H3(component_name),
-                Form(cls="space-y-4")(
-                    Input(name="component_name", type="hidden", value=component_name),
-                    settings_grid,
-                    DivCentered(
-                        Grid(
-                            Button(
-                                "Submit",
-                                cls=ButtonT.primary,
-                            ),
-                            Button(
-                                "Close",
-                                cls=ButtonT.secondary,
-                                hx_get="/",
-                                hx_target="#main",
-                            ),
-                            cols=2,
-                            cls="gap-2",
-                        )
-                    ),
-                    hx_post="/settings/submit",
-                    hx_target="#main",
-                    id=component_name,
-                ),
-                DivCentered(id="notification"),
-                header=Div(
-                    CardTitle(component_name),
-                ),
+            # Create an element for each component and add to the settings display
+            all_component_forms.append(
+                elements.component_settings_div(
+                    component_name,
+                    settings_col_cls=item_col_cls
+                    if count < len(settings) - 1
+                    else last_col_cls,
+                    ui_elements=ui_elements,
+                )
             )
-            all_component_forms.append(component_div)
         main_container(*all_component_forms)
         return main_container
 
@@ -281,6 +241,6 @@ class FHApp:
                     cls="p-2",
                 ),
                 self._main,
-                id="main"
-        )
+                id="main",
+            ),
         )
