@@ -42,12 +42,14 @@ def main():
     @app.get("/")
     def _():
         """Serves the main application page."""
+        fh.toggle_settings = False
         return fh.get_main_page()
 
     @app.get("/settings/show")
     def _():
         """Show the settings tabs"""
-        return fh.get_settings()
+        fh.toggle_settings = not fh.toggle_settings
+        return fh.get_main_page()
 
     @app.post("/settings/submit")
     async def _(request, session):

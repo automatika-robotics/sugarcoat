@@ -59,9 +59,44 @@ class FHApp:
         self.settings = self._create_component_settings_ui(configs)
         self.inputs = self._create_input_topics_ui(in_topics)
         self.outputs = self._create_output_topics_ui(out_topics)
+        self.toggle_settings = False
 
         # persistent elements
         self.outputs_log = elements.create_logging_card()
+
+    @property
+    def _settings_button(self) -> str:
+        return "Exit Settings" if self.toggle_settings else "Components Settings"
+
+    @property
+    def _main(self):
+        if not self.toggle_settings:
+            return Main(
+                    Grid(
+                        # ThemePicker(
+                        #     color=False,
+                        #     radii=False,
+                        #     shadows=False,
+                        #     font=False,
+                        #     mode=True,
+                        #     cls="p-4",
+                        # ),
+                        Div(
+                            Card(H3("Log"), self.outputs_log, cls=f"{CardT.secondary}"),
+                        ),
+                        Div(self.outputs),
+                        Div(self.inputs, cls="col-span-full"),
+                        id="modal-container",
+                        cols=2,
+                    ),
+                    Div(id="result"),
+                    id="main",
+                    cls="pt-2 pb-2",
+                    # connect to the websocket
+                    hx_ext="ws",
+                    ws_connect="/ws",
+                )
+        return self.settings
 
     def get_app(self):
         """Get the FastHTML app"""
@@ -127,13 +162,27 @@ class FHApp:
 
     def _create_component_settings_ui(self, settings: Dict):
         """Creates a Div for component settings from a dictionary."""
-        main_container = DivLAligned()
+        if len(settings) > 2:
+            grid_num_cols = 2
+            item_col_cls = "col-1"
+            # Make the last component span over the whole width if we have an odd number of components
+            last_col_cls = "col-span-full" if len(settings) % 2 == 1 else "col-1"
+        else:
+            grid_num_cols = 1
+            item_col_cls = "col-span-full"
+            last_col_cls = "col-span-full"
+
+        main_container = Grid(cols=grid_num_cols)
 
         all_component_forms = []
-        for component_name, component_settings in settings.items():
-            component_div = Card(cls="p-4")
+        for count, (component_name, component_settings) in enumerate(settings.items()):
+            component_div = Card(
+                cls=f"p-4 {item_col_cls if count < len(settings) - 1 else last_col_cls}",
+            )
             ui_elements = [
-                DivLAligned(self._create_ui_element(setting_name, setting_details))
+                DivLAligned(
+                    self._create_ui_element(setting_name, setting_details),
+                )
                 for setting_name, setting_details in component_settings.items()
             ]
             settings_grid = Grid(*ui_elements, cols=4, cls="space-y-3 gap-4 p-4")
@@ -214,50 +263,28 @@ class FHApp:
         """Serves the main page of the UI"""
         # Create settings on refresh
         self.settings = self._create_component_settings_ui(self.configs)
-
         # Serve main page
-        return Container(
-            NavBar(
-                Button(
-                    "Components Settings",
-                    id="settings-button",
-                    hx_get="/settings/show",
-                    hx_target="#modal-container",
-                    hx_swap="innerHTML",
-                    cls=ButtonT.primary,
-                ),
-                brand=DivLAligned(
-                    Img(
-                        src="https://automatikarobotics.com/Emos_dark.png",
-                        style="width:6vw",
-                    )
-                ),
-                cls="p-2",
-            ),
-            Main(
-                Grid(
-                    # ThemePicker(
-                    #     color=False,
-                    #     radii=False,
-                    #     shadows=False,
-                    #     font=False,
-                    #     mode=True,
-                    #     cls="p-4",
-                    # ),
-                    Div(
-                        Card(H3("Log"), self.outputs_log, cls=f"{CardT.secondary}"),
+        return (
+            Title("EMOS CLI"),
+            Container(
+                NavBar(
+                    Button(
+                        self._settings_button,
+                        id="settings-button",
+                        hx_get="/settings/show",
+                        hx_target="#main",
+                        hx_swap="outerHTML",
+                        cls=ButtonT.primary,
                     ),
-                    Div(self.outputs),
-                    Div(self.inputs, cls="col-span-full"),
-                    id="modal-container",
-                    cols=2,
+                    brand=DivLAligned(
+                        Img(
+                            src="https://automatikarobotics.com/Emos_dark.png",
+                            style="width:6vw",
+                        )
+                    ),
+                    cls="p-2",
                 ),
-                Div(id="result"),
-                id="main",
-                cls="pt-2 pb-2",
-                # connect to the websocket
-                hx_ext="ws",
-                ws_connect="/ws",
-            ),
-            id="main",
+                self._main,
+                id="main"
+        )
         )
