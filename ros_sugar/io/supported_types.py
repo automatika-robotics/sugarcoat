@@ -1,6 +1,6 @@
 """ROS Topics Supported Message Types"""
 
-from typing import Any, Union, Optional, List
+from typing import Any, Union, Optional, List, Dict
 import base64
 import numpy as np
 
@@ -174,6 +174,10 @@ class SupportedType:
         """
         return cls._ros_type
 
+    @classmethod
+    def from_ui_dict(cls, data: Dict, **_) -> Any:
+        raise NotImplementedError
+
 
 class String(SupportedType):
     """String."""
@@ -190,6 +194,10 @@ class String(SupportedType):
         msg = ROSString()
         msg.data = output
         return msg
+
+    @classmethod
+    def from_ui_dict(cls, data: Dict, **_) -> str:
+        return data.get('data', '')
 
 
 class Bool(SupportedType):

@@ -23,12 +23,11 @@ class FHApp:
         out_topics: Sequence[Topic],
     ):
         # --- Application Setup ---
-        # Get theme from MonsterUI
         BASE_DIR = Path.cwd()  # where the recipe is running
         static_files_abs = Path(__file__).resolve().parent
         static_files = static_files_abs.relative_to(BASE_DIR).as_posix()
         hdrs = (
-            Theme.red.headers(),
+            Theme.red.headers(),  # Get theme from MonsterUI
             Link(
                 rel="stylesheet",
                 href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css",
@@ -134,7 +133,7 @@ class FHApp:
         outputs_container = Card(H3("Outputs"), cls=CardT.secondary)
         for out in outputs:
             if out.msg_type in [String, SugarAudio]:
-                continue  # String is displayed in log
+                continue  # String and Audio are displayed in log
             output_divs.append(
                 Card(H4(out.name), elements.output_topic_card(out.name, out.msg_type))
             )

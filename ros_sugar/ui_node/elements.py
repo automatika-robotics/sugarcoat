@@ -2,9 +2,15 @@ from typing import List, Dict, Any
 
 from ros_sugar.io.supported_types import (
     String,
+    Float32,
+    Float64,
     Image,
     CompressedImage,
     Audio as SugarAudio,
+    Point,
+    PointStamped,
+    Pose,
+    PoseStamped,
 )
 from .utils import parse_type
 
@@ -18,26 +24,28 @@ except ModuleNotFoundError as e:
     ) from e
 
 
-def _in_string_element(topic_name: str):
+def _in_text_element(topic_name: str, topic_type: type):
     """FastHTML element for input String type"""
+    field_type = "number" if topic_type in [Float32, Float64] else "text"
     return (
         Form(cls="space-y-4")(
+            Input(name="topic_name", type="hidden", value=topic_name),
+            Input(name="topic_type", type="hidden", value=topic_type.__name__),
             Input(
-                name=topic_name,
+                name='data',
                 placeholder="String data...",
-                type="text",
+                type=field_type,
                 required=True,
                 autocomplete="off",
-                hx_target="#outputs-log",
             ),
             id=f"{topic_name}-form",
             ws_send=True,
-            hx_on__ws_after_send=f"this.{topic_name}.value=''; return false;",
+            hx_on__ws_after_send="this.reset(); return false;",
         ),
     )
 
 
-def _in_audio_element(topic_name: str):
+def _in_audio_element(topic_name: str, **_):
     """FastHTML element for input Audio type"""
     return Button(
         UkIcon("mic"),
@@ -46,12 +54,55 @@ def _in_audio_element(topic_name: str):
     )
 
 
+def _in_point_element(topic_name: str, topic_type: type):
+    """FastHTML element for 3D point type"""
+    return (
+        Form(cls="space-y-4")(
+            Input(name="topic_name", type="hidden", value=topic_name),
+            Input(name="topic_type", type="hidden", value=topic_type.__name__),
+            Input(
+                placeholder="X",
+                name="x",
+                type="number",
+                required=True,
+                autocomplete="off",
+            ),
+            Input(
+                placeholder="Y",
+                name="y",
+                type="number",
+                required=True,
+                autocomplete="off",
+            ),
+            Input(
+                placeholder="Z",
+                name="z",
+                type="number",
+                required=True,
+                autocomplete="off",
+            ),
+            id=f"{topic_name}-form",
+            ws_send=True,
+            hx_on__ws_after_send="this.reset(); return false;",
+        ),
+    )
+
+
 def _out_image_element(topic_name: str):
     """FastHTML element for output Image/CompressedImage type"""
     return Img(id=topic_name, name="video-frame", src="", cls="h-96")
 
 
-_INPUT_ELEMENTS: Dict = {String: _in_string_element, SugarAudio: _in_audio_element}
+_INPUT_ELEMENTS: Dict = {
+    String: _in_text_element,
+    Float32: _in_text_element,
+    Float64: _in_text_element,
+    SugarAudio: _in_audio_element,
+    Point: _in_point_element,
+    PointStamped: _in_point_element,
+    Pose: _in_point_element,
+    PoseStamped: _in_point_element,
+}
 
 _OUTPUT_ELEMENTS: Dict = {
     Image: _out_image_element,
@@ -73,7 +124,7 @@ def input_topic_card(topic_name: str, topic_type: type):
         cls="m-2",
         id=topic_name,
     )
-    return card(_INPUT_ELEMENTS[topic_type](topic_name))
+    return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
 
 
 def output_topic_card(topic_name: str, topic_type: type):

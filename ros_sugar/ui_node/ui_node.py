@@ -2,13 +2,12 @@ from typing import Dict, Optional, Sequence, Any, Callable
 import threading
 import asyncio
 import os
-import base64
-import cv2
 from attr import define, field, Factory
 from ..core.component import BaseComponent, BaseComponentConfig
 from .. import base_clients
 from ..io.callbacks import GenericCallback
 from ..io.topic import Topic
+from ..io import supported_types
 from automatika_ros_sugar.srv import ChangeParameters
 
 
@@ -73,7 +72,6 @@ class UINode(BaseComponent):
         """
 
         def _ui_callback(msg) -> None:
-
             ws_callback = (
                 self.stream_callback
                 if callback.input_topic.msg_type.__name__
@@ -149,10 +147,23 @@ class UINode(BaseComponent):
         )
         return result
 
-    def publish_data(self, topic_name: str, data: Any):
+    def publish_data(self, data: Any):
         """
         Publish data to input topics if any
         """
+        topic_name = data.pop("topic_name")
+        topic_type_str = data.pop("topic_type")
+        topic_type = getattr(supported_types, topic_type_str, None)
+
+        if not topic_type:
+            error_msg = f'Data type "{topic_type_str}" not found in supported types. Make sure the UI element is created correctly'
+            self.get_logger().error(error_msg)
+            payload = {"type": "error", "payload": error_msg}
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_callback(payload), self.loop
+            )
+            return
+
         if self.count_subscribers(topic_name) == 0:
             error_msg = f'No subscribers found for the topic "{topic_name}". Please check the topic name in your recipe'
             self.get_logger().error(error_msg)
@@ -161,7 +172,21 @@ class UINode(BaseComponent):
                 self.websocket_callback(payload), self.loop
             )
             return
-        self.publishers_dict[topic_name].publish(output=data)
+
+        try:
+            output = topic_type.from_ui_dict(
+                data
+            )  # Convert to publisher compatible data
+        except NotImplementedError:
+            error_msg = f'Data type "{topic_type_str}" does not implement a converter'
+            self.get_logger().error(error_msg)
+            payload = {"type": "error", "payload": error_msg}
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_callback(payload), self.loop
+            )
+            return
+
+        self.publishers_dict[topic_name].publish(output=output)
 
     def _execution_step(self):
         """

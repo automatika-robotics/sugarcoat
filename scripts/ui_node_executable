@@ -112,13 +112,14 @@ def main():
     async def _(data, send):
         """WS route for input/output communication with ROS UI Node"""
 
-        for key, val in data.items():
-            if isinstance(val, str):
-                await log_data(send, val, data_src="user")
-                ros_node.publish_data(topic_name=key, data=val)
-
-                # Send the robot loading dots
-                return elements.update_logging_card_with_loading(fh.outputs_log)
+        if data.get('topic_type') == "String":
+            # display in log for string data types
+            await log_data(send, data['data'], data_src="user")
+            ros_node.publish_data(data=data)
+            # Send the robot loading dots
+            return elements.update_logging_card_with_loading(fh.outputs_log)
+        else:
+            ros_node.publish_data(data=data)
 
     async def on_conn_stream(ws, send):
         """When a client connects, register its callback."""
