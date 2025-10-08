@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from typing import Dict
+import numpy as np
 from pathlib import Path
 import base64
 import logging
@@ -59,9 +60,13 @@ def main():
         form_data = await request.form()
         result = ros_node.update_configs(dict(form_data.items()))
         success = all(result.success)
-        logging.info(f"RESULT : {result}")
         if not success:
-            (fh.toasting(e, session, "error") for e in result.error_msg if e)
+            item_names = list(form_data.keys())
+            error_msg = "Error in updating the folllowing settings values: \n"
+            for key in range(len(result.success)):
+                if not result.success[key]:
+                    error_msg += f"{item_names[key + 1]}: {result.error_msg[key]}\n"
+            fh.toasting(error_msg, session, "error", duration=100000)
         else:
             fh.toasting("Settings changed successfully", session, "success")
         return fh.get_main_page()
