@@ -91,7 +91,7 @@ def main():
         # Callback function for ROS node
         async def websocket_callback(data: Dict):
             # Recieve json style data from node and pass to UI with send
-            if data["type"] in ["String", "Audio"] and data["payload"]:
+            if data["type"] in ["String", "Audio"] and len(data["payload"]) > 0:
                 is_audio = True if data["type"] == "Audio" else False
                 await log_data(
                     send, data["payload"], data_src="robot", is_audio=is_audio
@@ -129,7 +129,7 @@ def main():
     async def _(data, send):
         """WS route for input/output communication with ROS UI Node"""
         # Only handle audio data
-        if data["type"] == "audio" and data["payload"]:
+        if data["type"] == "audio" and len(data["payload"]) > 0:
             try:
                 await log_data(send, data["payload"], data_src="user", is_audio=True)
                 audio_bytes = base64.b64decode(data["payload"])
