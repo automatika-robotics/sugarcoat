@@ -5,11 +5,11 @@ import base64
 import logging
 import threading
 import uvicorn
-from ros_sugar.core.ui_node import UINode, UINodeConfig
 from ros_sugar.launch.executable import setup_component, run_component
 
-from ui_node.frontend import FHApp
-import ui_node.elements as elements
+from ros_sugar.ui_node import UINode, UINodeConfig
+from ros_sugar.ui_node.frontend import FHApp
+import ros_sugar.ui_node.elements as elements
 
 
 def main():

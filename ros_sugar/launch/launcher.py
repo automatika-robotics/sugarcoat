@@ -46,9 +46,9 @@ from ..core.action import Action
 from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
-from ..core.ui_node import UINode, UINodeConfig
 from .launch_actions import ComponentLaunchAction
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
+from ..ui_node import UINode, UINodeConfig
 
 # Get ROS distro
 __installed_distro = os.environ.get("ROS_DISTRO", "").lower()

@@ -5,7 +5,6 @@ from ros_sugar.io.supported_types import String, Audio as SugarAudio
 from ros_sugar.io.topic import Topic
 from .utils import parse_type
 from . import elements
-from ament_index_python.packages import get_package_prefix
 
 try:
     from fasthtml.common import *
@@ -26,11 +25,8 @@ class FHApp:
     ):
         # --- Application Setup ---
         # Get theme from MonsterUI
-        package_root = Path(
-            get_package_prefix("automatika_ros_sugar")
-        )  # where the package is installed
         BASE_DIR = Path.cwd()  # where the recipe is running
-        static_files_abs = package_root / "lib" / "automatika_ros_sugar" / "ui_node"
+        static_files_abs = Path(__file__).resolve().parent
         static_files = static_files_abs.relative_to(BASE_DIR).as_posix()
         hdrs = (
             Theme.red.headers(),

@@ -59,12 +59,6 @@ scripts/ui_node_executable
 DESTINATION lib/${PROJECT_NAME}
 )
 
-# ui_node front end files
-install(DIRECTORY
-scripts/ui_node
-DESTINATION lib/${PROJECT_NAME}
-)
-
 #NOTE: Remove testing for ROS build farm until required package names are merged in rosdistro
 # if(BUILD_TESTING)
 #   find_package(ament_lint_auto REQUIRED)

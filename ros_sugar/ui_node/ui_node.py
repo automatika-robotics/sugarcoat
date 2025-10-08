@@ -5,7 +5,7 @@ import os
 import base64
 import cv2
 from attr import define, field, Factory
-from .component import BaseComponent, BaseComponentConfig
+from ..core.component import BaseComponent, BaseComponentConfig
 from .. import base_clients
 from ..io.topic import Topic
 from automatika_ros_sugar.srv import ChangeParameters
