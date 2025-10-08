@@ -7,6 +7,7 @@ import cv2
 from attr import define, field, Factory
 from ..core.component import BaseComponent, BaseComponentConfig
 from .. import base_clients
+from ..io.callbacks import GenericCallback
 from ..io.topic import Topic
 from automatika_ros_sugar.srv import ChangeParameters
 
@@ -15,8 +16,8 @@ from automatika_ros_sugar.srv import ChangeParameters
 class UINodeConfig(BaseComponentConfig):
     components: Dict[str, Dict] = field(default=Factory(dict))
     port: int = field(default=5001)
-    ssl_keyfile: str = field(default='key.pem')
-    ssl_certificate: str = field(default='cert.pem')
+    ssl_keyfile: str = field(default="key.pem")
+    ssl_certificate: str = field(default="cert.pem")
 
 
 class UINode(BaseComponent):
@@ -42,8 +43,10 @@ class UINode(BaseComponent):
             str, base_clients.ServiceClientHandler
         ] = {}
 
-        # Set websocket callback
+        # Initialize websocket callbacks
         self.websocket_callback: Callable = lambda _: asyncio.sleep(0)
+        self.stream_callback: Callable = lambda _: asyncio.sleep(0)
+
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -62,6 +65,48 @@ class UINode(BaseComponent):
         )
 
         self.config: UINodeConfig
+
+    def _add_ros_subscriber(self, callback: GenericCallback):
+        """Overrides creating subscribers to run the ui callback instead of the main callback
+        :param callback:
+        :type callback: GenericCallback
+        """
+
+        def _ui_callback(msg) -> None:
+
+            ws_callback = (
+                self.stream_callback
+                if callback.input_topic.msg_type.__name__
+                in ["Image", "CompressedImage", "OccupancyGrid"]
+                else self.websocket_callback
+            )
+            callback.msg = msg
+            output = callback.get_output()
+            try:
+                ui_content = callback._get_ui_content(output=output)
+                payload = {
+                    "type": callback.input_topic.msg_type.__name__,
+                    "payload": ui_content,
+                    "topic": callback.input_topic.name,
+                }
+            except Exception as e:
+                payload = {
+                    "type": "error",
+                    "payload": f"Topic callback error: {e}",
+                }
+            asyncio.run_coroutine_threadsafe(ws_callback(payload), self.loop)
+
+        _subscriber = self.create_subscription(
+            msg_type=callback.input_topic.ros_msg_type,
+            topic=callback.input_topic.name,
+            qos_profile=callback.input_topic.qos_profile.to_ros(),
+            callback=_ui_callback,
+            callback_group=self.callback_group,
+        )
+        self.get_logger().debug(
+            f"Started subscriber to topic: {callback.input_topic.name} of type {callback.input_topic.msg_type}"
+        )
+        return _subscriber
 
     def custom_on_activate(self):
         """Custom activation configuration"""
@@ -83,60 +128,11 @@ class UINode(BaseComponent):
 
     def attach_streaming_callback(self, stream_callback: Callable):
         """Adds websocket callback to listeners of outputs"""
-
-        def _topic_callback(*, topic, output, **_):
-            topic_type = topic.msg_type.__name__
-            try:
-                # Encode image as JPEG
-                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-                result, buffer = cv2.imencode(".jpg", output, encode_param)
-                if not result:
-                    self.get_logger().error("Failed to encode image to JPEG format.")
-                    payload = {
-                        "type": "error",
-                        "payload": "Failed to encode image to JPEG format",
-                    }
-                else:
-                    # Convert to base64
-                    jpg_as_text = base64.b64encode(buffer).decode("utf-8")
-                    payload = {
-                        "type": topic_type,
-                        "payload": jpg_as_text,
-                        "topic": topic.name,
-                    }
-            except Exception:
-                payload = {
-                    "type": "error",
-                    "payload": "Failed to encode image to JPEG format",
-                }
-
-            asyncio.run_coroutine_threadsafe(stream_callback(payload), self.loop)
-
-        # Attach callback function
-        for callback in self.callbacks.values():
-            if callback.input_topic.msg_type.__name__ in ["Image", "CompressedImage"]:
-                callback.on_callback_execute(_topic_callback)
+        self.stream_callback = stream_callback
 
     def attach_websocket_callback(self, websocket_callback: Callable):
         """Adds websocket callback to listeners of outputs"""
         self.websocket_callback = websocket_callback
-
-        def _topic_callback(*, topic, output, **_):
-            topic_type = topic.msg_type.__name__
-            if topic_type == "Audio":
-                # Encode audio bytes to base64 to send as a JSON string
-                output = base64.b64encode(output).decode("utf-8")
-            payload = {"type": topic_type, "payload": output}
-
-            asyncio.run_coroutine_threadsafe(websocket_callback(payload), self.loop)
-
-        # Attach callback function
-        for callback in self.callbacks.values():
-            if callback.input_topic.msg_type.__name__ not in [
-                "Image",
-                "CompressedImage",
-            ]:
-                callback.on_callback_execute(_topic_callback)
 
     def update_configs(self, new_configs: Dict):
         self.get_logger().info("Updating configs")

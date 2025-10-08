@@ -4,6 +4,7 @@ import os
 from abc import abstractmethod
 from typing import Any, Callable, Optional, Union, Dict, List
 from socket import socket
+import base64
 
 import cv2
 import numpy as np
@@ -181,6 +182,15 @@ class GenericCallback:
         """
         return self.msg
 
+    @abstractmethod
+    def _get_ui_content(self, output) -> str:
+        """
+        Gets the output.
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return output
+
     @property
     def got_msg(self):
         """
@@ -295,6 +305,18 @@ class ImageCallback(GenericCallback):
             # pre-process and reshape
             return utils.image_pre_processing(self.msg, *self.encoding)
 
+    def _get_ui_content(self, output) -> str:
+        """Get ui content for image"""
+        # Encode image as JPEG
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+        result, buffer = cv2.imencode(".jpg", output, encode_param)
+        if not result:
+            get_logger(self.node_name).error("Failed to encode image to JPEG format.")
+            raise Exception("Failed to encode image to JPEG format.")
+        else:
+            # Convert to base64
+            return base64.b64encode(buffer).decode("utf-8")
+
 
 class CompressedImageCallback(ImageCallback):
     """
@@ -407,6 +429,11 @@ class AudioCallback(GenericCallback):
             #     file.writeframes(audio)
 
             return audio
+
+    def _get_ui_content(self, output) -> str:
+        """Get ui content for audio"""
+        # Encode audio bytes to base64 to send as a JSON string
+        return base64.b64encode(output).decode("utf-8")
 
 
 class MapMetaDataCallback(GenericCallback):
