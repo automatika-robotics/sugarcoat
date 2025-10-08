@@ -196,12 +196,19 @@ def validated_config(setting_name: str, value: Any, attrs_validators: List[Dict]
             map(Option, options), label=setting_name, id=setting_name, value=value
         )
 
-    elif validator_name in ["greater_than", "less_than"]:
+    elif validator_name == "less_than":
         return LabelInput(
             setting_name,
             id=setting_name,
             type="number",
             max=validator_props.get("ref_value", None),
+            value=str(value),
+        )
+    elif validator_name == "greater_than":
+        return LabelInput(
+            setting_name,
+            id=setting_name,
+            type="number",
             min=validator_props.get("ref_value", None),
             value=str(value),
         )
