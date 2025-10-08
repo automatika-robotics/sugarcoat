@@ -151,10 +151,12 @@ class Launcher:
         components: List[BaseComponent],
         package_name: Optional[str] = None,
         executable_entry_point: Optional[str] = "executable",
-        events_actions: Dict[
-            Event, Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
-        ]
-        | None = None,
+        events_actions: Optional[
+            Dict[
+                Event,
+                Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
+            ]
+        ] = None,
         multiprocessing: bool = False,
         activate_all_components_on_start: bool = True,
         components_to_activate_on_start: Optional[List[BaseComponent]] = None,
