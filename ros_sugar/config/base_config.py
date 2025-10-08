@@ -13,7 +13,6 @@ from .base_attrs import BaseAttrs
 __all__ = ["QoSConfig", "BaseComponentConfig", "BaseConfig", "ComponentRunType"]
 
 
-
 def _get_enum_value(enm_val):
     """
     Converter to get value from Enum
@@ -196,7 +195,7 @@ def _convert_runtype_to_enum(
         return value
     if isinstance(value, str):
         for value_enum in ComponentRunType:
-            if value_enum.value == value:
+            if value_enum.value.lower() == value.lower():
                 return value_enum
         raise ValueError(f"Unsupported ComponentRunTime value '{value}'")
 

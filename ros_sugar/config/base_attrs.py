@@ -66,7 +66,7 @@ class BaseAttrs:
         first_level_keys = [attr.name for attr in self.__attrs_attrs__]
         first_level_values = [getattr(self, key) for key in first_level_keys]
 
-        for name, value in zip(first_level_keys, first_level_values):
+        for name, value in (first_level_keys, first_level_values):
             # Do not display private attributes
             if not name.startswith("_"):
                 print_statement += f"{name}: {value}\n"
@@ -74,7 +74,7 @@ class BaseAttrs:
         return print_statement
 
     @classmethod
-    def __is_union_type(cls, some_type) -> bool:
+    def __is_subscripted_generic(cls, some_type) -> Optional[type]:
         """
         Helper method to check if a type is from typing.Union
 
@@ -84,25 +84,7 @@ class BaseAttrs:
         :return: If type is from typing.Union
         :rtype: bool
         """
-        return getattr(some_type, "__origin__", None) is Union
-
-    @classmethod
-    def __is_valid_arg_of_union_type(cls, obj, union_types) -> bool:
-        """
-        Helper method to check if a type is from typing.Union
-
-        :param obj: _description_
-        :type obj: _type_
-        :param union_types: _description_
-        :type union_types: _type_
-        :return: _description_
-        :rtype: _type_
-        """
-        _types = [
-            get_origin(t) if isinstance(t, _GenericAlias) else t
-            for t in get_args(union_types)
-        ]
-        return any(isinstance(obj, t) for t in _types)
+        return getattr(some_type, "__origin__", None)
 
     def asdict(self, filter: Optional[Callable] = None) -> Dict:
         """Convert class to dict.
@@ -130,11 +112,19 @@ class BaseAttrs:
         :rtype: Any
         """
         # Union typing requires special treatment
-        if self.__is_union_type(attribute_type):
-            if not self.__is_valid_arg_of_union_type(value, attribute_type):
-                raise TypeError(
-                    f"Trying to set with incompatible type. Attribute {key} expecting '{type(attribute_to_set)}' got '{type(value)}'"
-                )
+        if generic_type := self.__is_subscripted_generic(attribute_type):
+            _types = get_args(attribute_type)
+            if generic_type is Union:
+                # Check if the value type is one of the valid union types
+                if not any(isinstance(value, t) for t in _types):
+                    raise TypeError(
+                        f"Trying to set with incompatible type. Attribute {key} expecting '{type(attribute_to_set)}' got '{type(value)}'"
+                    )
+            if generic_type is Literal:
+                if not any(value == t for t in _types):
+                    raise TypeError(
+                        f"Trying to set a Literal attribute with incompatible value. Attribute {key} expecting '{_types}' got '{value}'"
+                    )
         elif isinstance(value, List) and attribute_type is np.ndarray:
             # Turn list into numpy array
             value = np.array(value)
@@ -212,6 +202,7 @@ class BaseAttrs:
                     value = self.__check_value_against_attr_type(
                         key, value, attribute_to_set, attribute_type
                     )
+                logging.info(f"Setting {key} with val: {value}")
                 setattr(self, key, value)
 
     def _select_nested_config(
@@ -417,17 +408,17 @@ class BaseAttrs:
         """
         # Get nested attributes if there
         nested_names = attr_name.split(".")
-        name_to_set = nested_names[0]
         obj_to_set = self
         obj_class = self
-        for name_to_set in nested_names:
+        for name in nested_names:
             # Raise an error if the name does not exist in the class
-            if not hasattr(obj_to_set, name_to_set):
+            if not hasattr(obj_to_set, name):
                 raise AttributeError(
                     f"Class '{self.__class__.__name__}' does not have an attribute '{attr_name}'"
                 )
             obj_class = obj_to_set
-            obj_to_set = getattr(obj_to_set, name_to_set)
+            obj_to_set = getattr(obj_to_set, name)
+            name_to_set = name
 
         attribute_type = fields_dict(obj_class.__class__)[name_to_set].type
 
@@ -493,9 +484,7 @@ class BaseAttrs:
         # Iterate over all attributes defined by attrs
         for attr_field in self.__attrs_attrs__:
             logging.info(f"Looping got {attr_field.name}, {attr_field.type}")
-            if (
-                attr_field.name.startswith("_")
-            ):
+            if attr_field.name.startswith("_"):
                 continue
             validators_list = []
             # Check if a validator exists for the field
@@ -510,12 +499,14 @@ class BaseAttrs:
                 else:  # It's a single validator
                     validators_list.append(self._parse_validator(attr_field.validator))
             parsed_type = attr_field.type
-            # Check and handle Union/Optional types:
-            if self.__is_union_type(attr_field.type):
+            # Check and handle Union/Optional/Literal types:
+            if generic_type := self.__is_subscripted_generic(attr_field.type):
                 args = get_args(attr_field.type)
                 # Execlude simple optional types
                 if len(args) == 2 and type(None) in args:
-                    logging.info("Got optional")
+                    continue
+                if generic_type is Literal:
+                    parsed_type = f"Literal{list(args)}"
                     continue
                 logging.info("Got Union type")
                 parsed_type = []
@@ -525,13 +516,13 @@ class BaseAttrs:
                     if not issubclass(val_type, enum.Enum):
                         parsed_type.append(val_type)
                     else:
-                        values = [member.value for member in val_type]
+                        values = [member.name for member in val_type]
                         parsed_enum = f"Literal{values}"
                 # If an enum is parsed pass only the literal type
                 parsed_type = parsed_enum or parsed_type
 
             if type(attr_field.type) is type and issubclass(attr_field.type, BaseAttrs):
-                val : BaseAttrs = getattr(self, attr_field.name)
+                val: BaseAttrs = getattr(self, attr_field.name)
                 logging.info(f"Setting up Nested for  {attr_field.name}")
                 fields_info[attr_field.name] = {
                     "type": "BaseAttrs",
