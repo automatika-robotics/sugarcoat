@@ -37,7 +37,12 @@ from .action import Action
 from .event import Event
 from ..events import json_to_events_list, event_from_json
 from ..io.callbacks import GenericCallback
-from ..config.base_config import BaseComponentConfig, ComponentRunType, BaseAttrs
+from ..config.base_config import (
+    BaseComponentConfig,
+    ComponentRunType,
+    BaseAttrs,
+    QoSConfig,
+)
 from ..io.topic import Topic
 from .fallbacks import ComponentFallbacks, Fallback
 from .status import Status
@@ -1058,8 +1063,15 @@ class BaseComponent(lifecycle.Node):
         :param value: Serialized inputs
         :type value: Union[str, bytes, bytearray]
         """
+        import logging
+
         topics = json.loads(value)
-        inputs = [Topic(**json.loads(t)) for t in topics]
+        inputs = []
+        for t in topics:
+            topic_dict = json.loads(t)
+            topic_dict["qos_profile"] = QoSConfig(**topic_dict.get("qos_profile", {}))
+            inputs.append(Topic(**topic_dict))
+
         self.in_topics = self._reparse_inputs_callbacks(inputs)
         self.callbacks = {
             input.name: input.msg_type.callback(input, node_name=self.node_name)
@@ -1090,7 +1102,11 @@ class BaseComponent(lifecycle.Node):
         :type value: Union[str, bytes, bytearray]
         """
         topics = json.loads(value)
-        outputs = [Topic(**json.loads(t)) for t in topics]
+        outputs = []
+        for t in topics:
+            topic_dict = json.loads(t)
+            topic_dict["qos_profile"] = QoSConfig(**topic_dict.get("qos_profile", {}))
+            outputs.append(Topic(**topic_dict))
         self.out_topics = self._reparse_outputs_converts(outputs)
         self.publishers_dict = {
             output.name: Publisher(output, node_name=self.node_name)
