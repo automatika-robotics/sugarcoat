@@ -183,7 +183,7 @@ class GenericCallback:
         return self.msg
 
     @abstractmethod
-    def _get_ui_content(self, output) -> str:
+    def _get_ui_content(self, output, **_) -> str:
         """
         Gets the output.
         :returns:   Topic content
@@ -305,17 +305,9 @@ class ImageCallback(GenericCallback):
             # pre-process and reshape
             return utils.image_pre_processing(self.msg, *self.encoding)
 
-    def _get_ui_content(self, output) -> str:
+    def _get_ui_content(self, output, **_) -> str:
         """Get ui content for image"""
-        # Encode image as JPEG
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-        result, buffer = cv2.imencode(".jpg", output, encode_param)
-        if not result:
-            get_logger(self.node_name).error("Failed to encode image to JPEG format.")
-            raise Exception("Failed to encode image to JPEG format.")
-        else:
-            # Convert to base64
-            return base64.b64encode(buffer).decode("utf-8")
+        return utils.convert_img_to_jpeg_str(output, self.node_name)
 
 
 class CompressedImageCallback(ImageCallback):
@@ -430,7 +422,7 @@ class AudioCallback(GenericCallback):
 
             return audio
 
-    def _get_ui_content(self, output) -> str:
+    def _get_ui_content(self, output, **_) -> str:
         """Get ui content for audio"""
         # Encode audio bytes to base64 to send as a JSON string
         return base64.b64encode(output).decode("utf-8")
@@ -754,8 +746,8 @@ class OccupancyGridCallback(GenericCallback):
     def _get_output(
         self,
         get_metadata: bool = False,
-        get_obstacles: bool = True,
-        get_three_d: bool = True,
+        get_obstacles: bool = False,
+        get_three_d: bool = False,
         **_,
     ) -> Optional[Union[OccupancyGrid, np.ndarray, Dict]]:
         """
@@ -824,3 +816,19 @@ class OccupancyGridCallback(GenericCallback):
         )
 
         return threeD_coordinates
+
+    def _get_ui_content(self, output, **_) -> str:
+        """Get ui content for image"""
+        # Convert occupancy grid values to grayscale image
+        img = np.zeros_like(output, dtype=np.uint8)
+        img[output == -1] = 127  # unknown
+        img[output == 0] = 255  # free
+        img[output > 0] = 0  # occupied
+        get_logger(self.node_name).info(f"img shape {img.shape}")
+
+        # Flip vertically (ROS map origin is bottom-left, OpenCV image top-left)
+        img = np.flipud(img)
+
+        cv2.imwrite('output_map.jpeg', img)
+
+        return utils.convert_img_to_jpeg_str(img, self.node_name)

@@ -493,7 +493,6 @@ class BaseAttrs:
         fields_info = {}
         # Iterate over all attributes defined by attrs
         for attr_field in self.__attrs_attrs__:
-            logging.info(f"Looping got {attr_field.name}, {attr_field.type}")
             if attr_field.name.startswith("_"):
                 continue
             validators_list = []

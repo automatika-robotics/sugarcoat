@@ -1,11 +1,25 @@
 from typing import List, Tuple, Dict
 import re
 import sys
-
+import base64
 import numpy as np
 from nav_msgs.msg import Odometry
 import cv2
 import std_msgs.msg as std_msg
+
+from rclpy.logging import get_logger
+
+
+def convert_img_to_jpeg_str(img, node_name: str = "util") -> str:
+    # Encode image as JPEG
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+    result, buffer = cv2.imencode(".jpg", img, encode_param)
+    if not result:
+        get_logger(node_name).error("Failed to encode image to JPEG format.")
+        raise Exception("Failed to encode image to JPEG format.")
+    else:
+        # Convert to base64
+        return base64.b64encode(buffer).decode("utf-8")
 
 
 def process_encoding(encoding: str) -> Tuple[np.dtype, int]:
@@ -169,9 +183,7 @@ def parse_format(fmt: str):
     return {"orig": orig, "codec": codec, "comp": comp, "is_depth": is_depth}
 
 
-def read_compressed_image(
-        img, parsed_fmt: Dict, prefer_rgb: bool = True
-) -> np.ndarray:
+def read_compressed_image(img, parsed_fmt: Dict, prefer_rgb: bool = True) -> np.ndarray:
     """
     Read a ROS sensor_msgs/CompressedImage (or similar) message into a numpy array.
 

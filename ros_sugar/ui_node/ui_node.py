@@ -70,6 +70,10 @@ class UINode(BaseComponent):
         :param callback:
         :type callback: GenericCallback
         """
+        payload = {
+            "type": callback.input_topic.msg_type.__name__,
+            "topic": callback.input_topic.name,
+        }
 
         def _ui_callback(msg) -> None:
             ws_callback = (
@@ -81,17 +85,11 @@ class UINode(BaseComponent):
             callback.msg = msg
             output = callback.get_output()
             try:
-                ui_content = callback._get_ui_content(output=output)
-                payload = {
-                    "type": callback.input_topic.msg_type.__name__,
-                    "payload": ui_content,
-                    "topic": callback.input_topic.name,
-                }
+                ui_content = callback._get_ui_content(output=output, msg=msg)
+                payload["payload"] = ui_content
             except Exception as e:
-                payload = {
-                    "type": "error",
-                    "payload": f"Topic callback error: {e}",
-                }
+                payload["type"] = "error"
+                payload["payload"] = f"Topic callback error: {e}"
             asyncio.run_coroutine_threadsafe(ws_callback(payload), self.loop)
 
         _subscriber = self.create_subscription(
@@ -102,7 +100,7 @@ class UINode(BaseComponent):
             callback_group=self.callback_group,
         )
         self.get_logger().debug(
-            f"Started subscriber to topic: {callback.input_topic.name} of type {callback.input_topic.msg_type}"
+            f"Started subscriber to topic: {callback.input_topic.name} of type {callback.input_topic.msg_type.__name__}"
         )
         return _subscriber
 

@@ -142,7 +142,7 @@ def main():
 
         # Callback function for ROS node
         async def stream_callback(data: Dict):
-            if data["type"] == "Image" or data["type"] == "CompressedImage":
+            if data["type"] in ["Image", "CompressedImage", "OccupancyGrid"]:
                 await ws.send_json(data)
             else:
                 await log_data(send, data["payload"], data_src=data["type"])
