@@ -175,7 +175,7 @@ class SupportedType:
         return cls._ros_type
 
     @classmethod
-    def from_ui_dict(cls, data: Dict, **_) -> Any:
+    def convert_ui_dict(cls, data: Dict, **_) -> Any:
         raise NotImplementedError
 
 
@@ -196,8 +196,8 @@ class String(SupportedType):
         return msg
 
     @classmethod
-    def from_ui_dict(cls, data: Dict, **_) -> str:
-        return data.get('data', '')
+    def convert_ui_dict(cls, data: Dict, **_) -> str:
+        return data.get("data", "")
 
 
 class Bool(SupportedType):
@@ -452,17 +452,26 @@ class Point(SupportedType):
         msg.z = output[2]
         return msg
 
+    @classmethod
+    def convert_ui_dict(cls, data: Dict, **_) -> str:
+        return np.array(
+            [
+                float(data.get("x", 0.0)),
+                float(data.get("y", 0.0)),
+                float(data.get("z", 0.0)),
+            ],
+            dtype=np.float64,
+        )
 
-class PointStamped(SupportedType):
+
+class PointStamped(Point):
     """PointStamped"""
 
     _ros_type = ROSPointStamped
     callback = callbacks.PointStampedCallback
 
     @classmethod
-    def convert(
-        cls, output: np.ndarray, **_
-    ) -> ROSPointStamped:
+    def convert(cls, output: np.ndarray, **_) -> ROSPointStamped:
         """ROS message converter function for datatype Point.
 
         :param output:
@@ -513,17 +522,32 @@ class Pose(SupportedType):
             msg.orientation.z = output[6]
         return msg
 
+    @classmethod
+    def convert_ui_dict(cls, data: Dict, **_) -> str:
+        return np.array(
+            [
+                float(data.get("x", 0.0)),
+                float(data.get("y", 0.0)),
+                float(data.get("z", 0.0)),
+                float(
+                    data.get("ori_w", 0.0) or "1.0"
+                ),  # 'or' is added to handle empty inputs (orientation is optional)
+                float(data.get("ori_x", 0.0) or "0.0"),
+                float(data.get("ori_y", 0.0) or "0.0"),
+                float(data.get("ori_z", 0.0) or "0.0"),
+            ],
+            dtype=np.float64,
+        )
 
-class PoseStamped(SupportedType):
+
+class PoseStamped(Pose):
     """PoseStamped"""
 
     _ros_type = ROSPoseStamped
     callback = callbacks.PoseStampedCallback
 
     @classmethod
-    def convert(
-        cls, output: np.ndarray, **_
-    ) -> ROSPoseStamped:
+    def convert(cls, output: np.ndarray, **_) -> ROSPoseStamped:
         """ROS message converter function for datatype Point.
 
         :param output:
