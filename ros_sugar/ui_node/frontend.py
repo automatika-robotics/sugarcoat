@@ -56,7 +56,7 @@ class FHApp:
         setup_toasts(self.app)
 
         # persistent elements
-        self.outputs_log = elements.create_logging_card()
+        self.outputs_log = elements.initial_logging_card()
 
     @property
     def _settings_button(self) -> str:
@@ -67,17 +67,7 @@ class FHApp:
         if not self.toggle_settings:
             return Main(
                 Grid(
-                    # ThemePicker(
-                    #     color=False,
-                    #     radii=False,
-                    #     shadows=False,
-                    #     font=False,
-                    #     mode=True,
-                    #     cls="p-4",
-                    # ),
-                    Div(
-                        Card(H3("Log"), self.outputs_log, cls=f"{CardT.secondary}"),
-                    ),
+                    Div(elements.output_logging_card(self.outputs_log)),
                     Div(self.outputs),
                     Div(self.inputs, cls="col-span-full"),
                     id="modal-container",
@@ -119,25 +109,40 @@ class FHApp:
         """Creates cards for Input Topics"""
 
         input_divs = []
-        inputs_container = Card(H3("Inputs"), cls=CardT.secondary)
-        for inp in inputs:
+        inputs_container = elements.styled_main_inputs_container()
+
+        # Create a styled grid
+        input_grid, inputs_columns_cls = elements.styled_inputs_grid(
+            number_of_inputs=len(inputs)
+        )
+
+        for idx, inp in enumerate(inputs):
             input_divs.append(
-                elements.input_topic_card(inp.name, inp.msg_type),
+                elements.input_topic_card(
+                    inp.name, inp.msg_type, inputs_columns_cls[idx]
+                ),
             )
-        return inputs_container(*input_divs)
+        return inputs_container(input_grid(*input_divs))
 
     def _create_output_topics_ui(self, outputs: Sequence[Topic]):
         """Creates cards for Output Topics"""
-
+        displayed_outputs = [
+            out for out in outputs if out.msg_type not in [String, SugarAudio]
+        ]  # String and Audio are displayed in log
         output_divs = []
-        outputs_container = Card(H3("Outputs"), cls=CardT.secondary)
-        for out in outputs:
-            if out.msg_type in [String, SugarAudio]:
-                continue  # String and Audio are displayed in log
+        outputs_container = elements.styled_main_outputs_container()
+        # Create a grid with max 2 outputs per line (1 per line for small views)
+        output_grid, outputs_columns_cls = elements.styled_outputs_grid(
+            number_of_outputs=len(displayed_outputs)
+        )
+
+        for idx, out in enumerate(displayed_outputs):
             output_divs.append(
-                Card(H4(out.name), elements.output_topic_card(out.name, out.msg_type))
+                elements.output_topic_card(
+                    out.name, out.msg_type, outputs_columns_cls[idx]
+                )
             )
-        return outputs_container(*output_divs)
+        return outputs_container(output_grid(*output_divs))
 
     def _create_component_settings_ui(self, settings: Dict):
         """Creates a Div for component settings from a dictionary."""
@@ -237,7 +242,6 @@ class FHApp:
                             style="width:6vw",
                         )
                     ),
-                    cls="p-2",
                 ),
                 self._main,
                 id="main",

@@ -202,6 +202,3 @@ function bufferToWav(buffer) {
         pos += 4;
     }
 }
-
-
-

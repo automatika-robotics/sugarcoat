@@ -28,11 +28,11 @@ def _in_text_element(topic_name: str, topic_type: type):
     """FastHTML element for input String type"""
     field_type = "number" if topic_type in [Float32, Float64] else "text"
     return (
-        Form(cls="space-y-4")(
+        Form(cls="mb-1 p-1")(
             Input(name="topic_name", type="hidden", value=topic_name),
             Input(name="topic_type", type="hidden", value=topic_type.__name__),
             Input(
-                name='data',
+                name="data",
                 placeholder="String data...",
                 type=field_type,
                 required=True,
@@ -90,7 +90,7 @@ def _in_point_element(topic_name: str, topic_type: type):
 
 def _out_image_element(topic_name: str):
     """FastHTML element for output Image/CompressedImage type"""
-    return Img(id=topic_name, name="video-frame", src="", cls="h-96")
+    return Img(id=topic_name, name="video-frame", src="", cls="h-80")
 
 
 _INPUT_ELEMENTS: Dict = {
@@ -110,7 +110,7 @@ _OUTPUT_ELEMENTS: Dict = {
 }
 
 
-def input_topic_card(topic_name: str, topic_type: type):
+def input_topic_card(topic_name: str, topic_type: type, column_class: str = ""):
     """Creates a UI element for an input topic
 
     :param topic_name: Topic name
@@ -121,13 +121,33 @@ def input_topic_card(topic_name: str, topic_type: type):
     """
     card = Card(
         H4(topic_name),
-        cls="m-2",
+        cls=f"m-2 {column_class}",
         id=topic_name,
     )
     return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
 
 
-def output_topic_card(topic_name: str, topic_type: type):
+def styled_main_inputs_container():
+    return Card(H3("Inputs"), cls=f"{CardT.secondary} h-[25vh] overflow-y-auto")
+
+
+def styled_inputs_grid(number_of_inputs: int) -> tuple:
+    # Create a grid with max 4 inputs per line (1 per line for small views)
+    input_grid = Grid(cls="gap-4", cols_lg=min(4, number_of_inputs), cols_sm=1)
+    inputs_columns_span = ["col-1"] * number_of_inputs
+    # Adjust the column span of the remaining inputs
+    if remaining_items := number_of_inputs % 4:
+        if remaining_items == 1:
+            inputs_columns_span[-1] = "col-span-full"
+        elif remaining_items == 2:
+            inputs_columns_span[-2:] = "col-span-2"
+        elif remaining_items == 3:
+            inputs_columns_span[-3:] = "col-span-2"
+            inputs_columns_span[-1] = "col-span-full"
+    return (input_grid, inputs_columns_span)
+
+
+def output_topic_card(topic_name: str, topic_type: type, column_class: str = ""):
     """Creates a UI element for an output topic
 
     :param topic_name: Topic name
@@ -136,7 +156,28 @@ def output_topic_card(topic_name: str, topic_type: type):
     :type topic_type: type
     :return: Output topic UI element
     """
-    return _OUTPUT_ELEMENTS[topic_type](topic_name)
+    card = Card(
+        H4(topic_name),
+        cls=f"m-2 {column_class}",
+        id=topic_name,
+    )
+    return card(_OUTPUT_ELEMENTS[topic_type](topic_name))
+
+
+def styled_main_outputs_container():
+    return Card(
+        H3("Outputs"),
+        cls=f"{CardT.secondary} h-[60vh] overflow-y-auto",
+    )
+
+
+def styled_outputs_grid(number_of_outputs: int) -> tuple:
+    # Create a grid with max 2 outputs per line (1 per line for small views)
+    output_grid = Grid(cls="gap-4", cols_lg=min(2, number_of_outputs), cols_sm=1)
+    outputs_columns_span = ["col-1"] * number_of_outputs
+    if number_of_outputs % 2:
+        outputs_columns_span[-1] = "col-span-full"
+    return (output_grid, outputs_columns_span)
 
 
 def settings_ui_element(setting_name: str, setting_details: dict):
@@ -270,9 +311,17 @@ def _styled_logging_audio(output, output_src: str = "info"):
     return container
 
 
-def create_logging_card():
+def output_logging_card(current_log):
+    return Card(
+        H3("Log"),
+        current_log,
+        cls=f"{CardT.secondary} h-[60vh] relative",
+    )
+
+
+def initial_logging_card():
     output_card = Card(
-        cls="overflow-y-auto h-96",
+        cls="absolute top-7 inset-x-2 bottom-2 overflow-y-auto",
         id="outputs-log",
     )
     return output_card(_styled_logging_text("Log Started ...", output_src="alert"))
