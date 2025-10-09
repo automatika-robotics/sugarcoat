@@ -86,6 +86,17 @@ class BaseAttrs:
         """
         return getattr(some_type, "__origin__", None)
 
+    @classmethod
+    def __get_subscribed_generic_simple_types(cls, sg_type) -> list:
+        _types = get_args(sg_type)
+        _parsed_types = []
+        for m_type in _types:
+            if cls.__is_subscripted_generic(m_type):
+                _parsed_types.extend(cls.__get_subscribed_generic_simple_types(m_type))
+            else:
+                _parsed_types.append(m_type)
+        return _parsed_types
+
     def asdict(self, filter: Optional[Callable] = None) -> Dict:
         """Convert class to dict.
         :rtype: dict
@@ -113,7 +124,7 @@ class BaseAttrs:
         """
         # Union typing requires special treatment
         if generic_type := self.__is_subscripted_generic(attribute_type):
-            _types = get_args(attribute_type)
+            _types = self.__get_subscribed_generic_simple_types(attribute_type)
             if generic_type is Union:
                 # Check if the value type is one of the valid union types
                 if not any(isinstance(value, t) for t in _types):
