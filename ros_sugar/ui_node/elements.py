@@ -11,6 +11,7 @@ from ros_sugar.io.supported_types import (
     PointStamped,
     Pose,
     PoseStamped,
+    OccupancyGrid,
 )
 from .utils import parse_type
 
@@ -99,8 +100,6 @@ def _in_point_element(topic_name: str, topic_type: type):
 
 def _in_pose_element(topic_name: str, topic_type: type):
     """FastHTML element for 3D point type"""
-    _arrow_down = UkIcon("chevrons-down")
-    _arrow_up = UkIcon("chevrons-up")
     return (
         Form(cls="space-x-2 space-y-2 mr-2 mb-2")(
             DivVStacked(
@@ -133,21 +132,11 @@ def _in_pose_element(topic_name: str, topic_type: type):
                 ),
                 DivHStacked(
                     P("Orientation (Optional):"),
-                    Button(
-                        _arrow_down,
-                        type="button",
-                        cls=f"{AT.primary}",
-                        onclick=f"""
-                            console.log(this);
-                            for (let i = 6; i < this.form.length -1 ; i++)
+                    _toggle_button(
+                        onclick="""
+                                for (let i = 6; i < this.form.length -1 ; i++)
                                 {{this.form[i].hidden = !this.form[i].hidden;}}
-                             if (this.form[6].hidden)
-                            {{
-                                this.innerHTML=`{_arrow_down}`;
-                            }}
-                            else
-                            {{this.innerHTML=`{_arrow_up}`}};
-                                """,
+                                """
                     ),
                     cls="space-x-0",
                 ),
@@ -213,7 +202,34 @@ _INPUT_ELEMENTS: Dict = {
 _OUTPUT_ELEMENTS: Dict = {
     Image: _out_image_element,
     CompressedImage: _out_image_element,
+    OccupancyGrid: _out_image_element,
 }
+
+
+def _toggle_button(**kwargs):
+    _arrow_down = UkIcon("chevrons-down")
+    _arrow_up = UkIcon("chevrons-up")
+    onclick = f"""
+                if (this.name == 'down')
+                {{
+                    this.innerHTML=`{_arrow_up}`;
+                    this.name = 'up';
+                }}
+                else
+                {{this.innerHTML=`{_arrow_down}`;
+                this.name = 'down'}};
+                    """
+    if kwargs.get("onclick", None):
+        onclick = f"{onclick}\n{kwargs.get('onclick')}"
+        kwargs.pop("onclick")
+    return Button(
+        _arrow_down,
+        type="button",
+        name="down",
+        cls=f"{AT.primary}",
+        onclick=onclick,
+        **kwargs
+    )
 
 
 def input_topic_card(topic_name: str, topic_type: type, column_class: str = "") -> FT:
@@ -250,7 +266,7 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
     :return: Styled Grid, Style class to use for each element in the grid
     :rtype: tuple
     """
-    # Create a grid with max 4 inputs per line (1 per line for small views)
+    # Create a grid with max 3 inputs per line (1 per line for small views)
     input_grid = Grid(cls="gap-4", cols_lg=min(3, number_of_inputs), cols_sm=1)
     inputs_columns_span = ["col-1"] * number_of_inputs
     # Adjust the column span of the remaining inputs
@@ -259,9 +275,6 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
             inputs_columns_span[-1] = "col-span-full"
         elif remaining_items == 2:
             inputs_columns_span[-1] = "col-span-2"
-        # elif remaining_items == 3:
-        #     inputs_columns_span[-3:] = "col-span-2"
-        #     inputs_columns_span[-1] = "col-span-full"
     return (input_grid, inputs_columns_span)
 
 
@@ -290,6 +303,32 @@ def styled_main_outputs_container() -> FT:
     """
     return Card(
         H3("Outputs"),
+        cls=f"{CardT.secondary} h-[60vh] overflow-y-auto",
+    )
+
+
+def toggable_main_outputs_container() -> FT:
+    """Creates main section for all the UI outputs
+
+    :return: Main outputs card
+    :rtype: FT Card
+    """
+    return Card(
+        DivHStacked(
+            H3("Map Outputs"),
+            _toggle_button(
+                onclick="""
+                        let mapDiv = document.getElementById('map-outputs');
+                        mapDiv.hidden = ! mapDiv.hidden;
+                        if (mapDiv.hidden){{
+                            mapDiv.style.display = "none";
+                        }} else {{
+                            mapDiv.style.display = "block";
+                        }}
+                        """
+            ),
+            cls="space-x-0",
+        ),
         cls=f"{CardT.secondary} h-[60vh] overflow-y-auto",
     )
 
@@ -397,7 +436,9 @@ LOG_STYLES = {
     "error": {"prefix": ">>> ERROR: ", "cls": f"{TextT.lg} text-red-500"},
     "warn": {"prefix": ">>> WARNNING: ", "cls": f"{TextT.lg} text-orange-500"},
     "user": {"prefix": "> User:", "cls": f"{TextT.medium} text-blue-400"},
-    "robot": {"prefix": "> Robot:", "cls": f"{TextT.medium} font-bold text-purple-400",
+    "robot": {
+        "prefix": "> Robot:",
+        "cls": f"{TextT.medium} font-bold text-purple-400",
     },
 }
 # Default style for "info" or any other unspecified source
