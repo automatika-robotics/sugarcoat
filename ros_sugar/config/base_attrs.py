@@ -202,7 +202,6 @@ class BaseAttrs:
                     value = self.__check_value_against_attr_type(
                         key, value, attribute_to_set, attribute_type
                     )
-                logging.info(f"Setting {key} with val: {value}")
                 setattr(self, key, value)
 
     def _select_nested_config(

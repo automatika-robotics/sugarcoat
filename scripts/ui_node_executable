@@ -118,6 +118,22 @@ def main():
             ros_node.publish_data(data=data)
             # Send the robot loading dots
             return elements.update_logging_card_with_loading(fh.outputs_log)
+        elif data.get("topic_type") in ["Point", "PointStamped"]:
+            # display in log for coordinates data types
+            await log_data(
+                send,
+                f"Published to topic /{data.get('topic_name')} using coordinates: x={data['x']}, y={data['y']}, z={data['z']}",
+                data_src="user",
+            )
+            ros_node.publish_data(data=data)
+        elif data.get("topic_type") in ["Pose", "PoseStamped"]:
+            # display in log for coordinates data types
+            await log_data(
+                send,
+                f"Published to topic /{data.get('topic_name')} using coordinates: (Position: x={data['x']}, y={data['y']}, z={data['z']}), (Orientation: w={data['ori_w'] or '1'}, x={data['ori_x'] or '0'}, y={data['ori_y'] or '0'}, z={data['ori_z'] or '0'})",
+                data_src="user",
+            )
+            ros_node.publish_data(data=data)
         else:
             ros_node.publish_data(data=data)
 

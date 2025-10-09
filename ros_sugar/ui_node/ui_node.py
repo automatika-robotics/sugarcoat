@@ -172,16 +172,16 @@ class UINode(BaseComponent):
             )
 
         try:
-            output = topic_type.from_ui_dict(
+            output = topic_type.convert_ui_dict(
                 data
             )  # Convert to publisher compatible data
         except NotImplementedError:
             return self._return_error(
                 f'Data type "{topic_type_str}" does not implement a converter'
             )
-        except Exception:
+        except Exception as e:
             return self._return_error(
-                f'Error occured when converting {data} to Sugar type "{topic_type_str}"'
+                f'Error occured when converting {data} to Sugar type "{topic_type_str}": {e}'
             )
 
         self.publishers_dict[topic_name].publish(output=output)

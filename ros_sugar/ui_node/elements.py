@@ -57,29 +57,135 @@ def _in_audio_element(topic_name: str, **_):
 def _in_point_element(topic_name: str, topic_type: type):
     """FastHTML element for 3D point type"""
     return (
-        Form(cls="space-y-4")(
-            Input(name="topic_name", type="hidden", value=topic_name),
-            Input(name="topic_type", type="hidden", value=topic_type.__name__),
-            Input(
-                placeholder="X",
-                name="x",
-                type="number",
-                required=True,
-                autocomplete="off",
+        Form(cls="space-x-2 space-y-2 mr-2 mb-2")(
+            DivVStacked(
+                DivFullySpaced(
+                    Input(name="topic_name", type="hidden", value=topic_name),
+                    Input(name="topic_type", type="hidden", value=topic_type.__name__),
+                    Input(
+                        placeholder="X",
+                        name="x",
+                        type="number",
+                        required=True,
+                        autocomplete="off",
+                    ),
+                    Input(
+                        placeholder="Y",
+                        name="y",
+                        type="number",
+                        required=True,
+                        autocomplete="off",
+                    ),
+                    Input(
+                        placeholder="Z",
+                        name="z",
+                        type="number",
+                        required=True,
+                        autocomplete="off",
+                    ),
+                    cls="space-x-2",
+                ),
+                Button(
+                    "Submit",
+                    cls=ButtonT.primary,
+                ),
             ),
-            Input(
-                placeholder="Y",
-                name="y",
-                type="number",
-                required=True,
-                autocomplete="off",
-            ),
-            Input(
-                placeholder="Z",
-                name="z",
-                type="number",
-                required=True,
-                autocomplete="off",
+            id=f"{topic_name}-form",
+            ws_send=True,
+            hx_on__ws_after_send="this.reset(); return false;",
+        ),
+    )
+
+
+def _in_pose_element(topic_name: str, topic_type: type):
+    """FastHTML element for 3D point type"""
+    _arrow_down = UkIcon("chevrons-down")
+    _arrow_up = UkIcon("chevrons-up")
+    return (
+        Form(cls="space-x-2 space-y-2 mr-2 mb-2")(
+            DivVStacked(
+                P("Position:"),
+                DivFullySpaced(
+                    Input(name="topic_name", type="hidden", value=topic_name),
+                    Input(name="topic_type", type="hidden", value=topic_type.__name__),
+                    Input(
+                        placeholder="X",
+                        name="x",
+                        type="number",
+                        required=True,
+                        autocomplete="off",
+                    ),
+                    Input(
+                        placeholder="Y",
+                        name="y",
+                        type="number",
+                        required=True,
+                        autocomplete="off",
+                    ),
+                    Input(
+                        placeholder="Z",
+                        name="z",
+                        type="number",
+                        required=True,
+                        autocomplete="off",
+                    ),
+                    cls="space-x-2",
+                ),
+                DivHStacked(
+                    P("Orientation (Optional):"),
+                    Button(
+                        _arrow_down,
+                        type="button",
+                        cls=f"{AT.primary}",
+                        onclick=f"""
+                            console.log(this);
+                            for (let i = 6; i < this.form.length -1 ; i++)
+                                {{this.form[i].hidden = !this.form[i].hidden;}}
+                             if (this.form[6].hidden)
+                            {{
+                                this.innerHTML=`{_arrow_down}`;
+                            }}
+                            else
+                            {{this.innerHTML=`{_arrow_up}`}};
+                                """,
+                    ),
+                    cls="space-x-0",
+                ),
+                DivFullySpaced(
+                    Input(
+                        placeholder="W",
+                        name="ori_w",
+                        type="number",
+                        autocomplete="off",
+                        hidden=True,
+                    ),
+                    Input(
+                        placeholder="X",
+                        name="ori_x",
+                        type="number",
+                        autocomplete="off",
+                        hidden=True,
+                    ),
+                    Input(
+                        placeholder="Y",
+                        name="ori_y",
+                        type="number",
+                        autocomplete="off",
+                        hidden=True,
+                    ),
+                    Input(
+                        placeholder="Z",
+                        name="ori_z",
+                        type="number",
+                        autocomplete="off",
+                        hidden=True,
+                    ),
+                    cls="space-x-2",
+                ),
+                Button(
+                    "Submit",
+                    cls=ButtonT.primary,
+                ),
             ),
             id=f"{topic_name}-form",
             ws_send=True,
@@ -100,8 +206,8 @@ _INPUT_ELEMENTS: Dict = {
     SugarAudio: _in_audio_element,
     Point: _in_point_element,
     PointStamped: _in_point_element,
-    Pose: _in_point_element,
-    PoseStamped: _in_point_element,
+    Pose: _in_pose_element,
+    PoseStamped: _in_pose_element,
 }
 
 _OUTPUT_ELEMENTS: Dict = {
@@ -110,7 +216,7 @@ _OUTPUT_ELEMENTS: Dict = {
 }
 
 
-def input_topic_card(topic_name: str, topic_type: type, column_class: str = ""):
+def input_topic_card(topic_name: str, topic_type: type, column_class: str = "") -> FT:
     """Creates a UI element for an input topic
 
     :param topic_name: Topic name
@@ -127,27 +233,39 @@ def input_topic_card(topic_name: str, topic_type: type, column_class: str = ""):
     return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
 
 
-def styled_main_inputs_container():
+def styled_main_inputs_container() -> FT:
+    """Creates main section for all the UI inputs
+
+    :return: Main inputs card
+    :rtype: FT Card
+    """
     return Card(H3("Inputs"), cls=f"{CardT.secondary} h-[25vh] overflow-y-auto")
 
 
 def styled_inputs_grid(number_of_inputs: int) -> tuple:
+    """Creates a styled grid for the number of inputs
+
+    :param number_of_inputs: Number of input cards
+    :type number_of_inputs: int
+    :return: Styled Grid, Style class to use for each element in the grid
+    :rtype: tuple
+    """
     # Create a grid with max 4 inputs per line (1 per line for small views)
-    input_grid = Grid(cls="gap-4", cols_lg=min(4, number_of_inputs), cols_sm=1)
+    input_grid = Grid(cls="gap-4", cols_lg=min(3, number_of_inputs), cols_sm=1)
     inputs_columns_span = ["col-1"] * number_of_inputs
     # Adjust the column span of the remaining inputs
-    if remaining_items := number_of_inputs % 4:
+    if remaining_items := number_of_inputs % 3:
         if remaining_items == 1:
             inputs_columns_span[-1] = "col-span-full"
         elif remaining_items == 2:
-            inputs_columns_span[-2:] = "col-span-2"
-        elif remaining_items == 3:
-            inputs_columns_span[-3:] = "col-span-2"
-            inputs_columns_span[-1] = "col-span-full"
+            inputs_columns_span[-1] = "col-span-2"
+        # elif remaining_items == 3:
+        #     inputs_columns_span[-3:] = "col-span-2"
+        #     inputs_columns_span[-1] = "col-span-full"
     return (input_grid, inputs_columns_span)
 
 
-def output_topic_card(topic_name: str, topic_type: type, column_class: str = ""):
+def output_topic_card(topic_name: str, topic_type: type, column_class: str = "") -> FT:
     """Creates a UI element for an output topic
 
     :param topic_name: Topic name
@@ -164,7 +282,12 @@ def output_topic_card(topic_name: str, topic_type: type, column_class: str = "")
     return card(_OUTPUT_ELEMENTS[topic_type](topic_name))
 
 
-def styled_main_outputs_container():
+def styled_main_outputs_container() -> FT:
+    """Creates main section for all the UI outputs
+
+    :return: Main outputs card
+    :rtype: FT Card
+    """
     return Card(
         H3("Outputs"),
         cls=f"{CardT.secondary} h-[60vh] overflow-y-auto",
@@ -172,6 +295,13 @@ def styled_main_outputs_container():
 
 
 def styled_outputs_grid(number_of_outputs: int) -> tuple:
+    """Creates a styled grid for the number of outputs
+
+    :param number_of_outputs: Number of output cards
+    :type number_of_outputs: int
+    :return: Styled Grid, Style class to use for each element in the grid
+    :rtype: tuple
+    """
     # Create a grid with max 2 outputs per line (1 per line for small views)
     output_grid = Grid(cls="gap-4", cols_lg=min(2, number_of_outputs), cols_sm=1)
     outputs_columns_span = ["col-1"] * number_of_outputs
@@ -264,10 +394,11 @@ def component_settings_div(component_name: str, settings_col_cls: str, ui_elemen
 
 LOG_STYLES = {
     "alert": {"prefix": ">>>", "cls": f"{TextT.lg} text-green-500"},
-    "error": {"prefix": ">>> ERROR:", "cls": f"{TextT.lg} text-red-500"},
-    "warn": {"prefix": ">>> WARNNING:", "cls": f"{TextT.lg} text-orange-500"},
-    "user": {"prefix": "> User:", "cls": f"{TextT.medium} text-blue-500"},
-    "robot": {"prefix": "> Robot:", "cls": f"{TextT.medium} font-bold text-purple-500"},
+    "error": {"prefix": ">>> ERROR: ", "cls": f"{TextT.lg} text-red-500"},
+    "warn": {"prefix": ">>> WARNNING: ", "cls": f"{TextT.lg} text-orange-500"},
+    "user": {"prefix": "> User:", "cls": f"{TextT.medium} text-blue-400"},
+    "robot": {"prefix": "> Robot:", "cls": f"{TextT.medium} font-bold text-purple-400",
+    },
 }
 # Default style for "info" or any other unspecified source
 DEFAULT_STYLE = {"prefix": ">", "cls": ""}
@@ -275,13 +406,13 @@ DEFAULT_STYLE = {"prefix": ">", "cls": ""}
 
 def _styled_logging_text(text: str, output_src: str = "info"):
     """Builds a styled text log component."""
-    container = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2")
+    container = Div(cls="whitespace-pre-wrap ml-2 p-2 flex items-start")
     style = LOG_STYLES.get(output_src, DEFAULT_STYLE)
 
     if output_src in ["user", "robot"]:
         prefix_element = Strong(style["prefix"] + " ", cls=style["cls"])
-        content_element = P(f"{text}")
-        container(prefix_element, content_element)
+        content_element = P(prefix_element, f"{text}")
+        container(content_element)
     # All other types have the text inside the main Strong tag
     else:
         full_text = f"{style['prefix']} {text}"
@@ -349,10 +480,10 @@ def update_logging_card(
 def update_logging_card_with_loading(logging_card):
     """Update logging card"""
     return logging_card(
-        DivLAligned(
-            Strong("> Robot: ", cls=f"{TextT.medium} font-bold text-purple-500"),
+        Div(
+            Strong("> Robot:", cls=f"{TextT.medium} font-bold text-purple-400 mr-2"),
             Loading(cls=(LoadingT.dots, LoadingT.md)),
-            cls="whitespace-pre-wrap ml-2 p-2",
+            cls="whitespace-pre-wrap ml-2 p-2 flex items-start",
             id="loading-dots",
             name="loading-dots",
         )
