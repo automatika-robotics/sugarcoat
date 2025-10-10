@@ -183,13 +183,14 @@ class GenericCallback:
         return self.msg
 
     @abstractmethod
-    def _get_ui_content(self, output, **_) -> str:
+    def _get_ui_content(self, **_) -> str:
         """
-        Gets the output.
+        Utility method to get UI compatible conent.
+        To be used with external callbacks in UI Node
         :returns:   Topic content
         :rtype:     Any
         """
-        return output
+        return self.get_output()
 
     @property
     def got_msg(self):
@@ -305,8 +306,9 @@ class ImageCallback(GenericCallback):
             # pre-process and reshape
             return utils.image_pre_processing(self.msg, *self.encoding)
 
-    def _get_ui_content(self, output, **_) -> str:
+    def _get_ui_content(self, **_) -> str:
         """Get ui content for image"""
+        output = self.get_output()
         return utils.convert_img_to_jpeg_str(output, self.node_name)
 
 
@@ -422,9 +424,10 @@ class AudioCallback(GenericCallback):
 
             return audio
 
-    def _get_ui_content(self, output, **_) -> str:
+    def _get_ui_content(self, **_) -> str:
         """Get ui content for audio"""
         # Encode audio bytes to base64 to send as a JSON string
+        output = self.get_output()
         return base64.b64encode(output).decode("utf-8")
 
 
@@ -746,8 +749,8 @@ class OccupancyGridCallback(GenericCallback):
     def _get_output(
         self,
         get_metadata: bool = False,
-        get_obstacles: bool = False,
-        get_three_d: bool = False,
+        get_obstacles: bool = True,
+        get_three_d: bool = True,
         **_,
     ) -> Optional[Union[OccupancyGrid, np.ndarray, Dict]]:
         """
@@ -817,9 +820,10 @@ class OccupancyGridCallback(GenericCallback):
 
         return threeD_coordinates
 
-    def _get_ui_content(self, output, **_) -> str:
-        """Get ui content for image"""
+    def _get_ui_content(self, **_) -> str:
+        """Get ui content for occupancy grid"""
         # Convert occupancy grid values to grayscale image
+        output = self.get_output(get_obstacles=False, get_three_d=False)
         img = np.zeros_like(output, dtype=np.uint8)
         img[output == -1] = 127  # unknown
         img[output == 0] = 255  # free
@@ -829,6 +833,6 @@ class OccupancyGridCallback(GenericCallback):
         # Flip vertically (ROS map origin is bottom-left, OpenCV image top-left)
         img = np.flipud(img)
 
-        cv2.imwrite('output_map.jpeg', img)
+        cv2.imwrite("output_map.jpeg", img)
 
         return utils.convert_img_to_jpeg_str(img, self.node_name)

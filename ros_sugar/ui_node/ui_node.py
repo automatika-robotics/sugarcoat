@@ -65,6 +65,12 @@ class UINode(BaseComponent):
 
         self.config: UINodeConfig
 
+    def _return_error(self, error_msg: str):
+        """Return error msg to the UI"""
+        self.get_logger().error(error_msg)
+        payload = {"type": "error", "payload": error_msg}
+        asyncio.run_coroutine_threadsafe(self.websocket_callback(payload), self.loop)
+
     def _add_ros_subscriber(self, callback: GenericCallback):
         """Overrides creating subscribers to run the ui callback instead of the main callback
         :param callback:
@@ -83,13 +89,11 @@ class UINode(BaseComponent):
                 else self.websocket_callback
             )
             callback.msg = msg
-            output = callback.get_output()
             try:
-                ui_content = callback._get_ui_content(output=output, msg=msg)
+                ui_content = callback._get_ui_content()
                 payload["payload"] = ui_content
             except Exception as e:
-                payload["type"] = "error"
-                payload["payload"] = f"Topic callback error: {e}"
+                return self._return_error(f"Topic callback error: {e}")
             asyncio.run_coroutine_threadsafe(ws_callback(payload), self.loop)
 
         _subscriber = self.create_subscription(
@@ -144,12 +148,6 @@ class UINode(BaseComponent):
             req_msg=srv_request
         )
         return result
-
-    def _return_error(self, error_msg: str):
-        """Return error msg to the UI"""
-        self.get_logger().error(error_msg)
-        payload = {"type": "error", "payload": error_msg}
-        asyncio.run_coroutine_threadsafe(self.websocket_callback(payload), self.loop)
 
     def publish_data(self, data: Any):
         """
