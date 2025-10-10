@@ -69,6 +69,8 @@ def main():
             fh.toasting(error_msg, session, "error", duration=100000)
         else:
             fh.toasting("Settings changed successfully", session, "success")
+            # Presist the new configuration
+            fh.update_configs_from_data(dict(form_data.items()))
         return fh.get_main_page()
 
     # -- WS handling --

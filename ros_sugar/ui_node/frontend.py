@@ -94,6 +94,17 @@ class FHApp:
         )  # Id duration is more than 20seconds -> activate dismiss by default
         add_toast(session, f"{msg}", toast_type, dismiss)
 
+    def update_configs_from_data(self, data: Dict):
+        """Update configs from a UI form data dict
+
+        :param data: Component settings form data
+        :type data: Dict
+        """
+        component_to_update = data["component_name"]
+        for param in self.configs[component_to_update].keys():
+            if param_value := data.get(param):
+                self.configs[component_to_update][param]["value"] = param_value
+
     # TODO: Create nested ui element
     # def _create_nested_attrs_ui(self, nested_value_name, nested_value):
     #     # main_nested_container = DivLAligned()
@@ -109,7 +120,8 @@ class FHApp:
         """Creates cards for Input Topics"""
 
         input_divs = []
-        inputs_container = elements.styled_main_inputs_container()
+        grid_id = "inputs-grid"
+        inputs_container = elements.styled_main_inputs_container(grid_id)
 
         # Create a styled grid
         input_grid, inputs_columns_cls = elements.styled_inputs_grid(
@@ -122,17 +134,16 @@ class FHApp:
                     inp.name, inp.msg_type, inputs_columns_cls[idx]
                 ),
             )
-        return inputs_container(input_grid(*input_divs))
+        return inputs_container(input_grid(*input_divs, id=grid_id))
 
     def _create_output_topics_ui(self, outputs: Sequence[Topic]):
         """Creates cards for Output Topics"""
         displayed_outputs = [
-            out
-            for out in outputs
-            if out.msg_type not in [String, SugarAudio]
+            out for out in outputs if out.msg_type not in [String, SugarAudio]
         ]  # String and Audio are displayed in log
         output_divs = []
-        outputs_container = elements.styled_main_outputs_container()
+        grid_id = "outputs-grid"
+        outputs_container = elements.styled_main_outputs_container(grid_id)
         # Create a grid with max 2 outputs per line (1 per line for small views)
         output_grid, outputs_columns_cls = elements.styled_outputs_grid(
             number_of_outputs=len(displayed_outputs)
@@ -144,7 +155,7 @@ class FHApp:
                     out.name, out.msg_type, outputs_columns_cls[idx]
                 )
             )
-        return outputs_container(output_grid(*output_divs))
+        return outputs_container(output_grid(*output_divs, id=grid_id))
 
     def _create_component_settings_ui(self, settings: Dict):
         """Creates a Div for component settings from a dictionary."""
@@ -223,9 +234,8 @@ class FHApp:
 
     def get_main_page(self):
         """Serves the main page of the UI"""
-        # Create settings on refresh
-        self.settings = self._create_component_settings_ui(self.configs)
         # Serve main page
+        self.settings = self._create_component_settings_ui(self.configs)
         return (
             Title("EMOS CLI"),
             Container(
