@@ -158,8 +158,11 @@ def main():
         if data["type"] == "audio" and len(data["payload"]) > 0:
             try:
                 await log_data(send, data["payload"], data_src="user", is_audio=True)
-                audio_bytes = base64.b64decode(data["payload"])
-                ros_node.publish_data(topic_name=data["topic"], data=audio_bytes)
+                ros_node.publish_data({
+                    "topic_name": data["topic_name"],
+                    "topic_type": "Audio",
+                    "data": data["payload"],
+                })
             except RuntimeError:
                 logging.warning("Runtime error when sending audio")
 

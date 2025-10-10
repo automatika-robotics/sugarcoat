@@ -175,8 +175,8 @@ class SupportedType:
         return cls._ros_type
 
     @classmethod
-    def convert_ui_dict(cls, data: Dict, **_) -> Any:
-        raise NotImplementedError
+    def convert_ui_dict(cls, data: Dict, **_) -> str:
+        return data.get("data", "")
 
 
 class String(SupportedType):
@@ -194,10 +194,6 @@ class String(SupportedType):
         msg = ROSString()
         msg.data = output
         return msg
-
-    @classmethod
-    def convert_ui_dict(cls, data: Dict, **_) -> str:
-        return data.get("data", "")
 
 
 class Bool(SupportedType):

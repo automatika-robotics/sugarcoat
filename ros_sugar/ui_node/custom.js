@@ -147,7 +147,8 @@ async function startAudioRecording(button) {
 
             mediaRecorder.onstart = () => {
                 isRecording = true;
-                button.innerHTML = `<i class="fa fa-stop"></i> <span>Stop</span> <span class="record-tooltip">End Recording</span>`;
+                button.innerHTML = `<i class="fa fa-stop"></i>`;
+                button.title = 'End Recording';
                 // Add "Recording..." indicator to chat
                 // recordingIndicatorEl = addMessage("🎙 Recording...", "user-message recording-indicator", "You", getCurrentTime());
             };
@@ -168,7 +169,7 @@ async function startAudioRecording(button) {
                 if (audioChunks.length === 0) {
                     if (recordingIndicatorEl) recordingIndicatorEl.remove();
                     console.error("No Audio recorded.");
-                    // addErrorMessage("No audio was recorded. Please try again.");
+                    addErrorMessage("No audio was recorded. Please try again.");
                     // button.innerHTML = `<i class="fa fa-microphone"></i> <span class="record-tooltip">Record</span>`;
                     return;
                 }
@@ -192,7 +193,7 @@ async function startAudioRecording(button) {
                     reader.onloadend = () => {
                         const base64Audio = reader.result.split(",")[1];
                         if (base64Audio) {
-                            ws_stream.send(JSON.stringify({ type: "audio", payload: base64Audio, topic: button.id}));
+                            ws_stream.send(JSON.stringify({ type: "audio", payload: base64Audio, topic_name: button.id}));
                         }
                     };
                 } catch (error) {
@@ -201,7 +202,8 @@ async function startAudioRecording(button) {
                     // addErrorMessage("Error: Could not process recorded audio.");
                 }
 
-                button.innerHTML = `<i class="fa fa-microphone"></i> <span class="record-tooltip">Record</span>`;
+                button.innerHTML = `<i class="fa fa-microphone"></i>`;
+                button.title = "Record";
             };
 
             mediaRecorder.start();

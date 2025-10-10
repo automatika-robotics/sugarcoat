@@ -48,10 +48,18 @@ def _in_text_element(topic_name: str, topic_type: type):
 
 def _in_audio_element(topic_name: str, **_):
     """FastHTML element for input Audio type"""
-    return Button(
-        UkIcon("mic"),
-        id=topic_name,
-        onclick="startAudioRecording(this)",
+    return DivCentered(
+        DivHStacked(
+            P("Send audio: "),
+            Button(
+                I(cls="fa fa-microphone"),
+                id=topic_name,
+                onclick="startAudioRecording(this)",
+                title="Record",
+                cls=f"{AT.primary}",
+            ),
+        ),
+        cls="no-drag ",
     )
 
 
@@ -254,7 +262,7 @@ def input_topic_card(topic_name: str, topic_type: type, column_class: str = "") 
     """
     card = Card(
         H4(topic_name),
-        cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto",
+        cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto rounded-lg",
         id=topic_name,
     )
     return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
@@ -272,7 +280,7 @@ def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:
             _toggle_button(div_to_toggle=inputs_grid_div_id),
             cls="space-x-0",
         ),
-        cls=f"draggable {CardT.secondary} max-h-[25vh] overflow-y-auto",
+        cls=f"draggable {CardT.secondary} max-h-[25vh] overflow-y-auto rounded-md",
         body_cls="space-y-0",
     )
 
@@ -293,7 +301,7 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
         if remaining_items == 1:
             inputs_columns_span[-1] = "col-span-full"
         elif remaining_items == 2:
-            inputs_columns_span[-1] = "col-span-2"
+            inputs_columns_span[-2:] = "flex flex-col items-center justify-center"
     return (input_grid, inputs_columns_span)
 
 
@@ -308,7 +316,7 @@ def output_topic_card(topic_name: str, topic_type: type, column_class: str = "")
     """
     card = Card(
         H4(topic_name),
-        cls=f"m-2 {column_class} h-[50vh]",
+        cls=f"m-2 {column_class} h-[50vh] rounded-lg",
         id=topic_name,
     )
     return card(_OUTPUT_ELEMENTS[topic_type](topic_name))
@@ -326,7 +334,7 @@ def styled_main_outputs_container(outputs_grid_div_id: str) -> FT:
             _toggle_button(div_to_toggle=outputs_grid_div_id),
             cls="space-x-0",
         ),
-        cls=f"draggable {CardT.secondary} overflow-y-auto max-h-[60vh]",
+        cls=f"draggable {CardT.secondary} overflow-y-auto max-h-[60vh] rounded-md",
         body_cls="space-y-0",
     )
 
@@ -485,7 +493,7 @@ def output_logging_card(current_log):
     return Card(
         H3("Log"),
         current_log,
-        cls=f"fix-size draggable {CardT.secondary} h-[60vh] relative",
+        cls=f"fix-size draggable {CardT.secondary} h-[60vh] relative rounded-md",
     )
 
 
