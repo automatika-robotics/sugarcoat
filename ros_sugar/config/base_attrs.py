@@ -87,12 +87,17 @@ class BaseAttrs:
         return getattr(some_type, "__origin__", None)
 
     @classmethod
-    def __get_subscribed_generic_simple_types(cls, sg_type) -> list:
+    def __get_subscribed_generic_simple_types(cls, sg_type) -> List:
         _types = get_args(sg_type)
         _parsed_types = []
         for m_type in _types:
-            if cls.__is_subscripted_generic(m_type):
-                _parsed_types.extend(cls.__get_subscribed_generic_simple_types(m_type))
+            if nested_generic := cls.__is_subscripted_generic(m_type):
+                if nested_generic is Literal:
+                    _parsed_types.append(m_type)
+                else:
+                    _parsed_types.extend(
+                        cls.__get_subscribed_generic_simple_types(m_type)
+                    )
             else:
                 _parsed_types.append(m_type)
         return _parsed_types
@@ -526,11 +531,13 @@ class BaseAttrs:
                 # Parse Enum to Literal
                 parsed_enum = None
                 for val_type in args:
-                    if not issubclass(val_type, enum.Enum):
-                        parsed_type.append(val_type)
-                    else:
+                    if val_type is Literal:
+                        parsed_type.append(f"Literal{get_args(val_type)}")
+                    elif issubclass(val_type, enum.Enum):
                         values = [member.name for member in val_type]
                         parsed_enum = f"Literal{values}"
+                    else:
+                        parsed_type.append(val_type)
                 # If an enum is parsed pass only the literal type
                 parsed_type = parsed_enum or parsed_type
 
