@@ -212,22 +212,17 @@ def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
     onclick = f"""
                 if (this.name == 'down')
                 {{
-                    console.log('Arrow down changing to up');
                     this.innerHTML=`{_arrow_up}`;
                     this.name = 'up';
                 }}
                 else{{
-                    console.log('Arrow up changing to down');
                     this.innerHTML=`{_arrow_down}`;
                     this.name = 'down'}};
-                console.log(this);
                 """
     if div_to_toggle:
         toggle_click = f"""
                     let toggleDiv = document.getElementById('{div_to_toggle}');
-                    console.log(this);
                     toggleDiv.hidden = ! toggleDiv.hidden;
-                    console.log(toggleDiv.style.display);
                     if (toggleDiv.hidden){{
                         toggleDiv.style.display = "none";
                     }} else {{
