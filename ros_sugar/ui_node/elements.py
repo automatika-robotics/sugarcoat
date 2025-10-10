@@ -206,19 +206,35 @@ _OUTPUT_ELEMENTS: Dict = {
 }
 
 
-def _toggle_button(**kwargs):
+def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
     _arrow_down = UkIcon("chevrons-down")
     _arrow_up = UkIcon("chevrons-up")
     onclick = f"""
                 if (this.name == 'down')
                 {{
+                    console.log('Arrow down changing to up');
                     this.innerHTML=`{_arrow_up}`;
                     this.name = 'up';
                 }}
-                else
-                {{this.innerHTML=`{_arrow_down}`;
-                this.name = 'down'}};
-                    """
+                else{{
+                    console.log('Arrow up changing to down');
+                    this.innerHTML=`{_arrow_down}`;
+                    this.name = 'down'}};
+                console.log(this);
+                """
+    if div_to_toggle:
+        toggle_click = f"""
+                    let toggleDiv = document.getElementById('{div_to_toggle}');
+                    console.log(this);
+                    toggleDiv.hidden = ! toggleDiv.hidden;
+                    console.log(toggleDiv.style.display);
+                    if (toggleDiv.hidden){{
+                        toggleDiv.style.display = "none";
+                    }} else {{
+                        toggleDiv.style.display = "";
+                    }}
+                """
+        onclick = f"{onclick}\n{toggle_click}"
     if kwargs.get("onclick", None):
         onclick = f"{onclick}\n{kwargs.get('onclick')}"
         kwargs.pop("onclick")
@@ -226,9 +242,9 @@ def _toggle_button(**kwargs):
         _arrow_down,
         type="button",
         name="down",
-        cls=f"{AT.primary}",
+        cls=f"no-drag {AT.primary}",
         onclick=onclick,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -243,19 +259,27 @@ def input_topic_card(topic_name: str, topic_type: type, column_class: str = "") 
     """
     card = Card(
         H4(topic_name),
-        cls=f"m-2 {column_class}",
+        cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto",
         id=topic_name,
     )
     return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
 
 
-def styled_main_inputs_container() -> FT:
+def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:
     """Creates main section for all the UI inputs
 
     :return: Main inputs card
     :rtype: FT Card
     """
-    return Card(H3("Inputs"), cls=f"{CardT.secondary} h-[25vh] overflow-y-auto")
+    return Card(
+        DivHStacked(
+            H4("Inputs"),
+            _toggle_button(div_to_toggle=inputs_grid_div_id),
+            cls="space-x-0",
+        ),
+        cls=f"draggable {CardT.secondary} max-h-[25vh] overflow-y-auto",
+        body_cls="space-y-0",
+    )
 
 
 def styled_inputs_grid(number_of_inputs: int) -> tuple:
@@ -267,7 +291,7 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
     :rtype: tuple
     """
     # Create a grid with max 3 inputs per line (1 per line for small views)
-    input_grid = Grid(cls="gap-4", cols_lg=min(3, number_of_inputs), cols_sm=1)
+    input_grid = Grid(cls="gap-0", cols_lg=min(3, number_of_inputs), cols_sm=1)
     inputs_columns_span = ["col-1"] * number_of_inputs
     # Adjust the column span of the remaining inputs
     if remaining_items := number_of_inputs % 3:
@@ -289,25 +313,13 @@ def output_topic_card(topic_name: str, topic_type: type, column_class: str = "")
     """
     card = Card(
         H4(topic_name),
-        cls=f"m-2 {column_class}",
+        cls=f"m-2 {column_class} h-[50vh]",
         id=topic_name,
     )
     return card(_OUTPUT_ELEMENTS[topic_type](topic_name))
 
 
-def styled_main_outputs_container() -> FT:
-    """Creates main section for all the UI outputs
-
-    :return: Main outputs card
-    :rtype: FT Card
-    """
-    return Card(
-        H3("Outputs"),
-        cls=f"{CardT.secondary} h-[60vh] overflow-y-auto",
-    )
-
-
-def toggable_main_outputs_container() -> FT:
+def styled_main_outputs_container(outputs_grid_div_id: str) -> FT:
     """Creates main section for all the UI outputs
 
     :return: Main outputs card
@@ -315,21 +327,12 @@ def toggable_main_outputs_container() -> FT:
     """
     return Card(
         DivHStacked(
-            H3("Map Outputs"),
-            _toggle_button(
-                onclick="""
-                        let mapDiv = document.getElementById('map-outputs');
-                        mapDiv.hidden = ! mapDiv.hidden;
-                        if (mapDiv.hidden){{
-                            mapDiv.style.display = "none";
-                        }} else {{
-                            mapDiv.style.display = "block";
-                        }}
-                        """
-            ),
+            H4("Outputs"),
+            _toggle_button(div_to_toggle=outputs_grid_div_id),
             cls="space-x-0",
         ),
-        cls=f"{CardT.secondary} h-[60vh] overflow-y-auto",
+        cls=f"draggable {CardT.secondary} overflow-y-auto max-h-[60vh]",
+        body_cls="space-y-0",
     )
 
 
@@ -342,7 +345,7 @@ def styled_outputs_grid(number_of_outputs: int) -> tuple:
     :rtype: tuple
     """
     # Create a grid with max 2 outputs per line (1 per line for small views)
-    output_grid = Grid(cls="gap-4", cols_lg=min(2, number_of_outputs), cols_sm=1)
+    output_grid = Grid(cls="gap-0", cols_lg=min(2, number_of_outputs), cols_sm=1)
     outputs_columns_span = ["col-1"] * number_of_outputs
     if number_of_outputs % 2:
         outputs_columns_span[-1] = "col-span-full"
@@ -487,7 +490,7 @@ def output_logging_card(current_log):
     return Card(
         H3("Log"),
         current_log,
-        cls=f"{CardT.secondary} h-[60vh] relative",
+        cls=f"fix-size draggable {CardT.secondary} h-[60vh] relative",
     )
 
 
