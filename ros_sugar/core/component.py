@@ -1423,11 +1423,11 @@ class BaseComponent(lifecycle.Node):
             parsed_param = param_type(param_str_value) if param_type else None
             self.config.update_value(param_name, parsed_param)
             self.get_logger().debug(
-                f"Updates {self.node_name} config to: {self.config}"
+                f"Updates {self.node_name} config param {param_name} to : {parsed_param}"
             )
 
         except Exception as e:
-            error_msg = f"'{self.config.__class__.__name__}' attribute '{param_name}' is of type {param_type}. Error message details: {e}"
+            error_msg = f"'Error setting {self.config.__class__.__name__}' attribute '{param_name}' of type {param_type} with value '{param_str_value}'. Error message details: {e}"
 
         return error_msg
 

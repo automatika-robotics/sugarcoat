@@ -388,7 +388,7 @@ class BaseAttrs:
         # Extract the simple type
         SIMPLE_TYPES = {int, float, str, bool}
         origin = get_origin(complex_type)
-        args = get_args(complex_type)
+        args = self.__get_subscribed_generic_simple_types(complex_type)
 
         # If it's directly a simple type
         if complex_type in SIMPLE_TYPES:
@@ -397,6 +397,11 @@ class BaseAttrs:
         # If it's a Union (including Optional)
         if origin is Union:
             for arg in args:
+                if arg in SIMPLE_TYPES:
+                    return arg
+        if origin is Literal:
+            literal_types = [type(arg) for arg in args]
+            for arg in literal_types:
                 if arg in SIMPLE_TYPES:
                     return arg
         return None  # No simple type found
@@ -430,7 +435,7 @@ class BaseAttrs:
             obj_to_set = getattr(obj_to_set, name)
             name_to_set = name
 
-        attribute_type = fields_dict(obj_class.__class__)[name_to_set].type
+        attribute_type = self.get_attribute_type(name_to_set)
 
         if not attribute_type:
             raise TypeError(
@@ -510,14 +515,13 @@ class BaseAttrs:
             parsed_type = attr_field.type
             # Check and handle Union/Optional/Literal types:
             if generic_type := self.__is_subscripted_generic(attr_field.type):
-                args = get_args(attr_field.type)
+                args = self.__get_subscribed_generic_simple_types(attr_field.type)
                 # Execlude simple optional types
                 if len(args) == 2 and type(None) in args:
                     continue
                 if generic_type is Literal:
                     parsed_type = f"Literal{list(args)}"
                     continue
-                logging.info("Got Union type")
                 parsed_type = []
                 # Parse Enum to Literal
                 parsed_enum = None
