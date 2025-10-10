@@ -5,8 +5,99 @@ const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const ws_stream = new WebSocket(`${wsProtocol}//${window.location.host}/ws_stream`);
 
 
-let currentStreamingMessageElement = null;
-let currentStreamingTimestamp = null;
+// Function to make all elements with class "draggable" movable
+let highestZ = 1; // Global tracker for z-index of draggable items
+function makeDraggable(className = "draggable") {
+    const elements = Array.from(document.getElementsByClassName(className));
+
+    elements.forEach(el => {
+    let isDragging = false;
+    let offsetX = 0, offsetY = 0;
+
+    // Helper function to start dragging
+    const startDrag = (clientX, clientY, fixedH = false) => {
+        isDragging = true;
+
+        // Bring this element to the top
+        highestZ++;
+        el.style.zIndex = highestZ;
+
+        // Preserve size
+        const rect = el.getBoundingClientRect();
+        const computedStyle = window.getComputedStyle(el);
+        el.style.width = computedStyle.width;
+        if (fixedH){
+            el.style.height = computedStyle.height;
+        }
+        else{
+            el.style.height = "auto";
+        }
+        el.style.maxHeight = "60vh"; // fallback max height
+
+        // Set absolute position
+        el.style.position = "absolute";
+        el.style.left = `${rect.left}px`;
+        el.style.top = `${rect.top}px`;
+        el.style.transition = "none";
+
+        // Calculate offset between mouse/touch and element top-left
+        offsetX = clientX - rect.left;
+        offsetY = clientY - rect.top;
+    };
+
+    // Mouse events
+    el.addEventListener("mousedown", (e) => {
+        // Ignore dragging if clicking inside:
+        // - Elements with class "no-drag"
+        // - Form fields: input, textarea, select, button
+        if (
+            e.target.closest(".no-drag") ||
+            e.target.tagName === "INPUT" ||
+            e.target.tagName === "TEXTAREA" ||
+            e.target.tagName === "SELECT" ||
+            e.target.tagName === "BUTTON"
+        ) return;
+
+
+        let fixH = false;
+        if (e.target.closest(".fix-size")) fixH=true;
+
+        startDrag(e.clientX, e.clientY, fixH);
+    });
+
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        el.style.left = `${e.clientX - offsetX}px`;
+        el.style.top = `${e.clientY - offsetY}px`;
+    });
+    document.addEventListener("mouseup", () => {
+        if (isDragging) {
+        isDragging = false;
+        el.style.transition = "";
+        }
+    });
+
+    // Touch events for mobile
+    el.addEventListener("touchstart", (e) => {
+        const touch = e.touches[0];
+        startDrag(touch.clientX, touch.clientY);
+    });
+    document.addEventListener("touchmove", (e) => {
+        if (!isDragging) return;
+        const touch = e.touches[0];
+        el.style.left = `${touch.clientX - offsetX}px`;
+        el.style.top = `${touch.clientY - offsetY}px`;
+    }, { passive: false }); // Prevent scrolling while dragging
+    document.addEventListener("touchend", () => {
+        isDragging = false;
+    });
+    });
+}
+
+
+document.addEventListener("DOMContentLoaded", () => {
+  makeDraggable();
+});
 
 ws_stream.onopen = () => {
     console.log("WebSocket connection established");
@@ -37,6 +128,9 @@ let audioChunks = [];
 let isRecording = false;
 let recordingIndicatorEl = null; // reference to the indicator message in DOM
 
+function presistForm(form){
+    FormPersistence.persist(form);
+}
 
 async function startAudioRecording(button) {
     console.log("In audio recordin")
