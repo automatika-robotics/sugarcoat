@@ -29,11 +29,6 @@ class FHApp:
 
         hdrs = (
             Theme.red.headers(),  # Get theme from MonsterUI
-            Link(
-                rel="stylesheet",
-                href="font-awesome.min.css",
-                type="text/css",
-            ),
             Script(
                 src="custom.js",
             ),
@@ -221,6 +216,7 @@ class FHApp:
         # Serve main page
         self.settings = self._create_component_settings_ui(self.configs)
         return (
+            Favicon(light_icon="automatika-icon.png", dark_icon="automatika-icon.png"),
             Title("EMOS CLI"),
             Container(
                 NavBar(

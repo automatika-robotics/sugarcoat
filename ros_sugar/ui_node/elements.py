@@ -55,7 +55,7 @@ def _in_audio_element(topic_name: str, **_):
         DivHStacked(
             P("Send audio: "),
             Button(
-                I(cls="fa fa-microphone"),
+                UkIcon(icon="mic"),
                 id=topic_name,
                 onclick="startAudioRecording(this)",
                 title="Record",
@@ -437,16 +437,16 @@ def settings_ui_element(
             attrs_validators=validators,
             field_type=field_type,
             type_args=type_args,
-            input_name=input_name
+            input_name=input_name,
         )
-    if field_type and type_args:
+    if field_type:
         return nonvalidated_config(
             setting_name=setting_name,
             value=value,
             field_type=field_type,
             type_args=type_args,
             input_name=input_name,
-    )
+        )
 
 
 def component_settings_div(
@@ -607,7 +607,9 @@ def update_logging_card_with_loading(logging_card):
     )
 
 
-def nonvalidated_config(setting_name: str, value: Any, field_type: str, type_args, input_name: str):
+def nonvalidated_config(
+    setting_name: str, value: Any, field_type: str, type_args, input_name: str
+):
     if field_type == "bool":
         # The 'checked' attribute is a boolean flag, so it doesn't need a value
         return LabelSwitch(
@@ -636,11 +638,15 @@ def nonvalidated_config(setting_name: str, value: Any, field_type: str, type_arg
         )
 
     elif field_type == "literal":
+        # Parsing to hanlde enum literals
+        parsed_value = value
+        if value not in type_args and value.upper() in type_args:
+            parsed_value = value.upper()
         return LabelSelect(
             map(Option, type_args),
             id=setting_name,
             label=setting_name,
-            value=value,
+            value=parsed_value,
             name=input_name,
         )
 
@@ -653,7 +659,12 @@ def nonvalidated_config(setting_name: str, value: Any, field_type: str, type_arg
 
 
 def validated_config(
-    setting_name: str, value: Any, attrs_validators: List[Dict], field_type, type_args, input_name
+    setting_name: str,
+    value: Any,
+    attrs_validators: List[Dict],
+    field_type,
+    type_args,
+    input_name,
 ):
     validator = attrs_validators[0]
     validator_name = list(validator.keys())[0]
@@ -706,11 +717,20 @@ def validated_config(
     )
 
 
-def _parse_nested_settings_dict(nested_dict, all_elements_list, nested_root_name):
+def _parse_nested_settings_dict(
+    nested_dict: Dict, all_elements_list: List, nested_root_name: str
+):
+    """Parse a UI elemnt for nested settings (config) classses
+
+    :param nested_dict: Nested config dictionary
+    :type nested_dict: Dict
+    :param all_elements_list: List to be populated with nested ui elements
+    :type all_elements_list: List
+    :param nested_root_name: Root name of the nested config attribute
+    :type nested_root_name: str
+    """
     for nested_setting_name, nested_setting_details in nested_dict.items():
-        field_type, type_args = parse_type(
-            nested_setting_details.get("type", "")
-        )
+        field_type, type_args = parse_type(nested_setting_details.get("type", ""))
         if field_type == "BaseAttrs":
             all_elements_list.append(H5(nested_setting_name, cls="col-span-4"))
             value = nested_setting_details.get("value", None)
@@ -758,6 +778,8 @@ def parse_ui_elements_to_simple_and_nested(
             id=section_id,
             cols=4,
             cls="space-y-3 gap-4 p-4",
+            hidden=True,
+            style="display: none;",
         )
         all_elements_list = []
         _parse_nested_settings_dict(
@@ -772,7 +794,11 @@ def parse_ui_elements_to_simple_and_nested(
         simple_ui_elements.append(
             DivLAligned(
                 settings_ui_element(
-                    setting_name, setting_details, field_type, type_args
+                    setting_name,
+                    setting_details,
+                    field_type,
+                    type_args,
+                    nested_root_name,
                 ),
             )
         )

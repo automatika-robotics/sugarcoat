@@ -175,12 +175,14 @@ function presistForm(form) {
 }
 
 async function startAudioRecording(button) {
-    console.log("In audio recordin")
+    uk_icon_recording = `<uk-icon icon="mic"><!----><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class=""><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg></uk-icon>`;
+    uk_icon_stop = `<uk-icon icon="square"><!----><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class=""><rect width="18" height="18" x="3" y="3" rx="2"></rect></svg></uk-icon>`;
+
     button.classList.toggle("recording");
 
     if (isRecording) {
         mediaRecorder.stop();
-        button.innerHTML = `<i class="fa fa-microphone"></i>`;
+        button.innerHTML = uk_icon_recording;
     } else {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -189,7 +191,7 @@ async function startAudioRecording(button) {
 
             mediaRecorder.onstart = () => {
                 isRecording = true;
-                button.innerHTML = `<i class="fa fa-stop"></i>`;
+                button.innerHTML = uk_icon_stop;
                 button.title = 'End Recording';
                 // Add "Recording..." indicator to chat
                 // recordingIndicatorEl = addMessage("🎙 Recording...", "user-message recording-indicator", "You", getCurrentTime());
@@ -212,7 +214,6 @@ async function startAudioRecording(button) {
                     if (recordingIndicatorEl) recordingIndicatorEl.remove();
                     console.error("No Audio recorded.");
                     addErrorMessage("No audio was recorded. Please try again.");
-                    // button.innerHTML = `<i class="fa fa-microphone"></i> <span class="record-tooltip">Record</span>`;
                     return;
                 }
 
@@ -244,7 +245,7 @@ async function startAudioRecording(button) {
                     // addErrorMessage("Error: Could not process recorded audio.");
                 }
 
-                button.innerHTML = `<i class="fa fa-microphone"></i>`;
+                button.innerHTML = uk_icon_recording;
                 button.title = "Record";
             };
 
