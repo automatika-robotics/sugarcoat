@@ -640,7 +640,7 @@ def nonvalidated_config(
     elif field_type == "literal":
         # Parsing to hanlde enum literals
         parsed_value = value
-        if value not in type_args and value.upper() in type_args:
+        if value not in type_args and type(value) is str and value.upper() in type_args:
             parsed_value = value.upper()
         return LabelSelect(
             map(Option, type_args),
@@ -650,12 +650,7 @@ def nonvalidated_config(
             name=input_name,
         )
 
-    return LabelInput(
-        label=f"Unhandled: {setting_name}",
-        id=setting_name,
-        disabled=True,
-        name=input_name,
-    )
+    return None
 
 
 def validated_config(
