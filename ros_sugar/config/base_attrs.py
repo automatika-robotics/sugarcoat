@@ -221,7 +221,7 @@ class BaseAttrs:
                 setattr(self, key, value)
 
     def _select_nested_config(
-        cls, config: Dict[str, Any], key_path: Optional[str]
+        self, config: Dict[str, Any], key_path: Optional[str]
     ) -> Dict[str, Any]:
         if not key_path:
             return config
@@ -519,27 +519,30 @@ class BaseAttrs:
                     validators_list.append(self._parse_validator(attr_field.validator))
             parsed_type = attr_field.type
             # Check and handle Union/Optional/Literal types:
-            if generic_type := self.__is_subscripted_generic(attr_field.type):
-                args = self.__get_subscribed_generic_simple_types(attr_field.type)
+            if generic_type := self.__is_subscripted_generic(parsed_type):
+                args = self.__get_subscribed_generic_simple_types(parsed_type)
+                # Do nothing if simple generic like Dict, List
+                if not args:
+                    pass
                 # Execlude simple optional types
-                if len(args) == 2 and type(None) in args:
-                    continue
-                if generic_type is Literal:
+                elif len(args) == 2 and type(None) in args:
+                    pass
+                elif generic_type is Literal:
                     parsed_type = f"Literal{list(args)}"
-                    continue
-                parsed_type = []
-                # Parse Enum to Literal
-                parsed_enum = None
-                for val_type in args:
-                    if val_type is Literal:
-                        parsed_type.append(f"Literal{get_args(val_type)}")
-                    elif issubclass(val_type, enum.Enum):
-                        values = [member.name for member in val_type]
-                        parsed_enum = f"Literal{values}"
-                    else:
-                        parsed_type.append(val_type)
-                # If an enum is parsed pass only the literal type
-                parsed_type = parsed_enum or parsed_type
+                else:
+                    parsed_type = []
+                    # Parse Enum to Literal
+                    parsed_enum = None
+                    for val_type in args:
+                        if val_type is Literal:
+                            parsed_type.append(f"Literal{get_args(val_type)}")
+                        elif issubclass(val_type, enum.Enum):
+                            values = [member.name for member in val_type]
+                            parsed_enum = f"Literal{values}"
+                        else:
+                            parsed_type.append(val_type)
+                    # If an enum is parsed pass only the literal type
+                    parsed_type = parsed_enum or parsed_type
 
             if type(attr_field.type) is type and issubclass(attr_field.type, BaseAttrs):
                 val: BaseAttrs = getattr(self, attr_field.name)
