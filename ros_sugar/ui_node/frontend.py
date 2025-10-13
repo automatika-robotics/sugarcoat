@@ -25,7 +25,7 @@ class FHApp:
         # --- Application Setup ---
         BASE_DIR = Path.cwd()  # where the recipe is running
         static_files_abs = Path(__file__).resolve().parent
-        static_files = static_files_abs.relative_to(BASE_DIR).as_posix()
+        static_files = Path(os.path.relpath(static_files_abs, BASE_DIR)).as_posix()
         hdrs = (
             Theme.red.headers(),  # Get theme from MonsterUI
             Link(
