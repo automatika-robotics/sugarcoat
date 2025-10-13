@@ -12,7 +12,6 @@ from typing import (
     _GenericAlias,
 )
 import functools
-import logging
 from copy import deepcopy
 import numpy as np
 from attrs import asdict, define, fields_dict
@@ -203,7 +202,7 @@ class BaseAttrs:
                         f"Trying to set with incompatible type. Attribute {key} expecting dictionary got '{type(value)}'"
                     )
                 attribute_to_set.from_dict(value)
-            elif isinstance(attribute_to_set, List):
+            elif isinstance(attribute_to_set, List) and attribute_to_set:
                 setattr(
                     self,
                     key,
@@ -427,19 +426,19 @@ class BaseAttrs:
         """
         # Get nested attributes if there
         nested_names = attr_name.split(".")
+        name_to_set = nested_names[0]
         obj_to_set = self
         obj_class = self
-        for name in nested_names:
+        for name_to_set in nested_names:
             # Raise an error if the name does not exist in the class
-            if not hasattr(obj_to_set, name):
+            if not hasattr(obj_to_set, name_to_set):
                 raise AttributeError(
                     f"Class '{self.__class__.__name__}' does not have an attribute '{attr_name}'"
                 )
             obj_class = obj_to_set
-            obj_to_set = getattr(obj_to_set, name)
-            name_to_set = name
+            obj_to_set = getattr(obj_to_set, name_to_set)
 
-        attribute_type = self.get_attribute_type(name_to_set)
+        attribute_type = self.get_attribute_type(attr_name)
 
         if not attribute_type:
             raise TypeError(
@@ -490,7 +489,8 @@ class BaseAttrs:
         # Fallback for unknown validators
         return {"unknown": "unknown"}
 
-    def get_fields_info(self) -> Dict[str, Dict[str, Any]]:
+    @classmethod
+    def get_fields_info(cls, class_object) -> Dict[str, Dict[str, Any]]:
         """
         Returns a dictionary with metadata about each field in the class.
 
@@ -501,7 +501,7 @@ class BaseAttrs:
         """
         fields_info = {}
         # Iterate over all attributes defined by attrs
-        for attr_field in self.__attrs_attrs__:
+        for attr_field in class_object.__attrs_attrs__:
             if attr_field.name.startswith("_"):
                 continue
             validators_list = []
@@ -512,20 +512,22 @@ class BaseAttrs:
                 # Check for composite validators (like and_())
                 if hasattr(attr_field.validator, "validators"):
                     for v in attr_field.validator.validators:
-                        validators_list.append(self._parse_validator(v))
+                        validators_list.append(cls._parse_validator(v))
 
                 else:  # It's a single validator
-                    validators_list.append(self._parse_validator(attr_field.validator))
+                    validators_list.append(cls._parse_validator(attr_field.validator))
             parsed_type = attr_field.type
             # Check and handle Union/Optional/Literal types:
-            if generic_type := self.__is_subscripted_generic(parsed_type):
-                args = self.__get_subscribed_generic_simple_types(parsed_type)
+            if generic_type := cls.__is_subscripted_generic(parsed_type):
+                args = cls.__get_subscribed_generic_simple_types(parsed_type)
                 # Do nothing if simple generic like Dict, List
                 if not args:
                     pass
                 # Execlude simple optional types
-                elif len(args) == 2 and type(None) in args:
-                    pass
+                elif generic_type is Union and type(None) in args:
+                    # Optional argument
+                    args.remove(type(None))
+                    parsed_type = Optional[args]
                 elif generic_type is Literal:
                     parsed_type = f"Literal{list(args)}"
                 else:
@@ -538,24 +540,26 @@ class BaseAttrs:
                         elif issubclass(val_type, enum.Enum):
                             values = [member.name for member in val_type]
                             parsed_enum = f"Literal{values}"
+                            validators_list = []
                         else:
                             parsed_type.append(val_type)
                     # If an enum is parsed pass only the literal type
                     parsed_type = parsed_enum or parsed_type
 
-            if type(attr_field.type) is type and issubclass(attr_field.type, BaseAttrs):
-                val: BaseAttrs = getattr(self, attr_field.name)
-                logging.info(f"Setting up Nested for  {attr_field.name}")
+            if type(attr_field.type) is type and (
+                issubclass(parsed_type, BaseAttrs)
+                or parsed_type.__base__.__name__ == "BaseAttrs"
+            ):
+                val: BaseAttrs = getattr(class_object, attr_field.name)
                 fields_info[attr_field.name] = {
                     "type": "BaseAttrs",
                     "validators": [],
-                    "value": val.get_fields_info(),
+                    "value": cls.get_fields_info(val),
                 }
-                return fields_info
-
-            fields_info[attr_field.name] = {
-                "type": parsed_type,
-                "validators": validators_list,
-                "value": getattr(self, attr_field.name),
-            }
+            else:
+                fields_info[attr_field.name] = {
+                    "type": parsed_type,
+                    "validators": validators_list,
+                    "value": getattr(class_object, attr_field.name),
+                }
         return fields_info

@@ -1440,12 +1440,9 @@ class BaseComponent(lifecycle.Node):
         :rtype: str | None
         """
         error_msg: Optional[str] = None
-        if not self.config.has_attribute(param_name):
-            error_msg = f"'{self.config.__class__.__name__}' does not contain an attribute '{param_name}'"
-
-        param_type = self.config.get_attribute_type(param_name)
 
         try:
+            param_type = self.config.get_attribute_type(param_name)
             parsed_param = param_type(param_str_value) if param_type else None
             self.config.update_value(param_name, parsed_param)
             self.get_logger().debug(
@@ -1921,7 +1918,6 @@ class BaseComponent(lifecycle.Node):
                 "Waiting for ongoing transition to end before executing new transition",
                 once=True,
             )
-
         # configured and inactive
         self.trigger_activate()
 
