@@ -527,7 +527,7 @@ class BaseAttrs:
                 elif generic_type is Union and type(None) in args:
                     # Optional argument
                     args.remove(type(None))
-                    parsed_type = Optional[args]
+                    parsed_type = f"Optional[{args[0]}]"
                 elif generic_type is Literal:
                     parsed_type = f"Literal{list(args)}"
                 else:

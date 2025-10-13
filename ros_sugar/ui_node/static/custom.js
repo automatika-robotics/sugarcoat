@@ -1,9 +1,73 @@
-const videoFrame = document.getElementsByName('video-frame');
-
-// Establish WebSocket connection (protocol aware)
+// Establish WebSocket connection for audio transmission (protocol aware)
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const ws_stream = new WebSocket(`${wsProtocol}//${window.location.host}/ws_stream`);
+const ws_stream = new WebSocket(`${wsProtocol}//${window.location.host}/ws_audio`);
+ws_stream.onopen = () => {
+    console.log("Audio Websocket connection established");
+};
 
+ws_stream.onclose = () => {
+    console.log("Audio Websocket connection closed");
+};
+
+ws_stream.onerror = (err) => {
+    console.error(`Audio WebSocket error:`, err);
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+    const videoFrames = document.getElementsByName("video-frame");
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const MAX_RETRIES = 10; // reconnet retries
+
+    videoFrames.forEach((img) => {
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws_${img.id}`;
+        connectImageWebSocket(img, wsUrl, 0);
+    });
+
+    function connectImageWebSocket(img, wsUrl, attempt) {
+        const ws = new WebSocket(wsUrl);
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => {
+            console.log(`[${img.id}] WebSocket connected`);
+            attempt = 0; // reset retry counter
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.payload) {
+                    img.src = "data:image/jpeg;base64," + data.payload;
+                    return;
+                }
+            } catch {
+                console.error("Received binary data, expection base64")
+            }
+
+            // Handle binary JPEG data
+            if (event.data instanceof ArrayBuffer) {
+                const bytes = new Uint8Array(event.data);
+                let binary = '';
+                bytes.forEach(b => binary += String.fromCharCode(b));
+                img.src = "data:image/jpeg;base64," + btoa(binary);
+            }
+        };
+
+        ws.onerror = (err) => {
+            console.error(`[${img.id}] WebSocket error:`, err);
+        };
+
+        ws.onclose = () => {
+            console.warn(`⚠️ [${img.id}] WebSocket closed`);
+            if (attempt < MAX_RETRIES) {
+                const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+                console.log(`[${img.id}] Reconnecting in ${delay / 1000}s...`);
+                setTimeout(() => connectImageWebSocket(img, wsUrl, attempt + 1), delay);
+            } else {
+                console.error(`[${img.id}] Max reconnect attempts reached`);
+            }
+        };
+    }
+});
 
 // Function to make all elements with class "draggable" movable
 let highestZ = 1; // Global tracker for z-index of draggable items
@@ -11,116 +75,94 @@ function makeDraggable(className = "draggable") {
     const elements = Array.from(document.getElementsByClassName(className));
 
     elements.forEach(el => {
-    let isDragging = false;
-    let offsetX = 0, offsetY = 0;
+        let isDragging = false;
+        let offsetX = 0, offsetY = 0;
 
-    // Helper function to start dragging
-    const startDrag = (clientX, clientY, fixedH = false) => {
-        isDragging = true;
+        // Helper function to start dragging
+        const startDrag = (clientX, clientY, fixedH = false) => {
+            isDragging = true;
 
-        // Bring this element to the top
-        highestZ++;
-        el.style.zIndex = highestZ;
+            // Bring this element to the top
+            highestZ++;
+            el.style.zIndex = highestZ;
 
-        // Preserve size
-        const rect = el.getBoundingClientRect();
-        const computedStyle = window.getComputedStyle(el);
-        el.style.width = computedStyle.width;
-        if (fixedH){
-            el.style.height = computedStyle.height;
-        }
-        else{
-            el.style.height = "auto";
-        }
-        el.style.maxHeight = "60vh"; // fallback max height
+            // Preserve size
+            const rect = el.getBoundingClientRect();
+            const computedStyle = window.getComputedStyle(el);
+            el.style.width = computedStyle.width;
+            if (fixedH) {
+                el.style.height = computedStyle.height;
+            }
+            else {
+                el.style.height = "auto";
+            }
+            el.style.maxHeight = "60vh"; // fallback max height
 
-        // Set absolute position
-        el.style.position = "absolute";
-        el.style.left = `${rect.left}px`;
-        el.style.top = `${rect.top}px`;
-        el.style.transition = "none";
+            // Set absolute position
+            el.style.position = "absolute";
+            el.style.left = `${rect.left}px`;
+            el.style.top = `${rect.top}px`;
+            el.style.transition = "none";
 
-        // Calculate offset between mouse/touch and element top-left
-        offsetX = clientX - rect.left;
-        offsetY = clientY - rect.top;
-    };
+            // Calculate offset between mouse/touch and element top-left
+            offsetX = clientX - rect.left;
+            offsetY = clientY - rect.top;
+        };
 
-    // Mouse events
-    el.addEventListener("mousedown", (e) => {
-        // Ignore dragging if clicking inside:
-        // - Elements with class "no-drag"
-        // - Form fields: input, textarea, select, button
-        if (
-            e.target.closest(".no-drag") ||
-            e.target.tagName === "INPUT" ||
-            e.target.tagName === "TEXTAREA" ||
-            e.target.tagName === "SELECT" ||
-            e.target.tagName === "BUTTON"
-        ) return;
+        // Mouse events
+        el.addEventListener("mousedown", (e) => {
+            // Ignore dragging if clicking inside:
+            // - Elements with class "no-drag"
+            // - Form fields: input, textarea, select, button
+            if (
+                e.target.closest(".no-drag") ||
+                e.target.tagName === "INPUT" ||
+                e.target.tagName === "TEXTAREA" ||
+                e.target.tagName === "SELECT" ||
+                e.target.tagName === "BUTTON"
+            ) return;
 
 
-        let fixH = false;
-        if (e.target.closest(".fix-size")) fixH=true;
+            let fixH = false;
+            if (e.target.closest(".fix-size")) fixH = true;
 
-        startDrag(e.clientX, e.clientY, fixH);
-    });
+            startDrag(e.clientX, e.clientY, fixH);
+        });
 
-    document.addEventListener("mousemove", (e) => {
-        if (!isDragging) return;
-        el.style.left = `${e.clientX - offsetX}px`;
-        el.style.top = `${e.clientY - offsetY}px`;
-    });
-    document.addEventListener("mouseup", () => {
-        if (isDragging) {
-        isDragging = false;
-        el.style.transition = "";
-        }
-    });
+        document.addEventListener("mousemove", (e) => {
+            if (!isDragging) return;
+            el.style.left = `${e.clientX - offsetX}px`;
+            el.style.top = `${e.clientY - offsetY}px`;
+        });
+        document.addEventListener("mouseup", () => {
+            if (isDragging) {
+                isDragging = false;
+                el.style.transition = "";
+            }
+        });
 
-    // Touch events for mobile
-    el.addEventListener("touchstart", (e) => {
-        const touch = e.touches[0];
-        startDrag(touch.clientX, touch.clientY);
-    });
-    document.addEventListener("touchmove", (e) => {
-        if (!isDragging) return;
-        const touch = e.touches[0];
-        el.style.left = `${touch.clientX - offsetX}px`;
-        el.style.top = `${touch.clientY - offsetY}px`;
-    }, { passive: false }); // Prevent scrolling while dragging
-    document.addEventListener("touchend", () => {
-        isDragging = false;
-    });
+        // Touch events for mobile
+        el.addEventListener("touchstart", (e) => {
+            const touch = e.touches[0];
+            startDrag(touch.clientX, touch.clientY);
+        });
+        document.addEventListener("touchmove", (e) => {
+            if (!isDragging) return;
+            const touch = e.touches[0];
+            el.style.left = `${touch.clientX - offsetX}px`;
+            el.style.top = `${touch.clientY - offsetY}px`;
+        }, { passive: false }); // Prevent scrolling while dragging
+        document.addEventListener("touchend", () => {
+            isDragging = false;
+        });
     });
 }
 
 
 document.addEventListener("DOMContentLoaded", () => {
-  makeDraggable();
+    makeDraggable();
 });
 
-ws_stream.onopen = () => {
-    console.log("WebSocket connection established");
-};
-
-// Display image msgs
-ws_stream.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-
-    // only images received here
-    const target = Array.from(videoFrame).find(img => img.id === data.topic);
-    if (target) {
-        target.src = 'data:image/jpeg;base64,' + data.payload;
-    }
-};
-
-ws_stream.onerror = (error) => {
-    console.error("WebSocket error: ", error);
-};
-
-ws_stream.onclose = () => {
-    console.log("WebSocket connection closed");
-};
 
 // Audio Recording Logic
 let mediaRecorder;
@@ -128,7 +170,7 @@ let audioChunks = [];
 let isRecording = false;
 let recordingIndicatorEl = null; // reference to the indicator message in DOM
 
-function presistForm(form){
+function presistForm(form) {
     FormPersistence.persist(form);
 }
 
@@ -193,7 +235,7 @@ async function startAudioRecording(button) {
                     reader.onloadend = () => {
                         const base64Audio = reader.result.split(",")[1];
                         if (base64Audio) {
-                            ws_stream.send(JSON.stringify({ type: "audio", payload: base64Audio, topic_name: button.id}));
+                            ws_stream.send(JSON.stringify({ type: "audio", payload: base64Audio, topic_name: button.id }));
                         }
                     };
                 } catch (error) {

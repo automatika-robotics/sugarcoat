@@ -1,4 +1,7 @@
+import importlib
 from typing import List, Dict, Any
+import logging
+from ..io.supported_types import SupportedType
 
 from ros_sugar.io.supported_types import (
     String,
@@ -214,6 +217,52 @@ _OUTPUT_ELEMENTS: Dict = {
 }
 
 
+def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
+    """Deserialize one additional element"""
+    # Get key type
+    module_name_key, _, type_name = k_t.rpartition(".")
+    if not module_name_key:
+        logging.error(f"Could not find module name for {k_t}")
+        return
+    # Get item func
+    module_name_item, _, func_name = i_t.rpartition(".")
+    if not module_name_item:
+        logging.error(f"Could not find module name for {i_t}")
+        return
+    module_key = importlib.import_module(module_name_key)
+    module_item = importlib.import_module(module_name_item)
+    key = getattr(module_key, type_name)
+    if not issubclass(key, SupportedType):
+        logging.error(f"Could not find {type_name} name in {module_key} module")
+        return
+    item = getattr(module_item, func_name)
+    if not callable(item):
+        logging.error(f"Could not find {func_name} name in {module_item} module")
+        return
+    return key, item
+
+
+def add_additional_ui_elements(
+    input_elements: Optional[List[Tuple]], output_elements: Optional[List[Tuple]]
+):
+    """Deserialize additional elements and add them"""
+    global _INPUT_ELEMENTS, _OUTPUT_ELEMENTS
+
+    # Add input elements
+    if input_elements:
+        for k_t, i_t in input_elements:
+            deserialized = _deserialize_additional_element(k_t, i_t)
+            if deserialized:
+                _INPUT_ELEMENTS[deserialized[0]] = deserialized[1]
+
+    # Add output elements
+    if output_elements:
+        for k_t, i_t in output_elements:
+            deserialized = _deserialize_additional_element(k_t, i_t)
+            if deserialized:
+                _OUTPUT_ELEMENTS[deserialized[0]] = deserialized[1]
+
+
 def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
     _arrow_down = UkIcon("chevrons-down")
     _arrow_up = UkIcon("chevrons-up")
@@ -367,6 +416,13 @@ def settings_ui_element(
 
     :return: Setting parameter UI element
     """
+    try:
+        field_type, type_args = parse_type(setting_details.get("type", ""))
+    except Exception as e:
+        logging.error(
+            f"Could not render setting: {setting_name}, with value: {setting_details} due to error: {e}"
+        )
+        field_type, type_args = None, None
     validators = setting_details.get("validators", [])
     value = setting_details.get("value")
 
@@ -383,12 +439,13 @@ def settings_ui_element(
             type_args=type_args,
             input_name=input_name
         )
-    return nonvalidated_config(
-        setting_name=setting_name,
-        value=value,
-        field_type=field_type,
-        type_args=type_args,
-        input_name=input_name,
+    if field_type and type_args:
+        return nonvalidated_config(
+            setting_name=setting_name,
+            value=value,
+            field_type=field_type,
+            type_args=type_args,
+            input_name=input_name,
     )
 
 
