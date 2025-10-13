@@ -65,6 +65,9 @@ else:
 m_pack.patch()
 
 
+UI_EXTENSIONS = {}
+
+
 class Launcher:
     """
     Launcher is a class created to provide a more pythonic way to launch and configure ROS nodes.
@@ -243,6 +246,23 @@ class Launcher:
         ssl_keyfile_path: str = "key.pem",
         ssl_certificate_path: str = "cert.pem",
     ):
+        self._ui_input_elements = []
+        self._ui_output_elements = []
+        for ext in UI_EXTENSIONS:
+            input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
+            # serialize inputs
+            for key, element in input_elements_dict.items():
+                self._ui_input_elements.append((
+                    f"{key.__module__}.{key.__qualname__}",
+                    f"{element.__module__}.{element.__qualname__}",
+                ))
+            # serialize outputs
+            for key, element in output_elements_dict.items():
+                self._ui_output_elements.append((
+                    f"{key.__module__}.{key.__qualname__}",
+                    f"{element.__module__}.{element.__qualname__}",
+                ))
+
         self._enable_ui = True
         self._ui_input_topics = inputs
         self._ui_output_topics = outputs
@@ -647,6 +667,10 @@ class Launcher:
         arguments = ui_node.launch_cmd_args + [
             "--additional_types",
             json.dumps(list(_additional_types.keys())),
+            "--ui_input_elements",
+            json.dumps(self._ui_input_elements),
+            "--ui_output_elements",
+            json.dumps(self._ui_output_elements),
             "--ros-args",
             "--log-level",
             "info",
@@ -890,12 +914,6 @@ class Launcher:
         except ImportError:
             pass
 
-        # Create UI node if enabled
-        if self._enable_ui:
-            self._setup_ui_node()
-
-        self._setup_monitor_node()
-
         for component in self._components:
             self._setup_component_events_handlers(component)
 
@@ -906,6 +924,12 @@ class Launcher:
                 self._setup_component_in_process(component, pkg_name, executable_name)
             else:
                 self._setup_component_in_thread(component)
+
+        # Create UI node if enabled
+        if self._enable_ui:
+            self._setup_ui_node()
+
+        self._setup_monitor_node()
 
         group_action = GroupAction(self._launch_group)
 

@@ -3,6 +3,8 @@ import threading
 import asyncio
 import os
 from attr import define, field, Factory
+
+from ..config.base_attrs import BaseAttrs
 from ..core.component import BaseComponent, BaseComponentConfig
 from .. import base_clients
 from ..io.callbacks import GenericCallback
@@ -32,7 +34,7 @@ class UINode(BaseComponent):
         if component_configs:
             # create UI specific configs for components
             comp_configs_fields = {
-                comp_name: conf.get_fields_info()
+                comp_name: BaseAttrs.get_fields_info(conf)
                 for comp_name, conf in component_configs.items()
             }
             config.components = comp_configs_fields
@@ -43,8 +45,7 @@ class UINode(BaseComponent):
         ] = {}
 
         # Initialize websocket callbacks
-        self.websocket_callback: Callable = lambda _: asyncio.sleep(0)
-        self.stream_callback: Callable = lambda _: asyncio.sleep(0)
+        self.default_websocket_callback: Callable = lambda _: asyncio.sleep(0)
 
         try:
             self.loop = asyncio.get_running_loop()
@@ -69,7 +70,9 @@ class UINode(BaseComponent):
         """Return error msg to the UI"""
         self.get_logger().error(error_msg)
         payload = {"type": "error", "payload": error_msg}
-        asyncio.run_coroutine_threadsafe(self.websocket_callback(payload), self.loop)
+        asyncio.run_coroutine_threadsafe(
+            self.default_websocket_callback(payload), self.loop
+        )
 
     def _add_ros_subscriber(self, callback: GenericCallback):
         """Overrides creating subscribers to run the ui callback instead of the main callback
@@ -81,12 +84,12 @@ class UINode(BaseComponent):
             "topic": callback.input_topic.name,
         }
 
+        setattr(self, f"{payload['type']}_callback", None)
+
         def _ui_callback(msg) -> None:
             ws_callback = (
-                self.stream_callback
-                if callback.input_topic.msg_type.__name__
-                in ["Image", "CompressedImage", "OccupancyGrid"]
-                else self.websocket_callback
+                getattr(self, f"{payload['type']}_callback")
+                or self.default_websocket_callback
             )
             callback.msg = msg
             try:
@@ -126,13 +129,14 @@ class UINode(BaseComponent):
         if hasattr(self, "loop_thread"):
             self.loop_thread.start()
 
-    def attach_streaming_callback(self, stream_callback: Callable):
+    def attach_websocket_callback(
+        self, ws_callback: Callable, topic_type: Optional[str] = None
+    ):
         """Adds websocket callback to listeners of outputs"""
-        self.stream_callback = stream_callback
-
-    def attach_websocket_callback(self, websocket_callback: Callable):
-        """Adds websocket callback to listeners of outputs"""
-        self.websocket_callback = websocket_callback
+        if topic_type:
+            setattr(self, f"{topic_type}_callback", ws_callback)
+        else:
+            self.default_websocket_callback = ws_callback
 
     def update_configs(self, new_configs: Dict):
         self.get_logger().info("Updating configs")

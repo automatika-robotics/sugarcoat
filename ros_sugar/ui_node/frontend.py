@@ -21,35 +21,41 @@ class FHApp:
         configs: Dict,
         in_topics: Sequence[Topic],
         out_topics: Sequence[Topic],
+        additional_input_elements: Optional[List[Tuple]] = None,
+        additional_output_elements: Optional[List[Tuple]] = None,
     ):
         # --- Application Setup ---
-        BASE_DIR = Path.cwd()  # where the recipe is running
-        static_files_abs = Path(__file__).resolve().parent
-        static_files = Path(os.path.relpath(static_files_abs, BASE_DIR)).as_posix()
+        static_src = Path(__file__).resolve().parent / "static"
+
         hdrs = (
             Theme.red.headers(),  # Get theme from MonsterUI
             Link(
                 rel="stylesheet",
-                href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css",
+                href="font-awesome.min.css",
                 type="text/css",
             ),
             Script(
-                src="https://unpkg.com/idiomorph@0.7.3/dist/idiomorph-ext.min.js",
-                integrity="sha384-szktAZju9fwY15dZ6D2FKFN4eZoltuXiHStNDJWK9+FARrxJtquql828JzikODob",
-                crossorigin="anonymous",
-            ),
-            Script(
-                src=static_files / Path("custom.js"),
+                src="custom.js",
             ),
         )
-        self.app, self.rt = fast_app(hdrs=hdrs, exts=["ws", "morph"])
+        self.app, self.rt = fast_app(
+            hdrs=hdrs, exts=["ws"], static_path=str(static_src)
+        )
 
         if not configs:
             logging.warning("No component configs provided to the UI")
 
+        # Add any additional elements
+        elements.add_additional_ui_elements(
+            input_elements=additional_input_elements,
+            output_elements=additional_output_elements,
+        )
+
         # Create settings UI
         self.configs = configs
         self.settings = self._create_component_settings_ui(configs)
+        self.in_topics = in_topics
+        self.out_topics = out_topics
         self.inputs = self._create_input_topics_ui(in_topics)
         self.outputs = self._create_output_topics_ui(out_topics)
         self.toggle_settings = False
@@ -86,13 +92,23 @@ class FHApp:
         """Get the FastHTML app"""
         return self.app, self.rt
 
-    # -- Utility Functions --
     def toasting(self, msg, session, toast_type="info", duration: int = 5000):
         session["duration"] = duration
         dismiss = (
             duration >= 20000
         )  # Id duration is more than 20seconds -> activate dismiss by default
         add_toast(session, f"{msg}", toast_type, dismiss)
+
+    def get_all_stream_outputs(self) -> List[Tuple]:
+        """Return all topics that connect to their own websocket for streaming"""
+        return [
+            (o.name, o.msg_type.__name__)
+            for o in self.out_topics
+            if (
+                elements._OUTPUT_ELEMENTS.get(o.msg_type, None)
+                == elements._out_image_element
+            )
+        ]
 
     def update_configs_from_data(self, data: Dict):
         """Update configs from a UI form data dict
@@ -197,32 +213,6 @@ class FHApp:
     def _get_current_time(self):
         """Returns the current time as HH:MM."""
         return datetime.now().strftime("%H:%M")
-
-    # -- UI elements --
-    def ChatMessage(self, text, msg_class, label, timestamp):
-        """Component for a single text message."""
-        return Div(
-            Div(label, cl="message-label"),
-            Div(text, cl=f"message {msg_class}"),
-            Div(timestamp, cl=f"message-date-{msg_class}"),
-            cl="message-wrapper",
-            style=f"align-self: {'flex-end' if 'user' in msg_class else 'flex-start'};",
-        )
-
-    def AudioMessage(self, audio_src, msg_class, label, timestamp):
-        """Component for a single audio message."""
-        return Div(
-            Div(Span(label), Span(timestamp), cl="audio-message-label"),
-            Div(
-                Audio(controls=True, src=audio_src, style="width: 100%;"),
-                cl="audio-message",
-            ),
-            cl=f"audio-message-wrapper-{msg_class}",
-        )
-
-    def StatusMessage(self, message, msg_class):
-        """Component for error or success messages."""
-        return Div(message, cl=msg_class)
 
     def get_settings(self):
         """Get components settings"""

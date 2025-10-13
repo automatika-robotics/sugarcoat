@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+import json
 from typing import Dict
-import numpy as np
 from pathlib import Path
-import base64
+from functools import partial
+import argparse
 import logging
 import threading
 import uvicorn
@@ -27,8 +28,24 @@ def main():
 
     ros_node_config = ros_node.config
 
+    # Get parsed UI elements
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ui_input_elements", type=str)
+    parser.add_argument("--ui_output_elements", type=str)
+    args, _ = parser.parse_known_args()  # type: ignore
+    additional_input_elements = (
+        json.loads(args.ui_input_elements) if args.ui_input_elements else None
+    )
+    additional_output_elements = (
+        json.loads(args.ui_output_elements) if args.ui_output_elements else None
+    )
+
     fh = FHApp(
-        ros_node_config.components, ros_node.out_topics, ros_node.in_topics
+        ros_node_config.components,
+        ros_node.out_topics,  # Inputs from the client to the ros node
+        ros_node.in_topics,  # Outputs to the client from the ros node
+        additional_input_elements=additional_input_elements,
+        additional_output_elements=additional_output_elements,
     )  # inputs and outputs are reversed
     app, _ = fh.get_app()
 
@@ -94,7 +111,48 @@ def main():
             toast_type="error",
         )
 
-    async def on_conn(send):
+    async def on_conn_stream(ws, send, topic_type: str):
+        """When a client connects, register its callback."""
+
+        # Callback function for ROS node
+        async def stream_callback(data: Dict):
+            if data["type"] == "error":
+                await log_data(send, data["payload"], data_src=data["type"])
+            else:
+                await ws.send_json(data)
+
+        ros_node.attach_websocket_callback(stream_callback, topic_type)
+
+    # Create websockets for streaming output topics
+    for topic_name, topic_type in fh.get_all_stream_outputs():
+
+        @app.ws(
+            f"/ws_{topic_name}",
+            conn=partial(on_conn_stream, topic_type=topic_type),
+            disconn=on_disconn,
+        )
+        async def _():
+            pass
+
+    @app.ws("/ws_audio", disconn=on_disconn)
+    async def _(data, send):
+        """WS route for sending audio to ROS UI Node"""
+        # Only handle audio data
+        if data["type"] == "audio" and len(data["payload"]) > 0:
+            try:
+                await log_data(send, data["payload"], data_src="user", is_audio=True)
+                ros_node.publish_data({
+                    "topic_name": data["topic_name"],
+                    "topic_type": "Audio",
+                    "data": data["payload"],
+                })
+            except RuntimeError:
+                logging.warning("Runtime error when sending audio")
+
+            # Send the robot loading dots
+            return elements.update_logging_card_with_loading(fh.outputs_log)
+
+    async def on_conn(ws, send):
         """When a client connects, register its callback."""
 
         # Callback function for ROS node
@@ -105,8 +163,11 @@ def main():
                 await log_data(
                     send, data["payload"], data_src="robot", is_audio=is_audio
                 )
-            else:
+            elif data["type"] == "error":
                 await log_data(send, data["payload"], data_src=data["type"])
+            else:
+                # Send to be handled with custom JS if needed
+                await ws.send_json(data)
 
         ros_node.attach_websocket_callback(websocket_callback)
 
@@ -138,36 +199,6 @@ def main():
             ros_node.publish_data(data=data)
         else:
             ros_node.publish_data(data=data)
-
-    async def on_conn_stream(ws, send):
-        """When a client connects, register its callback."""
-
-        # Callback function for ROS node
-        async def stream_callback(data: Dict):
-            if data["type"] in ["Image", "CompressedImage", "OccupancyGrid"]:
-                await ws.send_json(data)
-            else:
-                await log_data(send, data["payload"], data_src=data["type"])
-
-        ros_node.attach_streaming_callback(stream_callback)
-
-    @app.ws("/ws_stream", conn=on_conn_stream, disconn=on_disconn)
-    async def _(data, send):
-        """WS route for input/output communication with ROS UI Node"""
-        # Only handle audio data
-        if data["type"] == "audio" and len(data["payload"]) > 0:
-            try:
-                await log_data(send, data["payload"], data_src="user", is_audio=True)
-                ros_node.publish_data({
-                    "topic_name": data["topic_name"],
-                    "topic_type": "Audio",
-                    "data": data["payload"],
-                })
-            except RuntimeError:
-                logging.warning("Runtime error when sending audio")
-
-            # Send the robot loading dots
-            return elements.update_logging_card_with_loading(fh.outputs_log)
 
     # Check if SSL certificates exist
     if not (
