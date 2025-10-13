@@ -105,17 +105,6 @@ class FHApp:
             if param_value := data.get(param):
                 self.configs[component_to_update][param]["value"] = param_value
 
-    # TODO: Create nested ui element
-    # def _create_nested_attrs_ui(self, nested_value_name, nested_value):
-    #     # main_nested_container = DivLAligned()
-    #     nested_ui_elements = [
-    #         DivLAligned(
-    #             self._create_ui_element(nested_setting_name, nested_setting_details),
-    #         )
-    #         for nested_setting_name, nested_setting_details in nested_value.items()
-    #     ]
-    #     return nested_ui_elements
-
     def _create_input_topics_ui(self, inputs: Sequence[Topic]):
         """Creates cards for Input Topics"""
 
@@ -174,13 +163,17 @@ class FHApp:
 
         all_component_forms = []
         for count, (component_name, component_settings) in enumerate(settings.items()):
-            # Create an element per config parameter
-            ui_elements = [
-                DivLAligned(
-                    elements.settings_ui_element(setting_name, setting_details),
+            simple_ui_elements = []
+            nested_ui_elements = []
+            for setting_name, setting_details in component_settings.items():
+                elements.parse_ui_elements_to_simple_and_nested(
+                    component_name,
+                    setting_name,
+                    setting_details,
+                    simple_ui_elements,
+                    nested_ui_elements,
                 )
-                for setting_name, setting_details in component_settings.items()
-            ]
+
             # Create an element for each component and add to the settings display
             all_component_forms.append(
                 elements.component_settings_div(
@@ -188,7 +181,8 @@ class FHApp:
                     settings_col_cls=item_col_cls
                     if count < len(settings) - 1
                     else last_col_cls,
-                    ui_elements=ui_elements,
+                    ui_elements=simple_ui_elements,
+                    nested_ui_elements=nested_ui_elements,
                 )
             )
         main_container(*all_component_forms)

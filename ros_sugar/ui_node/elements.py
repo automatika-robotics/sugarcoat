@@ -355,7 +355,9 @@ def styled_outputs_grid(number_of_outputs: int) -> tuple:
     return (output_grid, outputs_columns_span)
 
 
-def settings_ui_element(setting_name: str, setting_details: dict):
+def settings_ui_element(
+    setting_name: str, setting_details: dict, field_type, type_args, input_name=None
+):
     """Creates a UI element based on the setting's type and validators
 
     :param setting_name: Config parameter name
@@ -365,25 +367,34 @@ def settings_ui_element(setting_name: str, setting_details: dict):
 
     :return: Setting parameter UI element
     """
-    field_type, type_args = parse_type(setting_details.get("type", ""))
     validators = setting_details.get("validators", [])
     value = setting_details.get("value")
+
+    if not input_name:
+        input_name = setting_name
 
     # Handle validators first
     if validators:
         return validated_config(
-            setting_name=setting_name, value=value, attrs_validators=validators
+            setting_name=setting_name,
+            value=value,
+            attrs_validators=validators,
+            field_type=field_type,
+            type_args=type_args,
+            input_name=input_name
         )
-
     return nonvalidated_config(
         setting_name=setting_name,
         value=value,
         field_type=field_type,
         type_args=type_args,
+        input_name=input_name,
     )
 
 
-def component_settings_div(component_name: str, settings_col_cls: str, ui_elements):
+def component_settings_div(
+    component_name: str, settings_col_cls: str, ui_elements, nested_ui_elements
+):
     """Creates a UI element for a component to show and update the config parameters
 
     :param component_name: Name of the component (ROS2 node name)
@@ -398,6 +409,7 @@ def component_settings_div(component_name: str, settings_col_cls: str, ui_elemen
         cls=f"p-4 {settings_col_cls}",
     )
     settings_grid = Grid(*ui_elements, cols=4, cls="space-y-3 gap-4 p-4")
+    nested_settings_grid = Grid(*nested_ui_elements, cols=1, cls="space-y-3 gap-4 p-4")
     _loading_content = DivHStacked(
         Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending")
     )
@@ -406,6 +418,7 @@ def component_settings_div(component_name: str, settings_col_cls: str, ui_elemen
         Form(cls="space-y-4")(
             Input(name="component_name", type="hidden", value=component_name),
             settings_grid,
+            nested_settings_grid,
             DivCentered(
                 Grid(
                     Button(
@@ -537,40 +550,54 @@ def update_logging_card_with_loading(logging_card):
     )
 
 
-def nonvalidated_config(setting_name: str, value: Any, field_type: str, type_args):
+def nonvalidated_config(setting_name: str, value: Any, field_type: str, type_args, input_name: str):
     if field_type == "bool":
         # The 'checked' attribute is a boolean flag, so it doesn't need a value
-        return LabelSwitch(label=setting_name, id=setting_name, checked=bool(value))
+        return LabelSwitch(
+            label=setting_name,
+            id=setting_name,
+            checked=bool(value),
+            name=input_name,
+        )
 
     elif field_type in ["str", "unknown"]:
-        return LabelInput(label=setting_name, id=setting_name, type="text", value=value)
+        return LabelInput(
+            label=setting_name,
+            id=setting_name,
+            type="text",
+            value=value,
+            name=input_name,
+        )
 
     elif field_type in ["int", "float"]:
         return LabelInput(
-            label=setting_name, id=setting_name, type="number", value=str(value)
+            label=setting_name,
+            id=setting_name,
+            type="number",
+            value=str(value),
+            name=input_name,
         )
 
     elif field_type == "literal":
         return LabelSelect(
-            map(Option, type_args), id=setting_name, label=setting_name, value=value
+            map(Option, type_args),
+            id=setting_name,
+            label=setting_name,
+            value=value,
+            name=input_name,
         )
 
-    # TODO: handle BaseAttrs
-    # elif field_type == "BaseAttrs":
-    #     print(f"Returning None for {setting_name} with: {value}")
-    #     # Handle nested attrs
-    #     return None
-
-    # Placeholder for complex types
-    # TODO: handle dict and list
-    # elif field_type in ["dict", "list"]:
-
     return LabelInput(
-        label=f"Unhandled: {setting_name}", id=setting_name, disabled=True
+        label=f"Unhandled: {setting_name}",
+        id=setting_name,
+        disabled=True,
+        name=input_name,
     )
 
 
-def validated_config(setting_name: str, value: Any, attrs_validators: List[Dict]):
+def validated_config(
+    setting_name: str, value: Any, attrs_validators: List[Dict], field_type, type_args, input_name
+):
     validator = attrs_validators[0]
     validator_name = list(validator.keys())[0]
     validator_props = validator[validator_name]
@@ -582,12 +609,17 @@ def validated_config(setting_name: str, value: Any, attrs_validators: List[Dict]
             max=validator_props.get("max_value", 1e9),
             step=validator_props.get("step", 1),
             value=str(value),
+            name=input_name,
         )
 
     elif validator_name == "in":
         options = validator_props.get("ref_value", [])
         return LabelSelect(
-            map(Option, options), label=setting_name, id=setting_name, value=value
+            map(Option, options),
+            label=setting_name,
+            id=setting_name,
+            value=value,
+            name=input_name,
         )
 
     elif validator_name == "less_than":
@@ -597,6 +629,7 @@ def validated_config(setting_name: str, value: Any, attrs_validators: List[Dict]
             type="number",
             max=validator_props.get("ref_value", None),
             value=str(value),
+            name=input_name,
         )
     elif validator_name == "greater_than":
         return LabelInput(
@@ -605,4 +638,84 @@ def validated_config(setting_name: str, value: Any, attrs_validators: List[Dict]
             type="number",
             min=validator_props.get("ref_value", None),
             value=str(value),
+            name=input_name,
+        )
+    return nonvalidated_config(
+        setting_name,
+        value,
+        field_type,
+        type_args,
+        input_name,
+    )
+
+
+def _parse_nested_settings_dict(nested_dict, all_elements_list, nested_root_name):
+    for nested_setting_name, nested_setting_details in nested_dict.items():
+        field_type, type_args = parse_type(
+            nested_setting_details.get("type", "")
+        )
+        if field_type == "BaseAttrs":
+            all_elements_list.append(H5(nested_setting_name, cls="col-span-4"))
+            value = nested_setting_details.get("value", None)
+            if value:
+                _parse_nested_settings_dict(
+                    nested_setting_details.get("value", {}),
+                    all_elements_list,
+                    f"{nested_root_name}.{nested_setting_name}",
+                )
+        else:
+            single_div = DivLAligned(
+                settings_ui_element(
+                    nested_setting_name,
+                    nested_setting_details,
+                    field_type,
+                    type_args,
+                    input_name=f"{nested_root_name}.{nested_setting_name}",
+                ),
+                id=f"{nested_setting_name}",
+            )
+            all_elements_list.append(single_div)
+    return
+
+
+def parse_ui_elements_to_simple_and_nested(
+    component_name,
+    setting_name,
+    setting_details,
+    simple_ui_elements: list,
+    nested_ui_elements: list,
+):
+    field_type, type_args = parse_type(setting_details.get("type", ""))
+    nested_root_name = f"{setting_name}"
+
+    if field_type == "BaseAttrs":
+        section_id = f"{component_name}-{setting_name}-settings-grid"
+        main_nested_container = Card(
+            DivLAligned(
+                H4(setting_name),
+                _toggle_button(div_to_toggle=section_id),
+            ),
+            cls="p-4",
+        )
+        all_elements = Grid(
+            id=section_id,
+            cols=4,
+            cls="space-y-3 gap-4 p-4",
+        )
+        all_elements_list = []
+        _parse_nested_settings_dict(
+            setting_details.get("value", {}), all_elements_list, nested_root_name
+        )
+        nested_ui_elements.append(
+            main_nested_container(all_elements(*all_elements_list))
+        )
+
+    else:
+        # simple type: create and add the simple UI element
+        simple_ui_elements.append(
+            DivLAligned(
+                settings_ui_element(
+                    setting_name, setting_details, field_type, type_args
+                ),
+            )
         )
