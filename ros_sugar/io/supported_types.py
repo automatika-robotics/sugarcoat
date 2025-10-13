@@ -39,7 +39,7 @@ from . import callbacks
 from .utils import numpy_to_multiarray
 
 
-_additional_types = []
+_additional_types = {}
 
 
 def _update_supportedtype_callback(existing_class: type, new_class: type) -> None:
@@ -99,7 +99,7 @@ def add_additional_datatypes(types: List[type]) -> None:
     """
     global _additional_types
     # Create a dictionary for quick lookup of existing classes by name
-    type_dict = {t.__name__: t for t in _additional_types}
+    type_dict = {t.__name__: t for t in _additional_types.values()}
 
     for new_class in types:
         if new_class.__name__ in type_dict:
@@ -121,7 +121,9 @@ def add_additional_datatypes(types: List[type]) -> None:
 
         else:
             # Add the new class to the list
-            _additional_types.append(new_class)
+            _additional_types[f"{new_class.__module__}.{new_class.__qualname__}"] = (
+                new_class
+            )
 
 
 class Meta(type):

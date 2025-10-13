@@ -9,7 +9,6 @@ from typing import (
     List,
     get_origin,
     Literal,
-    Type,
     _GenericAlias,
 )
 import functools

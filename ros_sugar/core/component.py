@@ -8,8 +8,9 @@ import toml
 import socket
 from abc import abstractmethod
 import threading
-from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple, Type
 from functools import wraps
+import importlib
 
 from rclpy import logging as rclpy_logging
 from rclpy.action.server import ActionServer, CancelResponse, GoalResponse
@@ -44,6 +45,8 @@ from ..config.base_config import (
     QoSConfig,
 )
 from ..io.topic import Topic
+from ..io.supported_types import SupportedType
+from ..io.publisher import Publisher
 from .fallbacks import ComponentFallbacks, Fallback
 from .status import Status
 from ..utils import (
@@ -54,7 +57,6 @@ from ..utils import (
     log_srv,
 )
 from ..tf import TFListener, TFListenerConfig
-from ..io.publisher import Publisher
 
 
 class BaseComponent(lifecycle.Node):
@@ -174,9 +176,12 @@ class BaseComponent(lifecycle.Node):
         ] = {}  # Dictionary of user defined algorithms configuration
 
         # Main goal handle (to execute one goal at a time)
-        # TODO add config parameter (one goal vs goal queue)
+        # TODO: add config parameter (one goal vs goal queue)
         self._main_goal_handle = None
         self._main_goal_lock = threading.Lock()
+
+        # Additional types from derived packages
+        self._additional_types: List[Type[SupportedType]] = []
 
         # To use without launcher -> Init the ROS2 node directly
         if self.config._use_without_launcher:
@@ -1040,6 +1045,23 @@ class BaseComponent(lifecycle.Node):
                 reconstructed_action_list.append(reconstructed_action)
             self.__actions.append(reconstructed_action_list)
 
+    def set_additional_types(self, value: str):
+        """
+        Additional types from serialized types (json)
+
+        :param value: Serialized Additional Types
+        :type value: str
+        """
+        serialized_types = json.loads(value)
+        for s_t in serialized_types:
+            module_name, _, class_name = s_t.rpartition(".")
+            if not module_name:
+                continue
+            module = importlib.import_module(module_name)
+            new_type = getattr(module, class_name)
+            if issubclass(new_type, SupportedType):
+                self._additional_types.append(new_type)
+
     @property
     def _inputs_json(self) -> Union[str, bytes, bytearray]:
         """
@@ -1063,13 +1085,14 @@ class BaseComponent(lifecycle.Node):
         :param value: Serialized inputs
         :type value: Union[str, bytes, bytearray]
         """
-        import logging
-
         topics = json.loads(value)
         inputs = []
         for t in topics:
             topic_dict = json.loads(t)
             topic_dict["qos_profile"] = QoSConfig(**topic_dict.get("qos_profile", {}))
+            topic_dict["additional_types"] = (
+                self._additional_types
+            )  # Add any additional types
             inputs.append(Topic(**topic_dict))
 
         self.in_topics = self._reparse_inputs_callbacks(inputs)
@@ -1106,6 +1129,9 @@ class BaseComponent(lifecycle.Node):
         for t in topics:
             topic_dict = json.loads(t)
             topic_dict["qos_profile"] = QoSConfig(**topic_dict.get("qos_profile", {}))
+            topic_dict["additional_types"] = (
+                self._additional_types
+            )  # Add any additional types
             outputs.append(Topic(**topic_dict))
         self.out_topics = self._reparse_outputs_converts(outputs)
         self.publishers_dict = {

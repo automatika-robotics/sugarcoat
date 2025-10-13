@@ -45,6 +45,11 @@ def _parse_args() -> Tuple[argparse.Namespace, List[str]]:
         type=str,
         help="User defined configuration for component algorithms",
     )
+    parser.add_argument(
+        "--additional_types",
+        type=str,
+        help="Additional type modules from derived packages",
+    )
     return parser.parse_known_args()
 
 
@@ -162,6 +167,10 @@ def setup_component(
 
     # Init the node with rclpy
     component.rclpy_init_node()
+
+    # Add any passed additional types
+    if args.additional_types:
+        component.set_additional_types(args.additional_types)
 
     # Set inputs/outputs
     inputs_json = args.inputs or None

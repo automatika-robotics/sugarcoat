@@ -5,6 +5,7 @@ import os
 import inspect
 import sys
 import socket
+import json
 from typing import (
     Awaitable,
     Callable,
@@ -40,6 +41,7 @@ from rclpy.lifecycle.managed_entity import ManagedEntity
 
 from . import logger
 from ..io import Topic
+from ..io.supported_types import _additional_types
 from ..core.action import LogInfo
 from ..config.base_config import ComponentRunType
 from ..core.action import Action
@@ -642,7 +644,13 @@ class Launcher:
         )
         ui_node._update_cmd_args_list()
         self.__component_names_to_activate_on_start_mp.append(ui_node.node_name)
-        arguments = ui_node.launch_cmd_args + ["--ros-args", "--log-level", "info"]
+        arguments = ui_node.launch_cmd_args + [
+            "--additional_types",
+            json.dumps(list(_additional_types.keys())),
+            "--ros-args",
+            "--log-level",
+            "info",
+        ]
 
         ui_node = LifecycleNodeLaunchAction(
             package="automatika_ros_sugar",
@@ -717,6 +725,8 @@ class Launcher:
         )
         if rclpy_log_level:
             arguments = component.launch_cmd_args + [
+                "--additional_types",
+                json.dumps(list(_additional_types.keys())),
                 "--ros-args",
                 "--log-level",
                 rclpy_log_level,
