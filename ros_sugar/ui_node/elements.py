@@ -3,19 +3,6 @@ from typing import List, Dict, Any
 import logging
 from ..io.supported_types import SupportedType
 
-from ros_sugar.io.supported_types import (
-    String,
-    Float32,
-    Float64,
-    Image,
-    CompressedImage,
-    Audio as SugarAudio,
-    Point,
-    PointStamped,
-    Pose,
-    PoseStamped,
-    OccupancyGrid,
-)
 from .utils import parse_type
 
 try:
@@ -28,13 +15,13 @@ except ModuleNotFoundError as e:
     ) from e
 
 
-def _in_text_element(topic_name: str, topic_type: type):
+def _in_text_element(topic_name: str, topic_type: str):
     """FastHTML element for input String type"""
-    field_type = "number" if topic_type in [Float32, Float64] else "text"
+    field_type = "number" if topic_type in ["Float32", "Float64"] else "text"
     return (
         Form(cls="mb-1 p-1")(
             Input(name="topic_name", type="hidden", value=topic_name),
-            Input(name="topic_type", type="hidden", value=topic_type.__name__),
+            Input(name="topic_type", type="hidden", value=topic_type),
             Input(
                 name="data",
                 placeholder="String data...",
@@ -66,14 +53,14 @@ def _in_audio_element(topic_name: str, **_):
     )
 
 
-def _in_point_element(topic_name: str, topic_type: type):
+def _in_point_element(topic_name: str, topic_type: str):
     """FastHTML element for 3D point type"""
     return (
         Form(cls="space-x-2 space-y-2 mr-2 mb-2")(
             DivVStacked(
                 DivFullySpaced(
                     Input(name="topic_name", type="hidden", value=topic_name),
-                    Input(name="topic_type", type="hidden", value=topic_type.__name__),
+                    Input(name="topic_type", type="hidden", value=topic_type),
                     Input(
                         placeholder="X",
                         name="x",
@@ -109,7 +96,7 @@ def _in_point_element(topic_name: str, topic_type: type):
     )
 
 
-def _in_pose_element(topic_name: str, topic_type: type):
+def _in_pose_element(topic_name: str, topic_type: str):
     """FastHTML element for 3D point type"""
     return (
         Form(cls="space-x-2 space-y-2 mr-2 mb-2")(
@@ -117,7 +104,7 @@ def _in_pose_element(topic_name: str, topic_type: type):
                 P("Position:"),
                 DivFullySpaced(
                     Input(name="topic_name", type="hidden", value=topic_name),
-                    Input(name="topic_type", type="hidden", value=topic_type.__name__),
+                    Input(name="topic_type", type="hidden", value=topic_type),
                     Input(
                         placeholder="X",
                         name="x",
@@ -200,20 +187,20 @@ def _out_image_element(topic_name: str):
 
 
 _INPUT_ELEMENTS: Dict = {
-    String: _in_text_element,
-    Float32: _in_text_element,
-    Float64: _in_text_element,
-    SugarAudio: _in_audio_element,
-    Point: _in_point_element,
-    PointStamped: _in_point_element,
-    Pose: _in_pose_element,
-    PoseStamped: _in_pose_element,
+    "String": _in_text_element,
+    "Float32": _in_text_element,
+    "Float64": _in_text_element,
+    "Audio": _in_audio_element,
+    "Point": _in_point_element,
+    "PointStamped": _in_point_element,
+    "Pose": _in_pose_element,
+    "PoseStamped": _in_pose_element,
 }
 
 _OUTPUT_ELEMENTS: Dict = {
-    Image: _out_image_element,
-    CompressedImage: _out_image_element,
-    OccupancyGrid: _out_image_element,
+    "Image": _out_image_element,
+    "CompressedImage": _out_image_element,
+    "OccupancyGrid": _out_image_element,
 }
 
 
@@ -253,14 +240,14 @@ def add_additional_ui_elements(
         for k_t, i_t in input_elements:
             deserialized = _deserialize_additional_element(k_t, i_t)
             if deserialized:
-                _INPUT_ELEMENTS[deserialized[0]] = deserialized[1]
+                _INPUT_ELEMENTS[deserialized[0].__name__] = deserialized[1]
 
     # Add output elements
     if output_elements:
         for k_t, i_t in output_elements:
             deserialized = _deserialize_additional_element(k_t, i_t)
             if deserialized:
-                _OUTPUT_ELEMENTS[deserialized[0]] = deserialized[1]
+                _OUTPUT_ELEMENTS[deserialized[0].__name__] = deserialized[1]
 
 
 def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
@@ -300,13 +287,13 @@ def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
     )
 
 
-def input_topic_card(topic_name: str, topic_type: type, column_class: str = "") -> FT:
+def input_topic_card(topic_name: str, topic_type: str, column_class: str = "") -> FT:
     """Creates a UI element for an input topic
 
     :param topic_name: Topic name
     :type topic_name: str
     :param topic_type: Topic message type
-    :type topic_type: type
+    :type topic_type: str
     :return: Input topic UI element
     """
     card = Card(
@@ -314,7 +301,9 @@ def input_topic_card(topic_name: str, topic_type: type, column_class: str = "") 
         cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto rounded-lg",
         id=topic_name,
     )
-    return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
+    return card(
+        _INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type)
+    )
 
 
 def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:
@@ -354,13 +343,13 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
     return (input_grid, inputs_columns_span)
 
 
-def output_topic_card(topic_name: str, topic_type: type, column_class: str = "") -> FT:
+def output_topic_card(topic_name: str, topic_type: str, column_class: str = "") -> FT:
     """Creates a UI element for an output topic
 
     :param topic_name: Topic name
     :type topic_name: str
     :param topic_type: Topic message type
-    :type topic_type: type
+    :type topic_type: str
     :return: Output topic UI element
     """
     card = Card(

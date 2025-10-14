@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime
 
-from ros_sugar.io.supported_types import String, Audio as SugarAudio
 from ros_sugar.io.topic import Topic
 from . import elements
 
@@ -106,7 +105,7 @@ class FHApp:
             (o.name, o.msg_type.__name__)
             for o in self.out_topics
             if (
-                elements._OUTPUT_ELEMENTS.get(o.msg_type, None)
+                elements._OUTPUT_ELEMENTS.get(o.msg_type.__name__, None)
                 == elements._out_image_element
             )
         ]
@@ -137,7 +136,7 @@ class FHApp:
         for idx, inp in enumerate(inputs):
             input_divs.append(
                 elements.input_topic_card(
-                    inp.name, inp.msg_type, inputs_columns_cls[idx]
+                    inp.name, inp.msg_type.__name__, inputs_columns_cls[idx]
                 ),
             )
         return inputs_container(input_grid(*input_divs, id=grid_id))
@@ -145,7 +144,7 @@ class FHApp:
     def _create_output_topics_ui(self, outputs: Sequence[Topic]):
         """Creates cards for Output Topics"""
         displayed_outputs = [
-            out for out in outputs if out.msg_type not in [String, SugarAudio]
+            out for out in outputs if out.msg_type.__name__ not in ["String", "Audio"]
         ]  # String and Audio are displayed in log
         output_divs = []
         grid_id = "outputs-grid"
@@ -158,7 +157,7 @@ class FHApp:
         for idx, out in enumerate(displayed_outputs):
             output_divs.append(
                 elements.output_topic_card(
-                    out.name, out.msg_type, outputs_columns_cls[idx]
+                    out.name, out.msg_type.__name__, outputs_columns_cls[idx]
                 )
             )
         return outputs_container(output_grid(*output_divs, id=grid_id))
