@@ -77,9 +77,15 @@ class FHApp:
                 Div(id="result"),
                 id="main",
                 cls="pt-2 pb-2",
-                # connect to the websocket
+                # connect to the default websocket
                 hx_ext="ws",
                 ws_connect="/ws",
+                # NOTE: Function defined in custon js to reconnect streaming websockets
+                # HTMX fires "htmx:afterSwap" after content is swapped into the DOM,
+                # and "htmx:afterOnLoad" / "htmx:afterRequest" for other lifecycle stages
+                # Respond to afterSwap and afterOnLoad to be safe.
+                hx_on__after_on_load="ensureConnectionsForPresentFrames",
+                hx_on__after_swap="ensureConnectionsForPresentFrames",
             )
         return self.settings
 
@@ -206,10 +212,6 @@ class FHApp:
     def get_settings(self):
         """Get components settings"""
         return self.settings
-
-    def update_settings(self):
-        """Update components settings"""
-        pass
 
     def get_main_page(self):
         """Serves the main page of the UI"""
