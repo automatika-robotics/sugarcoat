@@ -253,9 +253,6 @@ class BaseComponentConfig(BaseConfig):
     :param rclpy_log_level: Logging level for rclpy (ROS client library) logs. Can be a string or `LoggingSeverity` enum.
     :type rclpy_log_level: Union[str, LoggingSeverity]
 
-    :param run_type: Component run type, e.g., TIMED or EVENT. Can be a string or `ComponentRunType` enum.
-    :type run_type: Union[ComponentRunType, str]
-
     :param wait_for_restart_time: Time (in seconds) the component waits for a node to come back online after restart. Used to avoid infinite restart loops. Recommended to use a high value.
     :type wait_for_restart_time: float
     """
@@ -279,8 +276,8 @@ class BaseComponentConfig(BaseConfig):
         default=LoggingSeverity.WARN, converter=_convert_logging_severity_to_str
     )
 
-    run_type: Union[ComponentRunType, str] = field(
-        default=ComponentRunType.TIMED, converter=_convert_runtype_to_enum
+    _run_type: Union[ComponentRunType, str] = field(
+        default=ComponentRunType.TIMED, converter=_convert_runtype_to_enum, alias="_run_type"
     )
 
     _callback_group: Optional[Union[ros_callback_groups.CallbackGroup, str]] = field(

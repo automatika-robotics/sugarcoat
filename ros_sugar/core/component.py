@@ -847,11 +847,11 @@ class BaseComponent(lifecycle.Node):
         :return: Timed, ActionServer or Server
         :rtype: str
         """
-        return self.config.run_type
+        return self.config._run_type
 
     @run_type.setter
     def run_type(self, value: ComponentRunType):
-        self.config.run_type = value
+        self.config._run_type = value
 
     @property
     def fallback_rate(self) -> float:
