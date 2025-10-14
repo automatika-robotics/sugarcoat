@@ -99,6 +99,7 @@ def image_pre_processing(img, dtype, num_channels) -> np.ndarray:
     - Handles encodings, endianess, alpha channels, Bayer, YUV422.
     - Returns RGB arrays for color images, grayscale for mono, raw floats for depth.
     """
+    dtype = np.dtype(dtype)
     np_arr = np.frombuffer(img.data, dtype=dtype)
 
     # Endian correction
@@ -110,9 +111,24 @@ def image_pre_processing(img, dtype, num_channels) -> np.ndarray:
 
     # Reshape
     if num_channels == 1:
-        np_arr = np_arr.reshape((img.height, img.width))
+        np_arr = np.ndarray(
+            shape=(img.height, int(img.step / dtype.itemsize)),
+            dtype=dtype,
+            buffer=np_arr,
+        )
+        np_arr = np.ascontiguousarray(np_arr[: img.height, : img.width])
     else:
-        np_arr = np_arr.reshape((img.height, img.width, num_channels))
+        np_arr = np.ndarray(
+            shape=(
+                img.height,
+                int(img.step / dtype.itemsize / num_channels),
+                num_channels,
+            ),
+            dtype=dtype,
+            buffer=np_arr,
+        )
+        np_arr = np.ascontiguousarray(np_arr[: img.height, : img.width, :])
+
         # Drop alpha channel if present
         if num_channels == 4:
             np_arr = np_arr[:, :, :3]
