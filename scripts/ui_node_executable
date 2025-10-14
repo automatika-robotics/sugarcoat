@@ -201,7 +201,7 @@ def main():
             # display in log for coordinates data types
             await log_data(
                 send,
-                f"Published to topic /{data.get('topic_name')}: {data.get("data", "off")}",
+                f"Published to topic /{data.get('topic_name')}: {data.get('data', 'off')}",
                 data_src="user",
             )
             ros_node.publish_data(data=data)

@@ -828,11 +828,7 @@ class OccupancyGridCallback(GenericCallback):
         img[output == -1] = 127  # unknown
         img[output == 0] = 255  # free
         img[output > 0] = 0  # occupied
-        get_logger(self.node_name).info(f"img shape {img.shape}")
 
         # Flip vertically (ROS map origin is bottom-left, OpenCV image top-left)
         img = np.flipud(img)
-
-        cv2.imwrite("output_map.jpeg", img)
-
         return utils.convert_img_to_jpeg_str(img, self.node_name)
