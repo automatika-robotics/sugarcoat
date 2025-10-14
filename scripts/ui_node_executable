@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+import json
+from typing import Dict
+from pathlib import Path
+from functools import partial
+import argparse
+import logging
+import threading
+import uvicorn
+from ros_sugar.launch.executable import setup_component, run_component
+
+from ros_sugar.ui_node import UINode, UINodeConfig
+from ros_sugar.ui_node.frontend import FHApp
+import ros_sugar.ui_node.elements as elements
+
+
+def main():
+    """
+    Executable to run a component as a ros node.
+    Used to start a node using Launcher
+    """
+    logging.info("Starting UI Node executable")
+
+    # Start UI helper ROS node in a separate thread
+    ros_node: UINode = setup_component(
+        list_of_components=[UINode], list_of_configs=[UINodeConfig]
+    )  # type: ignore
+
+    ros_node_config = ros_node.config
+
+    # Get parsed UI elements
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ui_input_elements", type=str)
+    parser.add_argument("--ui_output_elements", type=str)
+    args, _ = parser.parse_known_args()  # type: ignore
+    additional_input_elements = (
+        json.loads(args.ui_input_elements) if args.ui_input_elements else None
+    )
+    additional_output_elements = (
+        json.loads(args.ui_output_elements) if args.ui_output_elements else None
+    )
+
+    fh = FHApp(
+        ros_node_config.components,
+        ros_node.out_topics,  # Inputs from the client to the ros node
+        ros_node.in_topics,  # Outputs to the client from the ros node
+        additional_input_elements=additional_input_elements,
+        additional_output_elements=additional_output_elements,
+    )  # inputs and outputs are reversed
+    app, _ = fh.get_app()
+
+    ros_thread = threading.Thread(
+        target=run_component,
+        args=[ros_node],
+        daemon=True,
+    )
+    ros_thread.start()
+
+    # Routes for the app backend
+    @app.get("/")
+    def _():
+        """Serves the main application page."""
+        fh.toggle_settings = False
+        return fh.get_main_page()
+
+    @app.get("/settings/show")
+    def _():
+        """Show the settings tabs"""
+        fh.toggle_settings = not fh.toggle_settings
+        return fh.get_main_page()
+
+    @app.post("/settings/submit")
+    async def _(request, session):
+        """Update Settings"""
+        # update config
+        # update UI
+        form_data = await request.form()
+        result = ros_node.update_configs(dict(form_data.items()))
+        success = all(result.success)
+        if not success:
+            item_names = list(form_data.keys())
+            error_msg = "Error in updating the folllowing settings values: \n"
+            for key in range(len(result.success)):
+                if not result.success[key]:
+                    error_msg += f"{item_names[key + 1]}: {result.error_msg[key]}\n"
+            fh.toasting(error_msg, session, "error", duration=100000)
+        else:
+            fh.toasting("Settings changed successfully", session, "success")
+            # Presist the new configuration
+            fh.update_configs_from_data(dict(form_data.items()))
+        return fh.get_main_page()
+
+    # -- WS handling --
+    async def log_data(send, data: str, data_src: str, is_audio: bool = False):
+        """Send data to log"""
+
+        await send(
+            elements.update_logging_card(
+                fh.outputs_log,
+                data,
+                output_src=data_src,
+                is_audio=is_audio,
+            )
+        )
+
+    async def on_disconn(session):
+        """Message for disconnection"""
+        fh.toasting(
+            "Disconnected from the robot. Check if the recipe is running or refresh the page",
+            session,
+            toast_type="error",
+        )
+
+    async def on_conn_stream(ws, send, topic_type: str):
+        """When a client connects, register its callback."""
+
+        # Callback function for ROS node
+        async def stream_callback(data: Dict):
+            if data["type"] == "error":
+                await log_data(send, data["payload"], data_src=data["type"])
+            else:
+                await ws.send_json(data)
+
+        ros_node.attach_websocket_callback(stream_callback, topic_type)
+
+    # Create websockets for streaming output topics
+    for topic_name, topic_type in fh.get_all_stream_outputs():
+
+        @app.ws(
+            f"/ws_{topic_name}",
+            conn=partial(on_conn_stream, topic_type=topic_type),
+            disconn=on_disconn,
+        )
+        async def _():
+            pass
+
+    @app.ws("/ws_audio", disconn=on_disconn)
+    async def _(data, send):
+        """WS route for sending audio to ROS UI Node"""
+        # Only handle audio data
+        if data["type"] == "audio" and len(data["payload"]) > 0:
+            try:
+                await log_data(send, data["payload"], data_src="user", is_audio=True)
+                ros_node.publish_data({
+                    "topic_name": data["topic_name"],
+                    "topic_type": "Audio",
+                    "data": data["payload"],
+                })
+            except RuntimeError:
+                logging.warning("Runtime error when sending audio")
+
+            # Send the robot loading dots
+            return elements.update_logging_card_with_loading(fh.outputs_log)
+
+    async def on_conn(ws, send):
+        """When a client connects, register its callback."""
+
+        # Callback function for ROS node
+        async def websocket_callback(data: Dict):
+            # Recieve json style data from node and pass to UI with send
+            if data["type"] in ["String", "Audio"] and len(data["payload"]) > 0:
+                is_audio = True if data["type"] == "Audio" else False
+                await log_data(
+                    send, data["payload"], data_src="robot", is_audio=is_audio
+                )
+            elif data["type"] == "error":
+                await log_data(send, data["payload"], data_src=data["type"])
+            else:
+                # Send to be handled with custom JS if needed
+                await ws.send_json(data)
+
+        ros_node.attach_websocket_callback(websocket_callback)
+
+    @app.ws("/ws", conn=on_conn, disconn=on_disconn)
+    async def _(data, send):
+        """WS route for input/output communication with ROS UI Node"""
+
+        if data.get("topic_type") == "String":
+            # display in log for string data types
+            await log_data(send, data["data"], data_src="user")
+            ros_node.publish_data(data=data)
+            # Send the robot loading dots
+            return elements.update_logging_card_with_loading(fh.outputs_log)
+        elif data.get("topic_type") in ["Point", "PointStamped"]:
+            # display in log for coordinates data types
+            await log_data(
+                send,
+                f"Published to topic /{data.get('topic_name')} using coordinates: x={data['x']}, y={data['y']}, z={data['z']}",
+                data_src="user",
+            )
+            ros_node.publish_data(data=data)
+        elif data.get("topic_type") in ["Pose", "PoseStamped"]:
+            # display in log for coordinates data types
+            await log_data(
+                send,
+                f"Published to topic /{data.get('topic_name')} using coordinates: (Position: x={data['x']}, y={data['y']}, z={data['z']}), (Orientation: w={data['ori_w'] or '1'}, x={data['ori_x'] or '0'}, y={data['ori_y'] or '0'}, z={data['ori_z'] or '0'})",
+                data_src="user",
+            )
+            ros_node.publish_data(data=data)
+        elif data.get("topic_type") == "Bool":
+            # display in log for coordinates data types
+            await log_data(
+                send,
+                f"Published to topic /{data.get('topic_name')}: {data.get('data', 'off')}",
+                data_src="user",
+            )
+            ros_node.publish_data(data=data)
+        else:
+            ros_node.publish_data(data=data)
+
+    # Check if SSL certificates exist
+    if not (
+        Path(ros_node_config.ssl_keyfile).exists()
+        and Path(ros_node_config.ssl_certificate).exists()
+    ):
+        logging.info("\n" + "=" * 80)
+        logging.info("WARNING: SSL certificates (key.pem, cert.pem) not found.")
+        logging.info(
+            "Microphone access will not work when accessing from another machine."
+        )
+        logging.info(
+            "To enable microphone over the network, generate certificates by running"
+        )
+        logging.info("the following command:")
+        logging.info(
+            '\nopenssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes -subj "/CN=localhost"\n'
+        )
+        logging.info(
+            "And give the path to the certificates to the launcher.enable_ui method"
+        )
+        logging.info("=" * 80 + "\n")
+        key_file = None
+        certificate_file = None
+        protocol = "http"
+    else:
+        key_file = ros_node_config.ssl_keyfile
+        certificate_file = ros_node_config.ssl_certificate
+        protocol = "https"
+
+    logging.info(
+        f"Access the recipe UI at: {protocol}://<IP_ADDRESS_OF_THE_ROBOT>:{ros_node_config.port}"
+    )
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=ros_node_config.port,
+        ssl_keyfile=key_file,
+        ssl_certfile=certificate_file,
+    )
+
+
+if __name__ == "__main__":
+    main()

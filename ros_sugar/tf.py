@@ -88,9 +88,7 @@ class TFListener:
         if self.got_transform:
             rot = self.transform.transform.rotation
             return np.array([rot.x, rot.y, rot.z, rot.w], dtype=np.float32)
-        get_logger(self.node_name).debug(
-            "Did not get transform. Not applying rotation"
-        )
+        get_logger(self.node_name).debug("Did not get transform. Not applying rotation")
         return None
 
     @property

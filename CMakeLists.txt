@@ -47,8 +47,15 @@ ament_export_dependencies(rosidl_default_runtime)
 ament_python_install_package(ros_sugar)
 
 # Add executables
+# Create service from recipe script
 install(PROGRAMS
 scripts/create_service
+DESTINATION lib/${PROJECT_NAME}
+)
+
+# Backend UI node executable
+install(PROGRAMS
+scripts/ui_node_executable
 DESTINATION lib/${PROJECT_NAME}
 )
 

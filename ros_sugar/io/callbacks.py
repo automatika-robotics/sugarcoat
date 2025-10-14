@@ -4,6 +4,7 @@ import os
 from abc import abstractmethod
 from typing import Any, Callable, Optional, Union, Dict, List
 from socket import socket
+import base64
 
 import cv2
 import numpy as np
@@ -47,6 +48,7 @@ class GenericCallback:
         self._frame_id: Optional[str] = None
 
         self._extra_callback: Optional[Callable] = None
+        self._get_processed: bool = True  # utilized only if extra callback is set
         self._subscriber: Optional[Subscription] = None
         self._post_processors: Optional[List[Union[Callable, socket]]] = None
 
@@ -76,13 +78,14 @@ class GenericCallback:
         """
         self._subscriber = subscriber
 
-    def on_callback_execute(self, callback: Callable) -> None:
+    def on_callback_execute(self, callback: Callable, get_processed=True) -> None:
         """Attach a method to be executed on topic callback
 
         :param callback:
         :type callback: Callable
         """
         self._extra_callback = callback
+        self._get_processed = get_processed
 
     def callback(self, msg) -> None:
         """
@@ -98,9 +101,13 @@ class GenericCallback:
             self._frame_id = msg.header.frame_id
 
         if self._extra_callback:
-            self._extra_callback(
-                msg=msg, topic=self.input_topic, output=self.get_output()
-            )
+            if self._get_processed:
+                self._extra_callback(
+                    msg=msg, topic=self.input_topic, output=self.get_output()
+                )
+            else:
+                # Get output would have to be called by the calling method
+                self._extra_callback(msg=msg, topic=self.input_topic)
 
     def add_post_processors(self, processors: List[Union[Callable, socket]]):
         """Add a post processor for callback message
@@ -174,6 +181,16 @@ class GenericCallback:
         :rtype:     Any
         """
         return self.msg
+
+    @abstractmethod
+    def _get_ui_content(self, **_) -> str:
+        """
+        Utility method to get UI compatible conent.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return self.get_output()
 
     @property
     def got_msg(self):
@@ -269,6 +286,7 @@ class ImageCallback(GenericCallback):
                 get_logger(self.node_name).error(
                     f"Fixed path {input_topic.fixed} provided for Image topic is not a valid file path"
                 )
+        self.encoding = None
 
     def _get_output(self, **_) -> Optional[np.ndarray]:
         """
@@ -283,8 +301,15 @@ class ImageCallback(GenericCallback):
         if isinstance(self.msg, np.ndarray):
             return self.msg
         else:
-            # pre-process in case of weird encodings and reshape ROS topic
-            return utils.image_pre_processing(self.msg)
+            if not self.encoding:
+                self.encoding = utils.process_encoding(self.msg.encoding)
+            # pre-process and reshape
+            return utils.image_pre_processing(self.msg, *self.encoding)
+
+    def _get_ui_content(self, **_) -> str:
+        """Get ui content for image"""
+        output = self.get_output()
+        return utils.convert_img_to_jpeg_str(output, self.node_name)
 
 
 class CompressedImageCallback(ImageCallback):
@@ -305,8 +330,10 @@ class CompressedImageCallback(ImageCallback):
         if isinstance(self.msg, np.ndarray):
             return self.msg
         else:
-            # pre-process in case of weird encodings and reshape ROS topic
-            return utils.read_compressed_image(self.msg)
+            if not self.encoding:
+                self.encoding = utils.parse_format(self.msg.format)
+            # pre-process
+            return utils.read_compressed_image(self.msg, self.encoding)
 
 
 class TextCallback(GenericCallback):
@@ -396,6 +423,12 @@ class AudioCallback(GenericCallback):
             #     file.writeframes(audio)
 
             return audio
+
+    def _get_ui_content(self, **_) -> str:
+        """Get ui content for audio"""
+        # Encode audio bytes to base64 to send as a JSON string
+        output = self.get_output()
+        return base64.b64encode(output).decode("utf-8")
 
 
 class MapMetaDataCallback(GenericCallback):
@@ -786,3 +819,16 @@ class OccupancyGridCallback(GenericCallback):
         )
 
         return threeD_coordinates
+
+    def _get_ui_content(self, **_) -> str:
+        """Get ui content for occupancy grid"""
+        # Convert occupancy grid values to grayscale image
+        output = self.get_output(get_obstacles=False, get_three_d=False)
+        img = np.zeros_like(output, dtype=np.uint8)
+        img[output == -1] = 127  # unknown
+        img[output == 0] = 255  # free
+        img[output > 0] = 0  # occupied
+
+        # Flip vertically (ROS map origin is bottom-left, OpenCV image top-left)
+        img = np.flipud(img)
+        return utils.convert_img_to_jpeg_str(img, self.node_name)

@@ -23,7 +23,7 @@ def get_all_msg_types(
         )
         if issubclass(type_obj, supported_types.SupportedType)
     ]
-    return available_types + supported_types._additional_types
+    return available_types + list(supported_types._additional_types.values())
 
 
 def __parse_name_without_class(type_name: str) -> str:
@@ -70,7 +70,7 @@ def get_msg_type(
         if supported_types._additional_types:
             extra_types = {
                 (a_type.__name__, a_type)
-                for a_type in supported_types._additional_types
+                for a_type in supported_types._additional_types.values()
             }
             # Get new types
             extra_types = extra_types.difference(available_types)
@@ -99,20 +99,6 @@ def _get_msg_types(
         output = get_msg_type(type_name)
         output_type_names.append(output)
     return output_type_names
-
-
-def msg_type_validator(*_: Any, value):
-    """
-    Validates that a string message type corresponds to a supported data type
-
-    :param value: _description_
-    :type value: _type_
-    :raises ValueError: _description_
-    """
-    if not get_msg_type(value):
-        raise ValueError(
-            f"Cannot set message type to not supported data type '{value}'. Check config.get_supported_datatypes for more info"
-        )
 
 
 def _normalize_topic_name(name: str) -> str:
@@ -165,6 +151,9 @@ class Topic(BaseAttrs):
         default=Factory(QoSConfig), converter=_make_qos_config
     )
     ros_msg_type: Any = field(default=None, init=False)
+    additional_types: List[Type[supported_types.SupportedType]] = field(
+        default=Factory(list)
+    )
 
     @msg_type.validator
     def _msg_type_validator(self, _, val):

@@ -8,8 +8,9 @@ import toml
 import socket
 from abc import abstractmethod
 import threading
-from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple, Type
 from functools import wraps
+import importlib
 
 from rclpy import logging as rclpy_logging
 from rclpy.action.server import ActionServer, CancelResponse, GoalResponse
@@ -37,8 +38,15 @@ from .action import Action
 from .event import Event
 from ..events import json_to_events_list, event_from_json
 from ..io.callbacks import GenericCallback
-from ..config.base_config import BaseComponentConfig, ComponentRunType, BaseAttrs
+from ..config.base_config import (
+    BaseComponentConfig,
+    ComponentRunType,
+    BaseAttrs,
+    QoSConfig,
+)
 from ..io.topic import Topic
+from ..io.supported_types import SupportedType
+from ..io.publisher import Publisher
 from .fallbacks import ComponentFallbacks, Fallback
 from .status import Status
 from ..utils import (
@@ -49,7 +57,6 @@ from ..utils import (
     log_srv,
 )
 from ..tf import TFListener, TFListenerConfig
-from ..io.publisher import Publisher
 
 
 class BaseComponent(lifecycle.Node):
@@ -149,7 +156,7 @@ class BaseComponent(lifecycle.Node):
         self.__fallbacks = fallbacks
         self.__fallbacks_giveup: bool = False
 
-        if self.config.use_without_launcher:
+        if self.config._use_without_launcher:
             # Create default services for changing config/inputs/outputs during runtime
             self._create_default_services()
 
@@ -169,12 +176,15 @@ class BaseComponent(lifecycle.Node):
         ] = {}  # Dictionary of user defined algorithms configuration
 
         # Main goal handle (to execute one goal at a time)
-        # TODO add config parameter (one goal vs goal queue)
+        # TODO: add config parameter (one goal vs goal queue)
         self._main_goal_handle = None
         self._main_goal_lock = threading.Lock()
 
+        # Additional types from derived packages
+        self._additional_types: List[Type[SupportedType]] = []
+
         # To use without launcher -> Init the ROS2 node directly
-        if self.config.use_without_launcher:
+        if self.config._use_without_launcher:
             self.rclpy_init_node(component_name, **kwargs)
 
     def rclpy_init_node(self, *args, **kwargs):
@@ -418,6 +428,9 @@ class BaseComponent(lifecycle.Node):
         """
         Create required subscriptions, publications, timers, ... etc. to activate the node
         """
+        # Init any global node variables
+        self.init_variables()
+
         self.create_all_subscribers()
 
         self.create_all_publishers()
@@ -463,9 +476,6 @@ class BaseComponent(lifecycle.Node):
         config_file = config_file or self._config_file
         if config_file:
             self.config_from_file(config_file)
-
-        # Init any global node variables
-        self.init_variables()
 
     # CREATION AND DESTRUCTION METHODS
     def init_variables(self):
@@ -837,11 +847,11 @@ class BaseComponent(lifecycle.Node):
         :return: Timed, ActionServer or Server
         :rtype: str
         """
-        return self.config.run_type
+        return self.config._run_type
 
     @run_type.setter
     def run_type(self, value: ComponentRunType):
-        self.config.run_type = value
+        self.config._run_type = value
 
     @property
     def fallback_rate(self) -> float:
@@ -1035,6 +1045,23 @@ class BaseComponent(lifecycle.Node):
                 reconstructed_action_list.append(reconstructed_action)
             self.__actions.append(reconstructed_action_list)
 
+    def set_additional_types(self, value: str):
+        """
+        Additional types from serialized types (json)
+
+        :param value: Serialized Additional Types
+        :type value: str
+        """
+        serialized_types = json.loads(value)
+        for s_t in serialized_types:
+            module_name, _, class_name = s_t.rpartition(".")
+            if not module_name:
+                continue
+            module = importlib.import_module(module_name)
+            new_type = getattr(module, class_name)
+            if issubclass(new_type, SupportedType):
+                self._additional_types.append(new_type)
+
     @property
     def _inputs_json(self) -> Union[str, bytes, bytearray]:
         """
@@ -1059,7 +1086,15 @@ class BaseComponent(lifecycle.Node):
         :type value: Union[str, bytes, bytearray]
         """
         topics = json.loads(value)
-        inputs = [Topic(**json.loads(t)) for t in topics]
+        inputs = []
+        for t in topics:
+            topic_dict = json.loads(t)
+            topic_dict["qos_profile"] = QoSConfig(**topic_dict.get("qos_profile", {}))
+            topic_dict["additional_types"] = (
+                self._additional_types
+            )  # Add any additional types
+            inputs.append(Topic(**topic_dict))
+
         self.in_topics = self._reparse_inputs_callbacks(inputs)
         self.callbacks = {
             input.name: input.msg_type.callback(input, node_name=self.node_name)
@@ -1090,7 +1125,14 @@ class BaseComponent(lifecycle.Node):
         :type value: Union[str, bytes, bytearray]
         """
         topics = json.loads(value)
-        outputs = [Topic(**json.loads(t)) for t in topics]
+        outputs = []
+        for t in topics:
+            topic_dict = json.loads(t)
+            topic_dict["qos_profile"] = QoSConfig(**topic_dict.get("qos_profile", {}))
+            topic_dict["additional_types"] = (
+                self._additional_types
+            )  # Add any additional types
+            outputs.append(Topic(**topic_dict))
         self.out_topics = self._reparse_outputs_converts(outputs)
         self.publishers_dict = {
             output.name: Publisher(output, node_name=self.node_name)
@@ -1398,20 +1440,17 @@ class BaseComponent(lifecycle.Node):
         :rtype: str | None
         """
         error_msg: Optional[str] = None
-        if not self.config.has_attribute(param_name):
-            error_msg = f"'{self.config.__class__.__name__}' does not contain an attribute '{param_name}'"
-
-        param_type = self.config.get_attribute_type(param_name)
 
         try:
+            param_type = self.config.get_attribute_type(param_name)
             parsed_param = param_type(param_str_value) if param_type else None
             self.config.update_value(param_name, parsed_param)
             self.get_logger().debug(
-                f"Updates {self.node_name} config to: {self.config}"
+                f"Updates {self.node_name} config param {param_name} to : {parsed_param}"
             )
 
         except Exception as e:
-            error_msg = f"'{self.config.__class__.__name__}' attribute '{param_name}' is of type {param_type}. Error message details: {e}"
+            error_msg = f"'Error setting {self.config.__class__.__name__}' attribute '{param_name}' of type {param_type} with value '{param_str_value}'. Error message details: {e}"
 
         return error_msg
 
@@ -1470,6 +1509,8 @@ class BaseComponent(lifecycle.Node):
             self._maintain_default_services = True
             # Stop the component
             self.stop()
+            self.trigger_cleanup()
+            self.trigger_configure()
 
         error_msg = self._update_config_param_from_str_value(
             param_name, param_str_value
@@ -1518,6 +1559,8 @@ class BaseComponent(lifecycle.Node):
             self._maintain_default_services = True
             # Stop the component
             self.stop()
+            self.trigger_cleanup()
+            self.trigger_configure()
 
         response.success = []
         response.error_msg = []
@@ -1875,7 +1918,6 @@ class BaseComponent(lifecycle.Node):
                 "Waiting for ongoing transition to end before executing new transition",
                 once=True,
             )
-
         # configured and inactive
         self.trigger_activate()
 
@@ -1924,13 +1966,12 @@ class BaseComponent(lifecycle.Node):
         """
         self.get_logger().warn("Reconfiguring component...")
 
-        # set new config as params attr
-        if isinstance(new_config, str):
-            self.configure(config_file=new_config)
-        elif isinstance(new_config, self.config.__class__):
-            self.config = new_config
-
         if keep_alive:
+            # set new config as params attr
+            if isinstance(new_config, str):
+                self.configure(config_file=new_config)
+            elif isinstance(new_config, self.config.__class__):
+                self.config = new_config
             return True
 
         initial_state = self.lifecycle_state
@@ -1949,6 +1990,12 @@ class BaseComponent(lifecycle.Node):
                 "Waiting for ongoing transition to end before executing new transition",
                 once=True,
             )
+
+        # set new config as params attr
+        if isinstance(new_config, str):
+            self._config_file = new_config
+        elif isinstance(new_config, self.config.__class__):
+            self.config = new_config
 
         # configure and go to configure (or active if the component was already active)
         self.trigger_configure()

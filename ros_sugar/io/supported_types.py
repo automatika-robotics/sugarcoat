@@ -1,6 +1,6 @@
 """ROS Topics Supported Message Types"""
 
-from typing import Any, Union, Optional, List
+from typing import Any, Union, Optional, List, Dict
 import base64
 import numpy as np
 
@@ -39,7 +39,7 @@ from . import callbacks
 from .utils import numpy_to_multiarray
 
 
-_additional_types = []
+_additional_types = {}
 
 
 def _update_supportedtype_callback(existing_class: type, new_class: type) -> None:
@@ -99,7 +99,7 @@ def add_additional_datatypes(types: List[type]) -> None:
     """
     global _additional_types
     # Create a dictionary for quick lookup of existing classes by name
-    type_dict = {t.__name__: t for t in _additional_types}
+    type_dict = {t.__name__: t for t in _additional_types.values()}
 
     for new_class in types:
         if new_class.__name__ in type_dict:
@@ -121,7 +121,9 @@ def add_additional_datatypes(types: List[type]) -> None:
 
         else:
             # Add the new class to the list
-            _additional_types.append(new_class)
+            _additional_types[f"{new_class.__module__}.{new_class.__qualname__}"] = (
+                new_class
+            )
 
 
 class Meta(type):
@@ -174,6 +176,10 @@ class SupportedType:
         """
         return cls._ros_type
 
+    @classmethod
+    def convert_ui_dict(cls, data: Dict, **_) -> str:
+        return data.get("data", "")
+
 
 class String(SupportedType):
     """String."""
@@ -207,6 +213,11 @@ class Bool(SupportedType):
         msg = ROSBool()
         msg.data = output
         return msg
+
+    @classmethod
+    def convert_ui_dict(cls, data: Dict, **_) -> str:
+        val = data.get("data", "")
+        return val == "on" or val == "1"
 
 
 class Float32(SupportedType):
@@ -385,7 +396,7 @@ class OccupancyGrid(SupportedType):
     @classmethod
     def convert(
         cls,
-        output: np.ndarray,
+        output: Union[np.ndarray, ROSOccupancyGrid],
         resolution: float,
         origin: Optional[ROSPose] = None,
         **_,
@@ -397,6 +408,9 @@ class OccupancyGrid(SupportedType):
         :param _:
         :rtype: ROSOccupancyGrid
         """
+        if isinstance(output, ROSOccupancyGrid):
+            return output
+
         if not len(output.shape) == 2:
             raise TypeError("OccupancyGrid data must be a 2D array")
 
@@ -441,17 +455,26 @@ class Point(SupportedType):
         msg.z = output[2]
         return msg
 
+    @classmethod
+    def convert_ui_dict(cls, data: Dict, **_) -> str:
+        return np.array(
+            [
+                float(data.get("x", 0.0)),
+                float(data.get("y", 0.0)),
+                float(data.get("z", 0.0)),
+            ],
+            dtype=np.float64,
+        )
 
-class PointStamped(SupportedType):
+
+class PointStamped(Point):
     """PointStamped"""
 
     _ros_type = ROSPointStamped
     callback = callbacks.PointStampedCallback
 
     @classmethod
-    def convert(
-        cls, output: np.ndarray, **_
-    ) -> ROSPointStamped:
+    def convert(cls, output: np.ndarray, **_) -> ROSPointStamped:
         """ROS message converter function for datatype Point.
 
         :param output:
@@ -502,17 +525,32 @@ class Pose(SupportedType):
             msg.orientation.z = output[6]
         return msg
 
+    @classmethod
+    def convert_ui_dict(cls, data: Dict, **_) -> str:
+        return np.array(
+            [
+                float(data.get("x", 0.0)),
+                float(data.get("y", 0.0)),
+                float(data.get("z", 0.0)),
+                float(
+                    data.get("ori_w", 0.0) or "1.0"
+                ),  # 'or' is added to handle empty inputs (orientation is optional)
+                float(data.get("ori_x", 0.0) or "0.0"),
+                float(data.get("ori_y", 0.0) or "0.0"),
+                float(data.get("ori_z", 0.0) or "0.0"),
+            ],
+            dtype=np.float64,
+        )
 
-class PoseStamped(SupportedType):
+
+class PoseStamped(Pose):
     """PoseStamped"""
 
     _ros_type = ROSPoseStamped
     callback = callbacks.PoseStampedCallback
 
     @classmethod
-    def convert(
-        cls, output: np.ndarray, **_
-    ) -> ROSPoseStamped:
+    def convert(cls, output: np.ndarray, **_) -> ROSPoseStamped:
         """ROS message converter function for datatype Point.
 
         :param output:

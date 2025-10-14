@@ -114,7 +114,7 @@ def copy_markdown_files(app, exception):
 
         for root, _, files in os.walk(src_dir):
             for file in files:
-                if file.endswith('.md'):
+                if file.endswith(".md"):
                     src_path = os.path.join(root, file)
                     # Compute path relative to the source dir
                     rel_path = os.path.relpath(src_path, src_dir)
@@ -130,16 +130,16 @@ def create_robots_txt(app, exception):
     """Create robots.txt file to take advantage of sitemap crawl"""
     if exception is None:
         dst_dir = app.outdir  # Typically 'build/html/'
-        robots_path = os.path.join(dst_dir, 'robots.txt')
+        robots_path = os.path.join(dst_dir, "robots.txt")
         content = f"""User-agent: *
 
 Sitemap: {html_baseurl}/sitemap.xml
 """
-        with open(robots_path, 'w') as f:
+        with open(robots_path, "w") as f:
             f.write(content)
 
 
 def setup(app):
     """Plugin to post build and copy markdowns as well"""
-    app.connect('build-finished', copy_markdown_files)
-    app.connect('build-finished', create_robots_txt)
+    app.connect("build-finished", copy_markdown_files)
+    app.connect("build-finished", create_robots_txt)

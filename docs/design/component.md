@@ -49,16 +49,11 @@ Available ComponentRunType are:
   - Executes main functionality based on a ROS2 action server request from a client
 ```
 
-The run type can be configured using 'run_type' attribute in the component config class, or directly using 'run_type' property:
+The run type can be configured directly using 'run_type' property:
 
 ```python
 from ros_sugar.config import ComponentRunType, BaseComponentConfig
 from ros_sugar.core import BaseComponent
-
-config = BaseComponentConfig(run_type=ComponentRunType.EVENT)
-
-# Can directly pass a string
-config = ComponentConfig(run_type="Event")
 
 # Can set from Component
 comp = BaseComponent(component_name='test')

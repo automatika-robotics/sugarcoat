@@ -124,7 +124,7 @@ class Publisher:
                 elif hasattr(msg, "header"):
                     # Add a header
                     msg.header = Header()
-                    msg.header.frame_id = frame_id or ""
+                    msg.header.frame_id = frame_id or msg.header.frame_id or ""
                     msg.header.stamp = (
                         Clock(clock_type=ClockType.ROS_TIME).now().to_msg()
                     )

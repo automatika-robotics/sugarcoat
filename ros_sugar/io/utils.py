@@ -1,12 +1,30 @@
-from typing import List, Tuple
-
+from typing import List, Tuple, Dict
+import re
+import sys
+import base64
 import numpy as np
 from nav_msgs.msg import Odometry
 import cv2
 import std_msgs.msg as std_msg
 
+from rclpy.logging import get_logger
 
-def _process_encoding(encoding: str) -> Tuple[np.dtype, int]:
+
+def convert_img_to_jpeg_str(img, node_name: str = "util") -> str:
+    # Encode image as JPEG
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # as cv2 expects a BGR
+
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+    result, buffer = cv2.imencode(".jpg", img, encode_param)
+    if not result:
+        get_logger(node_name).error("Failed to encode image to JPEG format.")
+        raise Exception("Failed to encode image to JPEG format.")
+    else:
+        # Convert to base64
+        return base64.b64encode(buffer).decode("utf-8")
+
+
+def process_encoding(encoding: str) -> Tuple[np.dtype, int]:
     """
     Returns dtype and number of channels from encoding
     """
@@ -75,54 +93,255 @@ def _process_encoding(encoding: str) -> Tuple[np.dtype, int]:
     return encoding_map[encoding]
 
 
-def image_pre_processing(img) -> np.ndarray:
+def image_pre_processing(img, dtype, num_channels) -> np.ndarray:
     """
-    Pre-processing of ROS image msg received in different encodings
-    :param      img:  Image as a middleware defined message
-    :type       img:  Middleware defined message type
+    Pre-processes ROS sensor_msgs/Image into a numpy array.
+    - Handles encodings, endianess, alpha channels, Bayer, YUV422.
+    - Returns RGB arrays for color images, grayscale for mono, raw floats for depth.
+    """
+    dtype = np.dtype(dtype)
+    np_arr = np.frombuffer(img.data, dtype=dtype)
 
-    :returns:   Image as an numpy array
-    :rtype:     Numpy array
-    """
-    dtype, num_channels = _process_encoding(img.encoding)
-    if num_channels > 1:
-        np_arr = np.asarray(img.data, dtype=dtype).reshape((
-            img.height,
-            img.width,
-            num_channels,
-        ))
-    # discard alpha channels if present
-    elif num_channels == 4:
-        np_arr = np.asarray(img.data, dtype=dtype).reshape((
-            img.height,
-            img.width,
-            num_channels,
-        ))[:, :, :3]
+    # Endian correction
+    if img.is_bigendian and (
+        np_arr.dtype.byteorder == "<"
+        or (np_arr.dtype.byteorder == "=" and sys.byteorder == "little")
+    ):
+        np_arr = np_arr.byteswap().newbyteorder()
+
+    # Reshape
+    if num_channels == 1:
+        np_arr = np.ndarray(
+            shape=(img.height, int(img.step / dtype.itemsize)),
+            dtype=dtype,
+            buffer=np_arr,
+        )
+        np_arr = np.ascontiguousarray(np_arr[: img.height, : img.width])
     else:
-        np_arr = np.asarray(img.data, dtype=dtype).reshape((img.height, img.width))
+        np_arr = np.ndarray(
+            shape=(
+                img.height,
+                int(img.step / dtype.itemsize / num_channels),
+                num_channels,
+            ),
+            dtype=dtype,
+            buffer=np_arr,
+        )
+        np_arr = np.ascontiguousarray(np_arr[: img.height, : img.width, :])
 
-    if img.encoding == "yuv422_yuy2":
-        np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_YUYV)
+        # Drop alpha channel if present
+        if num_channels == 4:
+            np_arr = np_arr[:, :, :3]
+
+    enc = img.encoding.lower()
+
+    # Handle Bayer patterns
+    if enc.startswith("bayer_"):
+        bayer_map = {
+            "bayer_rggb8": cv2.COLOR_BAYER_RG2RGB,
+            "bayer_bggr8": cv2.COLOR_BAYER_BG2RGB,
+            "bayer_gbrg8": cv2.COLOR_BAYER_GB2RGB,
+            "bayer_grbg8": cv2.COLOR_BAYER_GR2RGB,
+            "bayer_rggb16": cv2.COLOR_BAYER_RG2RGB,
+            "bayer_bggr16": cv2.COLOR_BAYER_BG2RGB,
+            "bayer_gbrg16": cv2.COLOR_BAYER_GB2RGB,
+            "bayer_grbg16": cv2.COLOR_BAYER_GR2RGB,
+        }
+        if enc in bayer_map:
+            np_arr = cv2.cvtColor(np_arr, bayer_map[enc])
+        return np_arr  # already RGB
+
+    # Handle YUV422
+    if "yuv422" in enc:
+        # Annoying edge case: Assume these formats to be stored rgb
+        if "yuy2" in enc:
+            np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_YUYV)
+        elif "uyvy" in enc:
+            np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_UYVY)
+        else:  # generic fallback
+            np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_YUYV)
+        return np_arr
+
+    # Handle BGR/BGRA
+    if enc.startswith("bgr"):
         np_arr = cv2.cvtColor(np_arr, cv2.COLOR_BGR2RGB)
 
-    # handle bgr
-    rgb = cv2.cvtColor(np_arr, cv2.COLOR_BGR2RGB) if "bgr" in img.encoding else np_arr
-    return rgb
+    return np_arr
 
 
-def read_compressed_image(img) -> np.ndarray:
+def parse_format(fmt: str):
     """
-    Reads ROS CompressedImage msg
-    :param      img:  Image as a middleware defined message
-    :type       img:  Middleware defined message type
-
-    :returns:   Image as an numpy array
-    :rtype:     Numpy array
+    Parse the CompressedImage.format field into components.
+    Returns dict: { orig: str, codec: Optional['jpeg'|'png'|'rvl'], comp: Optional[str], is_depth: bool }
     """
-    # Convert ROS image data to numpy array
-    np_arr = np.asarray(img.data, dtype="uint8")
-    cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    return cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+    fmt = (fmt or "").strip()
+    if not fmt:
+        return {"orig": "", "codec": None, "comp": None, "is_depth": False}
+
+    parts = [p.strip() for p in fmt.split(";") if p.strip()]
+    orig = parts[0] if parts else ""
+    rest = ";".join(parts[1:]).lower() if len(parts) > 1 else ""
+
+    is_depth = (
+        "compresseddepth" in rest
+        or "compresseddept" in rest
+        or "compresseddepth" in fmt.lower()
+    )
+
+    # find codec (jpeg/png/rvl)
+    codec_match = re.search(r"\b(jpeg|png|rvl)\b", rest)
+    codec = codec_match.group(1) if codec_match else None
+
+    # find compressed pixel format if present (examples: bgr8, rgb8, bgr16, rgb16, mono8, rgba8, bgra8)
+    comp_match = re.search(
+        r"\b(bgra8|rgba8|bgr16|rgb16|bgr8|rgb8|mono16|mono8)\b", fmt.lower()
+    )
+    comp = comp_match.group(0) if comp_match else None
+
+    return {"orig": orig, "codec": codec, "comp": comp, "is_depth": is_depth}
+
+
+def read_compressed_image(img, parsed_fmt: Dict, prefer_rgb: bool = True) -> np.ndarray:
+    """
+    Read a ROS sensor_msgs/CompressedImage (or similar) message into a numpy array.
+
+      - For color images (jpeg/png) decodes the compressed bytes and returns:
+          - HxWx3 RGB (uint8) by default (prefer_rgb=True).
+          - If prefer_rgb=False the raw ordering (OpenCV BGR/BGRA) is preserved.
+      - For png color with 16-bit (rgb16/bgr16) the function preserves dtype (uint16).
+      - For grayscale/mono images returns 2D array (HxW).
+      - For depth images (format contains 'compressedDepth'):
+          - PNG path: strips the compression config header (12 bytes on common builds) and decodes
+            the embedded PNG with cv2.IMREAD_UNCHANGED (preserves uint16 / float32 if present).
+          - RVL path: *not* implemented in this helper — see notes below and links.
+    :param img: a message-like object with attributes `.format` (string) and `.data` (bytes/bytearray/list[int])
+    :param fmt: fmt as a dict.
+    :param prefer_rgb: if True convert color images to RGB; otherwise leave as OpenCV order (BGR/BGRA).
+    :returns: numpy array (H x W x C) or (H x W) for mono/depth
+    :raises ValueError on decode errors or if RVL decompression is required (with guidance).
+    """
+    is_depth = parsed_fmt["is_depth"]
+    codec = parsed_fmt["codec"]
+    comp_pixfmt = parsed_fmt["comp"]  # e.g. 'rgb8', 'bgr8', 'rgb16'
+
+    # build a bytes object from img.data robustly
+    if isinstance(img.data, (bytes, bytearray)):
+        raw = bytes(img.data)
+    else:
+        # list of ints or numpy array
+        raw = bytes(bytearray(img.data))
+
+    if is_depth:
+        # compressed_depth_image_transport prepends a binary ConfigHeader (~12 bytes) to the compressed payload.
+        # We therefore strip ~12 bytes before decoding PNG/RVL payload.
+        # Reference: compressed_depth_image_transport codec implementation (PNG and RVL paths).
+        header_size = 12  # typical (sizeof(ConfigHeader): enum(4) + 2 * float(4) = 12)
+        if len(raw) <= header_size:
+            raise ValueError(
+                "Compressed depth message too small to contain header + payload"
+            )
+
+        payload = raw[header_size:]
+
+        # codec might be 'png' or 'rvl'. If codec wasn't parsed, try to detect by peeking bytes.
+        if codec is None:
+            # quick detect: PNG files start with the PNG signature
+            if payload[:8] == b"\x89PNG\r\n\x1a\n":
+                codec = "png"
+            else:
+                # rvl payloads (rows/cols + rvl data) won't have PNG signature
+                # fall back to rvl if not png
+                codec = "rvl"
+
+        if codec == "png":
+            arr = np.frombuffer(payload, dtype=np.uint8)
+            im = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+            if im is None:
+                raise ValueError("Failed to decode PNG payload for compressedDepth")
+            # NOTE: im dtype will often be uint16 (CV_16U) for 16UC1 depth; for 32FC1 paths the compressed pipeline
+            # may have stored float depth differently (see compressed_depth_image_transport docs).
+            return im  # keep shape/dtype as produced
+
+        elif codec == "rvl":
+            # RVL is a fast lossless 16-bit depth compression used by compressed_depth_image_transport.
+            # The ROS C++ plugin handles RVL (RvlCodec::DecompressRVL). We do not implement RVL here.
+            # Helpful references:
+            # - ROS compressed_depth_image_transport codec implementation.
+            # - RVL paper (algorithm description).
+            raise NotImplementedError(
+                "RVL-compressed depth detected. RVL decompression is not implemented in this helper. "
+                "Use the ROS 'compressed_depth_image_transport' C++/Python bridge, cv_bridge, or port the "
+                "RvlCodec. For pointers see: compressed_depth_image_transport codec and RVL paper. "
+            )
+        else:
+            # unknown depth codec
+            raise ValueError(f"Unknown compressedDepth codec: {codec}")
+
+    # Color / regular compressed image
+    # prepare numpy buffer for cv2.imdecode
+    arr = np.frombuffer(raw, dtype=np.uint8)
+
+    # if codec is known, use best flags
+    if codec == "jpeg":
+        # JPEG is inherently 8-bit; grayscale detection via ORIG/COMP strings
+        want_gray = False
+        if parsed_fmt["orig"].lower().startswith("mono") or (
+            comp_pixfmt and comp_pixfmt.startswith("mono")
+        ):
+            want_gray = True
+
+        if want_gray:
+            # Special handling: YUV422 published as mono8 but actually bgr color
+            if "yuv422" in img.format.lower():
+                cv_im = cv2.imdecode(arr, cv2.IMREAD_COLOR_BGR)
+                if cv_im is None:
+                    raise ValueError("Failed to decode JPEG YUV422 image")
+                return cv_im
+
+            # grayscale path
+            cv_im = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+            if cv_im is None:
+                raise ValueError("Failed to decode JPEG grayscale image")
+            return cv_im
+        else:
+            cv_im = cv2.imdecode(arr, cv2.IMREAD_COLOR)  # returns BGR uint8
+            if cv_im is None:
+                raise ValueError("Failed to decode JPEG color image")
+
+            # Decide whether to convert to RGB:
+            convert_to_rgb = False
+            if comp_pixfmt:
+                # If compressed pixfmt explicitly says 'rgb8' or 'rgb16' -> convert to RGB
+                if comp_pixfmt.startswith("rgb"):
+                    convert_to_rgb = True
+                elif comp_pixfmt.startswith("bgr"):
+                    convert_to_rgb = False
+            else:
+                # fallback: user preference
+                convert_to_rgb = bool(prefer_rgb)
+
+            if convert_to_rgb:
+                cv_im = cv2.cvtColor(cv_im, cv2.COLOR_BGR2RGB)
+            return cv_im
+
+    else:
+        # for png and unknown codecs try IMREAD_UNCHANGED (preserves 16-bit / alpha)
+        cv_im = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+        if cv_im is None:
+            # fallback to color
+            cv_im = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if cv_im is None:
+                raise ValueError("Failed to decode compressed image (unknown codec)")
+
+        # If image has 3 or 4 channels, optionally convert BGR(A)->RGB(A)
+        if cv_im.ndim == 3 and prefer_rgb:
+            _, _, c = cv_im.shape
+            if c == 3:
+                cv_im = cv2.cvtColor(cv_im, cv2.COLOR_BGR2RGB)
+            elif c == 4:
+                # BGRA -> RGBA
+                cv_im = cv2.cvtColor(cv_im, cv2.COLOR_BGRA2RGBA)
+        return cv_im
 
 
 def _np_quaternion_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
@@ -162,7 +381,12 @@ def _rotate_vector_by_quaternion(q: np.ndarray, v: List[float]) -> List[float]:
     return rotated_vq[1:].tolist()
 
 
-def _transform_pose(position: np.ndarray, orientation: np.ndarray, reference_position: np.ndarray, reference_orientation: np.ndarray) -> np.ndarray:
+def _transform_pose(
+    position: np.ndarray,
+    orientation: np.ndarray,
+    reference_position: np.ndarray,
+    reference_orientation: np.ndarray,
+) -> np.ndarray:
     """
     Transforms a pose from a local frame to a global frame using a reference pose.
     Equivalent to: global_pose = reference_pose * local_pose
@@ -174,15 +398,14 @@ def _transform_pose(position: np.ndarray, orientation: np.ndarray, reference_pos
     :return: PoseData in global frame
     :rtype: PoseData
     """
-    rotated_position = _rotate_vector_by_quaternion(reference_orientation, position.tolist())
+    rotated_position = _rotate_vector_by_quaternion(
+        reference_orientation, position.tolist()
+    )
     translated_position = reference_position + np.array(rotated_position)
 
     combined_orientation = _np_quaternion_multiply(reference_orientation, orientation)
 
-    return np.array([
-        *translated_position,
-        *combined_orientation
-    ])
+    return np.array([*translated_position, *combined_orientation])
 
 
 def _get_position_from_odom(odom_msg: Odometry) -> np.ndarray:
@@ -253,8 +476,14 @@ def odom_from_frame1_to_frame2(
     :return:    pose of target in frame 2
     :rtype:     PoseData
     """
-    transformed_pose = _transform_pose(_get_position_from_odom(pose_target_in_1), _get_orientation_from_odom(pose_target_in_1), _get_position_from_odom(pose_1_in_2), _get_orientation_from_odom(pose_1_in_2))
+    transformed_pose = _transform_pose(
+        _get_position_from_odom(pose_target_in_1),
+        _get_orientation_from_odom(pose_target_in_1),
+        _get_position_from_odom(pose_1_in_2),
+        _get_orientation_from_odom(pose_1_in_2),
+    )
     return _get_odom_from_ndarray(transformed_pose)
+
 
 def _parse_array_type(arr: np.ndarray, ros_msg_cls: type) -> np.ndarray:
     """Parses a numpy array to the data type of an std_msg

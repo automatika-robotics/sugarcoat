@@ -2,7 +2,6 @@
 
 from enum import Enum
 from typing import Union, Optional
-
 from attrs import define, field
 from rclpy import qos
 import rclpy.callback_groups as ros_callback_groups
@@ -196,7 +195,7 @@ def _convert_runtype_to_enum(
         return value
     if isinstance(value, str):
         for value_enum in ComponentRunType:
-            if value_enum.value == value:
+            if value_enum.value.lower() == value.lower():
                 return value_enum
         raise ValueError(f"Unsupported ComponentRunTime value '{value}'")
 
@@ -245,9 +244,6 @@ class BaseComponentConfig(BaseConfig):
     """
     Component configuration parameters
 
-    :param use_without_launcher: To use the component without the Launcher. When True, it initializes a ROS node on component init.
-    :type use_without_launcher: bool
-
     :param fallback_rate: Rate (Hz) at which the component checks for fallbacks and executes actions if a failure is detected.
     :type fallback_rate: float
 
@@ -257,17 +253,11 @@ class BaseComponentConfig(BaseConfig):
     :param rclpy_log_level: Logging level for rclpy (ROS client library) logs. Can be a string or `LoggingSeverity` enum.
     :type rclpy_log_level: Union[str, LoggingSeverity]
 
-    :param run_type: Component run type, e.g., TIMED or EVENT. Can be a string or `ComponentRunType` enum.
-    :type run_type: Union[ComponentRunType, str]
-
-    :param _callback_group: (Optional) Callback group used by the component. Can be a string or `ros_callback_groups.CallbackGroup` instance.
-    :type _callback_group: Optional[Union[ros_callback_groups.CallbackGroup, str]]
-
     :param wait_for_restart_time: Time (in seconds) the component waits for a node to come back online after restart. Used to avoid infinite restart loops. Recommended to use a high value.
     :type wait_for_restart_time: float
     """
 
-    use_without_launcher: bool = field(default=False)
+    _use_without_launcher: bool = field(default=False, init=False)
 
     # NOTE: Layer ID to be added in coming updates
     # layer_id: int = field(
@@ -286,8 +276,8 @@ class BaseComponentConfig(BaseConfig):
         default=LoggingSeverity.WARN, converter=_convert_logging_severity_to_str
     )
 
-    run_type: Union[ComponentRunType, str] = field(
-        default=ComponentRunType.TIMED, converter=_convert_runtype_to_enum
+    _run_type: Union[ComponentRunType, str] = field(
+        default=ComponentRunType.TIMED, converter=_convert_runtype_to_enum, alias="_run_type"
     )
 
     _callback_group: Optional[Union[ros_callback_groups.CallbackGroup, str]] = field(

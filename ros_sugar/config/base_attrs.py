@@ -8,8 +8,10 @@ from typing import (
     get_args,
     List,
     get_origin,
+    Literal,
     _GenericAlias,
 )
+import functools
 from copy import deepcopy
 import numpy as np
 from attrs import asdict, define, fields_dict
@@ -17,6 +19,18 @@ from attrs import Attribute
 import yaml
 import toml
 import os
+import enum
+from . import base_validators
+
+# mapping base_validator function names to ui friendly operation names
+FUNC_NAME_MAP = {
+    "__gt": "greater_than",
+    "__lt": "less_than",
+    "__in_": "in",
+    "__list_contained_in": "list_contained_in",
+    "__in_range_validator": "in_range",
+    "__in_range_discretized_validator": "in_range_discretized",
+}
 
 
 def skip_no_init(a: Attribute, _) -> bool:
@@ -50,7 +64,7 @@ class BaseAttrs:
         first_level_keys = [attr.name for attr in self.__attrs_attrs__]
         first_level_values = [getattr(self, key) for key in first_level_keys]
 
-        for name, value in zip(first_level_keys, first_level_values):
+        for name, value in (first_level_keys, first_level_values):
             # Do not display private attributes
             if not name.startswith("_"):
                 print_statement += f"{name}: {value}\n"
@@ -58,7 +72,7 @@ class BaseAttrs:
         return print_statement
 
     @classmethod
-    def __is_union_type(cls, some_type) -> bool:
+    def __is_subscripted_generic(cls, some_type) -> Optional[type]:
         """
         Helper method to check if a type is from typing.Union
 
@@ -68,25 +82,23 @@ class BaseAttrs:
         :return: If type is from typing.Union
         :rtype: bool
         """
-        return getattr(some_type, "__origin__", None) is Union
+        return getattr(some_type, "__origin__", None)
 
     @classmethod
-    def __is_valid_arg_of_union_type(cls, obj, union_types) -> bool:
-        """
-        Helper method to check if a type is from typing.Union
-
-        :param obj: _description_
-        :type obj: _type_
-        :param union_types: _description_
-        :type union_types: _type_
-        :return: _description_
-        :rtype: _type_
-        """
-        _types = [
-            get_origin(t) if isinstance(t, _GenericAlias) else t
-            for t in get_args(union_types)
-        ]
-        return any(isinstance(obj, t) for t in _types)
+    def __get_subscribed_generic_simple_types(cls, sg_type) -> List:
+        _types = get_args(sg_type)
+        _parsed_types = []
+        for m_type in _types:
+            if nested_generic := cls.__is_subscripted_generic(m_type):
+                if nested_generic is Literal:
+                    _parsed_types.append(m_type)
+                else:
+                    _parsed_types.extend(
+                        cls.__get_subscribed_generic_simple_types(m_type)
+                    )
+            else:
+                _parsed_types.append(m_type)
+        return _parsed_types
 
     def asdict(self, filter: Optional[Callable] = None) -> Dict:
         """Convert class to dict.
@@ -114,11 +126,19 @@ class BaseAttrs:
         :rtype: Any
         """
         # Union typing requires special treatment
-        if self.__is_union_type(attribute_type):
-            if not self.__is_valid_arg_of_union_type(value, attribute_type):
-                raise TypeError(
-                    f"Trying to set with incompatible type. Attribute {key} expecting '{type(attribute_to_set)}' got '{type(value)}'"
-                )
+        if generic_type := self.__is_subscripted_generic(attribute_type):
+            _types = self.__get_subscribed_generic_simple_types(attribute_type)
+            if generic_type is Union:
+                # Check if the value type is one of the valid union types
+                if not any(isinstance(value, t) for t in _types):
+                    raise TypeError(
+                        f"Trying to set with incompatible type. Attribute {key} expecting '{type(attribute_to_set)}' got '{type(value)}'"
+                    )
+            if generic_type is Literal:
+                if not any(value == t for t in _types):
+                    raise TypeError(
+                        f"Trying to set a Literal attribute with incompatible value. Attribute {key} expecting '{_types}' got '{value}'"
+                    )
         elif isinstance(value, List) and attribute_type is np.ndarray:
             # Turn list into numpy array
             value = np.array(value)
@@ -182,7 +202,7 @@ class BaseAttrs:
                         f"Trying to set with incompatible type. Attribute {key} expecting dictionary got '{type(value)}'"
                     )
                 attribute_to_set.from_dict(value)
-            elif isinstance(attribute_to_set, List):
+            elif isinstance(attribute_to_set, List) and attribute_to_set:
                 setattr(
                     self,
                     key,
@@ -199,7 +219,7 @@ class BaseAttrs:
                 setattr(self, key, value)
 
     def _select_nested_config(
-        cls, config: Dict[str, Any], key_path: Optional[str]
+        self, config: Dict[str, Any], key_path: Optional[str]
     ) -> Dict[str, Any]:
         if not key_path:
             return config
@@ -371,7 +391,7 @@ class BaseAttrs:
         # Extract the simple type
         SIMPLE_TYPES = {int, float, str, bool}
         origin = get_origin(complex_type)
-        args = get_args(complex_type)
+        args = self.__get_subscribed_generic_simple_types(complex_type)
 
         # If it's directly a simple type
         if complex_type in SIMPLE_TYPES:
@@ -380,6 +400,11 @@ class BaseAttrs:
         # If it's a Union (including Optional)
         if origin is Union:
             for arg in args:
+                if arg in SIMPLE_TYPES:
+                    return arg
+        if origin is Literal:
+            literal_types = [type(arg) for arg in args]
+            for arg in literal_types:
                 if arg in SIMPLE_TYPES:
                     return arg
         return None  # No simple type found
@@ -413,7 +438,7 @@ class BaseAttrs:
             obj_class = obj_to_set
             obj_to_set = getattr(obj_to_set, name_to_set)
 
-        attribute_type = fields_dict(obj_class.__class__)[name_to_set].type
+        attribute_type = self.get_attribute_type(attr_name)
 
         if not attribute_type:
             raise TypeError(
@@ -426,3 +451,115 @@ class BaseAttrs:
             )
         setattr(obj_class, name_to_set, attr_value)
         return True
+
+    @staticmethod
+    def _parse_validator(validator: object) -> Dict[str, Optional[Any]]:
+        """
+        Introspects an attrs validator object to extract its parameters.
+
+        :param validator: The validator object to parse.
+        :return: A dictionary with the validator's name and parameters.
+        """
+        validator_name = validator.__class__.__name__
+
+        # Handle attrs built-in range validators (gt, ge, lt, le)
+        if hasattr(validator, "bound"):
+            op_name = {
+                "_GreaterThenValidator": "greater_than",
+                "_GreaterEqualValidator": "greater_or_equal",
+                "_LessThenValidator": "less_than",
+                "_LessEqualValidator": "less_or_equal",
+            }.get(validator_name, "bound")
+            return {op_name: validator.bound}
+
+        # Handle functions of base_validators
+        if isinstance(validator, functools.partial):
+            func = validator.func
+            func_name = func.__name__
+            # ensure function is from base_validator
+            if hasattr(base_validators, func_name):
+                # map name to standard name
+                op_name = FUNC_NAME_MAP.get(func_name, func_name)
+                # collect bounds/parameters
+                bounds = {}
+                # keyword args in partial
+                bounds.update(validator.keywords or {})
+                return {op_name: bounds}
+
+        # Fallback for unknown validators
+        return {"unknown": "unknown"}
+
+    @classmethod
+    def get_fields_info(cls, class_object) -> Dict[str, Dict[str, Any]]:
+        """
+        Returns a dictionary with metadata about each field in the class.
+
+        This includes the field's name, type annotation, and parsed validator info.
+
+        :return: A dictionary where keys are field names and values are dicts
+                 of metadata.
+        """
+        fields_info = {}
+        # Iterate over all attributes defined by attrs
+        for attr_field in class_object.__attrs_attrs__:
+            if attr_field.name.startswith("_"):
+                continue
+            validators_list = []
+            # Check if a validator exists for the field
+            if attr_field.validator:
+                # A validator can be a single callable or a list/tuple of them
+                # if they are wrapped in attrs.validators.and_()
+                # Check for composite validators (like and_())
+                if hasattr(attr_field.validator, "validators"):
+                    for v in attr_field.validator.validators:
+                        validators_list.append(cls._parse_validator(v))
+
+                else:  # It's a single validator
+                    validators_list.append(cls._parse_validator(attr_field.validator))
+            parsed_type = attr_field.type
+            # Check and handle Union/Optional/Literal types:
+            if generic_type := cls.__is_subscripted_generic(parsed_type):
+                args = cls.__get_subscribed_generic_simple_types(parsed_type)
+                # Do nothing if simple generic like Dict, List
+                if not args:
+                    pass
+                # Execlude simple optional types
+                elif generic_type is Union and type(None) in args:
+                    # Optional argument
+                    args.remove(type(None))
+                    parsed_type = f"Optional[{args[0]}]"
+                elif generic_type is Literal:
+                    parsed_type = f"Literal{list(args)}"
+                else:
+                    parsed_type = []
+                    # Parse Enum to Literal
+                    parsed_enum = None
+                    for val_type in args:
+                        if val_type is Literal:
+                            parsed_type.append(f"Literal{get_args(val_type)}")
+                        elif issubclass(val_type, enum.Enum):
+                            values = [member.name for member in val_type]
+                            parsed_enum = f"Literal{values}"
+                            validators_list = []
+                        else:
+                            parsed_type.append(val_type)
+                    # If an enum is parsed pass only the literal type
+                    parsed_type = parsed_enum or parsed_type
+
+            if type(attr_field.type) is type and (
+                issubclass(parsed_type, BaseAttrs)
+                or parsed_type.__base__.__name__ == "BaseAttrs"
+            ):
+                val: BaseAttrs = getattr(class_object, attr_field.name)
+                fields_info[attr_field.name] = {
+                    "type": "BaseAttrs",
+                    "validators": [],
+                    "value": cls.get_fields_info(val),
+                }
+            else:
+                fields_info[attr_field.name] = {
+                    "type": parsed_type,
+                    "validators": validators_list,
+                    "value": getattr(class_object, attr_field.name),
+                }
+        return fields_info

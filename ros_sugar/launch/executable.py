@@ -45,6 +45,11 @@ def _parse_args() -> Tuple[argparse.Namespace, List[str]]:
         type=str,
         help="User defined configuration for component algorithms",
     )
+    parser.add_argument(
+        "--additional_types",
+        type=str,
+        help="Additional type modules from derived packages",
+    )
     return parser.parse_known_args()
 
 
@@ -109,6 +114,116 @@ def _parse_ros_args(args_names: List[str]) -> List[str]:
     return ros_specific_args
 
 
+def setup_component(
+    *, list_of_components: List[Type], list_of_configs: List[Type]
+) -> object:
+    args, args_names = _parse_args()
+
+    # Initialize rclpy with the ros-specific arguments
+    rclpy.init(args=_parse_ros_args(args_names))
+
+    component_type = args.component_type or None
+
+    if not component_type:
+        raise ValueError("Cannot launch withput providing a component_type")
+
+    comp_class = next(
+        (
+            comp_cls
+            for comp_cls in list_of_components
+            if comp_cls.__name__ == component_type
+        ),
+        None,
+    )
+
+    if not comp_class:
+        raise ValueError(
+            f"Cannot launch unknown component type '{component_type}'. Known types are: '{list_of_components}'"
+        )
+
+    # Get name
+    component_name = args.node_name or None
+
+    if not component_name:
+        raise ValueError("Cannot launch component without specifying a name")
+
+    # SET PROCESS NAME (if setproctitle is available)
+    try:
+        import setproctitle
+
+        setproctitle.setproctitle(component_name)
+    except ImportError:
+        pass
+
+    config = _parse_component_config(args, list_of_configs)
+
+    # Get config file if provided
+    config_file = args.config_file or None
+
+    # Init the component
+    component = comp_class(
+        config=config, component_name=component_name, config_file=config_file
+    )
+
+    # Init the node with rclpy
+    component.rclpy_init_node()
+
+    # Add any passed additional types
+    if args.additional_types:
+        component.set_additional_types(args.additional_types)
+
+    # Set inputs/outputs
+    inputs_json = args.inputs or None
+    outputs_json = args.outputs or None
+
+    try:
+        if inputs_json:
+            component._inputs_json = inputs_json
+
+        if outputs_json:
+            component._outputs_json = outputs_json
+    except (ValueError, TypeError) as e:
+        logging.warning(
+            f"Passed Invalid inputs and/or outputs -> continue with component default values. Error: '{e}'"
+        )
+
+    # Set events/actions
+    events_json = args.events or None
+    actions_json = args.actions or None
+
+    if events_json and actions_json:
+        component._events_json = events_json
+        component._actions_json = actions_json
+
+    # Set algorithms configuration
+    algorithms_json = args.algorithms_config or None
+    if algorithms_json:
+        component._algorithms_json = algorithms_json
+
+    return component
+
+
+def run_component(component: object):
+    """Run the component using a MultiThreadedExecutor
+
+    :param component: Component to run
+    :type component: object
+    """
+    executor = MultiThreadedExecutor()
+
+    executor.add_node(component)
+
+    try:
+        executor.spin()
+
+    except KeyboardInterrupt:
+        pass
+
+    finally:
+        executor.remove_node(component)
+        try_shutdown()
+
+
 def executable_main(*, list_of_components: List[Type], list_of_configs: List[Type]):
     """Executable main function to run a component as a ROS2 node in a new process.
     Used to start a node using Launcher
@@ -158,94 +273,9 @@ def executable_main(*, list_of_components: List[Type], list_of_configs: List[Typ
     :raises ValueError: If component or component config are unknown classes
     :raises ValueError: If component cannot be started with provided arguments
     """
-    args, args_names = _parse_args()
 
-    # Initialize rclpy with the ros-specific arguments
-    rclpy.init(args=_parse_ros_args(args_names))
-
-    component_type = args.component_type or None
-
-    if not component_type:
-        raise ValueError("Cannot launch withput providing a component_type")
-
-    comp_class = next(
-        (
-            comp_cls
-            for comp_cls in list_of_components
-            if comp_cls.__name__ == component_type
-        ),
-        None,
+    component = setup_component(
+        list_of_components=list_of_components, list_of_configs=list_of_configs
     )
 
-    if not comp_class:
-        raise ValueError(
-            f"Cannot launch unknown component type '{component_type}'. Known types are: '{list_of_components}'"
-        )
-
-    # Get name
-    component_name = args.node_name or None
-
-    if not component_name:
-        raise ValueError("Cannot launch component without specifying a name")
-
-    # SET PROCESS NAME (if setproctitle is available)
-    try:
-        import setproctitle
-        setproctitle.setproctitle(component_name)
-    except ImportError:
-        pass
-
-    config = _parse_component_config(args, list_of_configs)
-
-    # Get config file if provided
-    config_file = args.config_file or None
-
-    # Init the component
-    component = comp_class(
-        config=config, component_name=component_name, config_file=config_file
-    )
-
-    # Init the node with rclpy
-    component.rclpy_init_node()
-
-    # Set inputs/outputs
-    inputs_json = args.inputs or None
-    outputs_json = args.outputs or None
-
-    try:
-        if inputs_json:
-            component._inputs_json = inputs_json
-
-        if outputs_json:
-            component._outputs_json = outputs_json
-    except (ValueError, TypeError) as e:
-        logging.warning(
-            f"Passed Invalid inputs and/or outputs -> continue with component default values. Error: '{e}'"
-        )
-
-    # Set events/actions
-    events_json = args.events or None
-    actions_json = args.actions or None
-
-    if events_json and actions_json:
-        component._events_json = events_json
-        component._actions_json = actions_json
-
-    # Set algorithms configuration
-    algorithms_json = args.algorithms_config or None
-    if algorithms_json:
-        component._algorithms_json = algorithms_json
-
-    executor = MultiThreadedExecutor()
-
-    executor.add_node(component)
-
-    try:
-        executor.spin()
-
-    except KeyboardInterrupt:
-        pass
-
-    finally:
-        executor.remove_node(component)
-        try_shutdown()
+    run_component(component)

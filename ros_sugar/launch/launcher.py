@@ -5,6 +5,7 @@ import os
 import inspect
 import sys
 import socket
+import json
 from typing import (
     Awaitable,
     Callable,
@@ -39,6 +40,8 @@ from rclpy import logging
 from rclpy.lifecycle.managed_entity import ManagedEntity
 
 from . import logger
+from ..io import Topic
+from ..io.supported_types import _additional_types
 from ..core.action import LogInfo
 from ..config.base_config import ComponentRunType
 from ..core.action import Action
@@ -47,6 +50,7 @@ from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
 from .launch_actions import ComponentLaunchAction
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
+from ..ui_node import UINode, UINodeConfig
 
 # Get ROS distro
 __installed_distro = os.environ.get("ROS_DISTRO", "").lower()
@@ -59,6 +63,9 @@ else:
 
 # patch msgpack for numpy arrays
 m_pack.patch()
+
+
+UI_EXTENSIONS = {}
 
 
 class Launcher:
@@ -96,6 +103,8 @@ class Launcher:
         :type enable_monitoring: bool, optional
         :param activation_timeout: Timeout (seconds) for waiting on ROS2 nodes to come up for activation, defaults to None
         :type activation_timeout: float, optional
+        :param enable_client: If True, launches a separate client executable, defaults to False
+        :type enable_client: bool, optional
         """
         # Make sure RCLPY in initialized
         if not rclpy.ok():
@@ -110,6 +119,7 @@ class Launcher:
         self._config_file: Optional[str] = config_file
         self.__enable_monitoring: bool = enable_monitoring
         self._launch_group = []
+        self._enable_ui = False
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
@@ -146,10 +156,12 @@ class Launcher:
         components: List[BaseComponent],
         package_name: Optional[str] = None,
         executable_entry_point: Optional[str] = "executable",
-        events_actions: Dict[
-            Event, Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
-        ]
-        | None = None,
+        events_actions: Optional[
+            Dict[
+                Event,
+                Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
+            ]
+        ] = None,
         multiprocessing: bool = False,
         activate_all_components_on_start: bool = True,
         components_to_activate_on_start: Optional[List[BaseComponent]] = None,
@@ -225,6 +237,41 @@ class Launcher:
             if self._config_file:
                 component._config_file = self._config_file
                 component.config_from_file(self._config_file)
+
+    def enable_ui(
+        self,
+        inputs: Optional[List[Topic]] = None,
+        outputs: Optional[List[Topic]] = None,
+        port: int = 5001,
+        ssl_keyfile_path: str = "key.pem",
+        ssl_certificate_path: str = "cert.pem",
+    ):
+        self._ui_input_elements = []
+        self._ui_output_elements = []
+        for ext in UI_EXTENSIONS:
+            input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
+            # serialize inputs
+            for key, element in input_elements_dict.items():
+                self._ui_input_elements.append((
+                    f"{key.__module__}.{key.__qualname__}",
+                    f"{element.__module__}.{element.__qualname__}",
+                ))
+            # serialize outputs
+            for key, element in output_elements_dict.items():
+                self._ui_output_elements.append((
+                    f"{key.__module__}.{key.__qualname__}",
+                    f"{element.__module__}.{element.__qualname__}",
+                ))
+
+        self._enable_ui = True
+        self._ui_input_topics = inputs
+        self._ui_output_topics = outputs
+
+        self._ui_node_config: UINodeConfig = UINodeConfig(
+            port=port,
+            ssl_keyfile=ssl_keyfile_path,
+            ssl_certificate=ssl_certificate_path,
+        )
 
     def _setup_component_events_handlers(self, comp: BaseComponent):
         """Parse a component events/actions from the overall components actions
@@ -473,7 +520,7 @@ class Launcher:
             component=comp,
         )
 
-    def _setup_internal_events_handlers(self, nodes_in_processes: bool = True) -> None:
+    def _setup_internal_events_handlers(self) -> None:
         """Sets up the launch handlers for all internal events.
 
         :param nodes_in_processes:
@@ -516,12 +563,8 @@ class Launcher:
             )
             self._description.add_action(internal_events_handler)
 
-    def _setup_monitor_node(self, nodes_in_processes: bool = True) -> None:
-        """Adds a node to monitor all the launched components and their events
-
-        :param nodes_in_processes: If nodes are being launched in separate processes, defaults to True
-        :type nodes_in_processes: bool, optional
-        """
+    def _setup_monitor_node(self) -> None:
+        """Adds a node to monitor all the launched components and their events"""
         # Update internal events
         if self._internal_events:
             self._internal_event_names = [ev.name for ev in self._internal_events]
@@ -600,7 +643,50 @@ class Launcher:
         )
         self._description.add_action(exit_all_event_handler)
 
-        self._setup_internal_events_handlers(nodes_in_processes)
+        self._setup_internal_events_handlers()
+
+    def _setup_ui_node(self) -> None:
+        """Adds a node to communicate between launched components and web client
+
+        :param nodes_in_processes: If nodes are being launched in separate processes, defaults to True
+        :type nodes_in_processes: bool, optional
+        """
+        logger.info("UI enabled. Setting up ui node.")
+
+        # Setup the client node
+        component_configs = {comp.node_name: comp.config for comp in self._components}
+
+        ui_node = UINode(
+            config=self._ui_node_config,
+            inputs=self._ui_input_topics,
+            outputs=self._ui_output_topics,
+            component_configs=component_configs,
+        )
+        ui_node._update_cmd_args_list()
+        self.__component_names_to_activate_on_start_mp.append(ui_node.node_name)
+        arguments = ui_node.launch_cmd_args + [
+            "--additional_types",
+            json.dumps(list(_additional_types.keys())),
+            "--ui_input_elements",
+            json.dumps(self._ui_input_elements),
+            "--ui_output_elements",
+            json.dumps(self._ui_output_elements),
+            "--ros-args",
+            "--log-level",
+            "info",
+        ]
+
+        ui_node = LifecycleNodeLaunchAction(
+            package="automatika_ros_sugar",
+            exec_name=ui_node.node_name,
+            namespace=self._namespace,
+            name=ui_node.node_name,
+            executable="ui_node_executable",
+            output="screen",
+            arguments=arguments,
+        )
+
+        self._launch_group.append(ui_node)
 
     def __listen_for_external_processing(self, sock: socket.socket, func: Callable):
         # Block to accept connections
@@ -663,6 +749,8 @@ class Launcher:
         )
         if rclpy_log_level:
             arguments = component.launch_cmd_args + [
+                "--additional_types",
+                json.dumps(list(_additional_types.keys())),
                 "--ros-args",
                 "--log-level",
                 rclpy_log_level,
@@ -826,8 +914,6 @@ class Launcher:
         except ImportError:
             pass
 
-        self._setup_monitor_node()
-
         for component in self._components:
             self._setup_component_events_handlers(component)
 
@@ -838,6 +924,12 @@ class Launcher:
                 self._setup_component_in_process(component, pkg_name, executable_name)
             else:
                 self._setup_component_in_thread(component)
+
+        # Create UI node if enabled
+        if self._enable_ui:
+            self._setup_ui_node()
+
+        self._setup_monitor_node()
 
         group_action = GroupAction(self._launch_group)
 
