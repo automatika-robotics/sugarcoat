@@ -44,16 +44,16 @@ def _in_bool_element(topic_name: str, topic_type: str):
             Input(name="topic_type", type="hidden", value=topic_type),
             DivLAligned(
                 Switch(
-                id=topic_name,
-                checked=False,
-                name="data",
+                    id=topic_name,
+                    checked=False,
+                    name="data",
                 ),
                 Button(
                     "Send",
                     type="submit",
                     title="Send",
                 ),
-                cls="space-x-4 ml-2"
+                cls="space-x-4 ml-2",
             ),
             id=f"{topic_name}-form",
             ws_send=True,
@@ -328,9 +328,7 @@ def input_topic_card(topic_name: str, topic_type: str, column_class: str = "") -
         cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto rounded-lg",
         id=topic_name,
     )
-    return card(
-        _INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type)
-    )
+    return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
 
 
 def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:

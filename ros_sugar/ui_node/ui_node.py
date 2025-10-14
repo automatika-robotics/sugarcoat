@@ -139,9 +139,8 @@ class UINode(BaseComponent):
             self.default_websocket_callback = ws_callback
 
     def update_configs(self, new_configs: Dict):
-        self.get_logger().info("Updating configs")
+        self.get_logger().debug("Updating configs")
         component_name = new_configs.pop("component_name")
-        self.get_logger().info(f"{new_configs}")
 
         srv_request = ChangeParameters.Request()
         srv_request.names = list(new_configs.keys())

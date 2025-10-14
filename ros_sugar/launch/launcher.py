@@ -246,6 +246,40 @@ class Launcher:
         ssl_keyfile_path: str = "key.pem",
         ssl_certificate_path: str = "cert.pem",
     ):
+        """
+        Enables the user interface (UI) subsystem for recipes, initializing all UI extensions
+        to automatically generate front-end controls and data visualizations .
+
+        This method collects and serializes UI input and output elements from all registered
+        UI extensions in :data:`UI_EXTENSIONS`, and prepares them for runtime interaction.
+        It also configures SSL/TLS settings for the UI server and sets the topics through
+        which the UI communicates with the rest of the system.
+
+        :param inputs:
+            A list of topics that serve as UI input sources. These topics are monitored
+            and reflected in the UI. If ``None``, no input topics are bound.
+        :type inputs: Optional[List[Topic]]
+
+        :param outputs:
+            A list of topics that serve as UI output sinks.
+            If ``None``, no output topics are bound.
+        :type outputs: Optional[List[Topic]]
+
+        :param port:
+            The TCP port on which the UI server will listen for connections.
+            Defaults to ``5001``.
+        :type port: int
+
+        :param ssl_keyfile_path:
+            Path to the private key file used for SSL/TLS encryption. Defaults to ``"key.pem"``.
+        :type ssl_keyfile_path: str
+
+        :param ssl_certificate_path:
+            Path to the SSL/TLS certificate file used to authenticate the UI server.
+            Defaults to ``"cert.pem"``.
+        :type ssl_certificate_path: str
+        """
+
         self._ui_input_elements = []
         self._ui_output_elements = []
         for ext in UI_EXTENSIONS:
