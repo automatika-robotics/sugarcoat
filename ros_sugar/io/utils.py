@@ -12,6 +12,8 @@ from rclpy.logging import get_logger
 
 def convert_img_to_jpeg_str(img, node_name: str = "util") -> str:
     # Encode image as JPEG
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # as cv2 expects a BGR
+
     encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
     result, buffer = cv2.imencode(".jpg", img, encode_param)
     if not result:
@@ -137,11 +139,11 @@ def image_pre_processing(img, dtype, num_channels) -> np.ndarray:
     if "yuv422" in enc:
         # Annoying edge case: Assume these formats to be stored rgb
         if "yuy2" in enc:
-            np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2BGR_YUYV)
+            np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_YUYV)
         elif "uyvy" in enc:
-            np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2BGR_UYVY)
+            np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_UYVY)
         else:  # generic fallback
-            np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2BGR_YUYV)
+            np_arr = cv2.cvtColor(np_arr, cv2.COLOR_YUV2RGB_YUYV)
         return np_arr
 
     # Handle BGR/BGRA
@@ -317,7 +319,7 @@ def read_compressed_image(img, parsed_fmt: Dict, prefer_rgb: bool = True) -> np.
 
         # If image has 3 or 4 channels, optionally convert BGR(A)->RGB(A)
         if cv_im.ndim == 3 and prefer_rgb:
-            h, w, c = cv_im.shape
+            _, _, c = cv_im.shape
             if c == 3:
                 cv_im = cv2.cvtColor(cv_im, cv2.COLOR_BGR2RGB)
             elif c == 4:
