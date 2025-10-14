@@ -36,6 +36,32 @@ def _in_text_element(topic_name: str, topic_type: str):
     )
 
 
+def _in_bool_element(topic_name: str, topic_type: str):
+    """FastHTML element for input String type"""
+    return (
+        Form(cls="mb-1 p-1")(
+            Input(name="topic_name", type="hidden", value=topic_name),
+            Input(name="topic_type", type="hidden", value=topic_type),
+            DivLAligned(
+                Switch(
+                id=topic_name,
+                checked=False,
+                name="data",
+                ),
+                Button(
+                    "Send",
+                    type="submit",
+                    title="Send",
+                ),
+                cls="space-x-4 ml-2"
+            ),
+            id=f"{topic_name}-form",
+            ws_send=True,
+            hx_on__ws_after_send="this.reset(); return false;",
+        ),
+    )
+
+
 def _in_audio_element(topic_name: str, **_):
     """FastHTML element for input Audio type"""
     return DivCentered(
@@ -190,6 +216,7 @@ _INPUT_ELEMENTS: Dict = {
     "String": _in_text_element,
     "Float32": _in_text_element,
     "Float64": _in_text_element,
+    "Bool": _in_bool_element,
     "Audio": _in_audio_element,
     "Point": _in_point_element,
     "PointStamped": _in_point_element,

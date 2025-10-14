@@ -214,6 +214,11 @@ class Bool(SupportedType):
         msg.data = output
         return msg
 
+    @classmethod
+    def convert_ui_dict(cls, data: Dict, **_) -> str:
+        val = data.get("data", "")
+        return val == "on" or val == "1"
+
 
 class Float32(SupportedType):
     """Float32."""

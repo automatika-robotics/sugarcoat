@@ -197,6 +197,14 @@ def main():
                 data_src="user",
             )
             ros_node.publish_data(data=data)
+        elif data.get("topic_type") == "Bool":
+            # display in log for coordinates data types
+            await log_data(
+                send,
+                f"Published to topic /{data.get('topic_name')}: {data.get("data", "off")}",
+                data_src="user",
+            )
+            ros_node.publish_data(data=data)
         else:
             ros_node.publish_data(data=data)
 

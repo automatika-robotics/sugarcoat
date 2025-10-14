@@ -13,6 +13,7 @@ ws_stream.onerror = (err) => {
     console.error(`Audio WebSocket error:`, err);
 };
 
+
 document.addEventListener("DOMContentLoaded", () => {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const MAX_RETRIES = 10; // reconnect retries
@@ -162,6 +163,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Initial pass
     ensureConnectionsForPresentFrames();
+});
+
+// Fix parsing boolean values from UI Switch elements
+document.addEventListener("htmx:configRequest", function (event) {
+  const form = event.detail.elt.closest("form");
+  if (!form) return;
+
+  // Find all checkboxes or FastHTML Switch elements
+  form.querySelectorAll("input[type='checkbox'], .Switch input").forEach(el => {
+    const name = el.name;
+    if (!name) return;
+
+    // Always include the key, even if unchecked
+    event.detail.parameters[name] = el.checked ? '1' : '0';
+  });
 });
 
 // Function to make all elements with class "draggable" movable
