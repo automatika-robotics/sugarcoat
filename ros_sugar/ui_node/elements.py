@@ -631,7 +631,7 @@ def nonvalidated_config(
         return LabelSwitch(
             label=setting_name,
             id=setting_name,
-            checked=bool(value),
+            checked=int(value),
             name=input_name,
         )
 
