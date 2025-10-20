@@ -31,6 +31,7 @@ class FHApp:
             Script(
                 src="custom.js",
             ),
+            Link(rel="stylesheet", href="custom.css", type="text/css"),
         )
         self.app, self.rt = fast_app(
             hdrs=hdrs, exts=["ws"], static_path=str(static_src)
@@ -165,15 +166,15 @@ class FHApp:
     def _create_component_settings_ui(self, settings: Dict):
         """Creates a Div for component settings from a dictionary."""
         # Parse number of grid columns and column span based on the number of components
-        if len(settings) > 2:
-            grid_num_cols = 2
-            item_col_cls = "col-1"
-            # Make the last component span over the whole width if we have an odd number of components
-            last_col_cls = "col-span-full" if len(settings) % 2 == 1 else "col-1"
-        else:
-            grid_num_cols = 1
-            item_col_cls = "col-span-full"
-            last_col_cls = "col-span-full"
+        # if len(settings) > 2:
+        #     grid_num_cols = 2
+        #     item_col_cls = "col-1"
+        #     # Make the last component span over the whole width if we have an odd number of components
+        #     last_col_cls = "col-span-full" if len(settings) % 2 == 1 else "col-1"
+        # else:
+        grid_num_cols = 1
+        item_col_cls = "col-span-full"
+        last_col_cls = "col-span-full"
 
         main_container = Grid(cols=grid_num_cols)
 
@@ -218,25 +219,29 @@ class FHApp:
         self.settings = self._create_component_settings_ui(self.configs)
         return (
             Favicon(light_icon="automatika-icon.png", dark_icon="automatika-icon.png"),
-            Title("EMOS CLI"),
-            Container(
-                NavBar(
-                    Button(
-                        self._settings_button,
-                        id="settings-button",
-                        hx_get="/settings/show",
-                        hx_target="#main",
-                        hx_swap="outerHTML",
-                        cls=ButtonT.primary,
+            Title("EMOS UI"),
+            Div(
+                Container(
+                    NavBar(
+                        Button(
+                            self._settings_button,
+                            id="settings-button",
+                            hx_get="/settings/show",
+                            hx_target="#main",
+                            hx_swap="outerHTML",
+                            cls="primary-button",
+                        ),
+                        brand=DivLAligned(
+                            Img(
+                                src="https://automatikarobotics.com/Emos_dark.png",
+                                style="width:6vw",
+                            )
+                        ),
                     ),
-                    brand=DivLAligned(
-                        Img(
-                            src="https://automatikarobotics.com/Emos_dark.png",
-                            style="width:6vw",
-                        )
-                    ),
+                    self._main,
+                    id="main",
+                    cls="mt-0 mb-0",
                 ),
-                self._main,
-                id="main",
+                cls="grid-section",
             ),
         )

@@ -52,6 +52,7 @@ def _in_bool_element(topic_name: str, topic_type: str):
                     "Send",
                     type="submit",
                     title="Send",
+                    cls="primary-button"
                 ),
                 cls="space-x-4 ml-2",
             ),
@@ -110,10 +111,7 @@ def _in_point_element(topic_name: str, topic_type: str):
                     ),
                     cls="space-x-2",
                 ),
-                Button(
-                    "Submit",
-                    cls=ButtonT.primary,
-                ),
+                Button("Submit", cls="primary-button"),
             ),
             id=f"{topic_name}-form",
             ws_send=True,
@@ -195,10 +193,7 @@ def _in_pose_element(topic_name: str, topic_type: str):
                     ),
                     cls="space-x-2",
                 ),
-                Button(
-                    "Submit",
-                    cls=ButtonT.primary,
-                ),
+                Button("Submit", cls="primary-button"),
             ),
             id=f"{topic_name}-form",
             ws_send=True,
@@ -209,7 +204,7 @@ def _in_pose_element(topic_name: str, topic_type: str):
 
 def _out_image_element(topic_name: str):
     """FastHTML element for output Image/CompressedImage type"""
-    return Img(id=topic_name, name="video-frame", src="", cls="h-80")
+    return DivCentered(Img(id=topic_name, name="video-frame", src="", cls="h-[40vh] w-auto"))
 
 
 _INPUT_ELEMENTS: Dict = {
@@ -325,7 +320,7 @@ def input_topic_card(topic_name: str, topic_type: str, column_class: str = "") -
     """
     card = Card(
         H4(topic_name),
-        cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto rounded-lg",
+        cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto inner-main-card",
         id=topic_name,
     )
     return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
@@ -339,11 +334,11 @@ def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:
     """
     return Card(
         DivHStacked(
-            H4("Inputs"),
+            H4("Inputs", cls="cool-subtitle-mini"),
             _toggle_button(div_to_toggle=inputs_grid_div_id),
             cls="space-x-0",
         ),
-        cls=f"draggable {CardT.secondary} max-h-[25vh] overflow-y-auto rounded-md",
+        cls="draggable main-card max-h-[25vh] overflow-y-auto",
         body_cls="space-y-0",
     )
 
@@ -379,7 +374,7 @@ def output_topic_card(topic_name: str, topic_type: str, column_class: str = "") 
     """
     card = Card(
         H4(topic_name),
-        cls=f"m-2 {column_class} h-[50vh] rounded-lg",
+        cls=f"m-2 {column_class} h-[48vh] inner-main-card",
         id=topic_name,
     )
     return card(_OUTPUT_ELEMENTS[topic_type](topic_name))
@@ -393,11 +388,11 @@ def styled_main_outputs_container(outputs_grid_div_id: str) -> FT:
     """
     return Card(
         DivHStacked(
-            H4("Outputs"),
+            H4("Outputs", cls="cool-subtitle-mini"),
             _toggle_button(div_to_toggle=outputs_grid_div_id),
             cls="space-x-0",
         ),
-        cls=f"draggable {CardT.secondary} overflow-y-auto max-h-[60vh] rounded-md",
+        cls="draggable main-card overflow-y-auto max-h-[60vh]",
         body_cls="space-y-0",
     )
 
@@ -477,7 +472,7 @@ def component_settings_div(
     :return: Component config UI element
     """
     component_div = Card(
-        cls=f"p-4 {settings_col_cls}",
+        cls=f"p-4 {settings_col_cls} main-card",
     )
     settings_grid = Grid(*ui_elements, cols=4, cls="space-y-3 gap-4 p-4")
     nested_settings_grid = Grid(*nested_ui_elements, cols=1, cls="space-y-3 gap-4 p-4")
@@ -494,7 +489,7 @@ def component_settings_div(
                 Grid(
                     Button(
                         "Submit",
-                        cls=ButtonT.primary,
+                        cls="primary-button",
                         hx_post="/settings/submit",
                         hx_target="#main",
                         hx_on__before_request=f"""
@@ -504,7 +499,7 @@ def component_settings_div(
                     ),
                     Button(
                         "Close",
-                        cls=ButtonT.secondary,
+                        cls="secondary-button",
                         hx_get="/",
                         hx_target="#main",
                     ),
@@ -575,15 +570,18 @@ def _styled_logging_audio(output, output_src: str = "info"):
 
 def output_logging_card(current_log):
     return Card(
-        H3("Log"),
-        current_log,
-        cls=f"fix-size draggable {CardT.secondary} h-[60vh] relative rounded-md",
+        DivHStacked(
+            H4("Log", cls="cool-subtitle-mini"),
+            current_log,
+            cls="space-x-0",
+        ),
+        cls="fix-size draggable main-card h-[60vh] max-h-[60vh]",
     )
 
 
 def initial_logging_card():
     output_card = Card(
-        cls="absolute top-7 inset-x-2 bottom-2 overflow-y-auto",
+        cls="terminal-container absolute top-20 inset-x-2 bottom-2 overflow-y-auto",
         id="outputs-log",
     )
     return output_card(_styled_logging_text("Log Started ...", output_src="alert"))
@@ -631,6 +629,7 @@ def nonvalidated_config(
             id=setting_name,
             checked=int(value),
             name=input_name,
+            cls="form-input",
         )
 
     elif field_type in ["str", "unknown"]:
@@ -640,6 +639,7 @@ def nonvalidated_config(
             type="text",
             value=value,
             name=input_name,
+            cls="form-input",
         )
 
     elif field_type in ["int", "float"]:
@@ -649,6 +649,7 @@ def nonvalidated_config(
             type="number",
             value=str(value),
             name=input_name,
+            cls="form-input",
         )
 
     elif field_type == "literal":
@@ -662,6 +663,7 @@ def nonvalidated_config(
             label=setting_name,
             value=parsed_value,
             name=input_name,
+            cls="form-input",
         )
 
     return None
@@ -687,6 +689,7 @@ def validated_config(
             step=validator_props.get("step", 1),
             value=str(value),
             name=input_name,
+            cls="form-input",
         )
 
     elif validator_name == "in":
@@ -697,6 +700,7 @@ def validated_config(
             id=setting_name,
             value=value,
             name=input_name,
+            cls="form-input",
         )
 
     elif validator_name == "less_than":
@@ -707,6 +711,7 @@ def validated_config(
             max=validator_props.get("ref_value", None),
             value=str(value),
             name=input_name,
+            cls="form-input",
         )
     elif validator_name == "greater_than":
         return LabelInput(
@@ -716,6 +721,7 @@ def validated_config(
             min=validator_props.get("ref_value", None),
             value=str(value),
             name=input_name,
+            cls="form-input",
         )
     return nonvalidated_config(
         setting_name,
@@ -781,7 +787,7 @@ def parse_ui_elements_to_simple_and_nested(
                 H4(setting_name),
                 _toggle_button(div_to_toggle=section_id),
             ),
-            cls="p-4",
+            cls="p-4 main-card",
         )
         all_elements = Grid(
             id=section_id,
