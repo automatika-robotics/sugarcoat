@@ -3,67 +3,130 @@
   <source media="(prefers-color-scheme: light)" srcset="docs/_static/SUGARCOAT_LIGHT.png">
   <img alt="Sugarcoat Logo" src="docs/_static/SUGARCOAT_DARK.png"  width="50%">
 </picture>
-<br/><br/>
+
+<br/>
+
 
 🇨🇳 [简体中文](docs/README.zh.md) | 🇯🇵 [日本語](docs/README.ja.md)
 
-Sugarcoat 🍬 is a meta-framework that provides a whole lot of syntactic sugar for creating event-driven multinode systems in ROS2, using an intuitive Python API.
+
+## The Sweetest Way to Build ROS2 Systems
+
+**Sugarcoat** is a meta-framework that injects a whole lot of **syntactic sugar** into building complex, event-driven multinode systems in **ROS2**, all through an intuitive **Python API**.
+
+## Key Features
+
+| Feature | Description |
+| :--- | :--- |
+| **Event-Driven Core** | Built-in primitives for **Events** and **Actions** enables dynamic runtime configuration and control over your system's **Components**. |
+| **Built-in Resilience** | **Fallbacks** and **Fault Tolerance** are core design concepts, ensuring your systems are robust and reliable. |
+| **Intuitive Python API** | Design your entire system—nodes, events, and actions—using clean, readable Python code. |
+| **Dynamic Web UI** **(NEW!)** | Automatically generate a fully dynamic, extensible web interface for monitoring and configuring your system. |
+| **Launch Replacement** | A more pythonic alternative to the ROS2 Launch API, providing greater flexibility and runtime control for real-world applications. |
+
+## Packages Built with Sugarcoat
+
+- [**Kompass**](https://automatikarobotics.com/kompass/): A framework for building robust and comprehensive event-driven navigation stacks using an easy-to-use and intuitive Python API.
+- [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/): A fully-loaded framework for creating interactive physical agents that can understand, remember, and act upon contextual information from their environment.
+
+
+## Get Started
 
 - Learn more about the [**design concepts**](https://automatika-robotics.github.io/sugarcoat/design/index.html) in Sugarcoat 📚
 - Learn how to [**create your own ROS2 package**](https://automatika-robotics.github.io/sugarcoat/use.html) using Sugarcoat 🚀
 
-## Packages created using Sugarcoat
 
-- [**Kompass**](https://automatikarobotics.com/kompass/): a framework for building robust and comprehensive event-driven navigation stacks using an easy-to-use and intuitive Python API
-- [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/): a fully-loaded framework for creating interactive physical agents that can understand, remember, and act upon contextual information from their environment.
+## **(NEW!)** Introducing Dynamic Web UI for Sugarcoat Recipes
 
-## Overview
+The new **Dynamic Web UI** feature takes system visibility and control to the next level. Built with [**FastHTML**](https://www.fastht.ml/) and [**MonsterUI**](https://monsterui.answer.ai/), it is designed to automatically generate a fully dynamic, extensible web interface for any Sugarcoat recipe, completely eliminating the need for manual front-end development.
 
-Sugarcoat is built for ROS2 developers who want to create event-driven systems with multiple nodes that are easy to use, have builtin fallbacks and fault tolerance, and can be configured started with an intuitive Python API. It provides primitives for writing ROS nodes, and events/actions which can start/stop/modify the nodes, in the spirit of event driven software. Sugarcoat is also a replacement for the ROS Launch API.
+This feature instantly transforms your complex, multinode ROS2 system into a monitorable and configurable web application.
 
-A [Component](https://automatika-robotics.github.io/sugarcoat/design/component.html) is the main execution unit in Sugarcoat, each component is configured with [Inputs/Outputs](https://automatika-robotics.github.io/sugarcoat/design/topics.md) and [Fallback](https://automatika-robotics.github.io/sugarcoat/design/fallbacks.html) behaviors. Additionally, each component updates its own [Health Status](https://automatika-robotics.github.io/sugarcoat/design/status.html). Components can be handled and reconfigured dynamically at runtime using [Events](https://automatika-robotics.github.io/sugarcoat/design/events.html) and [Actions](https://automatika-robotics.github.io/sugarcoat/design/actions.html). Events, Actions and Components are passed to the [Launcher](https://automatika-robotics.github.io/sugarcoat/design/launcher.html) which runs the set of components as using multi-threaded or multi-process execution. The Launcher also uses an internal [Monitor](https://automatika-robotics.github.io/sugarcoat/design/monitor.html) to keep track of the components and monitor events.
+### Automatic UI Generation in Action
 
-## Base Component
+See how the Web UI effortlessly generates interfaces for different types of Sugarcoat recipes:
+
+- **Example 1: General Q\&A LLM Recipe**
+  A fully functional interface generated for an MLLM agent recipe from [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/), automatically providing controls for settings and real-time text I/O with the robot.
+
+<p align="center">
+<picture align="center">
+  <img alt="EmbodiedAgents UI Example GIF" src="docs/_static/images/agents_ui.gif" width="60%">
+</picture>
+</p>
+
+- **Example 2: Vision Follower Recipe**
+  A complex system using components from both [**Kompass**](https://automatikarobotics.com/kompass/) and [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/) to control the robot motion and follow a visual target. The UI automatically renders image data, detections, and robot action commands, demonstrating its ability to handle multimedia and complex component interactions.
+
+<p align="center">
+<picture align="center">
+  <img alt="KOMPASS UI Example GIF" src="docs/_static/images/follow_ui.gif" width="60%">
+</picture>
+</p>
+
+### What's Inside?
+
+- **Automatic Settings UI**: Interfaces for configuring the settings of all **Components** used in your recipe are generated on the fly.
+- **Auto I/O Visualization**: Front-end controls and data visualizations for UI **Inputs** and **Outputs** are created automatically.
+- **WebSocket-Based Streaming**: Features bidirectional, low-latency communication for streaming **text, image, and audio** messages.
+- **Responsive Layouts**: Input and output elements are presented in clear, adaptable grid layouts.
+- **Extensible Design**: Easily add support for new message types and custom visualizations through extensions.
+
+
+## How Sugarcoat Works
+
+The core of Sugarcoat revolves around a few concepts:
+
+- **Component**: The main execution unit (a ROS2 lifecycle node abstraction) configured with **Inputs/Outputs** and **Fallback** behaviors. Each component reports its **Health Status**. [Learn More about Components](https://automatika-robotics.github.io/sugarcoat/design/component.html)
 
 <p align="center">
 <picture align="center">
   <source media="(prefers-color-scheme: dark)" srcset="docs/_static/images/diagrams/component_dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/_static/images/diagrams/component_light.png">
-  <img alt="Base Component" src="docs/_static/images/diagrams/component_light.png" width="75%">
+  <img alt="Base Component Diagram" src="docs/_static/images/diagrams/component_light.png" width="75%">
 </picture>
 </p>
 
-## Multi-Process Execution
+- **Events & Actions**: Mechanisms to handle and reconfigure components dynamically at runtime. [Learn More about Events](https://automatika-robotics.github.io/sugarcoat/design/events.html) | [Learn More about Actions](https://automatika-robotics.github.io/sugarcoat/design/actions.html)
+- **Launcher**: Takes your defined Components, Events, and Actions, and executes the system using multi-threaded or multi-process execution. It works with an internal **Monitor** to manage component lifecycles and track events. [Learn More about the Launcher](https://automatika-robotics.github.io/sugarcoat/design/launcher.html)
+
 
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/_static/images/diagrams/multi_process_dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/_static/images/diagrams/multi_process_light.png">
-  <img alt="Multi-process execution" src="docs/_static/images/diagrams/multi_process_light.png" width="80%">
+  <img alt="Multi-process execution Diagram" src="docs/_static/images/diagrams/multi_process_light.png" width="80%">
 </picture>
 </p>
 
-## Installation
 
-For ROS versions >= _humble_, you can install Sugarcoat with your package manager. For example on Ubuntu:
+## 🛠️ Installation
+
+Sugarcoat is available for ROS versions $\ge$ **Humble**.
+
+### Using your Package Manager (Recommended)
+
+On Ubuntu, for example:
 
 `sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
 
-Alternatively, grab your favorite deb package from the [release page](https://github.com/automatika-robotics/sugarcoat/releases) and install it as follows:
+Alternatively, you can install a specific deb package from the [release page](https://github.com/automatika-robotics/sugarcoat/releases):
 
 `sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
 
-If the attrs version from your package manager is < 23.2, install it using pip as follows:
+> **Note:** If your package manager's version of `attrs` is older than 23.2, you may need to update it via pip:
+> `pip install 'attrs>=23.2.0'`
 
-`pip install 'attrs>=23.2.0'`
-
-## Building from source
+### Building from Source
 
 ```shell
 mkdir -p ros-sugar-ws/src
 cd ros-sugar-ws/src
-git clone https://github.com/automatika-robotics/sugarcoat && cd ..
+git clone [https://github.com/automatika-robotics/sugarcoat](https://github.com/automatika-robotics/sugarcoat) && cd ..
+
+# Install dependencies (ensure attrs>=23.2.0 is included)
 pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy setproctitle pyyaml toml
+
 colcon build
 source install/setup.bash
 ```
@@ -77,3 +140,10 @@ Sugarcoat is made available under the MIT license. Details can be found in the [
 ## Contributions
 
 Sugarcoat has been developed in collaboration between [Automatika Robotics](https://automatikarobotics.com/) and [Inria](https://inria.fr/). Contributions from the community are most welcome.
+
+## 🎩 Hat Tip
+
+The **Dynamic Web UI** is powered by two cool open-source projects. A big thank you to Answers.ai for their work on:
+
+- [**FastHTML**](https://www.fastht.ml/): The HTMX based framework that enables automatic generation of our dynamic web interfaces.
+- [**MonsterUI**](https://monsterui.answer.ai/): The styled UI components that make the interface intuitive.
