@@ -46,7 +46,7 @@ This feature instantly transforms your complex, multinode ROS2 system into a mon
 
 See how the Web UI effortlessly generates interfaces for different types of Sugarcoat recipes:
 
-- **Example 1: General Q\&A LLM Recipe**
+- **Example 1: General Q\&A MLLM Recipe**
   A fully functional interface generated for an MLLM agent recipe from [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/), automatically providing controls for settings and real-time text I/O with the robot.
 
 <p align="center">
