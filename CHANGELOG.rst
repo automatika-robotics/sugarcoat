@@ -2,6 +2,55 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (docs) Adds dynamic ui to docs and updates readme
+* (feature) Adds automatika CSS custom style for UI
+* (fix) Adds use of step in reading img msgs
+* (fix) Fixes colors when converting image to jpeg using cv2
+* (fix) Turns ComponentConfig run_type into a private parameter (_run_type) in the attrs class
+* (feature) Makes streaming websocket connections more robust by recreating them after htmx events and adding reconnects for stale cache
+* (fix) Handles nested settings classes in ui
+* (feature) Adds UI_EXTENSIONS to add custom UI elements from derived packages
+* (fix) Fixes parsing optional type for ui serialization
+* (fix) Fixes getting relative path for static files
+* (feature) Adds serialization of additional types
+* (fix) Fixes base attrs handing of parsed types for ui serialization
+* (fix) Handles literals inside generic types correctly
+* (feature) Adds 'dragabble' sections
+* (feature) Adds toggle button to all UI cards
+* (feature) Presists updates settings on the UI
+* (feature) Adds ui output for OccupancyGrid
+* (fix) Fixes de-seralizing qos config in topics
+* (feature) Adds ui dict converters for Point/Pose types
+* (fix) Adjusts inputs/outputs grid display in UI frontend
+* (feature) Adds extensibility to sending various datatypes to ROS topics
+* (fix) Fixes type hint in launcher add_pkg for 3.8 compatibility
+* (fix) Fixes input for 'less than' validator
+* (feature) Adds responsive settings display styling
+* (fix) Adds check for length of payload before putting it on the DOM
+* (feature) Adds sending and logging audio msgs
+* (feature) Adds audio elements to the log and adds clearing inputs after submission
+* (feature) Adds header and audio message elements to frontend
+* (feature) Adds dynamic creating of outputs starting with images
+* (feature) Adds complete set of image and compressed image pre processing
+* (feature) Adds raw data output option in extra callback functions
+* (feature) Adds sending and receiving text, images and errors with websocket endpoint
+* (fix) Fixes base attrs type description for Literal for python3.8+
+* (fix) Moves get_field_info from BaseConfig to BaseAttrs
+* (fix) Fixes transition for component config update service
+* (feature) Adds publishers and subscribers to ui node for input and output topics
+  - Adds method for publishing to inputs
+* (feature) Adds routes for settings update and websocket connection
+* (feature) Adds settings update through ui ros node
+* (refactor) Breaks executable main into two functions
+* (feature) Adds FastHTML based dynamically generated UI for recipe
+  - Adds UI server executable that spins the UI ROS node in a thread
+  - Adds dynamically generated settings UI
+* (feature) Adds helper method to get fields, annotations and validators from BaseComponentConfig
+* (fix) Adds minor fix to published frame id and occupancy grid sender
+* Contributors: ahr, mkabtoul
+
 0.3.2 (2025-09-03)
 ------------------
 * (docs) Updates events docs with new classes
