@@ -55,14 +55,15 @@ See how the Web UI effortlessly generates interfaces for different types of Suga
 </picture>
 </p>
 
-- **Example 2: Vision Follower Recipe**
-  A complex system using components from both [**Kompass**](https://automatikarobotics.com/kompass/) and [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/) to control the robot motion and follow a visual target. The UI automatically renders image data, detections, and robot action commands, demonstrating its ability to handle multimedia and complex component interactions.
+- **Example 2: Point Navigation Recipe**
+  An example for an automatically generated UI for a point navigation system from [**Kompass**](https://automatikarobotics.com/kompass/). The UI automatically renders map data, and sends navigation goals to the robot.
 
 <p align="center">
 <picture align="center">
-  <img alt="KOMPASS UI Example GIF" src="docs/_static/images/follow_ui.gif" width="60%">
+  <img alt="KOMPASS UI Example GIF" src="docs/_static/images/nav_ui.gif" width="60%">
 </picture>
 </p>
+
 
 ### What's Inside?
 

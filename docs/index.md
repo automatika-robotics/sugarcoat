@@ -36,6 +36,7 @@ design/monitor
 :caption: Using Sugarcoat
 
 advanced/use
+advanced/web_ui
 advanced/create_service
 advanced/srvs
 advanced/config

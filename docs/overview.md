@@ -6,11 +6,14 @@
 
 # Sugarcoat 🍬
 
+
 Sugarcoat 🍬 provides a whole lot of syntactic sugar for creating multi-node ROS2 event-driven systems and management using an intuitive Python API.
 
-- Discover the [**advantages of using Sugarcoat**](why.md) for creating ROS2 packages ⚡
+- Discover the [**advantages of using Sugarcoat**](why.md) for creating ROS2 packages
 - Learn more about the [**design concepts**](design/concepts_overview.md) in Sugarcoat
 - Learn how to [**create your own ROS2 package**](advanced/use.md) using Sugarcoat
+- Explore the [**Dynamic Web UI**](advanced/web_ui.md) for real-time system visualization and control
+
 
 ## Overview
 
