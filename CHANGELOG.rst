@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.4.0 (2025-11-04)
+------------------
 * (docs) Adds dynamic ui to docs and updates readme
 * (feature) Adds automatika CSS custom style for UI
 * (fix) Adds use of step in reading img msgs
