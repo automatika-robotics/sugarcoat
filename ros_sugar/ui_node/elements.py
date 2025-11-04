@@ -48,12 +48,7 @@ def _in_bool_element(topic_name: str, topic_type: str):
                     checked=False,
                     name="data",
                 ),
-                Button(
-                    "Send",
-                    type="submit",
-                    title="Send",
-                    cls="primary-button"
-                ),
+                Button("Send", type="submit", title="Send", cls="primary-button"),
                 cls="space-x-4 ml-2",
             ),
             id=f"{topic_name}-form",
@@ -204,7 +199,17 @@ def _in_pose_element(topic_name: str, topic_type: str):
 
 def _out_image_element(topic_name: str):
     """FastHTML element for output Image/CompressedImage type"""
-    return DivCentered(Img(id=topic_name, name="video-frame", src="", cls="h-[40vh] w-auto"))
+    return DivCentered(
+        Img(id=topic_name, name="video-frame", src="", cls="h-[40vh] w-auto")
+    )
+
+
+def _log_audio_element(logging_card, output, data_src: str):
+    return logging_card(_styled_logging_audio(output, data_src))
+
+
+def _log_text_element(logging_card, output, data_src: str):
+    return logging_card(_styled_logging_text(output, data_src))
 
 
 _INPUT_ELEMENTS: Dict = {
@@ -220,6 +225,11 @@ _INPUT_ELEMENTS: Dict = {
 }
 
 _OUTPUT_ELEMENTS: Dict = {
+    "String": _log_text_element,
+    "Float32": _log_text_element,
+    "Float64": _log_text_element,
+    "Bool": _log_text_element,
+    "Audio": _log_audio_element,
     "Image": _out_image_element,
     "CompressedImage": _out_image_element,
     "OccupancyGrid": _out_image_element,
@@ -597,13 +607,13 @@ def remove_child_from_logging_card(logging_card, target_id="loading-dots"):
             break
 
 
-def update_logging_card(
-    logging_card, output: str, output_src: str = "info", is_audio: bool = False
-):
+def update_logging_card(logging_card, output: str, data_type: str, data_src: str = "info"):
     remove_child_from_logging_card(logging_card)
-    if is_audio:
-        return logging_card(_styled_logging_audio(output, output_src))
-    return logging_card(_styled_logging_text(output, output_src))
+    # Handle errors originating from ROS node
+    if data_type == "error":
+        data_type = "String"
+        data_src = "error"
+    return _OUTPUT_ELEMENTS[data_type](logging_card, output, data_src)
 
 
 def update_logging_card_with_loading(logging_card):
