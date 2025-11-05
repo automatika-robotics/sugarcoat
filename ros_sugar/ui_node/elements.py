@@ -527,13 +527,16 @@ def component_settings_div(
 
 
 LOG_STYLES = {
-    "alert": {"prefix": ">>>", "cls": f"{TextT.lg} text-green-500"},
-    "error": {"prefix": ">>> ERROR: ", "cls": f"{TextT.lg} text-red-500"},
-    "warn": {"prefix": ">>> WARNNING: ", "cls": f"{TextT.lg} text-orange-500"},
-    "user": {"prefix": "> User:", "cls": f"{TextT.medium} text-blue-400"},
+    "alert": {"prefix": ">>>", "cls": f"{TextT.lg} tomorrow-night-green"},
+    "error": {"prefix": ">>> ERROR: ", "cls": f"{TextT.lg} tomorrow-night-red"},
+    "warn": {"prefix": ">>> WARNNING: ", "cls": f"{TextT.lg} tomorrow-night-yellow"},
+    "user": {
+        "prefix": "> User:",
+        "cls": f"{TextT.medium} font-bold tomorrow-night-blue",
+    },
     "robot": {
         "prefix": "> Robot:",
-        "cls": f"{TextT.medium} font-bold text-purple-400",
+        "cls": f"{TextT.medium} font-bold tomorrow-night-green",
     },
 }
 # Default style for "info" or any other unspecified source
@@ -620,7 +623,9 @@ def update_logging_card_with_loading(logging_card):
     """Update logging card"""
     return logging_card(
         Div(
-            Strong("> Robot:", cls=f"{TextT.medium} font-bold text-purple-400 mr-2"),
+            Strong(
+                "> Robot:", cls=f"{TextT.medium} font-bold tomorrow-night-green mr-2"
+            ),
             Loading(cls=(LoadingT.dots, LoadingT.md)),
             cls="whitespace-pre-wrap ml-2 p-2 flex items-start",
             id="loading-dots",

@@ -234,4 +234,36 @@ body {
     font-size: 0.95rem;
 }
 
+/* Tomorrow Night Updated Color Palette */
+.tomorrow-night-black {
+    color: #666666;
+}
+
+.tomorrow-night-blue {
+    color: #8db7dc;
+}
+
+.tomorrow-night-cyan {
+    color: #7ecdc3;
+}
+
+.tomorrow-night-green {
+    color: #74c16a;
+}
+
+.tomorrow-night-magenta {
+    color: #c397d8;
+}
+
+.tomorrow-night-red {
+    color: #d54e53;
+}
+
+.tomorrow-night-white {
+    color: #eaeaea;
+}
+
+.tomorrow-night-yellow {
+    color: #f0c674;
+}
 

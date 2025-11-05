@@ -14,7 +14,21 @@ ws_stream.onerror = (err) => {
 };
 
 
+function scrollToBottom() {
+        const log = document.getElementById("outputs-log");
+        if(log){
+            log.scrollTop = log.scrollHeight;
+        }
+    }
+
+// scrollToBottom on new log entry
+setInterval(scrollToBottom, 100);
+
+
 document.addEventListener("DOMContentLoaded", () => {
+
+    scrollToBottom();
+
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const MAX_RETRIES = 10; // reconnect retries
     const wsConnections = new Map(); // id -> { ws, timer }
