@@ -51,8 +51,8 @@ class FHApp:
         self.settings = self._create_component_settings_ui(configs)
         self.in_topics = in_topics
         self.out_topics = out_topics
-        self.inputs = self._create_input_topics_ui(in_topics)
-        self.outputs = self._create_output_topics_ui(out_topics)
+        self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
+        self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
         self.toggle_settings = False
         setup_toasts(self.app)
 
@@ -62,32 +62,6 @@ class FHApp:
     @property
     def _settings_button(self) -> str:
         return "Exit Settings" if self.toggle_settings else "Components Settings"
-
-    @property
-    def _main(self):
-        if not self.toggle_settings:
-            return Main(
-                Grid(
-                    Div(elements.output_logging_card(self.outputs_log)),
-                    Div(self.outputs),
-                    Div(self.inputs, cls="col-span-full"),
-                    id="modal-container",
-                    cols=2,
-                ),
-                Div(id="result"),
-                id="main",
-                cls="pt-2 pb-2",
-                # connect to the default websocket
-                hx_ext="ws",
-                ws_connect="/ws",
-                # NOTE: Function defined in custon js to reconnect streaming websockets
-                # HTMX fires "htmx:afterSwap" after content is swapped into the DOM,
-                # and "htmx:afterOnLoad" / "htmx:afterRequest" for other lifecycle stages
-                # Respond to afterSwap and afterOnLoad to be safe.
-                hx_on__after_on_load="ensureConnectionsForPresentFrames",
-                hx_on__after_swap="ensureConnectionsForPresentFrames",
-            )
-        return self.settings
 
     def get_app(self):
         """Get the FastHTML app"""
@@ -147,6 +121,8 @@ class FHApp:
         displayed_outputs = [
             out for out in outputs if out.msg_type.__name__ not in ["String", "Audio"]
         ]  # String and Audio are displayed in log
+        if not displayed_outputs:
+            return None
         output_divs = []
         grid_id = "outputs-grid"
         outputs_container = elements.styled_main_outputs_container(grid_id)
@@ -211,6 +187,47 @@ class FHApp:
 
     def get_settings(self):
         """Get components settings"""
+        return self.settings
+
+    @property
+    def _main(self):
+        if not self.toggle_settings:
+            main_grid = Grid(
+                id="modal-container",
+                cols=2,
+            )
+            if self.outputs:
+                main_grid(
+                    Div(elements.output_logging_card(self.outputs_log)),
+                    Div(self.outputs),
+                )
+            else:
+                main_grid(
+                    Div(
+                        elements.output_logging_card(self.outputs_log),
+                        cls="col-span-full",
+                    ),
+                )
+            if self.inputs:
+                main_grid(
+                    Div(self.inputs, cls="col-span-full"),
+                )
+
+            return Main(
+                main_grid,
+                Div(id="result"),
+                id="main",
+                cls="pt-2 pb-2",
+                # connect to the default websocket
+                hx_ext="ws",
+                ws_connect="/ws",
+                # NOTE: Function defined in custon js to reconnect streaming websockets
+                # HTMX fires "htmx:afterSwap" after content is swapped into the DOM,
+                # and "htmx:afterOnLoad" / "htmx:afterRequest" for other lifecycle stages
+                # Respond to afterSwap and afterOnLoad to be safe.
+                hx_on__after_on_load="ensureConnectionsForPresentFrames",
+                hx_on__after_swap="ensureConnectionsForPresentFrames",
+            )
         return self.settings
 
     def get_main_page(self):
