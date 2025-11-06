@@ -119,8 +119,8 @@ class FHApp:
     def _create_output_topics_ui(self, outputs: Sequence[Topic]):
         """Creates cards for Output Topics"""
         displayed_outputs = [
-            out for out in outputs if out.msg_type.__name__ not in ["String", "Audio"]
-        ]  # String and Audio are displayed in log
+            out for out in outputs if elements._OUTPUT_ELEMENTS[out.msg_type.__name__].__name__.startswith('_out')
+        ]  # Get output elements that have specific display cards
         if not displayed_outputs:
             return None
         output_divs = []
