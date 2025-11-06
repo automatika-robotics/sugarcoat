@@ -190,7 +190,7 @@ class GenericCallback:
         :returns:   Topic content
         :rtype:     Any
         """
-        return self.get_output()
+        return self.get_output(clear_last=True)
 
     @property
     def got_msg(self):
