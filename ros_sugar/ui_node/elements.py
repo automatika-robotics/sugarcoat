@@ -197,19 +197,19 @@ def _in_pose_element(topic_name: str, topic_type: str):
     )
 
 
-def _out_image_element(topic_name: str):
+def _out_image_element(topic_name: str, **_):
     """FastHTML element for output Image/CompressedImage type"""
     return DivCentered(
         Img(id=topic_name, name="video-frame", src="", cls="h-[40vh] w-auto")
     )
 
 
-def _log_audio_element(logging_card, output, data_src: str):
+def _log_audio_element(logging_card, output, data_src: str, **_):
     return logging_card(_styled_logging_audio(output, data_src))
 
 
-def _log_text_element(logging_card, output, data_src: str):
-    return logging_card(_styled_logging_text(output, data_src))
+def _log_text_element(logging_card, output, data_src: str, id: str = ""):
+    return logging_card(_styled_logging_text(output, data_src, id))
 
 
 _INPUT_ELEMENTS: Dict = {
@@ -543,14 +543,14 @@ LOG_STYLES = {
 DEFAULT_STYLE = {"prefix": ">", "cls": ""}
 
 
-def _styled_logging_text(text: str, output_src: str = "info"):
+def _styled_logging_text(text: str, output_src: str = "info", div_id: str = ""):
     """Builds a styled text log component."""
-    container = Div(cls="whitespace-pre-wrap ml-2 p-2 flex items-start")
+    container = Div(cls="whitespace-pre-wrap ml-2 p-2 flex items-start", id=div_id)
     style = LOG_STYLES.get(output_src, DEFAULT_STYLE)
 
     if output_src in ["user", "robot"]:
         prefix_element = Strong(style["prefix"] + " ", cls=style["cls"])
-        content_element = P(prefix_element, f"{text}")
+        content_element = Span(prefix_element, f"{text}", id="inner-text")
         container(content_element)
     # All other types have the text inside the main Strong tag
     else:
@@ -610,13 +610,36 @@ def remove_child_from_logging_card(logging_card, target_id="loading-dots"):
             break
 
 
-def update_logging_card(logging_card, output: str, data_type: str, data_src: str = "info"):
+def augment_text_in_logging_card(
+    logging_card,
+    new_txt: str,
+    target_id="streaming-text",
+):
+    """Update the inner text of a child in logging_card.children with a matching id."""
+    children = logging_card.children
+    target_child = None
+    for i in range(len(children) - 1, -1, -1):
+        if getattr(children[i], "id", None) == target_id:
+            target_child = children[i]
+            break
+    if not target_child:
+        return logging_card
+    # Update inner text
+    for i in range(len(target_child.children) - 1, -1, -1):
+        if getattr(target_child.children[i], "id", None) == "inner-text":
+            # Append the new text
+            target_child.children[i](Span(f" {new_txt}"))
+            return logging_card
+    return logging_card
+
+
+def update_logging_card(logging_card, output: str, data_type: str, data_src: str = "info", id: str = ""):
     remove_child_from_logging_card(logging_card)
     # Handle errors originating from ROS node
     if data_type == "error":
         data_type = "String"
         data_src = "error"
-    return _OUTPUT_ELEMENTS[data_type](logging_card, output, data_src)
+    return _OUTPUT_ELEMENTS[data_type](logging_card, output, data_src, id=id)
 
 
 def update_logging_card_with_loading(logging_card):
