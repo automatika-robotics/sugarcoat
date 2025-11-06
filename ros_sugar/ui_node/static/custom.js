@@ -14,20 +14,15 @@ ws_stream.onerror = (err) => {
 };
 
 
-function scrollToBottom() {
-        const log = document.getElementById("outputs-log");
-        if(log){
-            log.scrollTop = log.scrollHeight;
-        }
-    }
-
-// scrollToBottom on new log entry
-setInterval(scrollToBottom, 100);
-
-
 document.addEventListener("DOMContentLoaded", () => {
 
-    scrollToBottom();
+    // Observe the logging card for new entries to auto-scroll
+    const log_parent = document.getElementById("logging-card-parent");
+    const observer = new MutationObserver(() => {
+        const log = document.getElementById("outputs-log");
+        log.scrollTop = log.scrollHeight;
+    });
+    observer.observe(log_parent, { childList: true, subtree: true });
 
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const MAX_RETRIES = 10; // reconnect retries

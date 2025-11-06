@@ -589,6 +589,7 @@ def output_logging_card(current_log):
             cls="space-x-0",
         ),
         cls="fix-size draggable main-card h-[60vh] max-h-[60vh]",
+        id="logging-card-parent",
     )
 
 
