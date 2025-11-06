@@ -204,11 +204,11 @@ def _out_image_element(topic_name: str, **_):
     )
 
 
-def _log_audio_element(logging_card, output, data_src: str, **_):
-    return logging_card(_styled_logging_audio(output, data_src))
+def _log_audio_element(logging_card, output, data_src: str, id: str = "audio"):
+    return logging_card(_styled_logging_audio(output, data_src, id))
 
 
-def _log_text_element(logging_card, output, data_src: str, id: str = ""):
+def _log_text_element(logging_card, output, data_src: str, id: str = "text"):
     return logging_card(_styled_logging_text(output, data_src, id))
 
 
@@ -543,7 +543,7 @@ LOG_STYLES = {
 DEFAULT_STYLE = {"prefix": ">", "cls": ""}
 
 
-def _styled_logging_text(text: str, output_src: str = "info", div_id: str = ""):
+def _styled_logging_text(text: str, output_src: str = "info", div_id: str = "text"):
     """Builds a styled text log component."""
     container = Div(cls="whitespace-pre-wrap ml-2 p-2 flex items-start", id=div_id)
     style = LOG_STYLES.get(output_src, DEFAULT_STYLE)
@@ -563,9 +563,9 @@ def _styled_logging_text(text: str, output_src: str = "info", div_id: str = ""):
     return container
 
 
-def _styled_logging_audio(output, output_src: str = "info"):
+def _styled_logging_audio(output, output_src: str = "info", div_id: str = "audio"):
     """Builds a styled audio log component."""
-    container = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2")
+    container = DivLAligned(cls="whitespace-pre-wrap ml-2 p-2", id=div_id)
     style = LOG_STYLES.get(output_src, DEFAULT_STYLE)
 
     audio_element = Audio(
@@ -613,7 +613,7 @@ def remove_child_from_logging_card(logging_card, target_id="loading-dots"):
 def augment_text_in_logging_card(
     logging_card,
     new_txt: str,
-    target_id="streaming-text",
+    target_id="text",
 ):
     """Update the inner text of a child in logging_card.children with a matching id."""
     children = logging_card.children
@@ -628,18 +628,20 @@ def augment_text_in_logging_card(
     for i in range(len(target_child.children) - 1, -1, -1):
         if getattr(target_child.children[i], "id", None) == "inner-text":
             # Append the new text
-            target_child.children[i](Span(f" {new_txt}"))
+            target_child.children[i](Span(f"{new_txt}"))
             return logging_card
     return logging_card
 
 
-def update_logging_card(logging_card, output: str, data_type: str, data_src: str = "info", id: str = ""):
+def update_logging_card(
+    logging_card, output: str, data_type: str, data_src: str = "info"
+):
     remove_child_from_logging_card(logging_card)
     # Handle errors originating from ROS node
     if data_type == "error":
         data_type = "String"
         data_src = "error"
-    return _OUTPUT_ELEMENTS[data_type](logging_card, output, data_src, id=id)
+    return _OUTPUT_ELEMENTS[data_type](logging_card, output, data_src)
 
 
 def update_logging_card_with_loading(logging_card):
