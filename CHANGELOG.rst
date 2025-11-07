@@ -2,6 +2,19 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (feature) Adds UI font files locally
+* (fix) Fixes logging card scroll behavior
+* (fix) Fixes drawing of output UI elements by filtering those that log
+* (fix) Fixes setting id in divs added to logging card
+* (fix) Clears last message when getting output for UI
+* (feature) Adds method to augment exisiting text on logging card
+* (fix) Fixes terminal scrolling behavior in UI
+* (fix) Makes inputs/outputs displays conditional in UI
+* (refactor) Moves logging card outputs to their own functions based on datatype
+* Contributors: ahr, mkabtoul
+
 0.4.0 (2025-11-04)
 ------------------
 * (docs) Adds dynamic ui to docs and updates readme
