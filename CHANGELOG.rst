@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.4.1 (2025-11-07)
+------------------
 * (feature) Adds UI font files locally
 * (fix) Fixes logging card scroll behavior
 * (fix) Fixes drawing of output UI elements by filtering those that log
