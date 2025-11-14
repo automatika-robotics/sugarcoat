@@ -548,7 +548,9 @@ class OdomCallback(GenericCallback):
         :rtype: Odometry
         """
         odom_in_map_pose_data = Odometry()
-        odom_in_map_pose_data.pose.pose.position = transform.transform.translation
+        odom_in_map_pose_data.pose.pose.position.x = transform.transform.translation.x
+        odom_in_map_pose_data.pose.pose.position.y = transform.transform.translation.y
+        odom_in_map_pose_data.pose.pose.position.z = transform.transform.translation.z
         odom_in_map_pose_data.pose.pose.orientation = transform.transform.rotation
 
         odom_in_goal_pose_data: Odometry = utils.odom_from_frame1_to_frame2(
