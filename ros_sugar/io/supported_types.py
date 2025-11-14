@@ -426,7 +426,7 @@ class OccupancyGrid(SupportedType):
 
         # flatten by column
         # index (0,0) is the lower right corner of the grid in ROS
-        msg.data = output.flatten("F")
+        msg.data = output.flatten("F").astype(np.int8).tolist()
         return msg
 
 
