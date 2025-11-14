@@ -2,7 +2,7 @@
 
 import time as rostime
 from typing import Any, Optional
-
+from abc import abstractmethod
 import rclpy
 from attrs import Factory, define, field
 from rclpy.action.client import ActionClient
@@ -153,6 +153,50 @@ class ServiceClientHandler:
         # return response
         return self.future.result()
 
+
+class RobotPluginServiceClient(ServiceClientHandler):
+    """Template for creating robot specific plugin clients"""
+    def __init__(self, client_node: Node, srv_name: str = "robot_serice_name", srv_type: Optional[type] = None):
+        super().__init__(
+            srv_type=srv_type,
+            srv_name=srv_name,
+            client_node=client_node,
+        )
+        self.__name = srv_name
+        self.__type = srv_type.__class__.__name__
+
+    @property
+    def name(self) -> str:
+        """Get the service name
+
+        :return: Service name
+        :rtype: str
+        """
+        return self.__name
+
+    @property
+    def msg_type(self) -> str:
+        """Get the service type
+
+        :return: Service type
+        :rtype: str
+        """
+        return self.__type
+
+    @abstractmethod
+    def start(self, *_) -> bool:
+        """Implement any calls to execute on the start of the connection"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def publish(self, *_) -> bool:
+        """Send service calls / publish commands"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def end(self, *_) -> bool:
+        """Implement any calls to execute on the end of the connection"""
+        raise NotImplementedError
 
 class ActionClientHandler:
     """
