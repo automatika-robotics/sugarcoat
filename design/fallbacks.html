@@ -1,0 +1,643 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta content="cQVj-BaADcGVOGB7GOvfbkgJjxni10C2fYWCZ03jOeo" name="google-site-verification" />
+
+    <title>Fallbacks &#8212; Sugarcoat 0.4.1 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=8eace815" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=a3cf13c8"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'design/fallbacks';</script>
+    <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/design/fallbacks.html" />
+    <link rel="icon" href="../_static/favicon.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Launcher" href="launcher.html" />
+    <link rel="prev" title="Actions" href="actions.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/SUGARCOAT_LIGHT.png" class="logo__image only-light" alt="Sugarcoat 0.4.1 documentation - Home"/>
+    <script>document.write(`<img src="../_static/SUGARCOAT_DARK.png" class="logo__image only-dark" alt="Sugarcoat 0.4.1 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://automatikarobotics.com/" title="Automatika" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><img src="../_static/automatika-logo.png" class="icon-link-image" alt="Automatika"/></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/automatika-robotics/sugarcoat" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/B9ZU6qjzND" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Overview</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Sugarcoat 🍬</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Design Concepts</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="concepts_overview.html">Concepts Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="component.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="topics.html">Topics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="status.html">Health Status</a></li>
+<li class="toctree-l1"><a class="reference internal" href="events.html">Events</a></li>
+<li class="toctree-l1"><a class="reference internal" href="actions.html">Actions</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Fallbacks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="launcher.html">Launcher</a></li>
+<li class="toctree-l1"><a class="reference internal" href="monitor.html">Monitor</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Using Sugarcoat</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/web_ui.html">Using the Dynamic Web UI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/create_service.html">Converting a Sugarcoat Python Script into a systemd Service</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/config.html">Don’t Like YAML? We’ve Got You 😎</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">References</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../apidocs/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component_actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component_actions</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.events.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.events</span></code></a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/blob/main/docs/design/fallbacks.md?plain=1" target="_blank"
+   class="btn btn-sm btn-source-file-button dropdown-item"
+   title="Show source"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-code"></i>
+  </span>
+<span class="btn__text-container">Show source</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/edit/main/docs/design/fallbacks.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/issues/new?title=Issue%20on%20page%20%2Fdesign/fallbacks.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/design/fallbacks.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Fallbacks</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#fallbacks-categories">Fallbacks Categories:</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#default-behavior-in-a-component">Default behavior in a Component:</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#usage-in-a-component">Usage in a Component:</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="fallbacks">
+<h1>Fallbacks<a class="headerlink" href="#fallbacks" title="Link to this heading">#</a></h1>
+<p><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html#classes"><span class="std std-ref">Components Fallbacks</span></a> contain the set of <a class="reference internal" href="actions.html"><span class="std std-doc">Actions</span></a> to be executed when a failure <a class="reference internal" href="status.html"><span class="std std-doc">status</span></a> is detected. Fallbacks are defines with an Action or a list of Actions to be executed in sequence. Each Action in the list is retried until max_retries is reached.</p>
+<figure class="align-default" id="fig-fallbacks">
+<a class="reference internal image-reference" href="../_images/fallbacks_light.png"><img alt="Fallbacks and Health Status" src="../_images/fallbacks_light.png" style="width: 900px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Fallbacks and Health Status</span><a class="headerlink" href="#fig-fallbacks" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<section id="fallbacks-categories">
+<h2>Fallbacks Categories:<a class="headerlink" href="#fallbacks-categories" title="Link to this heading">#</a></h2>
+<p>Each component has 3 built-in possible fallbacks categories along with the possibility to set a behavior for “any failure” and a “giveup” behavior that is executed when all failure actions are exhausted.</p>
+<ul class="simple">
+<li><p>on_component_fail</p></li>
+<li><p>on_algorithm_fail</p></li>
+<li><p>on_system_fail</p></li>
+<li><p>on_any_fail</p></li>
+<li><p>on_giveup</p></li>
+</ul>
+<p>The first three are designed to correspond to the three different <a class="reference internal" href="status.html"><span class="std std-doc">Health Status</span></a> a Component can take other than “Healthy” status. ‘on_any_fail’ is used to define a fallback policy regardless of the failure category. Finally, ‘on_give’ is the final Action the Component will execute when all the fallbacks and retries are exhausted.</p>
+</section>
+<section id="default-behavior-in-a-component">
+<h2>Default behavior in a Component:<a class="headerlink" href="#default-behavior-in-a-component" title="Link to this heading">#</a></h2>
+<p>The default behavior in a Component is for the component to broadcast the status on any detected failure. By default the component sets ‘on_any_fail’ Fallback to ‘Action(self.broadcast_status)’ with ‘max_retries=None’.</p>
+<p>Action(s) set for ‘on_any_fail’ is executed for <em>any</em> failure for which no fallback action is defined.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Each Component already owns its own ComponentFallback configured to the previous default behavior. The only thing required is to configure the Actions executed at each (or any) failure type.</p>
+</div>
+</section>
+<section id="usage-in-a-component">
+<h2>Usage in a Component:<a class="headerlink" href="#usage-in-a-component" title="Link to this heading">#</a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">BaseComponent</span>
+    <span class="kn">from</span> <span class="nn">ros_sugar.actions</span> <span class="kn">import</span> <span class="n">ComponentActions</span>
+
+    <span class="n">my_component</span> <span class="o">=</span> <span class="n">BaseComponent</span><span class="p">(</span><span class="n">component_name</span><span class="o">=</span><span class="s1">&#39;test_component&#39;</span><span class="p">)</span>
+
+    <span class="c1"># Set fallback for component failure to restart the component</span>
+    <span class="n">my_component</span><span class="o">.</span><span class="n">on_component_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">ComponentActions</span><span class="o">.</span><span class="n">restart</span><span class="p">(</span><span class="n">component</span><span class="o">=</span><span class="n">my_component</span><span class="p">))</span>
+
+    <span class="c1"># Change fallback for any failure</span>
+    <span class="n">my_component</span><span class="o">.</span><span class="n">on_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">Action</span><span class="p">(</span><span class="n">my_component</span><span class="o">.</span><span class="n">restart</span><span class="p">))</span>
+
+    <span class="c1"># First broadcast status, if another failure happens -&gt; restart</span>
+    <span class="n">my_component</span><span class="o">.</span><span class="n">on_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="p">[</span><span class="n">Action</span><span class="p">(</span><span class="n">my_component</span><span class="o">.</span><span class="n">broadcast_status</span><span class="p">),</span> <span class="n">Action</span><span class="p">(</span><span class="n">my_component</span><span class="o">.</span><span class="n">restart</span><span class="p">)])</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="actions.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Actions</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="launcher.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Launcher</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#fallbacks-categories">Fallbacks Categories:</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#default-behavior-in-a-component">Default behavior in a Component:</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#usage-in-a-component">Usage in a Component:</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By Automatika Robotics
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2025, Automatika Robotics.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
