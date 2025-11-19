@@ -60,14 +60,14 @@ class Publisher:
         """
         self._pre_processors = processors
 
-    def _run_processor(self, processor: Union[Callable, socket], output: Any) -> Any:
+    def _run_processor(self, processor: Union[Callable, socket], *output) -> Any:
         """Run external processors
 
         :param processor: A callable or a socket
         :type processor: Union[Callable, socket]
         """
         if isinstance(processor, Callable):
-            return processor(output=output)
+            return processor(*output)
 
         try:
             out_dict = {"output": output}
@@ -86,10 +86,35 @@ class Publisher:
                 f"Error in external processor for {self.output_topic.name}: {e}"
             )
 
+    def _prepare_for_publish(self, *output) -> Any:
+        """Prepare the output for publishing by applying the pre-processors
+
+        :return: Pre-processed output rerady for converting and publishing
+        :rtype: Any
+        """
+        output_types = [type(arg) for arg in output]
+        if self._pre_processors:
+            for processor in self._pre_processors:
+                pre_output = self._run_processor(processor, *output)
+                # if any processor output is None, then dont publish
+                if pre_output is None:
+                    return None
+                pre_output_types = [type(arg) for arg in pre_output]
+                # type check processor output if incorrect, raise an error
+                if not all(
+                    out_type == pre_output_type
+                    for out_type, pre_output_type in zip(output_types, pre_output_types)
+                ):
+                    get_logger(self.node_name).warn(
+                        f"The output produced by the component for topic {self.output_topic.name} is of type {output}. Got pre_processor output of type {pre_output_types}"
+                    )
+                # if all good, set output equal to post output
+                output = pre_output
+        return output
+
     def publish(
         self,
-        output: Any,
-        *args,
+        *output,
         frame_id: Optional[str] = None,
         **kwargs,
     ) -> None:
@@ -100,32 +125,20 @@ class Publisher:
         :type output: Any
         """
         # Apply any output pre_processors sequentially before publishing, if defined
-        output_type = type(output)
-        if self._publisher:
-            if self._pre_processors:
-                for processor in self._pre_processors:
-                    pre_output = self._run_processor(processor, output)
-                    # if any processor output is None, then dont publish
-                    if pre_output is None:
-                        return None
-                    # type check processor output if incorrect, raise an error
-                    if type(pre_output) is not output_type:
-                        get_logger(self.node_name).warn(
-                            f"The output produced by the component for topic {self.output_topic.name} is of type {output_type.__name__}. Got pre_processor output of type {type(pre_output).__name__}"
-                        )
-                    # if all good, set output equal to post output
-                    output = pre_output
-            msg = self.output_topic.msg_type.convert(output, *args, **kwargs)
-            if msg:
-                if frame_id and not hasattr(msg, "header"):
-                    get_logger(self.node_name).warn(
-                        f"Cannot add a header to non-stamped message of type '{type(msg)}'"
-                    )
-                elif hasattr(msg, "header"):
-                    # Add a header
-                    msg.header = Header()
-                    msg.header.frame_id = frame_id or msg.header.frame_id or ""
-                    msg.header.stamp = (
-                        Clock(clock_type=ClockType.ROS_TIME).now().to_msg()
-                    )
-                self._publisher.publish(msg)
+        if self._publisher is None:
+            return
+        output = self._prepare_for_publish(*output)
+        if output is None:
+            return
+        msg = self.output_topic.msg_type.convert(*output, **kwargs)
+        if msg:
+            if frame_id and not hasattr(msg, "header"):
+                get_logger(self.node_name).warn(
+                    f"Cannot add a header to non-stamped message of type '{type(msg)}'"
+                )
+            elif hasattr(msg, "header"):
+                # Add a header
+                msg.header = Header()
+                msg.header.frame_id = frame_id or msg.header.frame_id or ""
+                msg.header.stamp = Clock(clock_type=ClockType.ROS_TIME).now().to_msg()
+            self._publisher.publish(msg)

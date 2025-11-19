@@ -56,7 +56,7 @@ from ..utils import (
     get_methods_with_decorator,
     log_srv,
 )
-from ..base_clients import RobotPluginServiceClient
+from ..robot_plugin import RobotPluginServiceClient
 from ..tf import TFListener, TFListenerConfig
 
 
@@ -266,8 +266,6 @@ class BaseComponent(lifecycle.Node):
             out.msg_type.convert = selected_convert
         return outputs
 
-
-
     def _use_robot_plugin(self):
         """Replace the component inputs/outputs with topics or clients provided by the robot plugin
 
@@ -278,9 +276,13 @@ class BaseComponent(lifecycle.Node):
         try:
             robot_plugins = importlib.import_module(self.config._robot_plugin)
             # Type hints are good, preserved from original
-            robot_feedback_plugins: Dict[str, Union[Topic, RobotPluginServiceClient]] = robot_plugins.robot_feedback
-            robot_action_plugins: Dict[str, Union[Topic, RobotPluginServiceClient]] = robot_plugins.robot_action
-            self.get_logger().info(f"Successfully loaded robot plugin: '{self.config._robot_plugin}'")
+            robot_feedback_plugins: Dict[str, Topic] = robot_plugins.robot_feedback
+            robot_action_plugins: Dict[str, Union[Topic, RobotPluginServiceClient]] = (
+                robot_plugins.robot_action
+            )
+            self.get_logger().info(
+                f"Successfully loaded robot plugin: '{self.config._robot_plugin}'"
+            )
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError(
                 f"Robot Plugin is enabled for component '{self.node_name}', "
@@ -295,7 +297,9 @@ class BaseComponent(lifecycle.Node):
 
         # Handle Robot Feedback (System Input Topics)
         if self.config._enable_plugin_feedbacks_handling:
-            self.get_logger().info("Checking for robot plugin feedback (input) replacements...")
+            self.get_logger().info(
+                "Checking for robot plugin feedback (input) replacements..."
+            )
             for topic in self.in_topics:
                 msg_type_name = topic.msg_type.__name__
                 # find a matching plugin by message type
@@ -310,11 +314,15 @@ class BaseComponent(lifecycle.Node):
                         self.get_logger().warn(
                             f"Robot Plugin Topic Name will be Used! To change it, replace the name in '{self.config._robot_plugin}'"
                         )
-                    self._replace_input_topic(topic.name, plugin_value.name, plugin_value.msg_type)
+                    self._replace_input_topic(
+                        topic.name, plugin_value.name, plugin_value.msg_type
+                    )
 
         # 4. Handle Actions (Output Topics) - Optimized O(N) loop
         if self.config._enable_plugin_actions_handling:
-            self.get_logger().info("Checking for robot plugin action (output) replacements...")
+            self.get_logger().info(
+                "Checking for robot plugin action (output) replacements..."
+            )
             for topic in self.out_topics:
                 msg_type_name = topic.msg_type.__name__
                 plugin_value = robot_action_plugins.get(msg_type_name)
@@ -328,8 +336,12 @@ class BaseComponent(lifecycle.Node):
                         self.get_logger().warn(
                             f"Robot Plugin Topic Name will be Used! To change it, replace the name in '{self.config._robot_plugin}'"
                         )
-                    self._replace_output_topic(topic.name, plugin_value.name, plugin_value.msg_type)
-                elif plugin_value and issubclass(plugin_value, RobotPluginServiceClient):
+                    self._replace_output_topic(
+                        topic.name, plugin_value.name, plugin_value.msg_type
+                    )
+                elif plugin_value and issubclass(
+                    plugin_value, RobotPluginServiceClient
+                ):
                     # Check for plugin_value truthiness before issubclass to avoid error on None
                     self.get_logger().info(
                         f"Plugin provides a client for type '{topic.msg_type}': Replacing output topic '{topic.name}' ({msg_type_name}) "
@@ -338,7 +350,6 @@ class BaseComponent(lifecycle.Node):
                     # Instantiate the client class, passing 'self' (the component)
                     client_instance = plugin_value(self)
                     self._replace_output_by_client(topic.name, client_instance)
-
 
     # Managing algorithms
     @property
@@ -1685,7 +1696,9 @@ class BaseComponent(lifecycle.Node):
         # Create New Topic/Callback
         try:
             new_topic = Topic(name=new_name, msg_type=msg_type)
-            new_callback = new_topic.msg_type.callback(new_topic, node_name=self.node_name)
+            new_callback = new_topic.msg_type.callback(
+                new_topic, node_name=self.node_name
+            )
         except Exception as e:
             error_msg = f"Invalid topic parameters: {e}"
             return error_msg
@@ -1709,9 +1722,7 @@ class BaseComponent(lifecycle.Node):
 
         return None
 
-    def _update_inactive_input_topic(
-        self, old_topic, new_topic
-    ):
+    def _update_inactive_input_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new input topic"""
         self.get_logger().info("Updating inactive topic lists (Parent implementation)")
 
@@ -1764,9 +1775,7 @@ class BaseComponent(lifecycle.Node):
         # Handle Active Publisher
         # If the publisher is active, "hot-swap" it
         if publisher._publisher:
-            self.get_logger().info(
-                f"Destroying publisher for old topic '{topic_name}'"
-            )
+            self.get_logger().info(f"Destroying publisher for old topic '{topic_name}'")
             self.destroy_publisher(publisher._publisher)
 
             self.get_logger().info(f"Creating publisher for new topic '{new_name}'")
@@ -1782,9 +1791,7 @@ class BaseComponent(lifecycle.Node):
 
         return None
 
-    def _update_inactive_output_topic(
-        self, old_topic, new_topic
-    ):
+    def _update_inactive_output_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new output topic"""
         self.get_logger().info("Updating inactive topic lists (Parent implementation)")
 
@@ -1799,8 +1806,9 @@ class BaseComponent(lifecycle.Node):
                 "Updating publisher dictionary anyway."
             )
 
-
-    def _replace_output_by_client(self, topic_name: str, service_client: RobotPluginServiceClient) -> Optional[str]:
+    def _replace_output_by_client(
+        self, topic_name: str, service_client: RobotPluginServiceClient
+    ) -> Optional[str]:
         """Replaces an output topic by a robot service client - Used for enabling clients from robot plugins
 
         :param topic_name: Old topic name
@@ -1830,14 +1838,14 @@ class BaseComponent(lifecycle.Node):
             self.destroy_publisher(publisher._publisher)
 
         # Update publishers_dict
-        self.publishers_dict.pop(normalized_topic_name)
+        old_publisher = self.publishers_dict.pop(normalized_topic_name)
+        service_client.replace_publisher(old_publisher)
         # Note: new_name comes from new_topic.name
         self.publishers_dict[service_client.name] = service_client
 
         # update the internal lists
         self._update_inactive_output_topic(old_topic, service_client)
         return None
-
 
     @log_srv
     def _change_topic_srv_callback(
