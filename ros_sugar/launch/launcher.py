@@ -92,7 +92,7 @@ class Launcher:
         config_file: Optional[str] = None,
         enable_monitoring: bool = True,
         activation_timeout: Optional[float] = None,
-        robot_plugin: Optional[str] = None
+        robot_plugin: Optional[str] = None,
     ) -> None:
         """Initialize launcher to manager components launch in ROS2
 
