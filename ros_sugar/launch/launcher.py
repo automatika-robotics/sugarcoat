@@ -104,8 +104,8 @@ class Launcher:
         :type enable_monitoring: bool, optional
         :param activation_timeout: Timeout (seconds) for waiting on ROS2 nodes to come up for activation, defaults to None
         :type activation_timeout: float, optional
-        :param enable_client: If True, launches a separate client executable, defaults to False
-        :type enable_client: bool, optional
+        :param robot_plugin: Name of the robot plugin package for compatibility handling, defaults to None
+        :type robot_plugin: str, optional
         """
         # Make sure RCLPY in initialized
         if not rclpy.ok():

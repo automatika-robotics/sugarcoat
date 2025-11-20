@@ -297,9 +297,6 @@ class BaseComponent(lifecycle.Node):
 
         # Handle Robot Feedback (System Input Topics)
         if self.config._enable_plugin_feedbacks_handling:
-            self.get_logger().info(
-                "Checking for robot plugin feedback (input) replacements..."
-            )
             for topic in self.in_topics:
                 msg_type_name = topic.msg_type.__name__
                 # find a matching plugin by message type
@@ -320,9 +317,6 @@ class BaseComponent(lifecycle.Node):
 
         # 4. Handle Actions (Output Topics) - Optimized O(N) loop
         if self.config._enable_plugin_actions_handling:
-            self.get_logger().info(
-                "Checking for robot plugin action (output) replacements..."
-            )
             for topic in self.out_topics:
                 msg_type_name = topic.msg_type.__name__
                 plugin_value = robot_action_plugins.get(msg_type_name)
@@ -1834,7 +1828,6 @@ class BaseComponent(lifecycle.Node):
         # Handle Active Publisher
         # If the publisher is active, "hot-swap"
         if publisher._publisher:
-            self.get_logger().warn(f"Destroying publisher for old topic '{topic_name}'")
             self.destroy_publisher(publisher._publisher)
 
         # Update publishers_dict
