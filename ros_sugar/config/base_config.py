@@ -280,7 +280,7 @@ class BaseComponentConfig(BaseConfig):
     _robot_plugin: Optional[str] = field(default=None, alias="_robot_plugin")
     # Enable handling the robot plugin in the component
     _enable_plugin_feedbacks_handling: bool = field(
-        default=True, alias="_enable_plugin_feedback_handling"
+        default=True, alias="_enable_plugin_feedbacks_handling"
     )
     _enable_plugin_actions_handling: bool = field(
         default=False, alias="_enable_plugin_actions_handling"
