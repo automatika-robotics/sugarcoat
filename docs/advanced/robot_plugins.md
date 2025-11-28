@@ -161,10 +161,8 @@ launcher = Launcher(config_file=config_file, robot_plugin="myrobot_plugin")
 Re-run the recipe after enabling the plugin, and Voila! The components now will be expecting the plugin odometry topic of type `CustomOdom`. Moreover, the `DriveManager` will no longer publish the `/cmd_vel` topic. Instead, it has created a service client in accordance to our custom plugin.
 
 
-<iframe width="560" height="315"
-  src="https://www.youtube-nocookie.com/embed/oZN6pcJKgfY"
-  frameborder="0"
-  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-  allowfullscreen
-  referrerpolicy="strict-origin-when-cross-origin">
-</iframe>
+```{youtube} oZN6pcJKgfY
+:width: 600
+:height: 338
+:align: center
+```
