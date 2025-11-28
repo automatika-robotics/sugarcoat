@@ -18,7 +18,8 @@
 | **事件驱动核心** | 内置的 **事件（Events）** 和 **动作（Actions）** 原语，使你能够在运行时动态配置和控制系统的 **组件（Components）**。 |
 | **内置韧性** | **回退机制（Fallbacks）** 和 **容错设计（Fault Tolerance）** 是核心概念，确保系统的健壮性与可靠性。 |
 | **直观的 Python API** | 使用简洁、可读的 Python 代码设计整个系统——包括节点、事件和动作。 |
-| **动态 Web UI** **（全新！）** | 自动生成可动态扩展的 Web 界面，用于监控和配置系统。 |
+| **动态 Web UI** | 自动生成可动态扩展的 Web 界面，用于监控和配置系统。 |
+| **通用应用 [使用机器人插件](https://www.youtube.com/watch?v=oZN6pcJKgfY) （!新）** | 允许您编写可在任何机器人上运行而无需更改代码的通用、可移植的自动化逻辑 |
 | **Launch 替代方案** | 一个比 ROS2 Launch API 更加 Pythonic 的替代方案，为真实应用提供更灵活的运行时控制能力。 |
 
 ## 基于 Sugarcoat 构建的框架
@@ -30,6 +31,8 @@
 
 - 了解 Sugarcoat 的[**设计概念**](https://automatika-robotics.github.io/sugarcoat/design/index.html) 📚
 - 学习如何使用 Sugarcoat [**创建你自己的 ROS2 包**](https://automatika-robotics.github.io/sugarcoat/use.html) 🚀
+- [**将您的自动化配方移植到不同的硬件上**](https://automatika-robotics.github.io/sugarcoat/advanced/robot_plugins.html) 使用 **机器人插件**
+- 探索 [**动态 Web UI**](https://automatika-robotics.github.io/sugarcoat/advanced/web_ui.html) 以实现实时系统可视化和控制
 
 ## **（全新！）** 介绍 Sugarcoat Recipes 的动态 Web UI
 

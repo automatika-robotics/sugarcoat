@@ -275,7 +275,6 @@ class BaseComponent(lifecycle.Node):
         # Load the plugin module and its definitions
         try:
             robot_plugins = importlib.import_module(self.config._robot_plugin)
-            # Type hints are good, preserved from original
             robot_feedback_plugins: Dict[str, Topic] = robot_plugins.robot_feedback
             robot_action_plugins: Dict[str, Union[Topic, RobotPluginServiceClient]] = (
                 robot_plugins.robot_action
@@ -315,7 +314,7 @@ class BaseComponent(lifecycle.Node):
                         topic.name, plugin_value.name, plugin_value.msg_type
                     )
 
-        # 4. Handle Actions (Output Topics) - Optimized O(N) loop
+        # Handle Actions (Output Topics)
         if self.config._enable_plugin_actions_handling:
             for topic in self.out_topics:
                 msg_type_name = topic.msg_type.__name__
