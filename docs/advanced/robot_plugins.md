@@ -73,7 +73,7 @@ launcher = Launcher(robot_plugin="myrobot_plugin")
 
 ## An Example Robot Plugin
 
-We created an example plugin called `myrobot_plugin` to bridge a standard robot commands (`Twist`) and a standard feedback (`Odometry`) to two custom interfaces.
+Lets explore an example of a custom plugin called [`myrobot_plugin`]((https://github.com/automatika-robotics/robot-plugin-example)). The plugin is made to bridge a standard robot commands (`Twist`) and a standard feedback (`Odometry`) to two custom interfaces.
 
 ### 1. Custom Interfaces
 
@@ -136,15 +136,15 @@ A `server_node.py` is provided to simulate the robot's ROS2 server. It spins a m
 
 ## See the Example Robot Plugin in Action
 
-We tested the example plugin with [**Kompass**](https://github.com/automatika-robotics/kompass) which is an event-driven navigation framework build on top of Sugarcoat.
+Here the example plugin is tested with [**Kompass**](https://github.com/automatika-robotics/kompass) which is an event-driven navigation framework build on top of Sugarcoat.
 
 - To recplicate this test, start by installing Kompass from source by following the instructions [here](https://automatika-robotics.github.io/kompass/install.html)
 
 - Pull the [myrobot_plugin_interface](https://github.com/automatika-robotics/robot-plugin-example) to your ROS2 workspace and build it.
 
-We performed the test by first running the `turtlebot3_test` and observing the subscribed and published topics. You will see that the components are subscribed to `/odometry/filtered` topic of type `Odometry`. The `DriveManager` component will also be publishing the robot commands as `Twist` messages on `/cmd_vel` topic (or `TwistStamped` based on your ROS2 distribution).
+Start by running the [`turtlebot3_test`](https://github.com/automatika-robotics/kompass/blob/main/kompass/recipes/turtlebot3.py) without the plugin and observe the subscribed and published topics. You will see that the components are subscribed to `/odometry/filtered` topic of type `Odometry`. The `DriveManager` component will also be publishing the robot commands as `Twist` messages on `/cmd_vel` topic (or `TwistStamped` based on your ROS2 distribution).
 
-To enable the plugin, we just need to edit one line in the recipe to change the exisitng:
+To enable the plugin, just edit one line in the recipe to change the exisitng launcher initialization from the following:
 ```python
 
 launcher = Launcher(robot_plugin="myrobot_plugin")
@@ -158,7 +158,7 @@ launcher = Launcher(config_file=config_file, robot_plugin="myrobot_plugin")
 
 ```
 
-Re-run the recipe after enabling the plugin, and Voila! The components now will be expecting the plugin odometry topic of type `CustomOdom`. Moreover, the `DriveManager` will no longer publish the `/cmd_vel` topic. Instead, it has created a service client in accordance to our custom plugin.
+Re-run the recipe after enabling the plugin, and Voila! The components now will be expecting the plugin odometry topic of type `CustomOdometry`. Moreover, the `DriveManager` will no longer publish the `/cmd_vel` topic. Instead, it has created a service client in accordance with our custom plugin.
 
 
 ```{youtube} oZN6pcJKgfY
