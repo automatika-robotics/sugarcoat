@@ -159,7 +159,7 @@ class SupportedType:
     callback = callbacks.GenericCallback
 
     @classmethod
-    def convert(cls, output, **_) -> Any:
+    def convert(cls, *output, **_) -> Any:
         """ROS message converter function for datatype
         :param args:
         :type _: Any
@@ -585,3 +585,18 @@ class Twist(SupportedType):
     """Twist for Control Commands"""
 
     _ros_type = ROSTwist
+
+    @classmethod
+    def convert(cls, vx: float, vy: float, omega: float, **_) -> ROSTwist:
+        """ROS message converter function for datatype Point.
+
+        :param output:
+        :type output: np.ndarray
+        :param _:
+        :rtype: ROSPoseStamped
+        """
+        msg = ROSTwist()
+        msg.linear.x = vx
+        msg.linear.y = vy
+        msg.angular.z = omega
+        return msg

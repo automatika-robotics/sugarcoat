@@ -21,7 +21,8 @@
 | **Event-Driven Core** | Built-in primitives for **Events** and **Actions** enables dynamic runtime configuration and control over your system's **Components**. |
 | **Built-in Resilience** | **Fallbacks** and **Fault Tolerance** are core design concepts, ensuring your systems are robust and reliable. |
 | **Intuitive Python API** | Design your entire system—nodes, events, and actions—using clean, readable Python code. |
-| **Dynamic Web UI** **(NEW!)** | Automatically generate a fully dynamic, extensible web interface for monitoring and configuring your system. |
+| **Dynamic Web UI** | Automatically generate a fully dynamic, extensible web interface for monitoring and configuring your system. |
+| **Universal Applications [Using Robot Plugins](https://www.youtube.com/watch?v=oZN6pcJKgfY) (!NEW)** | Allows you to write generic, portable automation logic that runs on any robot without code changes |
 | **Launch Replacement** | A more pythonic alternative to the ROS2 Launch API, providing greater flexibility and runtime control for real-world applications. |
 
 ## Packages Built with Sugarcoat
@@ -34,11 +35,12 @@
 
 - Learn more about the [**design concepts**](https://automatika-robotics.github.io/sugarcoat/design/index.html) in Sugarcoat 📚
 - Learn how to [**create your own ROS2 package**](https://automatika-robotics.github.io/sugarcoat/use.html) using Sugarcoat 🚀
+- [**Port your automation recipes across different hardware**](https://automatika-robotics.github.io/sugarcoat/advanced/robot_plugins.html) using **Robot Plugins**
+- Explore the [**Dynamic Web UI**](https://automatika-robotics.github.io/sugarcoat/advanced/web_ui.html) for real-time system visualization and control
 
+## Dynamic Web UI for Sugarcoat Recipes
 
-## **(NEW!)** Introducing Dynamic Web UI for Sugarcoat Recipes
-
-The new **Dynamic Web UI** feature takes system visibility and control to the next level. Built with [**FastHTML**](https://www.fastht.ml/) and [**MonsterUI**](https://monsterui.answer.ai/), it is designed to automatically generate a fully dynamic, extensible web interface for any Sugarcoat recipe, completely eliminating the need for manual front-end development.
+The **Dynamic Web UI** feature takes system visibility and control to the next level. Built with [**FastHTML**](https://www.fastht.ml/) and [**MonsterUI**](https://monsterui.answer.ai/), it is designed to automatically generate a fully dynamic, extensible web interface for any Sugarcoat recipe, completely eliminating the need for manual front-end development.
 
 This feature instantly transforms your complex, multinode ROS2 system into a monitorable and configurable web application.
 

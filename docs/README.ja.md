@@ -18,7 +18,8 @@
 | **イベント駆動コア** | **Events** と **Actions** のための組み込みプリミティブにより、システムの **Components** を動的に構成・制御可能。 |
 | **高い耐障害性** | **Fallbacks** と **Fault Tolerance** は設計の中心概念であり、システムの堅牢性と信頼性を保証します。 |
 | **直感的な Python API** | クリーンで読みやすい Python コードで、ノード・イベント・アクションを含むシステム全体を設計可能。 |
-| **ダイナミック Web UI** **（新機能！）** | システムの監視・設定のために、動的で拡張可能な Web インターフェイスを自動生成。 |
+| **ダイナミック Web UI** | システムの監視・設定のために、動的で拡張可能な Web インターフェイスを自動生成。 |
+| **汎用アプリケーション [ロボットプラグインの使用](https://www.youtube.com/watch?v=oZN6pcJKgfY) （!新規）** | コード変更なしで、あらゆるロボットで実行できる汎用的かつポータブルな自動化ロジックの記述を可能にします |
 | **Launch の代替** | ROS2 Launch API のより Pythonic な代替として、実アプリケーションにおける柔軟な実行時制御を提供。 |
 
 ## Sugarcoat を使用して構築されたパッケージ
@@ -30,6 +31,8 @@
 
 - Sugarcoat の[**設計コンセプト**](https://automatika-robotics.github.io/sugarcoat/design/index.html) を学ぶ 📚
 - Sugarcoat を使用して [**独自の ROS2 パッケージを作成**](https://automatika-robotics.github.io/sugarcoat/use.html) する方法を学ぶ 🚀
+- [**異なるハードウェア間での自動化レシピの移植**](https://automatika-robotics.github.io/sugarcoat/advanced/robot_plugins.html) には **ロボットプラグイン** を使用
+- リアルタイムのシステム可視化と制御のために [**ダイナミック Web UI**](https://automatika-robotics.github.io/sugarcoat/advanced/web_ui.html) を探索
 
 ## **（新機能！）** Sugarcoat Recipes のためのダイナミック Web UI を紹介
 

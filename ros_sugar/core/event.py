@@ -320,8 +320,6 @@ class Event:
         :type handle_once: bool, optional
         :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
         :type keep_event_delay: float, optional
-        :param topic_template: Option to provide the class with a template of the used topic class - Used for event serialization purposes, defaults to None
-        :type topic_template: Optional[Topic], optional
 
         :raises AttributeError: If a non-valid event_source is provided
 

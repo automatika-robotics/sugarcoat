@@ -92,6 +92,7 @@ class Launcher:
         config_file: Optional[str] = None,
         enable_monitoring: bool = True,
         activation_timeout: Optional[float] = None,
+        robot_plugin: Optional[str] = None,
     ) -> None:
         """Initialize launcher to manager components launch in ROS2
 
@@ -103,8 +104,8 @@ class Launcher:
         :type enable_monitoring: bool, optional
         :param activation_timeout: Timeout (seconds) for waiting on ROS2 nodes to come up for activation, defaults to None
         :type activation_timeout: float, optional
-        :param enable_client: If True, launches a separate client executable, defaults to False
-        :type enable_client: bool, optional
+        :param robot_plugin: Name of the robot plugin package for compatibility handling, defaults to None
+        :type robot_plugin: str, optional
         """
         # Make sure RCLPY in initialized
         if not rclpy.ok():
@@ -120,6 +121,7 @@ class Launcher:
         self.__enable_monitoring: bool = enable_monitoring
         self._launch_group = []
         self._enable_ui = False
+        self._robot_plugin = robot_plugin
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
@@ -230,6 +232,7 @@ class Launcher:
 
         # Configure components from config_file
         for component in components:
+            component.config._robot_plugin = self._robot_plugin
             if rclpy_log_level:
                 self._rclpy_log_level[component.node_name] = rclpy_log_level
             if ros_log_level:

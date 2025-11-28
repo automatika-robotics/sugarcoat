@@ -40,6 +40,7 @@ advanced/web_ui
 advanced/create_service
 advanced/srvs
 advanced/config
+advanced/robot_plugins
 advanced/types
 ```
 

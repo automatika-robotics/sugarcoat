@@ -68,19 +68,33 @@ def json_to_events_list(
 
 class OnAny(Event):
     def __init__(
-        self, event_name: str, event_source: Union[Topic, str, Dict], **_
+        self,
+        event_name: str,
+        event_source: Union[Topic, str, Dict],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
+        **_,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param attrs: Tuple of attributes to access in the topic message
-        :rtype: None
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         # passing trigger_value as zero as it will not be used in this event
-        super().__init__(event_name, event_source, None, [])
+        super().__init__(
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=None,
+            nested_attributes=[],
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+        )
 
     def callback(self, msg: Any) -> None:
         """
@@ -113,16 +127,22 @@ class OnChange(Event):
         event_name: str,
         event_source: Union[Topic, str, Dict],
         nested_attributes: Union[str, List[str]],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param attrs: Tuple of attributes to access in the topic message
-        :rtype: None
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         # passing trigger_value as zero as it will not be used in this event
         super().__init__(
@@ -130,6 +150,8 @@ class OnChange(Event):
             event_source=event_source,
             trigger_value=None,
             nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
             **kwargs,
         )
         self._previous_event_value = None
@@ -180,22 +202,34 @@ class OnChangeEqual(Event):
         event_source: Union[Topic, str, Dict],
         trigger_value: Union[float, int, bool, str, List],
         nested_attributes: Union[str, List[str]],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
-        """__init__.
+        """Init OnChangeEqual Event
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
+        :param trigger_value: Triggers event using this reference value
         :type trigger_value: Union[float, int, bool, str, List]
-        :param attrs:
-        :rtype: None
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         # passing trigger_value as zero as it will not be used in this event
         super().__init__(
-            event_name, event_source, trigger_value, nested_attributes, **kwargs
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            **kwargs,
         )
         self._previous_event_value = None
 
@@ -240,21 +274,33 @@ class OnEqual(Event):
         event_source: Union[Topic, str, Dict],
         trigger_value: Union[float, int, bool, str, List],
         nested_attributes: Union[str, List[str]],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
+        :param trigger_value: Triggers event using this reference value
         :type trigger_value: Union[float, int, bool, str, List]
-        :param attrs:
-        :rtype: None
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         super().__init__(
-            event_name, event_source, trigger_value, nested_attributes, **kwargs
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            **kwargs
         )
 
     def _update_trigger(self) -> None:
@@ -275,21 +321,33 @@ class OnContainsAll(Event):
         event_source: Union[Topic, str, Dict],
         trigger_value: List,
         nested_attributes: Union[str, List[str]],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
-        :type trigger_value: Union[float, int, bool, str, List]
-        :param attrs:
-        :rtype: None
+        :param trigger_value: Triggers event using this reference value
+        :type trigger_value: List
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         super().__init__(
-            event_name, event_source, trigger_value, nested_attributes, **kwargs
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            **kwargs
         )
 
     def _update_trigger(self) -> None:
@@ -315,22 +373,34 @@ class OnChangeContainsAll(Event):
         event_source: Union[Topic, str, Dict],
         trigger_value: List,
         nested_attributes: Union[str, List[str]],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
-        :type trigger_value: Union[float, int, bool, str, List]
-        :param attrs:
-        :rtype: None
+        :param trigger_value: Triggers event using this reference value
+        :type trigger_value: List
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         # passing trigger_value as zero as it will not be used in this event
         super().__init__(
-            event_name, event_source, trigger_value, nested_attributes, **kwargs
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            **kwargs
         )
         self._previous_event_value = None
 
@@ -373,22 +443,34 @@ class OnChangeNotContain(Event):
         event_source: Union[Topic, str, Dict],
         trigger_value: List,
         nested_attributes: Union[str, List[str]],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
-        :type trigger_value: Union[float, int, bool, str, List]
-        :param attrs:
-        :rtype: None
+        :param trigger_value: Triggers event using this reference value
+        :type trigger_value: List
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         # passing trigger_value as zero as it will not be used in this event
         super().__init__(
-            event_name, event_source, trigger_value, nested_attributes, **kwargs
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            **kwargs
         )
         self._previous_event_value = None
 
@@ -433,21 +515,33 @@ class OnContainsAny(Event):
         event_source: Union[Topic, str, Dict],
         trigger_value: List,
         nested_attributes: Union[str, List[str]],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
-        :type trigger_value: Union[float, int, bool, str, List]
-        :param attrs:
-        :rtype: None
+        :param trigger_value: Triggers event using this reference value
+        :type trigger_value: List
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         super().__init__(
-            event_name, event_source, trigger_value, nested_attributes, **kwargs
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            **kwargs
         )
 
     def _update_trigger(self) -> None:
@@ -473,22 +567,34 @@ class OnChangeContainsAny(Event):
         event_source: Union[Topic, str, Dict],
         trigger_value: List,
         nested_attributes: Union[str, List[str]],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
-        :type trigger_value: Union[float, int, bool, str, List]
-        :param attrs:
-        :rtype: None
+        :param trigger_value: Triggers event using this reference value
+        :type trigger_value: List
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         # passing trigger_value as zero as it will not be used in this event
         super().__init__(
-            event_name, event_source, trigger_value, nested_attributes, **kwargs
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            **kwargs,
         )
         self._previous_event_value = None
 
@@ -533,21 +639,33 @@ class OnDifferent(Event):
         event_source: Union[Topic, str, Dict],
         trigger_value: Union[float, int, bool, str, List],
         nested_attributes: Union[str, List[str]],
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
+        :param trigger_value: Triggers event using this reference value
         :type trigger_value: Union[float, int, bool, str, List]
-        :param attrs:
-        :rtype: None
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         super().__init__(
-            event_name, event_source, trigger_value, nested_attributes, **kwargs
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            **kwargs,
         )
 
     def _update_trigger(self) -> None:
@@ -572,23 +690,35 @@ class OnGreater(Event):
         trigger_value: Union[float, int, bool, str],
         nested_attributes: Union[str, List[str]],
         or_equal: bool = False,
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
+        :param trigger_value: Triggers event using this reference value
         :type trigger_value: Union[float, int, bool, str]
-        :param attrs:
-        :param or_equal:
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param or_equal: Trigger the event if greater or equal to the reference value, defaults to False
         :type or_equal: bool
-        :rtype: None
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         super().__init__(
-            event_name, event_source, trigger_value, nested_attributes, **kwargs
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            **kwargs,
         )
         if isinstance(event_source, Topic):
             self._or_equal = or_equal
@@ -641,27 +771,35 @@ class OnLess(OnGreater):
         trigger_value: Union[float, int, bool, str],
         nested_attributes: Union[str, List[str]],
         or_equal: bool = False,
+        handle_once: bool = False,
+        keep_event_delay: float = 0.0,
         **kwargs,
     ) -> None:
         """__init__.
 
-        :param event_name:
+        :param event_name: Event key name
         :type event_name: str
-        :param event_source:
+        :param event_source: Event source configured using a Topic instance or a valid json/dict config
         :type event_source: Union[Topic, str, Dict]
-        :param trigger_value:
+        :param trigger_value: Triggers event using this reference value
         :type trigger_value: Union[float, int, bool, str]
-        :param attrs:
-        :param or_equal:
+        :param nested_attributes: Attribute names to access within the event_source Topic
+        :type nested_attributes: Union[str, List[str]]
+        :param or_equal: Trigger the event if less or equal to the reference value, defaults to False
         :type or_equal: bool
-        :rtype: None
+        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :type handle_once: bool, optional
+        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :type keep_event_delay: float, optional
         """
         super().__init__(
-            event_name,
-            event_source,
-            trigger_value,
-            nested_attributes,
-            or_equal,
+            event_name=event_name,
+            event_source=event_source,
+            trigger_value=trigger_value,
+            nested_attributes=nested_attributes,
+            handle_once=handle_once,
+            keep_event_delay=keep_event_delay,
+            or_equal=or_equal,
             **kwargs,
         )
 

@@ -22,6 +22,7 @@ extensions = [
     "autodoc2",  # install with `pip install sphinx-autodoc2`
     "myst_parser",  # install with `pip install myst-parser`
     "sphinx_sitemap",  # install with `pip install sphinx-sitemap`
+    "sphinxcontrib.youtube",
 ]
 
 autodoc2_packages = [

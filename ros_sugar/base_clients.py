@@ -2,7 +2,6 @@
 
 import time as rostime
 from typing import Any, Optional
-
 import rclpy
 from attrs import Factory, define, field
 from rclpy.action.client import ActionClient
@@ -142,13 +141,10 @@ class ServiceClientHandler:
         self.future = self.client.call_async(self.request)
 
         # Spin until response
-        if executor:
-            while not self.future:
-                rclpy.spin_once(
-                    self.node, executor=executor, timeout_sec=self.config.timeout_secs
-                )
-        else:
-            rclpy.spin_until_future_complete(self.node, self.future)
+        while not self.future:
+            rclpy.spin_once(
+                self.node, executor=executor, timeout_sec=self.config.timeout_secs
+            )
 
         # return response
         return self.future.result()

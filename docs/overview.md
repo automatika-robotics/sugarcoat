@@ -12,6 +12,7 @@ Sugarcoat 🍬 provides a whole lot of syntactic sugar for creating multi-node R
 - Discover the [**advantages of using Sugarcoat**](why.md) for creating ROS2 packages
 - Learn more about the [**design concepts**](design/concepts_overview.md) in Sugarcoat
 - Learn how to [**create your own ROS2 package**](advanced/use.md) using Sugarcoat
+- [**Port your automation recipes across different hardware**](advanced/robot_plugins.md) using **Robot Plugins**
 - Explore the [**Dynamic Web UI**](advanced/web_ui.md) for real-time system visualization and control
 
 

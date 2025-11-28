@@ -59,17 +59,18 @@ class BaseAttrs:
         :return: _description_
         :rtype: str
         """
-        print_statement = "\n"
+        print_statement = "{\n"
 
         first_level_keys = [attr.name for attr in self.__attrs_attrs__]
         first_level_values = [getattr(self, key) for key in first_level_keys]
-
-        for name, value in (first_level_keys, first_level_values):
+        if first_level_keys.count("additional_types"):
+            first_level_keys.remove("additional_types")
+        for name, value in zip(first_level_keys, first_level_values):
             # Do not display private attributes
             if not name.startswith("_"):
-                print_statement += f"{name}: {value}\n"
+                print_statement += f"{name}: {value}, \n"
 
-        return print_statement
+        return print_statement.rstrip(", \n") + "\n}"
 
     @classmethod
     def __is_subscripted_generic(cls, some_type) -> Optional[type]:

@@ -56,6 +56,7 @@ from ..utils import (
     get_methods_with_decorator,
     log_srv,
 )
+from ..robot_plugin import RobotPluginServiceClient
 from ..tf import TFListener, TFListenerConfig
 
 
@@ -141,10 +142,7 @@ class BaseComponent(lifecycle.Node):
                 for output in self.out_topics
             }
 
-        if config_file:
-            self._config_file = config_file
-        else:
-            self._config_file = None
+        self._config_file = config_file
 
         # NOTE: Default fallback for any failure is set to broadcast status and max retries to None (i.e. component keeps executing on_any_fail action)
         if not fallbacks:
@@ -267,6 +265,84 @@ class BaseComponent(lifecycle.Node):
                     break
             out.msg_type.convert = selected_convert
         return outputs
+
+    def _use_robot_plugin(self):
+        """Replace the component inputs/outputs with topics or clients provided by the robot plugin
+
+        :raises ModuleNotFoundError: If the robot plugin module is not found
+        :raises AttributeError: If the robot plugin module is malformed or missing required 'robot_feedback' or 'robot_action' dictionaries
+        """
+        # Load the plugin module and its definitions
+        try:
+            robot_plugins = importlib.import_module(self.config._robot_plugin)
+            robot_feedback_plugins: Dict[str, Topic] = robot_plugins.robot_feedback
+            robot_action_plugins: Dict[str, Union[Topic, RobotPluginServiceClient]] = (
+                robot_plugins.robot_action
+            )
+            self.get_logger().info(
+                f"Successfully loaded robot plugin: '{self.config._robot_plugin}'"
+            )
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
+                f"Robot Plugin is enabled for component '{self.node_name}', "
+                f"but no plugin with name '{self.config._robot_plugin}' is found. "
+                "Install the plugin or disable the plugin use in this component"
+            ) from e
+        except AttributeError as e:
+            raise AttributeError(
+                f"Robot plugin '{self.config._robot_plugin}' is malformed or "
+                f"missing required 'robot_feedback' or 'robot_action' dictionaries: {e}"
+            ) from e
+
+        # Handle Robot Feedback (System Input Topics)
+        if self.config._enable_plugin_feedbacks_handling:
+            for topic in self.in_topics:
+                msg_type_name = topic.msg_type.__name__
+                # find a matching plugin by message type
+                plugin_value = robot_feedback_plugins.get(msg_type_name)
+
+                if isinstance(plugin_value, Topic):
+                    if topic.name != plugin_value.name:
+                        self.get_logger().warn(
+                            f"Input Topic is given with name '{topic.name}' ({msg_type_name}), "
+                            f"but robot plugin provides default name '{plugin_value.name}' ({plugin_value.msg_type.__name__})."
+                        )
+                        self.get_logger().warn(
+                            f"Robot Plugin Topic Name will be Used! To change it, replace the name in '{self.config._robot_plugin}'"
+                        )
+                    self._replace_input_topic(
+                        topic.name, plugin_value.name, plugin_value.msg_type
+                    )
+
+        # Handle Actions (Output Topics)
+        if self.config._enable_plugin_actions_handling:
+            for topic in self.out_topics:
+                msg_type_name = topic.msg_type.__name__
+                plugin_value = robot_action_plugins.get(msg_type_name)
+
+                if isinstance(plugin_value, Topic):
+                    if topic.name != plugin_value.name:
+                        self.get_logger().warn(
+                            f"Input Topic is given with name '{topic.name}' ({msg_type_name}), "
+                            f"but robot plugin provides default name '{plugin_value.name}' ({plugin_value.msg_type.__name__})."
+                        )
+                        self.get_logger().warn(
+                            f"Robot Plugin Topic Name will be Used! To change it, replace the name in '{self.config._robot_plugin}'"
+                        )
+                    self._replace_output_topic(
+                        topic.name, plugin_value.name, plugin_value.msg_type
+                    )
+                elif plugin_value and issubclass(
+                    plugin_value, RobotPluginServiceClient
+                ):
+                    # Check for plugin_value truthiness before issubclass to avoid error on None
+                    self.get_logger().info(
+                        f"Plugin provides a client for type '{topic.msg_type}': Replacing output topic '{topic.name}' ({msg_type_name}) "
+                        f"with a plugin service client."
+                    )
+                    # Instantiate the client class, passing 'self' (the component)
+                    client_instance = plugin_value(self)
+                    self._replace_output_by_client(topic.name, client_instance)
 
     # Managing algorithms
     @property
@@ -431,6 +507,10 @@ class BaseComponent(lifecycle.Node):
         # Init any global node variables
         self.init_variables()
 
+        # Update the component topics using the robot plugin if provided
+        if self.config._robot_plugin:
+            self._use_robot_plugin()
+
         self.create_all_subscribers()
 
         self.create_all_publishers()
@@ -508,9 +588,10 @@ class BaseComponent(lifecycle.Node):
             )
         # Create publisher and attach it to output publisher object
         for publisher in self.publishers_dict.values():
-            publisher.set_node_name(self.node_name)
-            # Set ROS publisher for each output publisher
-            publisher.set_publisher(self._add_ros_publisher(publisher))
+            if isinstance(publisher, Publisher):
+                publisher.set_node_name(self.node_name)
+                # Set ROS publisher for each output publisher
+                publisher.set_publisher(self._add_ros_publisher(publisher))
 
     def create_all_timers(self):
         """
@@ -1584,21 +1665,17 @@ class BaseComponent(lifecycle.Node):
     def _replace_input_topic(
         self, topic_name: str, new_name: str, msg_type: str
     ) -> Optional[str]:
-        """
-        Replace an existing input topic
+        """Replaces a component input topic by a new topic
 
-        :param topic_name: Existing input topic name
+        :param topic_name: Old Topic name
         :type topic_name: str
-        :param new_name: New input topic name
+        :param new_name: New topic name
         :type new_name: str
-        :param msg_type: New message type
+        :param msg_type: New topic message type
         :type msg_type: str
-
-        :return: Error message if replacement failed, else None
-        :rtype: str | None
+        :return: Error message or None if no errors are found
+        :rtype: Optional[str]
         """
-        error_msg = None
-        # Normalize names
         normalized_topic_name = (
             topic_name[1:] if topic_name.startswith("/") else topic_name
         )
@@ -1607,44 +1684,66 @@ class BaseComponent(lifecycle.Node):
             error_msg = f"Topic {topic_name} is not found in Component inputs"
             return error_msg
 
-        callback = self.callbacks[normalized_topic_name]
+        old_callback = self.callbacks[normalized_topic_name]
 
+        # Create New Topic/Callback
         try:
-            # Create new topic
-            new_topic = Topic(
-                name=new_name,
-                msg_type=msg_type,
+            new_topic = Topic(name=new_name, msg_type=msg_type)
+            new_callback = new_topic.msg_type.callback(
+                new_topic, node_name=self.node_name
             )
-            callback.input_topic = new_topic
         except Exception as e:
             error_msg = f"Invalid topic parameters: {e}"
             return error_msg
 
-        # Destroy subscription if it is already activated and create new callback
-        if callback._subscriber:
+        # Handle Active Subscriber
+        if old_callback._subscriber:
             self.get_logger().info(
                 f"Destroying subscriber for old topic '{topic_name}'"
             )
-            self.destroy_subscription(callback._subscriber)
+            self.destroy_subscription(old_callback._subscriber)
 
-            self.get_logger().info(f"Creating subscriber for new topic '{new_name}'")
-            callback.set_subscriber(self._add_ros_subscriber(callback))
-            return None
+            new_callback.set_subscriber(self._add_ros_subscriber(new_callback))
 
-        # Update in_topics list (If the previous subscriber is not created it will get created from in_topics on activation)
-        idx = list(self.callbacks).index(normalized_topic_name)
-        if idx:
+        # Update callbacks dictionary
+        self.callbacks.pop(normalized_topic_name)
+        self.callbacks[new_name] = new_callback
+
+        # update the internal lists
+        old_topic = old_callback.input_topic
+        self._update_inactive_input_topic(old_topic, new_topic)
+
+        return None
+
+    def _update_inactive_input_topic(self, old_topic, new_topic):
+        """Updates internal topics list with a new input topic"""
+        self.get_logger().info("Updating inactive topic lists (Parent implementation)")
+
+        # Update in_topics list
+        try:
+            idx = self.in_topics.index(old_topic)
             self.in_topics.pop(idx)
             self.in_topics.insert(idx, new_topic)
-            self.callbacks.pop(normalized_topic_name)
-            self.callbacks[new_name] = callback
-        return None
+        except ValueError:
+            self.get_logger().warn(
+                f"Old topic {old_topic.name} not found in self.in_topics. "
+                "Updating callbacks anyway."
+            )
 
     def _replace_output_topic(
         self, topic_name: str, new_name: str, msg_type: str
     ) -> Optional[str]:
-        error_msg = None
-        # Normalize names
+        """Replaces a component output topic by a new topic
+
+        :param topic_name: Old Topic name
+        :type topic_name: str
+        :param new_name: New topic name
+        :type new_name: str
+        :param msg_type: New topic message type
+        :type msg_type: str
+        :return: Error message or None if no errors are found
+        :rtype: Optional[str]
+        """
         normalized_topic_name = (
             topic_name[1:] if topic_name.startswith("/") else topic_name
         )
@@ -1654,34 +1753,90 @@ class BaseComponent(lifecycle.Node):
             return error_msg
 
         publisher = self.publishers_dict[normalized_topic_name]
-        try:
-            # Create new topic
-            new_topic = Topic(
-                name=new_name,
-                msg_type=msg_type,
-            )
-            publisher.output_topic = new_topic
 
+        # Create New Topic
+        try:
+            new_topic = Topic(name=new_name, msg_type=msg_type)
         except Exception as e:
             error_msg = f"Invalid topic parameters: {e}"
             return error_msg
 
-        # Destroy subscription if it is already activated and create new callback
+        # Get old_topic *before* replacing it on the publisher
+        old_topic = publisher.output_topic
+        publisher.output_topic = new_topic
+
+        # Handle Active Publisher
+        # If the publisher is active, "hot-swap" it
         if publisher._publisher:
-            self.get_logger().warn(f"Destroying publisher for old topic '{topic_name}'")
+            self.get_logger().info(f"Destroying publisher for old topic '{topic_name}'")
             self.destroy_publisher(publisher._publisher)
 
-            self.get_logger().warn(f"Creating publisher for new topic '{new_name}'")
+            self.get_logger().info(f"Creating publisher for new topic '{new_name}'")
             publisher.set_publisher(self._add_ros_publisher(publisher))
-            return None
 
-        # Update in_topics list (If the previous subscriber is not created it will get created from in_topics on activation)
-        idx = list(self.publishers_dict).index(normalized_topic_name)
-        if idx:
+        # Update publishers_dict
+        self.publishers_dict.pop(normalized_topic_name)
+        # Note: new_name comes from new_topic.name
+        self.publishers_dict[new_topic.name] = publisher
+
+        # update the internal lists
+        self._update_inactive_output_topic(old_topic, new_topic)
+
+        return None
+
+    def _update_inactive_output_topic(self, old_topic, new_topic):
+        """Updates internal topics list with a new output topic"""
+        self.get_logger().info("Updating inactive topic lists (Parent implementation)")
+
+        # Update out_topics list
+        try:
+            idx = self.out_topics.index(old_topic)
             self.out_topics.pop(idx)
             self.out_topics.insert(idx, new_topic)
-            self.publishers_dict.pop(normalized_topic_name)
-            self.publishers_dict[new_name] = publisher
+        except ValueError:
+            self.get_logger().warn(
+                f"Old topic {old_topic.name} not found in self.out_topics. "
+                "Updating publisher dictionary anyway."
+            )
+
+    def _replace_output_by_client(
+        self, topic_name: str, service_client: RobotPluginServiceClient
+    ) -> Optional[str]:
+        """Replaces an output topic by a robot service client - Used for enabling clients from robot plugins
+
+        :param topic_name: Old topic name
+        :type topic_name: str
+        :param service_client: Robot service client
+        :type service_client: RobotPluginServiceClient
+        :return: Error message or None if no errors are found
+        :rtype: Optional[str]
+        """
+        # Normalize names
+        normalized_topic_name = (
+            topic_name[1:] if topic_name.startswith("/") else topic_name
+        )
+
+        if topic_name not in self.publishers_dict.keys():
+            return f"Topic '{topic_name}' not found in publishers"
+
+        publisher = self.publishers_dict[normalized_topic_name]
+
+        # Get old_topic *before* replacing it on the publisher
+        old_topic = publisher.output_topic
+
+        # Handle Active Publisher
+        # If the publisher is active, "hot-swap"
+        if publisher._publisher:
+            self.destroy_publisher(publisher._publisher)
+
+        # Update publishers_dict
+        old_publisher = self.publishers_dict.pop(normalized_topic_name)
+        service_client.replace_publisher(old_publisher)
+        # Note: new_name comes from new_topic.name
+        self.publishers_dict[service_client.name] = service_client
+
+        # update the internal lists
+        self._update_inactive_output_topic(old_topic, service_client)
         return None
 
     @log_srv
@@ -1716,7 +1871,7 @@ class BaseComponent(lifecycle.Node):
             response.error_msg = "Not implemented"
         else:
             response.success = False
-            response.error_msg = f"Got invalid direction value '{request.direction}'. Direction can only be in [{ReplaceTopic.INPUT_TOPIC} -> input, or {ReplaceTopic.OUTPUT_TOPIC} -> output]"
+            response.error_msg = f"Got invalid direction value '{request.direction}'. Direction can only be in [{ReplaceTopic.Request.INPUT_TOPIC} -> input, or {ReplaceTopic.Request.OUTPUT_TOPIC} -> output]"
 
         return response
 
