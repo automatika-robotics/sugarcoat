@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.4.2 (2025-11-30)
+------------------
 * (docs) Adds robot plugins tutorial to docs
 * (feature) Adds publish pre processors to robot plugin client
 * (feature) Adds robot plugin client and enable using plugins in components and launcher
