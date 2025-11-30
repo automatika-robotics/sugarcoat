@@ -2,6 +2,27 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Merge pull request `#24 <https://github.com/automatika-robotics/sugarcoat/issues/24>`_ from automatika-robotics/feature/robot_plugins
+* (docs) Update ZH and JA readme
+* Merge branch 'feature/robot_plugins' of github.com:automatika-robotics/ros-sugar into feature/robot_plugins
+* (docs) Adds missing urls
+* (docs) Adds youtube plugin for sphinx docs in CI
+* (docs) Fixes video embed in docs
+* (docs) Updates readme
+* (docs) Adds robot plugins tutorial to docs
+* (chore) Adds debug logging and fixes docstring
+* (docs) Improves docstrings for events
+* (fix) Fixes typo
+* (refactor) Adds code formatting
+* (feature) Adds publish pre processors to robot plugin client
+* (refactor) Moves robot plugin methods and classes to a new module
+* (feature) Adds robot plugin client and enable using plugins in components and launcher
+* (fix) Fixes publishing occupancy grid (humble)
+* (fix) Fixes conversion between Vector3 and Point
+* Contributors: ahr, mkabtoul
+
 0.4.1 (2025-11-07)
 ------------------
 * (feature) Adds UI font files locally
