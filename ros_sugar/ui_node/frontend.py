@@ -20,6 +20,7 @@ class FHApp:
         configs: Dict,
         in_topics: Sequence[Topic],
         out_topics: Sequence[Topic],
+        srv_clients_configs : Optional[Sequence[Dict]] = None,
         additional_input_elements: Optional[List[Tuple]] = None,
         additional_output_elements: Optional[List[Tuple]] = None,
     ):
@@ -40,7 +41,9 @@ class FHApp:
         if not configs:
             logging.warning("No component configs provided to the UI")
 
-        # Add any additional elements
+        # Add any additional UI elements from derived packages (if any)
+        # This method will populate the global elements._INPUT_ELEMENTS and elements._OUTPUT_ELEMENTS dictionaries
+        # with the additional elements coming from derived packages
         elements.add_additional_ui_elements(
             input_elements=additional_input_elements,
             output_elements=additional_output_elements,
@@ -53,6 +56,11 @@ class FHApp:
         self.out_topics = out_topics
         self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
         self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
+        self.srv_clients = (
+            elements.input_service_clients_card(srv_clients_configs)
+            if srv_clients_configs
+            else None
+        )
         self.toggle_settings = False
         setup_toasts(self.app)
 
@@ -216,6 +224,8 @@ class FHApp:
                 main_grid(
                     Div(self.inputs, cls="col-span-full"),
                 )
+            if self.srv_clients:
+                main_grid(Div(self.srv_clients, cls="col-span-full"))
 
             return Main(
                 main_grid,

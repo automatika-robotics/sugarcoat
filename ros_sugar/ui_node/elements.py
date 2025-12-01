@@ -236,6 +236,74 @@ _OUTPUT_ELEMENTS: Dict = {
 }
 
 
+def _in_service_element(srv_name: str, request_fields: Dict[str, str]):
+    """Creates an Input form for a ROS2 service call
+
+    :param srv_name: Service name
+    :type srv_name: str
+    :param srv_type: Service Type
+    :type srv_type: type
+    :return: Service Form UI element
+    :rtype: FT
+    """
+    service_form = Form(
+        cls="space-x-2 space-y-2 mr-2 mb-2",
+        id=f"{srv_name}-form",
+    )
+    service_fields = Grid(cls="gap-2", cols=2)
+    for field_name, field_type in request_fields.items():
+        if field_type in [
+            "float",
+            "double",
+            "int8",
+            "int16",
+            "int32",
+            "int64",
+            "uint8",
+            "uint16",
+            "uint32",
+            "uint64",
+        ]:
+            field_input_type = "number"
+            default_value = "0"
+        elif field_type == "bool":
+            field_input_type = "checkbox"
+            default_value = "0"
+        else:
+            field_input_type = "text"
+            default_value = ""
+        service_fields(
+            LabelInput(
+                label=field_name,
+                type=field_input_type,
+                name=field_name,
+                placeholder=field_name,
+                required=False,
+                value=default_value,
+                autocomplete="off",
+            ),
+        )
+    _loading_content = DivHStacked(
+        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending Service Request")
+    )
+    return service_form(
+        DivHStacked(
+            Input(name="srv_name", type="hidden", value=srv_name),
+            service_fields,
+            Button(
+                "Submit",
+                cls="primary-button",
+                hx_post="/service/call",
+                hx_target="#main",
+                hx_on__before_request=f"""
+                        this.innerHTML = `{_loading_content}`;
+                        this.disabled = true;
+                        """,
+            ),
+        )
+    )
+
+
 def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
     """Deserialize one additional element"""
     # Get key type
@@ -334,6 +402,35 @@ def input_topic_card(topic_name: str, topic_type: str, column_class: str = "") -
         id=topic_name,
     )
     return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
+
+
+def input_service_clients_card(
+    srv_clients_config: Sequence[Dict], column_class: str = ""
+) -> FT:
+    """Creates a UI element for all service clients
+
+    :param srv_clients_config: Set of service clients configs
+    :type srv_clients_config: Sequence[Dict]
+    :param column_class: UI columns class
+    :type column_class: str, defaults to ""
+    :return: Input Service Clients UI element
+    """
+    main_card = Card(
+        H3("Service Calls"),
+        cls=f"m-2 {column_class} max-h-[80vh] overflow-y-auto inner-main-card",
+        id="service_clients",
+    )
+    for client in srv_clients_config:
+        client_card = Card(
+            H4(client["service_name"]),
+            cls=f"m-2 {column_class} max-h-[40vh] overflow-y-auto inner-main-card",
+            id=client["service_name"],
+        )
+        client_card(
+            _in_service_element(client["service_name"], client["request_fields"])
+        )
+        main_card(client_card)
+    return main_card
 
 
 def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:

@@ -1,16 +1,26 @@
-from typing import Dict, Optional, Sequence, Any, Callable
+from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple
 import threading
 import asyncio
 import os
 from attr import define, field, Factory
+import json
+import importlib
 
 from ..config.base_attrs import BaseAttrs
 from ..core.component import BaseComponent, BaseComponentConfig
 from .. import base_clients
 from ..io.callbacks import GenericCallback
 from ..io.topic import Topic
+from ..base_clients import (
+    ServiceClientHandler,
+    # ActionClientHandler,
+    ServiceClientConfig,
+    # ActionClientConfig
+)
 from ..io import supported_types
 from automatika_ros_sugar.srv import ChangeParameters
+
+from rclpy.logging import get_logger
 
 
 @define
@@ -25,7 +35,7 @@ class UINode(BaseComponent):
     def __init__(
         self,
         config: UINodeConfig,
-        inputs: Optional[Sequence[Topic]] = None,
+        inputs: Optional[Sequence[Union[Topic, ServiceClientConfig]]] = None,
         outputs: Optional[Sequence[Topic]] = None,
         component_name: str = "ui_node",
         component_configs: Optional[Dict[str, BaseComponentConfig]] = None,
@@ -56,15 +66,87 @@ class UINode(BaseComponent):
                 target=self.loop.run_forever, daemon=True
             )
 
+        topic_inputs = (
+            [inp for inp in inputs if isinstance(inp, Topic)] if inputs else []
+        )
+        self._client_inputs = (
+            [inp for inp in inputs if not isinstance(inp, Topic)] if inputs else []
+        )
         super().__init__(
             component_name=f"{component_name}_{os.getpid()}",
             config=config,
             inputs=outputs,  # create listeners for outputs
-            outputs=inputs,  # create publishers for inputs
+            outputs=topic_inputs,  # create publishers for inputs
             **kwargs,
         )
 
+        self._ros_service_clients: Dict[str, ServiceClientHandler] = {}
+        # TODO: Add action clients similar to service clients
+        # self._ros_action_clients: Sequence[ActionClientHandler] = []
+
         self.config: UINodeConfig
+
+    def _clients_inputs_dicts(self):
+        clients_configs_dicts = []
+        for client_config in self._client_inputs:
+            request_fields: Dict[str, str] = (
+                client_config.srv_type.Request.get_fields_and_field_types()
+            )
+            config_dict = {
+                "service_name": client_config.name,
+                "request_fields": request_fields,
+            }
+            clients_configs_dicts.append(config_dict)
+        return clients_configs_dicts
+
+    @property
+    def _client_inputs_json(self) -> str:
+        """Serialize service clients configs
+
+        :return: serialized_clients_configs
+        :rtype: str
+        """
+        serialized_clients_configs = []
+        for client_config in self._client_inputs:
+            # Parse the interface package name
+            service_module = client_config.srv_type.__module__.split(".srv")[0]
+            # Get the service name
+            service_type = client_config.srv_type.__name__
+            config_dict = {
+                "service_module": service_module,
+                "service_type": service_type,
+                "service_name": client_config.name,
+            }
+            serialized_clients_configs.append(json.dumps(config_dict))
+        return json.dumps(serialized_clients_configs)
+
+    @_client_inputs_json.setter
+    def _client_inputs_json(self, clients_json: str):
+        """Parse ServiceClientConfig from serialized configs
+
+        :param clients_json: Serialized configs
+        :type clients_json: str
+        """
+        self._client_inputs = []
+        clients_serialized = json.loads(clients_json)
+        for client_serialized in clients_serialized:
+            client_dict: dict = json.loads(client_serialized)
+            try:
+                # Get the service name and module name
+                module_name = client_dict.get("service_module")
+                service_type_name = client_dict.get("service_type")
+                name = client_dict.get("service_name")
+
+                # Import the service class
+                module = importlib.import_module(f"{module_name}.srv")
+                service_type = getattr(module, service_type_name)
+
+                # Re-create the service config
+                service_config = ServiceClientConfig(srv_type=service_type, name=name)
+                self._client_inputs.append(service_config)
+
+            except Exception as e:
+                get_logger(self.node_name).warning(f"Error parsing clients inputs: {e}")
 
     def _return_error(self, error_msg: str):
         """Return error msg to the UI"""
@@ -113,7 +195,6 @@ class UINode(BaseComponent):
 
     def custom_on_activate(self):
         """Custom activation configuration"""
-
         # Setup settings updater clients
         if self.config.components:
             for component_name in self.config.components:
@@ -125,9 +206,41 @@ class UINode(BaseComponent):
                     )
                 )
 
+        # Initialize all input clients (if any)
+        for inp in self._client_inputs:
+            if isinstance(inp, ServiceClientConfig):
+                self._ros_service_clients[inp.name] = base_clients.ServiceClientHandler(
+                    client_node=self, config=inp
+                )
+
+            # TODO: Uncoment for action clients
+            # elif isinstance(inp, ActionClientConfig):
+            #     self._ros_action_clients.append(
+            #         base_clients.ActionClientHandler(client_node=self, config=inp)
+            #     )
+
         # Start loop thread if necessary
         if hasattr(self, "loop_thread"):
             self.loop_thread.start()
+
+        return super().custom_on_activate()
+
+    def custom_on_deactivate(self):
+        """Custom deactivation configuration"""
+        for inp in self._update_parameters_srv_client.values():
+            if inp.client is not None:
+                self.destroy_client(inp.client)
+
+        for inp in self._ros_service_clients.items():
+            if inp.client is not None:
+                self.destroy_client(inp.client)
+
+        # TODO: Uncoment for action clients
+        # for inp in self._ros_action_clients:
+        #     if inp.client is not None:
+        #         self.destroy_client(inp.client)
+
+        return super().custom_on_deactivate()
 
     def attach_websocket_callback(
         self, ws_callback: Callable, topic_type: Optional[str] = None
@@ -151,6 +264,39 @@ class UINode(BaseComponent):
             req_msg=srv_request
         )
         return result
+
+    def send_srv_call(self, srv_call_data: Dict) -> Tuple[str, Any]:
+        """
+        Send a service call using the service request form data
+        """
+        srv_name = srv_call_data.pop("srv_name")
+        if srv_name not in self._ros_service_clients:
+            return (False, f'Service client "{srv_name}" not found!')
+
+        try:
+            output = self._ros_service_clients[srv_name].send_request_from_dict(
+                request_fields=srv_call_data
+            )
+        except Exception as e:
+            return (
+                False,
+                f'Error occured when sending service request to "{srv_name}": {e}',
+            )
+
+        if output:
+            # Parse response to display on UI
+            response_fileds = self._ros_service_clients[
+                srv_name
+            ].client.srv_type.Response.get_fields_and_field_types()
+            # Format a response string with fields dictionary keys and actual response values
+            response_str = ""
+            for key in response_fileds.keys():
+                response_str += f"{key} = {getattr(output, key)}, "
+            return (True, response_str)
+        return (
+            False,
+            f'Server Error - Service "{srv_name}" request send but no service response recieved',
+        )
 
     def publish_data(self, data: Any):
         """

@@ -49,6 +49,7 @@ from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
 from .launch_actions import ComponentLaunchAction
+from ..base_clients import ServiceClientConfig
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
 from ..ui_node import UINode, UINodeConfig
 
@@ -243,7 +244,7 @@ class Launcher:
 
     def enable_ui(
         self,
-        inputs: Optional[List[Topic]] = None,
+        inputs: Optional[List[Union[Topic, ServiceClientConfig]]] = None,
         outputs: Optional[List[Topic]] = None,
         port: int = 5001,
         ssl_keyfile_path: str = "key.pem",
@@ -287,7 +288,7 @@ class Launcher:
         self._ui_output_elements = []
         for ext in UI_EXTENSIONS:
             input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
-            # serialize inputs
+            # Additional input/output elements are used for UI elements coming from derived packages
             for key, element in input_elements_dict.items():
                 self._ui_input_elements.append((
                     f"{key.__module__}.{key.__qualname__}",
@@ -708,6 +709,8 @@ class Launcher:
             json.dumps(self._ui_input_elements),
             "--ui_output_elements",
             json.dumps(self._ui_output_elements),
+            "--ui_service_clients",
+            ui_node._client_inputs_json,
             "--ros-args",
             "--log-level",
             "info",
