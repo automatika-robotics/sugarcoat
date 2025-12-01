@@ -1,7 +1,7 @@
 """ROS Service/Action Client Wrapper"""
 
 import time as rostime
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 import rclpy
 from attrs import Factory, define, field
 from rclpy.action.client import ActionClient
@@ -74,12 +74,12 @@ class ServiceClientHandler:
         :type srv_name: ServiceClientConfig
 
         """
-        if not config and (srv_name and srv_type):
-            config = ServiceClientConfig(name=srv_name, srv_type=srv_type)
-        else:
+        if not config and not srv_name and not srv_type:
             raise ValueError(
                 "Cannot initialize service client. Provide a valid config or a valid service name and service type"
             )
+        if not config and (srv_name and srv_type):
+            config = ServiceClientConfig(name=srv_name, srv_type=srv_type)
 
         # If config is provided plus additional name or type -> update name or type
         if srv_name:
@@ -94,6 +94,32 @@ class ServiceClientHandler:
             f"creating client for {self.config.name} of type {self.config.srv_type}"
         )
         self.client = self.node.create_client(self.config.srv_type, self.config.name)
+
+    def send_request_from_dict(
+        self, request_fields: Dict[str, str], executor: Optional[Executor] = None
+    ):
+        """Send a service request using a serialized Dict request data
+
+        :param request_fields: Request data [key, value]
+        :type request_fields: Dict[str, str]
+        :param executor: Optional ros executor, defaults to None
+        :type executor: Optional[Executor], optional
+        :return: Service result
+        :rtype: Any
+        """
+        request = self.client.srv_type.Request()
+        for name, value in request_fields.items():
+            try:
+                attribute = getattr(request, name)
+                attribute_type = type(attribute)
+                setattr(request, name, attribute_type(value))
+            except Exception as e:
+                self.node.get_logger().error(
+                    f"Error creating service rerquest from dict: {e}"
+                )
+                return None
+
+        return self.send_request(request, executor)
 
     def send_request(self, req_msg, executor: Optional[Executor] = None):
         """
@@ -141,7 +167,7 @@ class ServiceClientHandler:
         self.future = self.client.call_async(self.request)
 
         # Spin until response
-        while not self.future:
+        while not self.future.result():
             rclpy.spin_once(
                 self.node, executor=executor, timeout_sec=self.config.timeout_secs
             )
