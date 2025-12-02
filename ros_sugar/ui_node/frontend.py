@@ -20,7 +20,7 @@ class FHApp:
         configs: Dict,
         in_topics: Sequence[Topic],
         out_topics: Sequence[Topic],
-        srv_clients_configs : Optional[Sequence[Dict]] = None,
+        srv_clients_configs: Optional[Sequence[Dict]] = None,
         additional_input_elements: Optional[List[Tuple]] = None,
         additional_output_elements: Optional[List[Tuple]] = None,
     ):
@@ -57,7 +57,7 @@ class FHApp:
         self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
         self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
         self.srv_clients = (
-            elements.input_service_clients_card(srv_clients_configs)
+            elements.styled_main_service_clients_container(srv_clients_configs)
             if srv_clients_configs
             else None
         )

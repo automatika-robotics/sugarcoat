@@ -15,6 +15,14 @@ except ModuleNotFoundError as e:
     ) from e
 
 
+# NOTE: All custom classes names are implmenetd in custom.css (for style specific classes)
+# Some class names are linked with a custom behavior implemnented in custom.js (such as 'draggable' class)
+
+# NOTE: 'hx_post' calls (used in Buttons) are implemented in scripts/ui_node_executable
+
+# TODO: Make all draggable containers re-sizable as well
+
+
 def _in_text_element(topic_name: str, topic_type: str):
     """FastHTML element for input String type"""
     field_type = "number" if topic_type in ["Float32", "Float64"] else "text"
@@ -53,7 +61,7 @@ def _in_bool_element(topic_name: str, topic_type: str):
             ),
             id=f"{topic_name}-form",
             ws_send=True,
-            hx_on__ws_after_send="this.reset(); return false;",
+            hx_on__ws_after_send="this.reset(); return false;",  # Reset the form fields values in the UI after sending
         ),
     )
 
@@ -66,7 +74,7 @@ def _in_audio_element(topic_name: str, **_):
             Button(
                 UkIcon(icon="mic"),
                 id=topic_name,
-                onclick="startAudioRecording(this)",
+                onclick="startAudioRecording(this)",  # Method implemented in custom.js
                 title="Record",
                 cls=f"{AT.primary}",
             ),
@@ -149,6 +157,7 @@ def _in_pose_element(topic_name: str, topic_type: str):
                 ),
                 DivHStacked(
                     P("Orientation (Optional):"),
+                    # Toggle button for only the orientation fields (skips the first 6 position fields of the form)
                     _toggle_button(
                         onclick="""
                                 for (let i = 6; i < this.form.length -1 ; i++)
@@ -205,12 +214,19 @@ def _out_image_element(topic_name: str, **_):
 
 
 def _log_audio_element(logging_card, output, data_src: str, id: str = "audio"):
+    """Adds an Audio output or input to the main logging card"""
     return logging_card(_styled_logging_audio(output, data_src, id))
 
 
 def _log_text_element(logging_card, output, data_src: str, id: str = "text"):
+    """Adds a Text output or input to the main logging card"""
     return logging_card(_styled_logging_text(output, data_src, id))
 
+
+# _INPUT_ELEMENTS and _OUTPUT_ELEMENTS are the main dictionaries used to link message types with their UI elements
+# (both inputs: _INPUT_ELEMENTS and outputs: _OUTPUT_ELEMENTS)
+# Other Sugarcoat-based packages can implmenet their own UI elements
+# and these dictionaries will be populaed and updated automatically
 
 _INPUT_ELEMENTS: Dict = {
     "String": _in_text_element,
@@ -351,8 +367,16 @@ def add_additional_ui_elements(
 
 
 def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
+    """UI arrow button to use for show/hide toggle of a Div with a given ID
+
+    :param div_to_toggle: Id of the Div to show/hide on button click, defaults to None
+    :type div_to_toggle: Optional[str], optional
+    :return: UI Button Element
+    :rtype: FT
+    """
     _arrow_down = UkIcon("chevrons-down")
     _arrow_up = UkIcon("chevrons-up")
+    # Toggle the button between up <> down on every click
     onclick = f"""
                 if (this.name == 'down')
                 {{
@@ -394,8 +418,11 @@ def input_topic_card(topic_name: str, topic_type: str, column_class: str = "") -
     :type topic_name: str
     :param topic_type: Topic message type
     :type topic_type: str
+    :param column_class: CSS class for number of columns, if not set the Div will span over the whole parent width
+    :type column_class: str
     :return: Input topic UI element
     """
+    # An inner card (with margin m-2) and max height of 20vh
     card = Card(
         H4(topic_name),
         cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto inner-main-card",
@@ -404,7 +431,7 @@ def input_topic_card(topic_name: str, topic_type: str, column_class: str = "") -
     return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
 
 
-def input_service_clients_card(
+def styled_main_service_clients_container(
     srv_clients_config: Sequence[Dict], column_class: str = ""
 ) -> FT:
     """Creates a UI element for all service clients
@@ -415,11 +442,18 @@ def input_service_clients_card(
     :type column_class: str, defaults to ""
     :return: Input Service Clients UI element
     """
+    # dragabble class: makes the whole container draggable (implmeneted in custom.js)
+    # cool-subtitle-mini: automatika red color cool title (in custom.css)
     main_card = Card(
-        H3("Service Calls"),
-        cls=f"m-2 {column_class} max-h-[80vh] overflow-y-auto inner-main-card",
+        DivHStacked(
+            H4("Service Calls", cls="cool-subtitle-mini"),
+            _toggle_button(div_to_toggle="all_services"),
+            cls="space-x-0",
+        ),
+        cls=f"draggable main-card {column_class} max-h-[80vh] overflow-y-auto",
         id="service_clients",
     )
+    all_services_cards = Div(id="all_services")
     for client in srv_clients_config:
         client_card = Card(
             H4(client["service_name"]),
@@ -429,8 +463,8 @@ def input_service_clients_card(
         client_card(
             _in_service_element(client["service_name"], client["request_fields"])
         )
-        main_card(client_card)
-    return main_card
+        all_services_cards(client_card)
+    return main_card(all_services_cards)
 
 
 def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:
@@ -679,6 +713,13 @@ def _styled_logging_audio(output, output_src: str = "info", div_id: str = "audio
 
 
 def output_logging_card(current_log):
+    """Creates a main container for the logging card and adds current logging
+
+    :param current_log: Current logging card
+    :type current_log: FT
+    :return: Logging card main container
+    :rtype: FT
+    """
     return Card(
         DivHStacked(
             H4("Log", cls="cool-subtitle-mini"),
@@ -691,6 +732,11 @@ def output_logging_card(current_log):
 
 
 def initial_logging_card():
+    """Creates an empty logging card with 'Log Started' text
+
+    :return: Empty logging card
+    :rtype: FT
+    """
     output_card = Card(
         cls="terminal-container absolute top-20 inset-x-2 bottom-2 overflow-y-auto",
         id="outputs-log",
@@ -734,6 +780,20 @@ def augment_text_in_logging_card(
 def update_logging_card(
     logging_card, output: str, data_type: str, data_src: str = "info"
 ):
+    """Updates the logging card with a response text
+
+    :param logging_card: Main logging card to update
+    :type logging_card: FT
+    :param output: Text to add to the card
+    :type output: str
+    :param data_type: Type of the data (String/error)
+    :type data_type: str
+    :param data_src: Source of the data (info, error, robot, etc.), defaults to "info"
+    :type data_src: str, optional
+    :return: Updated logging card
+    :rtype: FT
+    """
+    # Remove any previous loading that exists on the card
     remove_child_from_logging_card(logging_card)
     # Handle errors originating from ROS node
     if data_type == "error":
@@ -743,7 +803,9 @@ def update_logging_card(
 
 
 def update_logging_card_with_loading(logging_card):
-    """Update logging card"""
+    """Adds a robot 'loading' element to the main logging card.
+    Used to add loading to the card until a response is received
+    """
     return logging_card(
         Div(
             Strong(
@@ -760,6 +822,21 @@ def update_logging_card_with_loading(logging_card):
 def nonvalidated_config(
     setting_name: str, value: Any, field_type: str, type_args, input_name: str
 ):
+    """Sets up a UI element for a component settings element WITHOUT validators
+
+    :param setting_name: Name of the settings field
+    :type setting_name: str
+    :param value: Value of the settings field
+    :type value: Any
+    :param field_type: Type of the settings field
+    :type field_type: _type_
+    :param type_args: Type arguments (if any)
+    :type type_args: _type_
+    :param input_name: Corresponding input name
+    :type input_name: _type_
+    :return: UI input element
+    :rtype: FT
+    """
     if field_type == "bool":
         # The 'checked' attribute is a boolean flag, so it doesn't need a value
         return LabelSwitch(
@@ -815,6 +892,23 @@ def validated_config(
     type_args,
     input_name,
 ):
+    """Sets up UI element for a component settings element with validators
+
+    :param setting_name: Name of the settings field
+    :type setting_name: str
+    :param value: Value of the settings field
+    :type value: Any
+    :param attrs_validators: Validators of the settings field
+    :type attrs_validators: List[Dict]
+    :param field_type: Type of the settings field
+    :type field_type: _type_
+    :param type_args: Type arguments (if any)
+    :type type_args: _type_
+    :param input_name: Corresponding input name
+    :type input_name: _type_
+    :return: UI input element
+    :rtype: FT
+    """
     validator = attrs_validators[0]
     validator_name = list(validator.keys())[0]
     validator_props = validator[validator_name]
@@ -873,7 +967,7 @@ def validated_config(
 def _parse_nested_settings_dict(
     nested_dict: Dict, all_elements_list: List, nested_root_name: str
 ):
-    """Parse a UI elemnt for nested settings (config) classses
+    """Parse a UI element for nested settings (config) classses
 
     :param nested_dict: Nested config dictionary
     :type nested_dict: Dict
@@ -909,12 +1003,25 @@ def _parse_nested_settings_dict(
 
 
 def parse_ui_elements_to_simple_and_nested(
-    component_name,
-    setting_name,
-    setting_details,
+    component_name: str,
+    setting_name: str,
+    setting_details: Any,
     simple_ui_elements: list,
     nested_ui_elements: list,
 ):
+    """Parses the component settings element to determine if it is a simple type (int, float, etc.) or  a nested type (for elements that are BaseAttrs classes themselves), then adds the element to the corresponding list
+
+    :param component_name: Name of the component
+    :type component_name: str
+    :param setting_name: Name of the settings field
+    :type setting_name: str
+    :param setting_details: Value of the settings field
+    :type setting_details: Any
+    :param simple_ui_elements: Set of component's simple UI elements to populate
+    :type simple_ui_elements: list
+    :param nested_ui_elements: Set of component's nested UI elements to populate
+    :type nested_ui_elements: list
+    """
     field_type, type_args = parse_type(setting_details.get("type", ""))
     nested_root_name = f"{setting_name}"
 
