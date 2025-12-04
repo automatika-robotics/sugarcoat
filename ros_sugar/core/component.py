@@ -1349,7 +1349,7 @@ class BaseComponent(lifecycle.Node):
 
     # MAIN ACTION SERVER HELPER METHODS AND CALLBACKS
     @abstractmethod
-    def main_action_callback(self, goal_handle):
+    def main_action_callback(self, goal_handle) -> Any:
         """
         Component main action server callback - used if component started with run_as_action_server=True
 
