@@ -1248,14 +1248,15 @@ class BaseComponent(lifecycle.Node):
             for idx, func_name in enumerate(processor_data[0]):
                 sock_file = f"/tmp/{self.node_name}_{key}_{func_name}.socket"
                 if not os.path.exists(sock_file):
-                    self.get_logger().error(
+                    raise RuntimeError(
                         f"File {sock_file} doesn't exists. The external processors have not been setup properly. Exiting .. "
                     )
-                    raise KeyboardInterrupt()
 
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.settimeout(1)  # timeout set to 1s
                 sock.connect(sock_file)
+                # The processessing functions are a list which is the first element of the tuple
+                # stored in _external_processors dict
                 processor_data[0][idx] = sock
 
     @property

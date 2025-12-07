@@ -1,13 +1,19 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Callable, Union, Any
 import re
 import sys
 import base64
 import numpy as np
-from nav_msgs.msg import Odometry
 import cv2
-import std_msgs.msg as std_msg
+from socket import socket
 
 from rclpy.logging import get_logger
+import std_msgs.msg as std_msg
+from nav_msgs.msg import Odometry
+
+import msgpack
+import msgpack_numpy as m_pack
+# patch msgpack for numpy arrays
+m_pack.patch()
 
 
 def convert_img_to_jpeg_str(img, node_name: str = "util") -> str:
@@ -532,7 +538,7 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
 
     # Set up the layout
     msg.layout.dim = []
-    for size, stride, label in zip(arr.shape, strides, labels):
+    for size, stride, label in zip(arr.shape, strides, labels, strict=True):
         dim = std_msg.MultiArrayDimension()
         dim.label = label
         dim.size = size
@@ -543,3 +549,30 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
     msg.data = arr.flatten().tolist()
 
     return msg
+
+
+def run_external_processor(logger_name: str, topic_name: str, processor: Union[Callable, socket], *output) -> Any:
+    """Run external processors
+
+    :param processor: A callable or a socket
+    :type processor: Union[Callable, socket]
+    """
+    if isinstance(processor, Callable):
+        return processor(*output)
+
+    try:
+        out_dict = {"output": output}
+        payload = msgpack.packb(out_dict)
+        if payload:
+            processor.sendall(payload)
+        else:
+            get_logger(logger_name).error(
+                f"Could not pack arguments for external processor in external function provided for {topic_name}"
+            )
+        result_b = processor.recv(1024)
+        result = msgpack.unpackb(result_b)
+        return result
+    except Exception as e:
+        get_logger(logger_name).error(
+            f"Error in external processor for {topic_name}: {e}"
+        )

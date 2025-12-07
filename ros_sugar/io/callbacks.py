@@ -8,8 +8,6 @@ import base64
 
 import cv2
 import numpy as np
-import msgpack
-import msgpack_numpy as m_pack
 from geometry_msgs.msg import Pose
 from jinja2.environment import Template
 from nav_msgs.msg import OccupancyGrid, Odometry
@@ -19,9 +17,6 @@ from rclpy.subscription import Subscription
 from tf2_ros import TransformStamped
 
 from . import utils
-
-# patch msgpack for numpy arrays
-m_pack.patch()
 
 
 class GenericCallback:
@@ -117,33 +112,6 @@ class GenericCallback:
         """
         self._post_processors = processors
 
-    def _run_processor(self, processor: Union[Callable, socket], output: Any) -> Any:
-        """Run external processors
-
-        :param processor: A callable or a socket
-        :type processor: Union[Callable, socket]
-        """
-        if isinstance(processor, Callable):
-            return processor(output=output)
-
-        try:
-            out_dict = {"output": output}
-            payload = msgpack.packb(out_dict)
-            if payload:
-                processor.sendall(payload)
-            else:
-                get_logger(self.node_name).error(
-                    f"Could not pack arguments for external processor in topic {self.input_topic.name}"
-                )
-
-            result_b = processor.recv(1024)
-            result = msgpack.unpackb(result_b)
-            return result
-        except Exception as e:
-            get_logger(self.node_name).error(
-                f"Error in external processor for {self.input_topic.name}: {e}"
-            )
-
     def get_output(self, clear_last: bool = False, **kwargs) -> Any:
         """Post process outputs based on custom processors (if any) and return it
         :param output:
@@ -155,7 +123,7 @@ class GenericCallback:
         if self._post_processors and output:
             # Apply post processors sequentially if defined
             for processor in self._post_processors:
-                post_output = self._run_processor(processor, output)
+                post_output = utils.run_external_processor(self.node_name, self.input_topic.name, processor, output)
                 # if any processor output is None, then send None
                 if not post_output:
                     return None
