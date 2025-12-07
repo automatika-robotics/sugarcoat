@@ -552,10 +552,34 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
 
 
 def run_external_processor(logger_name: str, topic_name: str, processor: Union[Callable, socket], *output) -> Any:
-    """Run external processors
+    """
+    Execute external processing using a callable or a Unix socket.
 
-    :param processor: A callable or a socket
+    This utility function is designed to handle two scenarios:
+    1. When the processor is a callable (e.g., a function), it invokes the callable with the provided `*output` arguments.
+    2. When the processor is a Unix socket, it sends the `*output` data packed in msgpack format to the connected process and waits for a response.
+
+    :param logger_name: The name of the logger to use for logging messages.
+    :type logger_name: str
+
+    :param topic_name: A descriptive name for the processing topic, used in log messages.
+    :type topic_name: str
+
+    :param processor: The external processor, which can be either a callable or a Unix socket.
+                      If it's a callable, it will be directly invoked with `*output`.
+                      If it's a Unix socket, data will be sent and received over this socket.
     :type processor: Union[Callable, socket]
+
+    :param output: Variable length argument list to be passed to the external processor.
+    :type output: Any
+
+    :return: The result of the external processing. This can vary depending on the type of processor used.
+             For a callable, it's whatever the function returns.
+             For a Unix socket, it's the unpacked response received from the connected process.
+    :rtype: Any
+
+    :raises Exception: If an error occurs during the execution of the external processor or communication over the socket,
+                       an exception is logged with an appropriate error message.
     """
     if isinstance(processor, Callable):
         return processor(*output)
