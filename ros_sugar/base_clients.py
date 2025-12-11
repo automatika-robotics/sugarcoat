@@ -1,7 +1,7 @@
 """ROS Service/Action Client Wrapper"""
 
 import time as rostime
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, Union, Tuple
 import rclpy
 from attrs import Factory, define, field
 from rclpy.action.client import ActionClient
@@ -10,6 +10,7 @@ from rclpy.callback_groups import CallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import Executor
 
 from .config import BaseAttrs, base_validators
+from .supported_types import set_ros_msg_from_dict
 
 
 @define
@@ -96,7 +97,9 @@ class ServiceClientHandler:
         self.client = self.node.create_client(self.config.srv_type, self.config.name)
 
     def send_request_from_dict(
-        self, request_fields: Dict[str, str], executor: Optional[Executor] = None
+        self,
+        request_fields: Dict[str, Union[str, Dict]],
+        executor: Optional[Executor] = None,
     ):
         """Send a service request using a serialized Dict request data
 
@@ -107,19 +110,18 @@ class ServiceClientHandler:
         :return: Service result
         :rtype: Any
         """
-        request = self.client.srv_type.Request()
-        for name, value in request_fields.items():
-            try:
-                attribute = getattr(request, name)
-                attribute_type = type(attribute)
-                setattr(request, name, attribute_type(value))
-            except Exception as e:
-                self.node.get_logger().error(
-                    f"Error creating service rerquest from dict: {e}"
-                )
-                return None
+        try:
+            updated_message = set_ros_msg_from_dict(
+                msg_class=self.config.srv_type.Request, data_dict=request_fields
+            )
+            self.node.get_logger().error(f"sending request {updated_message}")
+        except Exception as e:
+            self.node.get_logger().error(
+                f"Error creating service request from dict: {e}"
+            )
+            return None
 
-        return self.send_request(request, executor)
+        return self.send_request(updated_message, executor)
 
     def send_request(self, req_msg, executor: Optional[Executor] = None):
         """
@@ -196,11 +198,12 @@ class ActionClientHandler:
         :param config: Client config
         :type config: ActionClientConfig
         """
+        self._check_server_alive_timer = None
         self.reset()
 
         if not config and (action_name and action_type):
             config = ActionClientConfig(name=action_name, action_type=action_type)
-        else:
+        elif not config:
             raise ValueError(
                 "Cannot initialize action client. Provide a valid config or a valid action name and action type"
             )
@@ -227,9 +230,33 @@ class ActionClientHandler:
         """
         self.old_feedback_count: int = -1
         self.feedback_count: int = 0
-        self.goal_rejcted = False
+        self.goal_rejected = False
         self.goal_accepted = False
         self.action_returned = False
+        self._feedback_timeout = False
+        if self._check_server_alive_timer:
+            self.node.destroy_timer(self._check_server_alive_timer)
+            self._check_server_alive_timer = None
+
+    def send_request_from_dict(
+        self,
+        request_fields: Dict[str, Union[str, Dict]],
+        wait_until_first_feedback: bool = True,
+    ):
+        """Send an action request using a serialized Dict request data
+
+        :param request_fields: Request data [key, value]
+        :type request_fields: Dict[str, Union[str, Dict]]
+        """
+        try:
+            updated_message = set_ros_msg_from_dict(
+                msg_class=self.config.action_type.Goal, data_dict=request_fields
+            )
+        except Exception as e:
+            self.node.get_logger().error(f"Error creating action goal from dict: {e}")
+            return None
+
+        return self.send_request(updated_message, wait_until_first_feedback)
 
     def send_request(
         self, request_msg: Any, wait_until_first_feedback: bool = True
@@ -283,10 +310,16 @@ class ActionClientHandler:
         while wait_until_first_feedback and self.feedback_count <= 0:
             self.node.get_logger().warn("Waiting for action feedback", once=True)
             if not self.got_new_feedback():
+                self.cancel_request()
                 return False
 
         # Add method when action is done
         self._send_goal_future.add_done_callback(self.action_response_callback)
+
+        self._check_server_alive_timer = self.node.create_timer(
+            timer_period_sec=self.config.feedback_check_timeout,
+            callback=self._check_alive_callback,
+        )
 
         return True
 
@@ -298,13 +331,13 @@ class ActionClientHandler:
         :param future: Action result future
         :type future: Any
         """
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.goal_rejcted = True
+        self._goal_handle = future.result()
+        if not self._goal_handle.accepted:
+            self.goal_rejected = True
             return
         self.goal_accepted = True
 
-        self._get_result_future = goal_handle.get_result_async()
+        self._get_result_future = self._goal_handle.get_result_async()
         self._get_result_future.add_done_callback(self.action_result_callback)
         return
 
@@ -328,6 +361,19 @@ class ActionClientHandler:
         # Increase the feedback counter
         self.feedback_count += 1
         self.feedback_msg = feedback_msg
+        # Reset counters
+        if self.feedback_count > 1000:
+            self.feedback_count = 0
+            self.old_feedback_count = -1
+
+    def _check_alive_callback(self):
+        # New feedback got received within the timeout
+        if self.feedback_count > self.old_feedback_count:
+            self.old_feedback_count = self.feedback_count
+            return
+        # No feedback is received
+        self.cancel_request()
+        self._feedback_timeout = True
 
     def got_new_feedback(self) -> bool:
         """
@@ -345,3 +391,52 @@ class ActionClientHandler:
             _check_counter += self.config.feedback_check_period
             rostime.sleep(self.config.feedback_check_period)
         return False
+
+    def cancel_request(self) -> Tuple[bool, str]:
+        """Cancel an active action goal and return result
+
+        :return: If cancellation is successful
+        :rtype: Tuple[bool, str]
+        """
+        if self.goal_accepted:
+            # self._send_goal_future.set_result(self.config.action_type.Result())
+            self._goal_handle.cancel_goal_async()
+            # Wait for action to return or timeout
+            _check_counter: float = 0.0
+            while (
+                not self.action_returned
+                and _check_counter < self.config.feedback_check_timeout
+            ):
+                _check_counter += self.config.feedback_check_period
+                rostime.sleep(self.config.feedback_check_period)
+            if _check_counter >= self.config.feedback_check_timeout:
+                return (False, "Failed to cancel goal")
+            self.reset()
+            return (True, "Action goal cancelled successfully")
+        else:
+            # Goal is already canceled
+            return (True, "No ongoing action goal to cancel")
+
+    def get_status(self) -> Tuple[bool, str]:
+        """Get goal status and feedback or error message
+
+        :return: (Active/Inactive, message)
+        :rtype: Tuple[bool, str]
+        """
+        if self._goal_handle.is_active and self.got_new_feedback():
+            return (True, f"Feedback: {self.feedback_msg}")
+        if self._feedback_timeout:
+            self._feedback_timeout = False
+            return (
+                False,
+                f"Did not recieve any feedback from server within {self.config.feedback_check_timeout} ... Cancelling",
+            )
+        if not self._goal_handle.is_active:
+            return (
+                False,
+                "Action goal cancelled by the server!",
+            )
+        return (
+            True,
+            None,
+        )
