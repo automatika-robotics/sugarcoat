@@ -1360,7 +1360,7 @@ class BaseComponent(lifecycle.Node):
         if self.run_type == ComponentRunType.ACTION_SERVER:
             raise NotImplementedError
 
-    def _main_action_goal_callback(self, _):
+    def _main_action_goal_callback(self, _) -> GoalResponse:
         """
         Goal callback for the main component action server
 
@@ -1386,7 +1386,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().info("Goal accepted")
             self._main_goal_handle.execute()
 
-    def _main_action_cancel_callback(self, _):
+    def _main_action_cancel_callback(self, _) -> GoalResponse:
         """Main component action server callback when handle is canceled
 
         :param goal_handle: _description_

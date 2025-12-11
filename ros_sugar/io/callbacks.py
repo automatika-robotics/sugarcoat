@@ -90,6 +90,7 @@ class GenericCallback:
         :type msg: Any
         """
         self.msg = msg
+        self.__got_msg = True
 
         # Get the frame if available
         if hasattr(msg, "header") and isinstance(msg.header, Header):
@@ -134,7 +135,6 @@ class GenericCallback:
                     )
                 # if all good, set output equal to post output
                 output = post_output
-        self.__got_msg = self.msg is not None
         # Clear the last message
         if clear_last:
             self.clear_last_msg()
@@ -153,7 +153,7 @@ class GenericCallback:
     @abstractmethod
     def _get_ui_content(self, **_) -> str:
         """
-        Utility method to get UI compatible conent.
+        Utility method to get UI compatible content.
         To be used with external callbacks in UI Node
         :returns:   Topic content
         :rtype:     Any
@@ -487,7 +487,7 @@ class OdomCallback(GenericCallback):
     def _process(self, msg: Odometry) -> np.ndarray:
         """Takes Odometry ROS object and converts it to a numpy array with [x, y, z, heading, speed]
 
-        :param msg: Input ROS odomtery message
+        :param msg: Input ROS odometry message
         :type msg: Odometry
 
         :return: [x, y, z, heading, speed]
