@@ -49,7 +49,7 @@ from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
 from .launch_actions import ComponentLaunchAction
-from ..base_clients import ServiceClientConfig
+from ..base_clients import ServiceClientConfig, ActionClientConfig
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
 from ..ui_node import UINode, UINodeConfig
 
@@ -244,7 +244,9 @@ class Launcher:
 
     def enable_ui(
         self,
-        inputs: Optional[List[Union[Topic, ServiceClientConfig]]] = None,
+        inputs: Optional[
+            List[Union[Topic, ServiceClientConfig, ActionClientConfig]]
+        ] = None,
         outputs: Optional[List[Topic]] = None,
         port: int = 5001,
         ssl_keyfile_path: str = "key.pem",
@@ -689,7 +691,7 @@ class Launcher:
         :param nodes_in_processes: If nodes are being launched in separate processes, defaults to True
         :type nodes_in_processes: bool, optional
         """
-        logger.info("UI enabled. Setting up ui node.")
+        logger.info(f"UI enabled. Setting up ui node: {self._ui_input_topics}")
 
         # Setup the client node
         component_configs = {comp.node_name: comp.config for comp in self._components}

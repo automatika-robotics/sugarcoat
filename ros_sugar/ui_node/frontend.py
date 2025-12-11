@@ -21,6 +21,7 @@ class FHApp:
         in_topics: Sequence[Topic],
         out_topics: Sequence[Topic],
         srv_clients_configs: Optional[Sequence[Dict]] = None,
+        action_clients_configs: Optional[Sequence[Dict]] = None,
         additional_input_elements: Optional[List[Tuple]] = None,
         additional_output_elements: Optional[List[Tuple]] = None,
     ):
@@ -56,11 +57,22 @@ class FHApp:
         self.out_topics = out_topics
         self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
         self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
+        logging.warning(f"Got action clients: {action_clients_configs}")
         self.srv_clients = (
-            elements.styled_main_service_clients_container(srv_clients_configs)
+            elements.styled_main_service_clients_container(
+                srv_clients_configs, container_name="Service Calls"
+            )
             if srv_clients_configs
             else None
         )
+        self.action_clients = (
+            elements.styled_main_service_clients_container(
+                action_clients_configs, container_name="Action Calls"
+            )
+            if action_clients_configs
+            else None
+        )
+        logging.warning(f"Got UI clients: {self.action_clients}")
         self.toggle_settings = False
         setup_toasts(self.app)
 
@@ -119,7 +131,10 @@ class FHApp:
         for idx, inp in enumerate(inputs):
             input_divs.append(
                 elements.input_topic_card(
-                    inp.name, inp.msg_type.__name__, inputs_columns_cls[idx]
+                    topic_name=inp.name,
+                    topic_type=inp.msg_type.__name__,
+                    ros_msg_type=inp.ros_msg_type,
+                    column_class=inputs_columns_cls[idx],
                 ),
             )
         return inputs_container(input_grid(*input_divs, id=grid_id))
@@ -210,22 +225,44 @@ class FHApp:
             )
             if self.outputs:
                 main_grid(
-                    Div(elements.output_logging_card(self.outputs_log)),
-                    Div(self.outputs),
+                    Div(
+                        elements.output_logging_card(self.outputs_log),
+                        id="log-frontend",
+                    ),
+                    Div(self.outputs, id="outputs-frontend"),
                 )
             else:
                 main_grid(
                     Div(
                         elements.output_logging_card(self.outputs_log),
                         cls="col-span-full",
+                        id="log-frontend",
                     ),
                 )
             if self.inputs:
                 main_grid(
-                    Div(self.inputs, cls="col-span-full"),
+                    Div(
+                        self.inputs,
+                        cls="col-span-full",
+                        id="inputs-frontend",
+                    ),
                 )
             if self.srv_clients:
-                main_grid(Div(self.srv_clients, cls="col-span-full"))
+                main_grid(
+                    Div(
+                        self.srv_clients,
+                        cls="col-span-full",
+                        id="srv-frontend",
+                    )
+                )
+            if self.action_clients:
+                main_grid(
+                    Div(
+                        self.action_clients,
+                        cls="col-span-full",
+                        id="actions-frontend",
+                    )
+                )
 
             return Main(
                 main_grid,
@@ -244,31 +281,75 @@ class FHApp:
             )
         return self.settings
 
+    @property
+    def _nav_bar(self) -> FT:
+        if self.toggle_settings:
+            nav_bar_items = [
+                Button(
+                    self._settings_button,
+                    id="settings-button",
+                    hx_get="/settings/show",
+                    hx_target="#main",
+                    hx_swap="outerHTML",
+                    cls="primary-button",
+                ),
+            ]
+        else:
+            nav_bar_items = [elements.filter_tag_button(name="log", div_to_hide="log-frontend")]
+            if self.outputs:
+                nav_bar_items.append(
+                    elements.filter_tag_button(
+                        name="outputs", div_to_hide="outputs-frontend"
+                    ),
+                )
+            if self.inputs:
+                nav_bar_items.append(
+                    elements.filter_tag_button(
+                        name="inputs", div_to_hide="inputs-frontend"
+                    ),
+                )
+            if self.srv_clients:
+                nav_bar_items.append(
+                    elements.filter_tag_button(name="services", div_to_hide="srv-frontend"),
+                )
+            if self.action_clients:
+                nav_bar_items.append(
+                    elements.filter_tag_button(
+                        name="actions", div_to_hide="actions-frontend"
+                    ),
+                )
+            nav_bar_items.append(
+                Button(
+                    self._settings_button,
+                    id="settings-button",
+                    hx_get="/settings/show",
+                    hx_target="#main",
+                    hx_swap="outerHTML",
+                    cls="primary-button",
+                ),
+            )
+        nav_bar = NavBar(
+            *nav_bar_items,
+            brand=DivLAligned(
+                Img(
+                    src="https://automatikarobotics.com/Emos_dark.png",
+                    style="width:6vw",
+                )
+            ),
+        )
+        return nav_bar
+
     def get_main_page(self):
         """Serves the main page of the UI"""
         # Serve main page
         self.settings = self._create_component_settings_ui(self.configs)
+
         return (
             Favicon(light_icon="automatika-icon.png", dark_icon="automatika-icon.png"),
             Title("EMOS UI"),
             Div(
                 Container(
-                    NavBar(
-                        Button(
-                            self._settings_button,
-                            id="settings-button",
-                            hx_get="/settings/show",
-                            hx_target="#main",
-                            hx_swap="outerHTML",
-                            cls="primary-button",
-                        ),
-                        brand=DivLAligned(
-                            Img(
-                                src="https://automatikarobotics.com/Emos_dark.png",
-                                style="width:6vw",
-                            )
-                        ),
-                    ),
+                    self._nav_bar,
                     self._main,
                     id="main",
                     cls="mt-0 mb-0",

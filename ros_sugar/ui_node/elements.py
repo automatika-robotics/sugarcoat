@@ -1,7 +1,7 @@
 import importlib
 from typing import List, Dict, Any
 import logging
-from ..io.supported_types import SupportedType
+from ..io.supported_types import SupportedType, get_ros_msg_fields_dict
 
 from .utils import parse_type
 
@@ -15,8 +15,8 @@ except ModuleNotFoundError as e:
     ) from e
 
 
-# NOTE: All custom classes names are implmenetd in custom.css (for style specific classes)
-# Some class names are linked with a custom behavior implemnented in custom.js (such as 'draggable' class)
+# NOTE: All custom classes names are implemented in custom.css (for style specific classes)
+# Some class names are linked with a custom behavior implemented in custom.js (such as 'draggable' class)
 
 # NOTE: 'hx_post' calls (used in Buttons) are implemented in scripts/ui_node_executable
 
@@ -225,8 +225,8 @@ def _log_text_element(logging_card, output, data_src: str, id: str = "text"):
 
 # _INPUT_ELEMENTS and _OUTPUT_ELEMENTS are the main dictionaries used to link message types with their UI elements
 # (both inputs: _INPUT_ELEMENTS and outputs: _OUTPUT_ELEMENTS)
-# Other Sugarcoat-based packages can implmenet their own UI elements
-# and these dictionaries will be populaed and updated automatically
+# Other Sugarcoat-based packages can implement their own UI elements
+# and these dictionaries will be populated and updated automatically
 
 _INPUT_ELEMENTS: Dict = {
     "String": _in_text_element,
@@ -252,24 +252,29 @@ _OUTPUT_ELEMENTS: Dict = {
 }
 
 
-def _in_service_element(srv_name: str, request_fields: Dict[str, str]):
-    """Creates an Input form for a ROS2 service call
+def _generic_message_form(msg_fields: Dict[str, Dict[str, Dict]]) -> FT:
+    """Creates an input UI element (form) for any ROS2 message
 
-    :param srv_name: Service name
-    :type srv_name: str
-    :param srv_type: Service Type
-    :type srv_type: type
-    :return: Service Form UI element
+    :param msg_fields: Dictionary of the message fields {name: type | Dict}
+    :type msg_fields: Dict[str, Dict[str, Dict]]
+    :return: UI form input element
     :rtype: FT
     """
-    service_form = Form(
-        cls="space-x-2 space-y-2 mr-2 mb-2",
-        id=f"{srv_name}-form",
-    )
-    service_fields = Grid(cls="gap-2", cols=2)
-    for field_name, field_type in request_fields.items():
-        if field_type in [
+    ui_fields = Grid(cls="gap-2 m-1", cols=2)
+    for field_name, field_type in msg_fields.items():
+        if isinstance(field_type, Dict):
+            ui_fields(
+                DivVStacked(
+                    P(f"{field_name}", cls="cool-subtitle-mini-blue m-2"),
+                    _generic_message_form(field_type),
+                    cls="card-border",
+                ),
+            )
+            continue
+        elif field_type in [
             "float",
+            "float32",
+            "float64",
             "double",
             "int8",
             "int16",
@@ -288,7 +293,7 @@ def _in_service_element(srv_name: str, request_fields: Dict[str, str]):
         else:
             field_input_type = "text"
             default_value = ""
-        service_fields(
+        ui_fields(
             LabelInput(
                 label=field_name,
                 type=field_input_type,
@@ -299,15 +304,46 @@ def _in_service_element(srv_name: str, request_fields: Dict[str, str]):
                 autocomplete="off",
             ),
         )
+    return ui_fields
+
+
+def _generic_message_form_with_topic_info(
+    topic_name: str, topic_type: str, msg_fields: Dict[str, Dict[str, Dict]]
+) -> FT:
+    ui_fields = _generic_message_form(msg_fields)
+    ui_fields(
+        Input(name="topic_name", type="hidden", value=topic_name),
+        Input(name="topic_type", type="hidden", value=topic_type),
+    )
+    return ui_fields
+
+
+def _in_service_element(
+    srv_name: str, srv_type: str, request_fields: Dict[str, Dict[str, Dict]]
+):
+    """Creates an Input form for a ROS2 service call
+
+    :param srv_name: Service name
+    :type srv_name: str
+    :return: Service Form UI element
+    :rtype: FT
+    """
+    service_form = Form(
+        cls="space-x-2 space-y-2 m-2",
+        id=f"{srv_name}-form",
+    )
+    if ui_element := _INPUT_ELEMENTS.get(srv_type, None):
+        ui_fields = ui_element(srv_name, srv_type)
+    else:
+        ui_fields = _generic_message_form(request_fields)
     _loading_content = DivHStacked(
         Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending Service Request")
     )
     return service_form(
-        DivHStacked(
-            Input(name="srv_name", type="hidden", value=srv_name),
-            service_fields,
+        ui_fields,
+        DivCentered(
             Button(
-                "Submit",
+                "Send Service Call",
                 cls="primary-button",
                 hx_post="/service/call",
                 hx_target="#main",
@@ -315,8 +351,63 @@ def _in_service_element(srv_name: str, request_fields: Dict[str, str]):
                         this.innerHTML = `{_loading_content}`;
                         this.disabled = true;
                         """,
+            )
+        ),
+        Input(name="srv_name", type="hidden", value=srv_name),
+    )
+
+
+def _in_action_client_element(
+    action_name: str, action_type: str, request_fields: Dict[str, Dict[str, Dict]]
+):
+    """Creates an Input form for a ROS2 Action Server call
+
+    :param srv_name: Action name
+    :type srv_name: str
+    :return: Service Form UI element
+    :rtype: FT
+    """
+    action_form = Form(
+        cls="space-x-2 space-y-2 m-2",
+        id=f"{action_name}-form",
+    )
+    if ui_element := _INPUT_ELEMENTS.get(action_type, None):
+        ui_fields = ui_element(action_name, action_type)
+    else:
+        ui_fields = _generic_message_form(request_fields)
+    _loading_content_send = DivHStacked(
+        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending Action Goal")
+    )
+    _loading_content_cancel = DivHStacked(
+        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Cancelling Action Goal")
+    )
+    return action_form(
+        ui_fields,
+        DivCentered(
+            DivHStacked(
+                Button(
+                    "Send Action Goal",
+                    cls="primary-button",
+                    hx_post="/action/goal",
+                    hx_target="#main",
+                    hx_on__before_request=f"""
+                        this.innerHTML = `{_loading_content_send}`;
+                        this.disabled = true;
+                        """,
+                ),
+                Button(
+                    "Cancel Action Goal",
+                    cls="primary-button",
+                    hx_post="/action/cancel",
+                    hx_target="#main",
+                    hx_on__before_request=f"""
+                        this.innerHTML = `{_loading_content_cancel}`;
+                        this.disabled = true;
+                        """,
+                ),
             ),
-        )
+        ),
+        Input(name="action_name", type="hidden", value=action_name),
     )
 
 
@@ -411,7 +502,53 @@ def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
     )
 
 
-def input_topic_card(topic_name: str, topic_type: str, column_class: str = "") -> FT:
+def filter_tag_button(name: str, div_to_hide: str, **kwargs):
+    """UI arrow button to use for show/hide toggle of a Div with a given ID
+
+    :param div_to_toggle: Id of the Div to show/hide on button click, defaults to None
+    :type div_to_toggle: Optional[str], optional
+    :return: UI Button Element
+    :rtype: FT
+    """
+    # Toggle the button between up <> down on every click
+    onclick = """
+                console.log(this);
+                if (this.name == 'active')
+                {{
+                    this.classList.value = "uk-btn filter-btn inactive";
+                    this.name = 'inactive';
+                }}
+                else{{
+                    this.classList.value = "uk-btn filter-btn active";
+                    this.name = 'active'}};
+                """
+    toggle_click = f"""
+                let toggleDiv = document.getElementById('{div_to_hide}');
+                toggleDiv.hidden = ! toggleDiv.hidden;
+                if (toggleDiv.hidden){{
+                    toggleDiv.style.display = "none";
+                }} else {{
+                    toggleDiv.style.display = "";
+                }}
+            """
+
+    onclick = f"{onclick}\n{toggle_click}"
+    if kwargs.get("onclick", None):
+        onclick = f"{onclick}\n{kwargs.get('onclick')}"
+        kwargs.pop("onclick")
+    return Button(
+        name,
+        type="button",
+        name="active",
+        cls="filter-btn",
+        onclick=onclick,
+        **kwargs,
+    )
+
+
+def input_topic_card(
+    topic_name: str, topic_type: str, ros_msg_type: type, column_class: str = ""
+) -> FT:
     """Creates a UI element for an input topic
 
     :param topic_name: Topic name
@@ -428,11 +565,21 @@ def input_topic_card(topic_name: str, topic_type: str, column_class: str = "") -
         cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto inner-main-card",
         id=topic_name,
     )
-    return card(_INPUT_ELEMENTS[topic_type](topic_name, topic_type=topic_type))
+    if ui_element := _INPUT_ELEMENTS.get(topic_type, None):
+        return card(ui_element(topic_name, topic_type=topic_type))
+    else:
+        # Unknown message type -> return the generic message element
+        # Get fields dictionary
+        msg_fields = get_ros_msg_fields_dict(ros_msg_type)
+        return card(
+            _generic_message_form_with_topic_info(
+                topic_name=topic_name, topic_type=topic_type, msg_fields=msg_fields
+            )
+        )
 
 
 def styled_main_service_clients_container(
-    srv_clients_config: Sequence[Dict], column_class: str = ""
+    srv_clients_config: Sequence[Dict], container_name: str, column_class: str = ""
 ) -> FT:
     """Creates a UI element for all service clients
 
@@ -442,27 +589,35 @@ def styled_main_service_clients_container(
     :type column_class: str, defaults to ""
     :return: Input Service Clients UI element
     """
-    # dragabble class: makes the whole container draggable (implmeneted in custom.js)
+    # draggable class: makes the whole container draggable (implemented in custom.js)
     # cool-subtitle-mini: automatika red color cool title (in custom.css)
+    _id = container_name.lower().replace(" ", "_")
     main_card = Card(
         DivHStacked(
-            H4("Service Calls", cls="cool-subtitle-mini"),
-            _toggle_button(div_to_toggle="all_services"),
+            H4(container_name, cls="cool-subtitle-mini"),
+            _toggle_button(div_to_toggle=f"all_{_id}"),
             cls="space-x-0",
         ),
-        cls=f"draggable main-card {column_class} max-h-[80vh] overflow-y-auto",
-        id="service_clients",
+        cls=f"main-card {column_class} max-h-[80vh] overflow-y-auto",
+        id=_id,
     )
-    all_services_cards = Div(id="all_services")
+    all_services_cards = Div(id=f"all_{_id}")
     for client in srv_clients_config:
         client_card = Card(
-            H4(client["service_name"]),
+            H4(client["name"]),
             cls=f"m-2 {column_class} max-h-[40vh] overflow-y-auto inner-main-card",
-            id=client["service_name"],
+            id=client["name"],
         )
-        client_card(
-            _in_service_element(client["service_name"], client["request_fields"])
-        )
+        if "action" in _id:
+            client_card(
+                _in_action_client_element(
+                    client["name"], client["type"], client["fields"]
+                )
+            )
+        else:
+            client_card(
+                _in_service_element(client["name"], client["type"], client["fields"])
+            )
         all_services_cards(client_card)
     return main_card(all_services_cards)
 

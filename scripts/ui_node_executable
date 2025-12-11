@@ -47,7 +47,8 @@ def main():
         ros_node_config.components,
         ros_node.out_topics,  # Inputs from the client to the ros node
         ros_node.in_topics,  # Outputs to the client from the ros node
-        srv_clients_configs=ros_node._clients_inputs_dicts(),
+        srv_clients_configs=ros_node.srv_clients_inputs_dicts(),
+        action_clients_configs=ros_node.action_clients_inputs_dicts(),
         additional_input_elements=additional_input_elements,  # Additional UI input elements from derived packages
         additional_output_elements=additional_output_elements,  # Additional UI output elements from derived packages
     )  # inputs and outputs are reversed
@@ -83,14 +84,14 @@ def main():
         success = all(result.success)
         if not success:
             item_names = list(form_data.keys())
-            error_msg = "Error in updating the folllowing settings values: \n"
+            error_msg = "Error in updating the following settings values: \n"
             for key in range(len(result.success)):
                 if not result.success[key]:
                     error_msg += f"{item_names[key + 1]}: {result.error_msg[key]}\n"
             fh.toasting(error_msg, session, "error", duration=100000)
         else:
             fh.toasting("Settings changed successfully", session, "success")
-            # Presist the new configuration
+            # Persist the new configuration
             fh.update_configs_from_data(dict(form_data.items()))
         return fh.get_main_page()
 
@@ -98,13 +99,84 @@ def main():
     async def _(request, session):
         """Send a ROS2 service call from the client"""
         form_data = await request.form()
-        result_code, result = ros_node.send_srv_call(dict(form_data.items()))
+        data_dict = dict(form_data.items())
+        # Add request to logging card
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"Sending service call: '{data_dict}'",
+            data_type="String",
+            data_src="user",
+        )
+        result_code, result = ros_node.send_srv_call(data_dict)
         if not result_code:
             fh.toasting(result, session, "error", duration=100000)
         else:
             fh.toasting(
                 f"Service returned response: {result}", session, "info", duration=100000
             )
+        # Add response to logging card
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"Service returned response: '{result}'",
+            data_type="String",
+            data_src="robot",
+        )
+        return fh.get_main_page()
+
+    @app.post("/action/goal")
+    async def _(request, session):
+        """Send a ROS2 action goal from the client"""
+        form_data = await request.form()
+        data_dict = dict(form_data.items())
+        # Add request to logging card
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"Sending action server goal: '{data_dict}'",
+            data_type="String",
+            data_src="user",
+        )
+        result_code, result = ros_node.send_action_goal(data_dict)
+        if not result_code:
+            fh.toasting(result, session, "error", duration=100000)
+        else:
+            fh.toasting(
+                f"Action goal sent: {result}", session, "info", duration=100000
+            )
+        # Add response to logging card
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"{result}",
+            data_type="String",
+            data_src="robot",
+        )
+        # TODO: Add sending feedback to the log
+        return fh.get_main_page()
+
+    @app.post("/action/cancel")
+    async def _(request, session):
+        """Cancel a ROS2 action goal from the client"""
+        form_data = await request.form()
+        data_dict = dict(form_data.items())
+        action_name = data_dict.get('action_name')
+        # Add request to logging card
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"Sending action goal cancellation for action: '{action_name}'",
+            data_type="String",
+            data_src="user",
+        )
+        result_code, result = ros_node.cancel_action(action_name)
+        if not result_code:
+            fh.toasting(result, session, "error", duration=100000)
+        else:
+            fh.toasting(f"{result}", session, "info", duration=100000)
+        # Add response to logging card
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"{result}",
+            data_type="String",
+            data_src="robot",
+        )
         return fh.get_main_page()
 
     # -- WS handling --
