@@ -124,7 +124,7 @@ Sugarcoat 适用于 ROS 版本 $\ge$ **Humble**。
 ```shell
 mkdir -p ros-sugar-ws/src
 cd ros-sugar-ws/src
-git clone [https://github.com/automatika-robotics/sugarcoat](https://github.com/automatika-robotics/sugarcoat) && cd ..
+git clone https://github.com/automatika-robotics/sugarcoat && cd ..
 
 # Install dependencies (ensure attrs>=23.2.0 is included)
 pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy setproctitle pyyaml toml

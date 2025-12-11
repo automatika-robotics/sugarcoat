@@ -125,7 +125,7 @@ Alternatively, you can install a specific deb package from the [release page](ht
 ```shell
 mkdir -p ros-sugar-ws/src
 cd ros-sugar-ws/src
-git clone [https://github.com/automatika-robotics/sugarcoat](https://github.com/automatika-robotics/sugarcoat) && cd ..
+git clone https://github.com/automatika-robotics/sugarcoat && cd ..
 
 # Install dependencies (ensure attrs>=23.2.0 is included)
 pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy setproctitle pyyaml toml
