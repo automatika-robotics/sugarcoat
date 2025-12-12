@@ -12,6 +12,7 @@ from nav_msgs.msg import Odometry
 
 import msgpack
 import msgpack_numpy as m_pack
+
 # patch msgpack for numpy arrays
 m_pack.patch()
 
@@ -551,7 +552,9 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
     return msg
 
 
-def run_external_processor(logger_name: str, topic_name: str, processor: Union[Callable, socket], *output) -> Any:
+def run_external_processor(
+    logger_name: str, topic_name: str, processor: Union[Callable, socket], *output
+) -> Any:
     """
     Execute external processing using a callable or a Unix socket.
 

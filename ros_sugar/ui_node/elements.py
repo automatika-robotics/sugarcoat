@@ -14,13 +14,107 @@ except ModuleNotFoundError as e:
         "In order to use the dynamic web UI for your recipe, please install FastHTML & MonsterUI with `pip install python-fasthtml MonsterUI`"
     ) from e
 
-
 # NOTE: All custom classes names are implemented in custom.css (for style specific classes)
 # Some class names are linked with a custom behavior implemented in custom.js (such as 'draggable' class)
 
 # NOTE: 'hx_post' calls (used in Buttons) are implemented in scripts/ui_node_executable
 
 # TODO: Make all draggable containers re-sizable as well
+
+
+# ---- UTILITY ELEMENTS ----
+
+
+def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
+    """UI arrow button to use for show/hide toggle of a Div with a given ID
+
+    :param div_to_toggle: Id of the Div to show/hide on button click, defaults to None
+    :type div_to_toggle: Optional[str], optional
+    :return: UI Button Element
+    :rtype: FT
+    """
+    _arrow_down = UkIcon("chevrons-down")
+    _arrow_up = UkIcon("chevrons-up")
+    # Toggle the button between up <> down on every click
+    onclick = f"""
+                if (this.name == 'down')
+                {{
+                    this.innerHTML=`{_arrow_up}`;
+                    this.name = 'up';
+                }}
+                else{{
+                    this.innerHTML=`{_arrow_down}`;
+                    this.name = 'down'}};
+                """
+    if div_to_toggle:
+        toggle_click = f"""
+                    let toggleDiv = document.getElementById('{div_to_toggle}');
+                    toggleDiv.hidden = ! toggleDiv.hidden;
+                    if (toggleDiv.hidden){{
+                        toggleDiv.style.display = "none";
+                    }} else {{
+                        toggleDiv.style.display = "";
+                    }}
+                """
+        onclick = f"{onclick}\n{toggle_click}"
+    if kwargs.get("onclick", None):
+        onclick = f"{onclick}\n{kwargs.get('onclick')}"
+        kwargs.pop("onclick")
+    return Button(
+        _arrow_down,
+        type="button",
+        name="down",
+        cls=f"no-drag {AT.primary}",
+        onclick=onclick,
+        **kwargs,
+    )
+
+
+def filter_tag_button(name: str, div_to_hide: str, **kwargs):
+    """UI arrow button to use for show/hide toggle of a Div with a given ID
+
+    :param div_to_toggle: Id of the Div to show/hide on button click, defaults to None
+    :type div_to_toggle: Optional[str], optional
+    :return: UI Button Element
+    :rtype: FT
+    """
+    # Toggle the button between up <> down on every click
+    onclick = """
+                console.log(this);
+                if (this.name == 'active')
+                {{
+                    this.classList.value = "uk-btn filter-btn inactive";
+                    this.name = 'inactive';
+                }}
+                else{{
+                    this.classList.value = "uk-btn filter-btn active";
+                    this.name = 'active'}};
+                """
+    toggle_click = f"""
+                let toggleDiv = document.getElementById('{div_to_hide}');
+                toggleDiv.hidden = ! toggleDiv.hidden;
+                if (toggleDiv.hidden){{
+                    toggleDiv.style.display = "none";
+                }} else {{
+                    toggleDiv.style.display = "";
+                }}
+            """
+
+    onclick = f"{onclick}\n{toggle_click}"
+    if kwargs.get("onclick", None):
+        onclick = f"{onclick}\n{kwargs.get('onclick')}"
+        kwargs.pop("onclick")
+    return Button(
+        name,
+        type="button",
+        name="active",
+        cls="filter-btn",
+        onclick=onclick,
+        **kwargs,
+    )
+
+
+# ---- CUSTOM INPUT MESSAGES ELEMENTS ----
 
 
 def _in_text_element(topic_name: str, topic_type: str):
@@ -206,6 +300,9 @@ def _in_pose_element(topic_name: str, topic_type: str):
     )
 
 
+# ---- CUSTOM OUTPUT MESSAGES ELEMENTS ----
+
+
 def _out_image_element(topic_name: str, **_):
     """FastHTML element for output Image/CompressedImage type"""
     return DivCentered(
@@ -250,6 +347,58 @@ _OUTPUT_ELEMENTS: Dict = {
     "CompressedImage": _out_image_element,
     "OccupancyGrid": _out_image_element,
 }
+
+
+# ---- ADDITIONAL MESSAGES ELEMENTS ----
+
+
+def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
+    """Deserialize one additional element"""
+    # Get key type
+    module_name_key, _, type_name = k_t.rpartition(".")
+    if not module_name_key:
+        logging.error(f"Could not find module name for {k_t}")
+        return
+    # Get item func
+    module_name_item, _, func_name = i_t.rpartition(".")
+    if not module_name_item:
+        logging.error(f"Could not find module name for {i_t}")
+        return
+    module_key = importlib.import_module(module_name_key)
+    module_item = importlib.import_module(module_name_item)
+    key = getattr(module_key, type_name)
+    if not issubclass(key, SupportedType):
+        logging.error(f"Could not find {type_name} name in {module_key} module")
+        return
+    item = getattr(module_item, func_name)
+    if not callable(item):
+        logging.error(f"Could not find {func_name} name in {module_item} module")
+        return
+    return key, item
+
+
+def add_additional_ui_elements(
+    input_elements: Optional[List[Tuple]], output_elements: Optional[List[Tuple]]
+):
+    """Deserialize additional elements and add them"""
+    global _INPUT_ELEMENTS, _OUTPUT_ELEMENTS
+
+    # Add input elements
+    if input_elements:
+        for k_t, i_t in input_elements:
+            deserialized = _deserialize_additional_element(k_t, i_t)
+            if deserialized:
+                _INPUT_ELEMENTS[deserialized[0].__name__] = deserialized[1]
+
+    # Add output elements
+    if output_elements:
+        for k_t, i_t in output_elements:
+            deserialized = _deserialize_additional_element(k_t, i_t)
+            if deserialized:
+                _OUTPUT_ELEMENTS[deserialized[0].__name__] = deserialized[1]
+
+
+# ---- GENERIC MESSAGES ELEMENTS ----
 
 
 def _generic_message_form(msg_fields: Dict[str, Dict[str, Dict]]) -> FT:
@@ -316,6 +465,9 @@ def _generic_message_form_with_topic_info(
         Input(name="topic_type", type="hidden", value=topic_type),
     )
     return ui_fields
+
+
+# ---- ROS SERVICES/ACTIONS ELEMENTS ----
 
 
 def _in_service_element(
@@ -411,173 +563,6 @@ def _in_action_client_element(
     )
 
 
-def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
-    """Deserialize one additional element"""
-    # Get key type
-    module_name_key, _, type_name = k_t.rpartition(".")
-    if not module_name_key:
-        logging.error(f"Could not find module name for {k_t}")
-        return
-    # Get item func
-    module_name_item, _, func_name = i_t.rpartition(".")
-    if not module_name_item:
-        logging.error(f"Could not find module name for {i_t}")
-        return
-    module_key = importlib.import_module(module_name_key)
-    module_item = importlib.import_module(module_name_item)
-    key = getattr(module_key, type_name)
-    if not issubclass(key, SupportedType):
-        logging.error(f"Could not find {type_name} name in {module_key} module")
-        return
-    item = getattr(module_item, func_name)
-    if not callable(item):
-        logging.error(f"Could not find {func_name} name in {module_item} module")
-        return
-    return key, item
-
-
-def add_additional_ui_elements(
-    input_elements: Optional[List[Tuple]], output_elements: Optional[List[Tuple]]
-):
-    """Deserialize additional elements and add them"""
-    global _INPUT_ELEMENTS, _OUTPUT_ELEMENTS
-
-    # Add input elements
-    if input_elements:
-        for k_t, i_t in input_elements:
-            deserialized = _deserialize_additional_element(k_t, i_t)
-            if deserialized:
-                _INPUT_ELEMENTS[deserialized[0].__name__] = deserialized[1]
-
-    # Add output elements
-    if output_elements:
-        for k_t, i_t in output_elements:
-            deserialized = _deserialize_additional_element(k_t, i_t)
-            if deserialized:
-                _OUTPUT_ELEMENTS[deserialized[0].__name__] = deserialized[1]
-
-
-def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
-    """UI arrow button to use for show/hide toggle of a Div with a given ID
-
-    :param div_to_toggle: Id of the Div to show/hide on button click, defaults to None
-    :type div_to_toggle: Optional[str], optional
-    :return: UI Button Element
-    :rtype: FT
-    """
-    _arrow_down = UkIcon("chevrons-down")
-    _arrow_up = UkIcon("chevrons-up")
-    # Toggle the button between up <> down on every click
-    onclick = f"""
-                if (this.name == 'down')
-                {{
-                    this.innerHTML=`{_arrow_up}`;
-                    this.name = 'up';
-                }}
-                else{{
-                    this.innerHTML=`{_arrow_down}`;
-                    this.name = 'down'}};
-                """
-    if div_to_toggle:
-        toggle_click = f"""
-                    let toggleDiv = document.getElementById('{div_to_toggle}');
-                    toggleDiv.hidden = ! toggleDiv.hidden;
-                    if (toggleDiv.hidden){{
-                        toggleDiv.style.display = "none";
-                    }} else {{
-                        toggleDiv.style.display = "";
-                    }}
-                """
-        onclick = f"{onclick}\n{toggle_click}"
-    if kwargs.get("onclick", None):
-        onclick = f"{onclick}\n{kwargs.get('onclick')}"
-        kwargs.pop("onclick")
-    return Button(
-        _arrow_down,
-        type="button",
-        name="down",
-        cls=f"no-drag {AT.primary}",
-        onclick=onclick,
-        **kwargs,
-    )
-
-
-def filter_tag_button(name: str, div_to_hide: str, **kwargs):
-    """UI arrow button to use for show/hide toggle of a Div with a given ID
-
-    :param div_to_toggle: Id of the Div to show/hide on button click, defaults to None
-    :type div_to_toggle: Optional[str], optional
-    :return: UI Button Element
-    :rtype: FT
-    """
-    # Toggle the button between up <> down on every click
-    onclick = """
-                console.log(this);
-                if (this.name == 'active')
-                {{
-                    this.classList.value = "uk-btn filter-btn inactive";
-                    this.name = 'inactive';
-                }}
-                else{{
-                    this.classList.value = "uk-btn filter-btn active";
-                    this.name = 'active'}};
-                """
-    toggle_click = f"""
-                let toggleDiv = document.getElementById('{div_to_hide}');
-                toggleDiv.hidden = ! toggleDiv.hidden;
-                if (toggleDiv.hidden){{
-                    toggleDiv.style.display = "none";
-                }} else {{
-                    toggleDiv.style.display = "";
-                }}
-            """
-
-    onclick = f"{onclick}\n{toggle_click}"
-    if kwargs.get("onclick", None):
-        onclick = f"{onclick}\n{kwargs.get('onclick')}"
-        kwargs.pop("onclick")
-    return Button(
-        name,
-        type="button",
-        name="active",
-        cls="filter-btn",
-        onclick=onclick,
-        **kwargs,
-    )
-
-
-def input_topic_card(
-    topic_name: str, topic_type: str, ros_msg_type: type, column_class: str = ""
-) -> FT:
-    """Creates a UI element for an input topic
-
-    :param topic_name: Topic name
-    :type topic_name: str
-    :param topic_type: Topic message type
-    :type topic_type: str
-    :param column_class: CSS class for number of columns, if not set the Div will span over the whole parent width
-    :type column_class: str
-    :return: Input topic UI element
-    """
-    # An inner card (with margin m-2) and max height of 20vh
-    card = Card(
-        H4(topic_name),
-        cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto inner-main-card",
-        id=topic_name,
-    )
-    if ui_element := _INPUT_ELEMENTS.get(topic_type, None):
-        return card(ui_element(topic_name, topic_type=topic_type))
-    else:
-        # Unknown message type -> return the generic message element
-        # Get fields dictionary
-        msg_fields = get_ros_msg_fields_dict(ros_msg_type)
-        return card(
-            _generic_message_form_with_topic_info(
-                topic_name=topic_name, topic_type=topic_type, msg_fields=msg_fields
-            )
-        )
-
-
 def styled_main_service_clients_container(
     srv_clients_config: Sequence[Dict], container_name: str, column_class: str = ""
 ) -> FT:
@@ -622,6 +607,41 @@ def styled_main_service_clients_container(
     return main_card(all_services_cards)
 
 
+# ---- INPUTS CARD ELEMENTS ----
+
+
+def input_topic_card(
+    topic_name: str, topic_type: str, ros_msg_type: type, column_class: str = ""
+) -> FT:
+    """Creates a UI element for an input topic
+
+    :param topic_name: Topic name
+    :type topic_name: str
+    :param topic_type: Topic message type
+    :type topic_type: str
+    :param column_class: CSS class for number of columns, if not set the Div will span over the whole parent width
+    :type column_class: str
+    :return: Input topic UI element
+    """
+    # An inner card (with margin m-2) and max height of 20vh
+    card = Card(
+        H4(topic_name),
+        cls=f"m-2 {column_class} max-h-[20vh] overflow-y-auto inner-main-card",
+        id=topic_name,
+    )
+    if ui_element := _INPUT_ELEMENTS.get(topic_type, None):
+        return card(ui_element(topic_name, topic_type=topic_type))
+    else:
+        # Unknown message type -> return the generic message element
+        # Get fields dictionary
+        msg_fields = get_ros_msg_fields_dict(ros_msg_type)
+        return card(
+            _generic_message_form_with_topic_info(
+                topic_name=topic_name, topic_type=topic_type, msg_fields=msg_fields
+            )
+        )
+
+
 def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:
     """Creates main section for all the UI inputs
 
@@ -657,6 +677,9 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
         elif remaining_items == 2:
             inputs_columns_span[-2:] = "flex flex-col items-center justify-center"
     return (input_grid, inputs_columns_span)
+
+
+# ---- OUTPUTS CARD ELEMENTS ----
 
 
 def output_topic_card(topic_name: str, topic_type: str, column_class: str = "") -> FT:
@@ -709,108 +732,7 @@ def styled_outputs_grid(number_of_outputs: int) -> tuple:
     return (output_grid, outputs_columns_span)
 
 
-def settings_ui_element(
-    setting_name: str, setting_details: dict, field_type, type_args, input_name=None
-):
-    """Creates a UI element based on the setting's type and validators
-
-    :param setting_name: Config parameter name
-    :type setting_name: str
-    :param setting_details: Details of the parsed config
-    :type setting_details: dict
-
-    :return: Setting parameter UI element
-    """
-    try:
-        field_type, type_args = parse_type(setting_details.get("type", ""))
-    except Exception as e:
-        logging.error(
-            f"Could not render setting: {setting_name}, with value: {setting_details} due to error: {e}"
-        )
-        field_type, type_args = None, None
-    validators = setting_details.get("validators", [])
-    value = setting_details.get("value")
-
-    if not input_name:
-        input_name = setting_name
-
-    # Handle validators first
-    if validators:
-        return validated_config(
-            setting_name=setting_name,
-            value=value,
-            attrs_validators=validators,
-            field_type=field_type,
-            type_args=type_args,
-            input_name=input_name,
-        )
-    if field_type:
-        return nonvalidated_config(
-            setting_name=setting_name,
-            value=value,
-            field_type=field_type,
-            type_args=type_args,
-            input_name=input_name,
-        )
-
-
-def component_settings_div(
-    component_name: str, settings_col_cls: str, ui_elements, nested_ui_elements
-):
-    """Creates a UI element for a component to show and update the config parameters
-
-    :param component_name: Name of the component (ROS2 node name)
-    :type component_name: str
-    :param settings_col_cls: UI Div columns span in the display grid
-    :type settings_col_cls: str
-    :param ui_elements: A set ot UI elements for each parameter in the component config
-    :type ui_elements: List
-    :return: Component config UI element
-    """
-    component_div = Card(
-        cls=f"p-4 {settings_col_cls} main-card",
-    )
-    settings_grid = Grid(*ui_elements, cols=4, cls="space-y-3 gap-4 p-4")
-    nested_settings_grid = Grid(*nested_ui_elements, cols=1, cls="space-y-3 gap-4 p-4")
-    _loading_content = DivHStacked(
-        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending")
-    )
-    return component_div(
-        H3(component_name),
-        Form(cls="space-y-4")(
-            Input(name="component_name", type="hidden", value=component_name),
-            settings_grid,
-            nested_settings_grid,
-            DivCentered(
-                Grid(
-                    Button(
-                        "Submit",
-                        cls="primary-button",
-                        hx_post="/settings/submit",
-                        hx_target="#main",
-                        hx_on__before_request=f"""
-                        this.innerHTML = `{_loading_content}`;
-                        this.disabled = true;
-                        """,
-                    ),
-                    Button(
-                        "Close",
-                        cls="secondary-button",
-                        hx_get="/",
-                        hx_target="#main",
-                    ),
-                    cols=2,
-                    cls="gap-2",
-                )
-            ),
-            id=component_name,
-        ),
-        DivCentered(id="notification"),
-        header=Div(
-            CardTitle(component_name),
-        ),
-    )
-
+# ---- OUTPUT LOGGING CARD ELEMENTS ----
 
 LOG_STYLES = {
     "alert": {"prefix": ">>>", "cls": f"{TextT.lg} tomorrow-night-green"},
@@ -971,6 +893,115 @@ def update_logging_card_with_loading(logging_card):
             id="loading-dots",
             name="loading-dots",
         )
+    )
+
+
+# ---------------------------------------------------------
+
+
+# ------------- SETTINGS PANEL ELEMENTS -------------------
+
+
+def settings_ui_element(
+    setting_name: str, setting_details: dict, field_type, type_args, input_name=None
+):
+    """Creates a UI element based on the setting's type and validators
+
+    :param setting_name: Config parameter name
+    :type setting_name: str
+    :param setting_details: Details of the parsed config
+    :type setting_details: dict
+
+    :return: Setting parameter UI element
+    """
+    try:
+        field_type, type_args = parse_type(setting_details.get("type", ""))
+    except Exception as e:
+        logging.error(
+            f"Could not render setting: {setting_name}, with value: {setting_details} due to error: {e}"
+        )
+        field_type, type_args = None, None
+    validators = setting_details.get("validators", [])
+    value = setting_details.get("value")
+
+    if not input_name:
+        input_name = setting_name
+
+    # Handle validators first
+    if validators:
+        return validated_config(
+            setting_name=setting_name,
+            value=value,
+            attrs_validators=validators,
+            field_type=field_type,
+            type_args=type_args,
+            input_name=input_name,
+        )
+    if field_type:
+        return nonvalidated_config(
+            setting_name=setting_name,
+            value=value,
+            field_type=field_type,
+            type_args=type_args,
+            input_name=input_name,
+        )
+
+
+def component_settings_div(
+    component_name: str, settings_col_cls: str, ui_elements, nested_ui_elements
+):
+    """Creates a UI element for a component to show and update the config parameters
+
+    :param component_name: Name of the component (ROS2 node name)
+    :type component_name: str
+    :param settings_col_cls: UI Div columns span in the display grid
+    :type settings_col_cls: str
+    :param ui_elements: A set ot UI elements for each parameter in the component config
+    :type ui_elements: List
+    :return: Component config UI element
+    """
+    component_div = Card(
+        cls=f"p-4 {settings_col_cls} main-card",
+    )
+    settings_grid = Grid(*ui_elements, cols=4, cls="space-y-3 gap-4 p-4")
+    nested_settings_grid = Grid(*nested_ui_elements, cols=1, cls="space-y-3 gap-4 p-4")
+    _loading_content = DivHStacked(
+        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending")
+    )
+    return component_div(
+        H3(component_name),
+        Form(cls="space-y-4")(
+            Input(name="component_name", type="hidden", value=component_name),
+            settings_grid,
+            nested_settings_grid,
+            DivCentered(
+                Grid(
+                    Button(
+                        "Submit",
+                        cls="primary-button",
+                        hx_post="/settings/submit",
+                        hx_target="#main",
+                        hx_on__before_request=f"""
+                        this.innerHTML = `{_loading_content}`;
+                        this.disabled = true;
+                        """,
+                    ),
+                    Button(
+                        "Close",
+                        cls="secondary-button",
+                        hx_get="/",
+                        hx_target="#main",
+                    ),
+                    cols=2,
+                    cls="gap-2",
+                )
+            ),
+            id=component_name,
+        ),
+        DivCentered(id="notification"),
+        header=Div(
+            CardTitle(component_name),
+        ),
     )
 
 

@@ -66,7 +66,9 @@ class Publisher:
         output_types = [type(arg) for arg in output]
         if self._pre_processors:
             for processor in self._pre_processors:
-                pre_output = utils.run_external_processor(self.node_name, self.output_topic.name, processor, *output)
+                pre_output = utils.run_external_processor(
+                    self.node_name, self.output_topic.name, processor, *output
+                )
                 # if any processor output is None, then dont publish
                 if pre_output is None:
                     return None
@@ -74,7 +76,9 @@ class Publisher:
                 # type check processor output if incorrect, raise an error
                 if not all(
                     out_type == pre_output_type
-                    for out_type, pre_output_type in zip(output_types, pre_output_types, strict=True)
+                    for out_type, pre_output_type in zip(
+                        output_types, pre_output_types, strict=True
+                    )
                 ):
                     get_logger(self.node_name).warn(
                         f"The output produced by the component for topic {self.output_topic.name} is of type {output}. Got pre_processor output of type {pre_output_types}"

@@ -124,7 +124,9 @@ class GenericCallback:
         if self._post_processors and output:
             # Apply post processors sequentially if defined
             for processor in self._post_processors:
-                post_output = utils.run_external_processor(self.node_name, self.input_topic.name, processor, output)
+                post_output = utils.run_external_processor(
+                    self.node_name, self.input_topic.name, processor, output
+                )
                 # if any processor output is None, then send None
                 if not post_output:
                     return None
