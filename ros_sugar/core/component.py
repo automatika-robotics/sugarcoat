@@ -56,6 +56,7 @@ from ..utils import (
     get_methods_with_decorator,
     log_srv,
 )
+from ..base_clients import ActionClientConfig
 from ..robot_plugin import RobotPluginServiceClient
 from ..tf import TFListener, TFListenerConfig
 
@@ -388,6 +389,19 @@ class BaseComponent(lifecycle.Node):
                 nested_root_name=f"{self.node_name}.{algo_config_name.partition('Config')[0]}",
             )
         return algo_config
+
+    @property
+    def ui_main_action_input(self) -> Optional[ActionClientConfig]:
+        """Get a UI input for the the component's main action server (if present)
+
+        :return: Client config for the component's main action
+        :rtype: Optional[ActionClientConfig]
+        """
+        if self.main_action_name and self.action_type:
+            return ActionClientConfig(
+                action_type=self.action_type, name=self.main_action_name
+            )
+        return None
 
     # Managing Inputs/Outputs
     def _add_ros_subscriber(self, callback: GenericCallback):
