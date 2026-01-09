@@ -55,30 +55,58 @@ class FHApp:
         self.configs = configs
         self.hide_settings_panel: bool = hide_settings_panel
         self.toggle_settings = False
+
+        # Inputs and Outputs
         self.in_topics = in_topics
         self.out_topics = out_topics
         self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
         self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
+
+        # Setup service clients
         self.srv_clients = (
             elements.styled_main_service_clients_container(
-                srv_clients_configs, container_name="Service Calls"
+                srv_clients_configs, container_name="Services"
             )
             if srv_clients_configs
             else None
         )
-        self.action_clients = (
-            elements.styled_main_service_clients_container(
-                action_clients_configs, container_name="Action Calls"
-            )
-            if action_clients_configs
-            else None
-        )
-        logging.warning(f"Got UI clients: {self.action_clients}")
-        self.toggle_settings = False
+
+        # Setup action clients
+        self.action_clients_ft: Dict[str, elements.Task] = {}
+        if action_clients_configs:
+            for client in action_clients_configs:
+                self.action_clients_ft[client["name"]] = elements.Task(
+                    name=client["name"],
+                    client_type=client["type"],
+                    fields=client["fields"],
+                )
+
         setup_toasts(self.app)
 
         # persistent elements
         self.outputs_log = elements.initial_logging_card()
+
+    @property
+    def action_clients(self) -> FT:
+        if not self.action_clients_ft:
+            return None
+        all_clients_cards = Div(id="all_actions")
+        for value in self.action_clients_ft.values():
+            all_clients_cards(value.card)
+        actions_main_card = Card(
+            DivHStacked(
+                H4("Actions", cls="cool-subtitle-mini"),
+                elements._toggle_button(div_to_toggle="all_actions"),
+                cls="space-x-0",
+            ),
+            cls="main-card max-h-[80vh] overflow-y-auto",
+            id="actions",
+            # NOTE: It is important to add these two variables to link this DOM element to the websocket.
+            # This way any 'send' function applied from this websocket callback will update the element with the same class 'id'
+            hx_ext="ws_actions",
+            ws_connect="/ws_actions",
+        )
+        return actions_main_card(all_clients_cards)
 
     @property
     def _settings_button(self) -> str:

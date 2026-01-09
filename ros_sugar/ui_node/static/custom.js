@@ -28,6 +28,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const MAX_RETRIES = 10; // reconnect retries
     const wsConnections = new Map(); // id -> { ws, timer }
 
+    const actions = document.getElementById("actions-frontend");
+    if(actions){
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws_actions= new WebSocket(`${wsProtocol}//${window.location.host}/ws_actions`);
+
+        ws_actions.onopen = () => {
+            console.log("Actions Websocket connection established");
+        };
+    }
+
     // Create connection for a given <img> element
     function connectImageWebSocket(img, wsUrl, attempt = 0) {
         const ws = new WebSocket(wsUrl);

@@ -22,6 +22,97 @@ except ModuleNotFoundError as e:
 # TODO: Make all draggable containers re-sizable as well
 
 
+# ---- TASK ELEMENT ----
+class Task:
+    """Task (ROS2 Action) Element Class"""
+
+    def __init__(self, name: str, client_type: str, fields):
+        """
+
+        :param name: Action Name
+        :type name: str
+        :param client_type: Action Type
+        :type client_type: str
+        :param fields: Action Request Fields
+        :type fields: _type_
+        """
+        self._status = "inactive"
+        self._feedback = None
+        self._duration = None
+        self._name = name
+        self._type = client_type
+        self._fields = fields
+
+    def update(
+        self,
+        *,
+        status: Optional[str] = None,
+        feedback: Any = None,
+        duration: Optional[float] = None,
+    ):
+        """Update the task current status
+
+        :param status: New status
+        :type status: str
+        """
+        if status:
+            self._status = status
+        if feedback:
+            self._feedback = feedback
+        if duration is not None:
+            self._duration = duration
+
+    @property
+    def card(self) -> FT:
+        """Get a UI card element for the task tracking and request
+
+        :return: _description_
+        :rtype: FT
+        """
+        client_card = Card(
+            DivHStacked(H4(self._name), self._badge),
+            cls="m-2 max-h-[40vh] overflow-y-auto inner-main-card",
+            id=self._name,
+            ws_send=True,
+        )
+        # TODO: Format the feedback message and add a display card
+        # if self.feedback:
+        #     client_card(self.feedback)
+        return client_card(
+            _in_action_client_element(self._name, self._type, self._fields)
+        )
+
+    @property
+    def feedback(self):
+        """Get a UI element for the task feedback"""
+        if self._status not in ["active", "running"]:
+            return None
+        else:
+            return P(self._feedback)
+
+    @property
+    def _badge(self):
+        """Create a status badge"""
+        if self._status in ["running", "active", "accepted"]:
+            # Add loading
+            status_div = DivHStacked(
+                Span(
+                    DivHStacked(
+                        Loading(cls=f"{LoadingT.spinner} {LoadingT.xs}"), self._status
+                    ),
+                    cls=f"status-badge {self._status}",
+                    id="status-badge-div",
+                )
+            )
+            if self._duration is not None:
+                minutes, seconds = divmod(self._duration, 60)
+                status_div(Span(f"{minutes}:{seconds}", cls="slick-timer"))
+            return status_div
+        return Span(
+            self._status, cls=f"status-badge {self._status}", id="status-badge-div"
+        )
+
+
 # ---- UTILITY ELEMENTS ----
 
 
@@ -468,8 +559,6 @@ def _generic_message_form_with_topic_info(
 
 
 # ---- ROS SERVICES/ACTIONS ELEMENTS ----
-
-
 def _in_service_element(
     srv_name: str, srv_type: str, request_fields: Dict[str, Dict[str, Dict]]
 ):
@@ -574,7 +663,6 @@ def styled_main_service_clients_container(
     :type column_class: str, defaults to ""
     :return: Input Service Clients UI element
     """
-    # draggable class: makes the whole container draggable (implemented in custom.js)
     # cool-subtitle-mini: automatika red color cool title (in custom.css)
     _id = container_name.lower().replace(" ", "_")
     main_card = Card(
@@ -593,16 +681,9 @@ def styled_main_service_clients_container(
             cls=f"m-2 {column_class} max-h-[40vh] overflow-y-auto inner-main-card",
             id=client["name"],
         )
-        if "action" in _id:
-            client_card(
-                _in_action_client_element(
-                    client["name"], client["type"], client["fields"]
-                )
-            )
-        else:
-            client_card(
-                _in_service_element(client["name"], client["type"], client["fields"])
-            )
+        client_card(
+            _in_service_element(client["name"], client["type"], client["fields"])
+        )
         all_services_cards(client_card)
     return main_card(all_services_cards)
 

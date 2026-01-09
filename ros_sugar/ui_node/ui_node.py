@@ -5,6 +5,7 @@ import os
 from attr import define, field, Factory
 import json
 import importlib
+from functools import partial
 
 from ..config.base_attrs import BaseAttrs
 from ..core.component import BaseComponent, BaseComponentConfig
@@ -93,6 +94,9 @@ class UINode(BaseComponent):
 
         self._ros_service_clients: Dict[str, ServiceClientHandler] = {}
         self._ros_action_clients: Dict[str, ActionClientHandler] = {}
+        # Used to store callbacks for active clients
+        self._ros_action_clients_feedback_callbacks: Dict[str, Callable] = {}
+        self._ros_action_clients_feedback_timers: Dict = {}
 
         self.config: UINodeConfig
 
@@ -133,6 +137,9 @@ class UINode(BaseComponent):
             }
             clients_configs_dicts.append(config_dict)
         return clients_configs_dicts
+
+    def get_active_action_clients(self) -> Dict[str, ActionClientHandler]:
+        return self._ros_action_clients
 
     @property
     def _client_inputs_json(self) -> str:
@@ -200,7 +207,9 @@ class UINode(BaseComponent):
                 self._srv_client_inputs.append(service_config)
 
             except Exception as e:
-                get_logger(self.node_name).warning(f"Error parsing service clients inputs: {e}")
+                get_logger(self.node_name).warning(
+                    f"Error parsing service clients inputs: {e}"
+                )
 
         self._action_client_inputs = []
         for client_serialized in all_clients_serialized["actions"]:
@@ -220,12 +229,9 @@ class UINode(BaseComponent):
                 self._action_client_inputs.append(action_config)
 
             except Exception as e:
-                get_logger(self.node_name).warning(f"Error parsing action clients inputs: {e}")
-
-        get_logger(self.node_name).warning(f"Got action: {self._action_client_inputs}")
-        get_logger(self.node_name).warning(
-            f"Got _srv_client_inputs: {self._srv_client_inputs}"
-        )
+                get_logger(self.node_name).warning(
+                    f"Error parsing action clients inputs: {e}"
+                )
 
     def _return_error(self, error_msg: str):
         """Return error msg to the UI"""
@@ -293,7 +299,6 @@ class UINode(BaseComponent):
 
         # Initialize all input service clients (if any)
         for inp in self._action_client_inputs:
-            get_logger('ss').info(f"Creating client for {inp.name}")
             self._ros_action_clients[inp.name] = base_clients.ActionClientHandler(
                 client_node=self, config=inp
             )
@@ -301,8 +306,6 @@ class UINode(BaseComponent):
         # Start loop thread if necessary
         if hasattr(self, "loop_thread"):
             self.loop_thread.start()
-
-        get_logger("ss").info(f"_ros_action_clients {self._ros_action_clients}")
 
         return super().custom_on_activate()
 
@@ -347,6 +350,10 @@ class UINode(BaseComponent):
         )
         return result
 
+    def attach_client_feedback_callback(self, ws_callback, action_name: str):
+        if self._ros_action_clients.get(action_name, None):
+            self._ros_action_clients_feedback_callbacks[action_name] = ws_callback
+
     def send_srv_call(self, srv_call_data: Dict) -> Tuple[str, Any]:
         """
         Send a service call using the service request form data
@@ -377,7 +384,7 @@ class UINode(BaseComponent):
             return (True, response_str)
         return (
             False,
-            f'Server Error - Service "{srv_name}" request send but no service response recieved',
+            f'Server Error - Service "{srv_name}" request send but no service response received',
         )
 
     def send_action_goal(self, action_goal_data: Dict) -> Tuple[str, Any]:
@@ -399,13 +406,20 @@ class UINode(BaseComponent):
             )
 
         if sent_done:
-            return (True, "Action Goal sent successfully")
+            # If goal is sent, start a timer to send the feedback to the websocket
+            self._ros_action_clients_feedback_timers[action_name] = self.create_timer(
+                timer_period_sec=1 / self.config.loop_rate,
+                callback=partial(
+                    self._action_feedback_callback, action_name=action_name
+                ),
+            )
+            return (True, f"Starting requested action {action_name}...")
         return (
             False,
             f'Server Error - Was not able to send goal for action "{action_name}"',
         )
 
-    def get_action_feedback(self, action_name: str) -> Optional[str]:
+    async def _action_feedback_callback(self, action_name: str):
         """Get feedback message from action (if available)
 
         :param action_name: Action name
@@ -415,9 +429,11 @@ class UINode(BaseComponent):
         """
         if action_name not in self._ros_action_clients:
             return
-        feedback = self._ros_action_clients[action_name].feedback_msg
-        if feedback:
-            return f"Action '{action_name}' Feedback @{float(self.get_secs_time(), 2)}: {feedback}"
+        feedback_data = self._ros_action_clients[action_name].get_ui_elements()
+        if feedback_func := self._ros_action_clients_feedback_callbacks.get(
+            action_name, None
+        ):
+            await feedback_func(feedback_data)
 
     def cancel_action(self, action_name: str) -> Tuple[bool, str]:
         """Cancel ongoing action goal
@@ -428,7 +444,10 @@ class UINode(BaseComponent):
         :rtype: (bool, str)
         """
         if action_name not in self._ros_action_clients:
-            return (True, f"Action cancellation is not possible: '{action_name}' is not found")
+            return (
+                True,
+                f"Action cancellation is not possible: '{action_name}' is not found",
+            )
         return self._ros_action_clients[action_name].cancel_request()
 
     def publish_data(self, data: Any):
@@ -459,7 +478,7 @@ class UINode(BaseComponent):
             )
         except Exception as e:
             return self._return_error(
-                f'Error occured when converting {data} to Sugar type "{topic_type_str}": {e}'
+                f'Error occurred when converting {data} to Sugar type "{topic_type_str}": {e}'
             )
 
         self.publishers_dict[topic_name].publish(output=output)
