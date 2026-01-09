@@ -29,6 +29,7 @@ class UINodeConfig(BaseComponentConfig):
     port: int = field(default=5001)
     ssl_keyfile: str = field(default="key.pem")
     ssl_certificate: str = field(default="cert.pem")
+    hide_settings: bool = field(default=False)
 
 
 class UINode(BaseComponent):

@@ -251,6 +251,7 @@ class Launcher:
         port: int = 5001,
         ssl_keyfile_path: str = "key.pem",
         ssl_certificate_path: str = "cert.pem",
+        hide_settings_panel: bool = False,
     ):
         """
         Enables the user interface (UI) subsystem for recipes, initializing all UI extensions
@@ -284,6 +285,10 @@ class Launcher:
             Path to the SSL/TLS certificate file used to authenticate the UI server.
             Defaults to ``"cert.pem"``.
         :type ssl_certificate_path: str
+
+        :param hide_settings_panel:
+            Disable the components settings panel in the UI.
+        :type hide_settings_panel: bool, default False
         """
 
         self._ui_input_elements = []
@@ -311,6 +316,7 @@ class Launcher:
             port=port,
             ssl_keyfile=ssl_keyfile_path,
             ssl_certificate=ssl_certificate_path,
+            hide_settings=hide_settings_panel,
         )
 
     def _setup_component_events_handlers(self, comp: BaseComponent):
