@@ -837,7 +837,7 @@ class BaseComponent(lifecycle.Node):
         if not self.__events or not self.__actions:
             return
         self.__event_listeners = []
-        for event, actions in zip(self.__events, self.__actions):
+        for event, actions in zip(self.__events, self.__actions, strict=True):
             # Register action to event callback to get executed on trigger
             event.register_actions(actions)
             # Create listener to the event trigger topic
@@ -849,6 +849,18 @@ class BaseComponent(lifecycle.Node):
                 callback_group=MutuallyExclusiveCallbackGroup(),
             )
             self.__event_listeners.append(listener)
+
+    def _add_event_action_pair(self, event: Event, action: Union[Action, List[Action]]):
+        """Add an event/action pair.
+        This method is supposed to be used by child components if required
+        """
+        action_set = action if isinstance(action, List) else [action]
+        if self.__events and self.__actions:
+            self.__events.append(event)
+            self.__actions.append(action_set)
+        else:
+            self.__events = [event]
+            self.__actions = [action_set]
 
     def got_all_inputs(
         self,
@@ -986,7 +998,7 @@ class BaseComponent(lifecycle.Node):
         events_actions_names = {}
         if not self.__events or not self.__actions:
             return {}
-        for event, action_set in zip(self.__events, self.__actions):
+        for event, action_set in zip(self.__events, self.__actions, strict=True):
             events_actions_names[event.name] = action_set
         return events_actions_names
 
@@ -1000,8 +1012,10 @@ class BaseComponent(lifecycle.Node):
         :type events_actions_dict: Dict[Event, List[Action]]
         :raises ValueError: If a given Action does not correspond to a valid component method
         """
-        self.__events = []
-        self.__actions = []
+        # Initialize only if one of events/actions is None
+        if not self.__events or not self.__actions:
+            self.__events = []
+            self.__actions = []
         for event_serialized, actions in events_actions_dict.items():
             action_set = actions if isinstance(actions, list) else [actions]
             for action in action_set:
