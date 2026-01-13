@@ -7,6 +7,7 @@ import sys
 import socket
 import json
 from typing import (
+    TypeVar,
     Awaitable,
     Callable,
     Dict,
@@ -16,6 +17,7 @@ from typing import (
     Union,
     Any,
     Tuple,
+    Mapping,
 )
 from concurrent.futures import ThreadPoolExecutor
 
@@ -67,6 +69,9 @@ m_pack.patch()
 
 
 UI_EXTENSIONS = {}
+
+# For type hinting events_actions dict: This represents "Any type that is a subclass of Event"
+EventT = TypeVar("EventT", bound=Event)
 
 
 class Launcher:
@@ -160,8 +165,8 @@ class Launcher:
         package_name: Optional[str] = None,
         executable_entry_point: Optional[str] = "executable",
         events_actions: Optional[
-            Dict[
-                Event,
+            Mapping[
+                EventT,
                 Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
             ]
         ] = None,
@@ -353,8 +358,8 @@ class Launcher:
     def __rewrite_actions_for_components(
         self,
         components_list: List[BaseComponent],
-        actions_dict: Dict[
-            Event, Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
+        actions_dict: Mapping[
+            EventT, Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
         ],
     ):
         """
