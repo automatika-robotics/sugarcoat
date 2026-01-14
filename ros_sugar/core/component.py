@@ -146,7 +146,7 @@ class BaseComponent(lifecycle.Node):
 
         self._config_file = config_file
 
-        self.__fallbacks = fallbacks
+        self.__fallbacks = fallbacks or ComponentFallbacks()
         self.__fallbacks_giveup: bool = False
 
         if self.config._use_without_launcher:
@@ -2401,7 +2401,8 @@ class BaseComponent(lifecycle.Node):
                 self.get_logger().error(
                     "All possible fallbacks are exhausted -> Component is givingup"
                 )
-                self.__fallbacks.execute_giveup()
+                if self.__fallbacks.on_giveup:
+                    self.__fallbacks.execute_giveup()
                 return
 
             elif (
@@ -2561,6 +2562,16 @@ class BaseComponent(lifecycle.Node):
             self.__fallbacks.on_algorithm_fail = Fallback(
                 action=action, max_retries=max_retries
             )
+
+    def on_giveup(self, action: Union[List[Action], Action]) -> None:
+        """
+        Set the fallback strategy (action) on giveup
+
+        :param action: Action to be executed on give up
+        :type action: Union[List[Action], Action]
+        """
+        if self._is_valid_fallback_action(action):
+            self.__fallbacks.on_giveup = Fallback(action=action)
 
     @component_fallback
     def broadcast_status(self) -> None:
@@ -2770,6 +2781,11 @@ class BaseComponent(lifecycle.Node):
 
         # Trigger fallbacks manually
         self._fallbacks_check_callback()
+
+        # TODO: Make the sleep duration a parameter?
+        # Wait before trying to retrigger failed transition
+        self.get_logger().warning("Retriggering failed transition in 1 sec...")
+        time.sleep(1)
 
         # Attempt retriggering the transition
         if self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_CONFIGURING:
