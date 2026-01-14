@@ -1813,8 +1813,6 @@ class BaseComponent(lifecycle.Node):
 
     def _update_inactive_input_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new input topic"""
-        self.get_logger().info("Updating inactive topic lists (Parent implementation)")
-
         # Update in_topics list
         try:
             idx = self.in_topics.index(old_topic)
@@ -1882,8 +1880,6 @@ class BaseComponent(lifecycle.Node):
 
     def _update_inactive_output_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new output topic"""
-        self.get_logger().info("Updating inactive topic lists (Parent implementation)")
-
         # Update out_topics list
         try:
             idx = self.out_topics.index(old_topic)
@@ -2162,7 +2158,7 @@ class BaseComponent(lifecycle.Node):
         timeout_counter = 0  # Add timeout to avoid an infinite loop
         while (
             self.lifecycle_state >= LifecycleStateMsg.TRANSITION_STATE_CONFIGURING
-        ) and (timeout_counter < self.config.wait_for_restart_time):
+        ) and (timeout_counter < self.config._lifecycle_state_transition_timeout):
             self.get_logger().warn(
                 "Waiting for ongoing transition to end before executing new transition",
                 once=True,
@@ -2171,7 +2167,7 @@ class BaseComponent(lifecycle.Node):
             timeout_counter += 1 / self.config.loop_rate
 
         if self.lifecycle_state >= LifecycleStateMsg.TRANSITION_STATE_CONFIGURING:
-            self.get_logger().error(
+            self.get_logger().debug(
                 "Error: Component stuck in lifecycle transition",
             )
             self.health_status.set_fail_component()
@@ -2186,13 +2182,11 @@ class BaseComponent(lifecycle.Node):
         :return: If the component is started
         :rtype: bool
         """
-        current_state = self.lifecycle_state
-
-        if current_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
+        if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             # Component already active
             return True
 
-        elif current_state in [
+        elif self.lifecycle_state in [
             LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
             LifecycleStateMsg.PRIMARY_STATE_FINALIZED,
         ]:
@@ -2298,12 +2292,11 @@ class BaseComponent(lifecycle.Node):
         :return: If the component is Reconfigured
         :rtype: bool
         """
-        current_state = self.lifecycle_state
 
-        if current_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
+        if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
             self.trigger_configure()
 
-        if current_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
+        if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             self.trigger_deactivate()
 
         transition_done = self.__wait_for_state_transition()
@@ -2399,10 +2392,11 @@ class BaseComponent(lifecycle.Node):
             if self.__fallbacks_giveup:
                 # All fallbacks are already exhausted
                 self.get_logger().error(
-                    "All possible fallbacks are exhausted -> Component is givingup"
+                    "All possible fallbacks are exhausted -> Component is givingup", once=True
                 )
                 if self.__fallbacks.on_giveup:
                     self.__fallbacks.execute_giveup()
+                    self.health_status.value = self.__fallbacks.latest_status
                 return
 
             elif (
@@ -2563,7 +2557,8 @@ class BaseComponent(lifecycle.Node):
                 action=action, max_retries=max_retries
             )
 
-    def on_giveup(self, action: Union[List[Action], Action]) -> None:
+    def on_giveup(
+        self, action: Union[List[Action], Action], max_retries: int = 0) -> None:
         """
         Set the fallback strategy (action) on giveup
 
@@ -2571,7 +2566,7 @@ class BaseComponent(lifecycle.Node):
         :type action: Union[List[Action], Action]
         """
         if self._is_valid_fallback_action(action):
-            self.__fallbacks.on_giveup = Fallback(action=action)
+            self.__fallbacks.on_giveup = Fallback(action=action, max_retries=max_retries)
 
     @component_fallback
     def broadcast_status(self) -> None:
@@ -2779,8 +2774,9 @@ class BaseComponent(lifecycle.Node):
         self.custom_on_error()
         self.health_status.set_fail_component(component_names=[self.get_name()])
 
-        # Trigger fallbacks manually
-        self._fallbacks_check_callback()
+        # Trigger fallbacks manually if the fallback check timer is not already active
+        if not hasattr(self, '__fallbacks_check_timer'):
+            self._fallbacks_check_callback()
 
         # TODO: Make the sleep duration a parameter?
         # Wait before trying to retrigger failed transition

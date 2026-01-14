@@ -192,7 +192,10 @@ class ComponentFallbacks:
 
             # None max_retries == Never give up, or max_retries not reached yet
             if not fallback.max_retries or fallback.retry_idx < fallback.max_retries:
-                success = fallback.action()
+                try:
+                    success = fallback.action()
+                except Exception:
+                    success = False
                 if success:
                     # Fallback rau successfully -> reset the status to healthy
                     self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
@@ -215,7 +218,10 @@ class ComponentFallbacks:
             fallback.action_idx += 1
 
         if fallback.action_idx < len(fallback.action):
-            success = fallback.action[fallback.action_idx]()
+            try:
+                success = fallback.action[fallback.action_idx]()
+            except Exception:
+                success = False
             if success:
                 # Fallback rau successfully -> reset the status to healthy
                 self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
