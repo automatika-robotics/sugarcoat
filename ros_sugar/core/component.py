@@ -2122,6 +2122,7 @@ class BaseComponent(lifecycle.Node):
             return False
         return True
 
+    @component_action
     def start(self) -> bool:
         """
         Start the component - trigger_activate
