@@ -1686,7 +1686,7 @@ class BaseComponent(lifecycle.Node):
         response.success = []
         response.error_msg = []
 
-        for name, val in zip(param_names, param_str_values):
+        for name, val in zip(param_names, param_str_values, strict=True):
             error_msg = self._update_config_param_from_str_value(name, val)
 
             if not error_msg:
@@ -2316,11 +2316,11 @@ class BaseComponent(lifecycle.Node):
         """
         try:
             if keep_alive:
-                for param_name, new_value in zip(params_names, new_values):
+                for param_name, new_value in zip(params_names, new_values, strict=True):
                     self.config.update_value(param_name, new_value)
             else:
                 self.stop()
-                for param_name, new_value in zip(params_names, new_values):
+                for param_name, new_value in zip(params_names, new_values, strict=True):
                     self.config.update_value(param_name, new_value)
                 self.start()
         except Exception:
