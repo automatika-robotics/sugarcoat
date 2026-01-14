@@ -33,6 +33,7 @@ from launch.actions import (
     OpaqueCoroutine,
     OpaqueFunction,
     Shutdown,
+    SetEnvironmentVariable,
 )
 from launch_ros.actions import LifecycleNode as LifecycleNodeLaunchAction
 from launch_ros.actions import Node as NodeLaunchAction
@@ -985,6 +986,11 @@ class Launcher:
         self._setup_monitor_node()
 
         group_action = GroupAction(self._launch_group)
+
+        # Force colorized output (for multi-processing)
+        self._description.add_action(
+            SetEnvironmentVariable("RCUTILS_COLORIZED_OUTPUT", "1")
+        )
 
         self._description.add_action(group_action)
 
