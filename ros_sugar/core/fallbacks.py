@@ -141,7 +141,7 @@ class ComponentFallbacks:
         if self.on_system_fail:
             self.on_system_fail.reset_retries()
 
-    def _execute_fallback(self, fallback: Optional[Fallback]) -> None:
+    def _execute_fallback(self, fallback: Fallback) -> None:
         """
         Execute a fallback from given fallbacks methods
 
@@ -152,14 +152,6 @@ class ComponentFallbacks:
 
         :raises ValueError: If the list of fallback methods is None
         """
-        if not fallback:
-            # try executing the generic fallback
-            if self.on_any_fail:
-                self._execute_fallback(self.on_any_fail)
-                return
-            else:
-                raise ValueError("No fallback actions are defined for detected failure")
-
         if not isinstance(fallback.action, List):
             # Only one fallback action is available
 
