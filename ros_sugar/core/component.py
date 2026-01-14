@@ -24,6 +24,7 @@ from rclpy.subscription import Subscription
 from rclpy.client import Client
 from tf2_ros.transform_listener import TransformListener
 from builtin_interfaces.msg import Time
+from lifecycle_msgs.msg import State as LifecycleStateMsg
 
 from automatika_ros_sugar.msg import ComponentStatus
 from automatika_ros_sugar.srv import (
@@ -1636,11 +1637,21 @@ class BaseComponent(lifecycle.Node):
             response.success = False
             response.error_msg = error_msg
 
-        while not self.lifecycle_state == 3:
+        timeout_counter = 0  # Add timeout to avoid an infinite loop
+        while self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE and (
+            timeout_counter < self.config.wait_for_restart_time
+        ):
             self.get_logger().warn(
                 f"Component {self.node_name} is not in ACTIVE state. Waiting for it to become active again.",
                 once=True,
             )
+            time.sleep(1 / self.config.loop_rate)
+            timeout_counter += 1 / self.config.loop_rate
+
+        if self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
+            response.success = False
+            response.error_msg = "Error restarting the component"
+            self.health_status.set_fail_component()
 
         return response
 
@@ -2080,6 +2091,37 @@ class BaseComponent(lifecycle.Node):
             timeout += 1 / self.config.loop_rate
         return timeout < self.config.wait_for_restart_time
 
+    def __wait_for_state_transition(self) -> bool:
+        """Waits until the component is not in a transitioning state in:
+        TRANSITION_STATE_CONFIGURING = 10
+        TRANSITION_STATE_CLEANINGUP = 11
+        TRANSITION_STATE_SHUTTINGDOWN = 12
+        TRANSITION_STATE_ACTIVATING = 13
+        TRANSITION_STATE_DEACTIVATING = 14
+        TRANSITION_STATE_ERRORPROCESSING = 15
+
+            :return: _description_
+            :rtype: bool
+        """
+        timeout_counter = 0  # Add timeout to avoid an infinite loop
+        while (
+            self.lifecycle_state >= LifecycleStateMsg.TRANSITION_STATE_CONFIGURING
+        ) and (timeout_counter < self.config.wait_for_restart_time):
+            self.get_logger().warn(
+                "Waiting for ongoing transition to end before executing new transition",
+                once=True,
+            )
+            time.sleep(1 / self.config.loop_rate)
+            timeout_counter += 1 / self.config.loop_rate
+
+        if self.lifecycle_state >= LifecycleStateMsg.TRANSITION_STATE_CONFIGURING:
+            self.get_logger().error(
+                "Error: Component stuck in lifecycle transition",
+            )
+            self.health_status.set_fail_component()
+            return False
+        return True
+
     def start(self) -> bool:
         """
         Start the component - trigger_activate
@@ -2089,19 +2131,22 @@ class BaseComponent(lifecycle.Node):
         """
         current_state = self.lifecycle_state
 
-        if current_state == 3:
+        if current_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             # Component already active
             return True
 
-        elif current_state in [1, 4]:
+        elif current_state in [
+            LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
+            LifecycleStateMsg.PRIMARY_STATE_FINALIZED,
+        ]:
             # unconfigured or finalized -> configure again before starting
             self.trigger_configure()
 
-        while current_state > 4:
-            self.get_logger().warn(
-                "Waiting for ongoing transition to end before executing new transition",
-                once=True,
-            )
+        transition_done = self.__wait_for_state_transition()
+
+        if not transition_done:
+            return False
+
         # configured and inactive
         self.trigger_activate()
 
@@ -2115,23 +2160,20 @@ class BaseComponent(lifecycle.Node):
         :return: If the component is stopped
         :rtype: bool
         """
-        if self.lifecycle_state in [1, 2, 4]:
+        if self.lifecycle_state in [
+            LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
+            LifecycleStateMsg.PRIMARY_STATE_INACTIVE,
+            LifecycleStateMsg.PRIMARY_STATE_FINALIZED,
+        ]:
             # Already not active
             return True
 
-        while self.lifecycle_state > 4:
-            self.get_logger().warn(
-                "Waiting for ongoing transition to end before executing new transition",
-                once=True,
-            )
+        transition_done = self.__wait_for_state_transition()
+
+        if not transition_done:
+            return False
 
         self.trigger_deactivate()
-
-        while self.lifecycle_state not in [1, 2, 4]:
-            self.get_logger().warn(
-                "Waiting for node to be completely stopped",
-                once=True,
-            )
 
         return True
 
@@ -2160,20 +2202,21 @@ class BaseComponent(lifecycle.Node):
 
         initial_state = self.lifecycle_state
 
-        if initial_state == 2:
+        reactivate = initial_state >= LifecycleStateMsg.PRIMARY_STATE_ACTIVE
+
+        if initial_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
             # Already configured -> cleanup first
             self.trigger_cleanup()
 
-        if initial_state == 3:
+        if initial_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             # active -> deactivate then cleanup
             self.trigger_deactivate()
             self.trigger_cleanup()
 
-        while initial_state > 4:
-            self.get_logger().warn(
-                "Waiting for ongoing transition to end before executing new transition",
-                once=True,
-            )
+        transition_done = self.__wait_for_state_transition()
+
+        if not transition_done:
+            return False
 
         # set new config as params attr
         if isinstance(new_config, str):
@@ -2184,7 +2227,7 @@ class BaseComponent(lifecycle.Node):
         # configure and go to configure (or active if the component was already active)
         self.trigger_configure()
 
-        if initial_state >= 3:
+        if reactivate:
             self.trigger_activate()
             return self.__wait_for_node_start()
 
@@ -2200,17 +2243,17 @@ class BaseComponent(lifecycle.Node):
         """
         current_state = self.lifecycle_state
 
-        if current_state == 1:
+        if current_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
             self.trigger_configure()
 
-        if current_state == 3:
+        if current_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             self.trigger_deactivate()
 
-        while current_state > 4:
-            self.get_logger().warn(
-                "Waiting for ongoing transition to end before executing new transition",
-                once=True,
-            )
+        transition_done = self.__wait_for_state_transition()
+
+        if not transition_done:
+            # timeout
+            return False
 
         if wait_time:
             self.get_logger().warn(
@@ -2465,7 +2508,10 @@ class BaseComponent(lifecycle.Node):
         Used as the default fallback strategy for any system (external) failure
         """
         # If node is active publish status
-        if hasattr(self, "health_status_publisher") and self.lifecycle_state == 3:
+        if (
+            hasattr(self, "health_status_publisher")
+            and self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE
+        ):
             self.health_status_publisher.publish(self.health_status())
 
     # LIFECYCLE ON TRANSITIONS CUSTOM METHODS
@@ -2508,7 +2554,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition to state 'configured': {e}"
             )
-            self.health_status.set_fail_component(component_names=[self.get_name()])
+            return self.on_error(state)
 
         return super().on_configure(state)
 
@@ -2552,7 +2598,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition to state 'active': {e}"
             )
-            self.health_status.set_fail_component(component_names=[self.get_name()])
+            return self.on_error(state)
 
         return super().on_activate(state)
 
@@ -2586,7 +2632,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition to state 'inactive': {e}"
             )
-            self.health_status.set_fail_component(component_names=[self.get_name()])
+            return self.on_error(state)
 
         return super().on_deactivate(state)
 
@@ -2614,7 +2660,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition to state 'finalized': {e}"
             )
-            self.health_status.set_fail_component(component_names=[self.get_name()])
+            return self.on_error(state)
 
         return super().on_shutdown(state)
 
@@ -2643,6 +2689,8 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition from state 'unconfigured': {e}"
             )
+            return self.on_error(state)
+
         return super().on_cleanup(state)
 
     def on_error(
@@ -2656,8 +2704,26 @@ class BaseComponent(lifecycle.Node):
         self.get_logger().error(
             f"Transition error for node {self.get_name()} - {state}"
         )
-        self.health_status.set_fail_component(component_names=[self.get_name()])
         self.custom_on_error()
+        self.health_status.set_fail_component(component_names=[self.get_name()])
+
+        # Trigger fallbacks manually
+        self._fallbacks_check_callback()
+
+        # Attempt retriggering the transition
+        if self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_CONFIGURING:
+            return self.on_configure(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_ACTIVATING:
+            return self.on_activate(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_DEACTIVATING:
+            return self.on_deactivate(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_CLEANINGUP:
+            return self.on_cleanup(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_SHUTTINGDOWN:
+            return self.on_shutdown(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_ERRORPROCESSING:
+            return self.on_shutdown(state)
+
         return super().on_error(state)
 
     def custom_on_configure(self) -> None:
