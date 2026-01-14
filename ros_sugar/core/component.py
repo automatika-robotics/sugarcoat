@@ -2373,6 +2373,9 @@ class BaseComponent(lifecycle.Node):
             else:
                 self.__fallbacks_giveup = self.__fallbacks.execute_generic_fallback()
 
+            # Update the health status from the fallback after execution
+            self.health_status.value = self.__fallbacks.latest_status
+
         except ValueError:
             # ValueError is thrown when no fallbacks are defined for detected failure
             if self.__enable_health_publishing:

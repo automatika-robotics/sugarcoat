@@ -4,6 +4,8 @@ from typing import List, Optional, Union
 
 from attrs import define, field
 
+from automatika_ros_sugar.msg import ComponentStatus
+
 from .action import Action
 
 
@@ -93,6 +95,7 @@ class ComponentFallbacks:
 
         # Flag to indicate that all fallbacks failed and no more fallbacks are available
         self.__giveup: bool = False
+        self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
 
     @property
     def giveup(self) -> bool:
@@ -103,6 +106,15 @@ class ComponentFallbacks:
         :rtype: bool
         """
         return self.__giveup
+
+    @property
+    def latest_status(self) -> int:
+        """Get the latest health status updated by the fallback execution
+
+        :return: Health status code
+        :rtype: int
+        """
+        return self.__latest_state_value
 
     def reset(self) -> None:
         """Reset all fallback execution tracking indices to 0 and the retries tracking indices to 0"""
@@ -143,7 +155,7 @@ class ComponentFallbacks:
         if not fallback:
             # try executing the generic fallback
             if self.on_any_fail:
-                self.execute_generic_fallback()
+                self._execute_fallback(self.on_any_fail)
                 return
             else:
                 raise ValueError("No fallback actions are defined for detected failure")
@@ -151,15 +163,12 @@ class ComponentFallbacks:
         if not isinstance(fallback.action, List):
             # Only one fallback action is available
 
-            # None max_retries == Never give up
-            if not fallback.max_retries:
-                fallback.action()
-                fallback.retry_idx += 1
-                self.__giveup = False
-                return
-
-            if fallback.retry_idx < fallback.max_retries:
-                fallback.action()
+            # None max_retries == Never give up, or max_retries not reached yet
+            if not fallback.max_retries or fallback.retry_idx < fallback.max_retries:
+                success = fallback.action()
+                if success:
+                    # Fallback rau successfully -> reset the status to healthy
+                    self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
                 fallback.retry_idx += 1
                 self.__giveup = False
             else:
@@ -179,7 +188,10 @@ class ComponentFallbacks:
             fallback.action_idx += 1
 
         if fallback.action_idx < len(fallback.action):
-            fallback.action[fallback.action_idx]()
+            success = fallback.action[fallback.action_idx]()
+            if success:
+                # Fallback rau successfully -> reset the status to healthy
+                self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
             self.__giveup = False
         else:
             self.__giveup = True
@@ -197,6 +209,7 @@ class ComponentFallbacks:
         :return: Giveup: If no more fallbacks are available to be executed
         :rtype: bool
         """
+        self.__latest_state_value = ComponentStatus.STATUS_FAILURE_COMPONENT_LEVEL
         self._execute_fallback(self.on_component_fail)
         return self.__giveup
 
@@ -207,6 +220,7 @@ class ComponentFallbacks:
         :return: Giveup: If no more fallbacks are available to be executed
         :rtype: bool
         """
+        self.__latest_state_value = ComponentStatus.STATUS_FAILURE_ALGORITHM_LEVEL
         self._execute_fallback(self.on_algorithm_fail)
         return self.__giveup
 
@@ -217,6 +231,7 @@ class ComponentFallbacks:
         :return: Giveup: If no more fallbacks are available to be executed
         :rtype: bool
         """
+        self.__latest_state_value = ComponentStatus.STATUS_FAILURE_SYSTEM_LEVEL
         self._execute_fallback(self.on_system_fail)
         return self.__giveup
 
@@ -227,5 +242,6 @@ class ComponentFallbacks:
         :return: Giveup: If no more fallbacks are available to be executed
         :rtype: bool
         """
+        self.__latest_state_value = ComponentStatus.STATUS_GENERAL_FAILURE
         self._execute_fallback(self.on_any_fail)
         return self.__giveup
