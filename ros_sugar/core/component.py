@@ -2392,7 +2392,8 @@ class BaseComponent(lifecycle.Node):
             if self.__fallbacks_giveup:
                 # All fallbacks are already exhausted
                 self.get_logger().error(
-                    "All possible fallbacks are exhausted -> Component is givingup", once=True
+                    "All possible fallbacks are exhausted -> Component is givingup",
+                    once=True,
                 )
                 if self.__fallbacks.on_giveup:
                     self.__fallbacks.execute_giveup()
@@ -2558,7 +2559,8 @@ class BaseComponent(lifecycle.Node):
             )
 
     def on_giveup(
-        self, action: Union[List[Action], Action], max_retries: int = 0) -> None:
+        self, action: Union[List[Action], Action], max_retries: int = 1
+    ) -> None:
         """
         Set the fallback strategy (action) on giveup
 
@@ -2566,7 +2568,9 @@ class BaseComponent(lifecycle.Node):
         :type action: Union[List[Action], Action]
         """
         if self._is_valid_fallback_action(action):
-            self.__fallbacks.on_giveup = Fallback(action=action, max_retries=max_retries)
+            self.__fallbacks.on_giveup = Fallback(
+                action=action, max_retries=max_retries
+            )
 
     @component_fallback
     def broadcast_status(self) -> None:
@@ -2775,7 +2779,7 @@ class BaseComponent(lifecycle.Node):
         self.health_status.set_fail_component(component_names=[self.get_name()])
 
         # Trigger fallbacks manually if the fallback check timer is not already active
-        if not hasattr(self, '__fallbacks_check_timer'):
+        if not hasattr(self, "__fallbacks_check_timer"):
             self._fallbacks_check_callback()
 
         # TODO: Make the sleep duration a parameter?

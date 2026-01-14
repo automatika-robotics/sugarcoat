@@ -191,7 +191,7 @@ class ComponentFallbacks:
             # Only one fallback action is available
 
             # None max_retries == Never give up, or max_retries not reached yet
-            if not fallback.max_retries or fallback.retry_idx < fallback.max_retries:
+            if fallback.max_retries is None or fallback.retry_idx < fallback.max_retries:
                 try:
                     success = fallback.action()
                 except Exception:
@@ -206,7 +206,7 @@ class ComponentFallbacks:
             return
 
         # Fallback with a list of actions cannot have None max_retries as it will remain stuck on first action
-        if not fallback.max_retries:
+        if fallback.max_retries is None:
             fallback.max_retries = 1
 
         if fallback.retry_idx < fallback.max_retries:
