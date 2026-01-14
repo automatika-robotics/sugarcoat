@@ -1,7 +1,7 @@
 """Fallbacks"""
 
-from typing import List, Optional, Union
-
+from typing import List, Optional, Union, Dict
+import json
 from attrs import define, field
 
 from automatika_ros_sugar.msg import ComponentStatus
@@ -16,6 +16,7 @@ class Fallback:
     action: Union[List[Action], Action] = field()
     max_retries: Optional[int] = field(default=None)
 
+    # Internal values to keep track of retry attempts and the unique action index within a set of actions
     action_idx: int = field(default=0, init=False)
     retry_idx: int = field(default=0, init=False)
 
@@ -31,6 +32,18 @@ class Fallback:
         """Reset the current action and the retries index to zero"""
         self.reset_current_idx()
         self.reset_retries()
+
+    @property
+    def dictionary(self) -> Dict:
+        """Getter of fallback as a dictionary for serialization
+
+        :return: Fallback dict
+        :rtype: Dict
+        """
+        return {
+            "action": self.action.dictionary,
+            "max_retries": self.max_retries,
+        }
 
 
 class ComponentFallbacks:
@@ -115,6 +128,28 @@ class ComponentFallbacks:
         :rtype: int
         """
         return self.__latest_state_value
+
+    @property
+    def json(self) -> Union[str, bytes, bytearray]:
+        """Getter of serialized component fallbacks for component multi-process execution serialization/deserialization
+
+        :return: Serialized ComponentFallbacks
+        :rtype: Union[str, bytes, bytearray]
+        """
+        fallbacks_dict = {
+            "on_any_fail": self.on_any_fail.dictionary if self.on_any_fail else None,
+            "on_component_fail": self.on_component_fail.dictionary
+            if self.on_component_fail
+            else None,
+            "on_algorithm_fail": self.on_algorithm_fail.dictionary
+            if self.on_algorithm_fail
+            else None,
+            "on_system_fail": self.on_system_fail.dictionary
+            if self.on_system_fail
+            else None,
+            "on_giveup": self.on_giveup.dictionary if self.on_giveup else None,
+        }
+        return json.dumps(fallbacks_dict)
 
     def reset(self) -> None:
         """Reset all fallback execution tracking indices to 0 and the retries tracking indices to 0"""

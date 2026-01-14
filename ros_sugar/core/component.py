@@ -146,13 +146,6 @@ class BaseComponent(lifecycle.Node):
 
         self._config_file = config_file
 
-        # NOTE: Default fallback for any failure is set to broadcast status and max retries to None (i.e. component keeps executing on_any_fail action)
-        if not fallbacks:
-            fallbacks = ComponentFallbacks(
-                on_any_fail=Fallback(
-                    action=Action(method=self.broadcast_status), max_retries=None
-                )
-            )
         self.__fallbacks = fallbacks
         self.__fallbacks_giveup: bool = False
 
@@ -1089,6 +1082,9 @@ class BaseComponent(lifecycle.Node):
         if self.__actions:
             self.launch_cmd_args = ["--actions", self._actions_json]
 
+        if self.__fallbacks:
+            self.launch_cmd_args = ["--fallbacks", self._fallbacks_json]
+
         if self._external_processors:
             self.launch_cmd_args = [
                 "--external_processors",
@@ -1146,6 +1142,66 @@ class BaseComponent(lifecycle.Node):
                     raise AttributeError(
                         f"Component '{self.node_name}' does not contain requested Action method '{action_dict['action_name']}'"
                     )
+                method = getattr(self, action_dict["action_name"])
+                reconstructed_action = Action(
+                    method=method,
+                    args=action_dict["args"],
+                    kwargs=action_dict["kwargs"],
+                )
+                reconstructed_action_list.append(reconstructed_action)
+            self.__actions.append(reconstructed_action_list)
+
+    @property
+    def _fallbacks_json(self) -> Union[str, bytes]:
+        """Getter of serialized component Fallbacks
+
+        :return: Serialized Fallbacks: {fallback_type: serialized_fallback}
+        :rtype: Union[str, bytes]
+        """
+        return self.__fallbacks.json
+
+    @_fallbacks_json.setter
+    def _fallbacks_json(self, serialized_fallbacks: Union[str, bytes]):
+        deserialized_fallbacks = json.loads(serialized_fallbacks)
+        fallbacks_kwargs = {}
+        for key, value in deserialized_fallbacks.items():
+            # If a fallback was defined
+            if (value is not None) and (
+                fallback_serialized_action := value.get("action", None)
+            ):
+                if not hasattr(self, fallback_serialized_action["action_name"]):
+                    raise AttributeError(
+                        f"Component '{self.node_name}' does not contain requested Fallback Action method '{fallback_serialized_action['action_name']}'"
+                    )
+                method = getattr(self, fallback_serialized_action["action_name"])
+                reconstructed_action = Action(
+                    method=method,
+                    args=fallback_serialized_action["args"],
+                    kwargs=fallback_serialized_action["kwargs"],
+                )
+                reconstructed_fallback = Fallback(
+                    reconstructed_action, value.get("max_retries", None)
+                )
+                fallbacks_kwargs[key] = reconstructed_fallback
+        self.__fallbacks = ComponentFallbacks(**fallbacks_kwargs)
+
+    @_actions_json.setter
+    def _actions_json(self, actions_serialized: Union[str, bytes]):
+        """Setter of component events from JSON serialized actions
+
+        :param actions_serialized: Serialized Actions List
+        :type actions_serialized: Union[str, bytes]
+        """
+        self.__actions = []
+        actions_dict: Dict = json.loads(actions_serialized)
+        for action_list in actions_dict.values():
+            reconstructed_action_list = []
+            for action_dict in action_list:
+                if not hasattr(self, action_dict["action_name"]):
+                    raise AttributeError(
+                        f"Component '{self.node_name}' does not contain requested Action method '{action_dict['action_name']}'"
+                    )
+                # reparse the method using the given action name
                 method = getattr(self, action_dict["action_name"])
                 reconstructed_action = Action(
                     method=method,
@@ -2346,6 +2402,7 @@ class BaseComponent(lifecycle.Node):
                     "All possible fallbacks are exhausted -> Component is givingup"
                 )
                 self.__fallbacks.execute_giveup()
+                return
 
             elif (
                 self.health_status.is_algorithm_fail
@@ -2371,7 +2428,7 @@ class BaseComponent(lifecycle.Node):
                 )
                 self.__fallbacks_giveup = self.__fallbacks.execute_system_fallback()
 
-            else:
+            elif self.__fallbacks.on_any_fail:
                 self.__fallbacks_giveup = self.__fallbacks.execute_generic_fallback()
 
             # Update the health status from the fallback after execution
