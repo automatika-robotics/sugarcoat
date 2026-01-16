@@ -21,6 +21,14 @@ why
 :caption: Design Concepts
 
 design/concepts_overview
+design/component
+design/topics
+design/status
+design/events
+design/actions
+design/fallbacks
+design/launcher
+design/monitor
 ```
 
 ```{toctree}

@@ -1,4 +1,4 @@
-# Design Concepts
+# Design Concepts Overview
 
 Sugarcoat is designed to transform standard ROS2 nodes into robust, self-healing, and dynamic building blocks for autonomous systems. The architecture is centered around five key pillars: [**Modular Execution**](#1-the-component-smart-execution), [**Active Resilience**](#2-active-resilience-status--fallbacks), [**Event-Driven Behavior**](#3-dynamic-behavior-events--actions), and [**Centralized Orchestration**](#4-orchestration-launcher--monitor).
 
@@ -85,18 +85,4 @@ Multi-process execution
 :align: center
 
 Multi-process execution
-```
-
-```{toctree}
-:maxdepth: 1
-:caption: Design Concepts
-
-component
-topics
-status
-events
-actions
-fallbacks
-launcher
-monitor
 ```
