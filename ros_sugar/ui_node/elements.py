@@ -880,10 +880,11 @@ def output_logging_card(current_log):
     """
     return Card(
         DivHStacked(
-            H4("Log", cls="cool-subtitle-mini"),
             current_log,
             cls="space-x-0",
         ),
+        header=H4("Log", cls="cool-subtitle-mini"),
+        header_cls="drag-handle",
         cls="fix-size draggable main-card h-[60vh] max-h-[60vh]",
         id="logging-card-parent",
     )

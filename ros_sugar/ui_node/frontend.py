@@ -34,6 +34,12 @@ class FHApp:
             Script(
                 src="custom.js",
             ),
+            Script(
+                src="audio_manager.js",
+            ),
+            Script(
+                src="video_manager.js",
+            ),
             Link(rel="stylesheet", href="custom.css", type="text/css"),
         )
         self.app, self.rt = fast_app(
