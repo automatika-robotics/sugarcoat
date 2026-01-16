@@ -197,7 +197,7 @@ class ComponentFallbacks:
                 except Exception:
                     success = False
                 if success:
-                    # Fallback rau successfully -> reset the status to healthy
+                    # Fallback ran successfully -> reset the status to healthy
                     self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
                 fallback.retry_idx += 1
                 self.__giveup = False
@@ -223,7 +223,7 @@ class ComponentFallbacks:
             except Exception:
                 success = False
             if success:
-                # Fallback rau successfully -> reset the status to healthy
+                # Fallback ran successfully -> reset the status to healthy
                 self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
             self.__giveup = False
         else:

@@ -25,7 +25,7 @@ The Component checks its internal health status at the defined component `loop_r
 
 **If a specific fallback is not defined (is None), the system checks the next applicable level (usually falling through to on_any_fail).**
 
-:::{note} Components do not have any default fallback behavior.
+:::{note} Components do not have any default fallback behavior. Fallbacks can be defined per component or for the whole component graph.
 :::
 
 ## Fallback Strategies

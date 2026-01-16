@@ -6,7 +6,7 @@ While a standard ROS2 node requires you to manually handle parameter callbacks, 
 
 ## Why use BaseComponent?
 
-- **Lifecycle Native**: Every component is a by default. It supports configure, activate, deactivate, and shutdown states out of the box.
+- **Lifecycle Native**: Every component is a lifecycle node by default. It supports configure, activate, deactivate, and shutdown states out of the box.
 
 - **Health Aware**: Built-in [Health Status](#health-status) broadcast and connection to the system.
 
@@ -34,7 +34,7 @@ Component Structure
 
 Each Component must serve (at least) one main functionality which can be executed in different modes or [ComponentRunType](../apidocs/ros_sugar/ros_sugar.config.base_config.md/#classes) (Example below)
 
-Additionally the Component can offer any number of additional services.
+The Component can offer any number of additional services.
 
 Available `ComponentRunType` are:
 

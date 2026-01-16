@@ -57,7 +57,7 @@ These actions directly manipulate the state or configuration of a specific `Base
 | **`start`** | `component` | Triggers the component's Lifecycle transition to **Active**. |
 | **`stop`** | `component` | Triggers the component's Lifecycle transition to **Inactive** (stops execution loops). |
 | **`restart`** | `component`<br>`wait_time` (opt) | Stops the component, waits `wait_time` seconds (default 0), and Starts it again. |
-| **`reconfigure`** | `component`<br>`new_config`<br>`keep_alive` | Reloads the component with a new configuration object or YAML file path. |
+| **`reconfigure`** | `component`<br>`new_config`<br>`keep_alive` | Reloads the component with a new configuration object or any configuration file path. |
 | **`update_parameter`** | `component`<br>`param_name`<br>`new_value`<br>`keep_alive` | Updates a **single** configuration parameter. <br>`keep_alive=True` (default) keeps the node running during update. |
 | **`update_parameters`** | `component`<br>`params_names`<br>`new_values`<br>`keep_alive` | Updates **multiple** configuration parameters simultaneously. |
 
@@ -72,7 +72,7 @@ These actions interact with the broader ROS2 system and are executed by the cent
 | **`send_srv_request`** | `srv_name`<br>`srv_type`<br>`srv_request_msg` | Sends a request to a ROS 2 Service. |
 | **`send_action_goal`** | `action_name`<br>`action_type`<br>`action_request_msg` | Sends a goal to a ROS 2 Action Server. |
 
-:::{tip} The previous pre-defined Actions are all keyword only
+:::{tip} The pre-defined Actions are all keyword only
 :::
 
 ### Usage Example:

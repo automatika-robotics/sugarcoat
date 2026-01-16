@@ -43,6 +43,7 @@ from .utils import numpy_to_multiarray
 _additional_types = {}
 
 
+# GENERIC HELPER FUNCTIONS
 def _update_supportedtype_callback(existing_class: type, new_class: type) -> None:
     if not new_class.callback or new_class.callback == existing_class.callback:
         # If new type has no callback or it is the same as the current callback -> exit
@@ -92,6 +93,7 @@ def _update_supportedtype_conversion(existing_class: type, new_class: type) -> N
             ]
 
 
+# FOR DERIVED PACKGES
 def add_additional_datatypes(types: List[type]) -> None:
     """Add additional SupportedType classes to the list of supported ROS2 messages
 
@@ -127,6 +129,7 @@ def add_additional_datatypes(types: List[type]) -> None:
             )
 
 
+# HELPER FUNCTIONS FOR UI CREATION
 def get_ros_msg_fields_dict(msg_class: type) -> Dict[str, Any]:
     """
     Parses the fields names and types from any ROS message into a dict.
@@ -225,6 +228,7 @@ def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
     return msg
 
 
+# SUPPORTED TYPES
 class Meta(type):
     """Meta."""
 
