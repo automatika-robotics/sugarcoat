@@ -150,4 +150,3 @@ Sugarcoat 是由 [Automatika Robotics](https://automatikarobotics.com/) 和 [Inr
 
 - [**FastHTML**](https://www.fastht.ml/): 基于 HTMX 的框架，使我们的动态 Web 界面能够自动生成。
 - [**MonsterUI**](https://monsterui.answer.ai/): 提供优雅且直观的 UI 组件，让界面更具可用性与美感。
-

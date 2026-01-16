@@ -1,5 +1,8 @@
 # Monitor
 
+:::{note} The Monitor is an internal element of Sugarcoat launch system that is configured automatically for you. The following documentation aims only to explain its internal usage.
+:::
+
 Monitor is a ROS2 Node (not Lifecycle) responsible of monitoring the status of the stack (rest of the running nodes) and managing requests/responses from the Orchestrator.
 
 
@@ -31,6 +34,3 @@ An Event Trigger
 - Creates clients for all components main services and main action servers
 - Creates service clients to components reconfiguration services to handle actions sent from the Launcher
 
-
-:::{note} When using the Launcher, you do not need to configure the Monitor. The Launcher will configure and launch its own Monitor node internally. The code below shows an example of this internal configuration
-:::

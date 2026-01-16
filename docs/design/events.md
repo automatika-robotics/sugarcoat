@@ -1,179 +1,225 @@
 # Events
 
-Events are created to alert a robot software stack to any dynamic change at runtime. An Event is defined by a change in a ROS2 message value on a specific topic.
+Sugarcoat's Event-Driven architecture enables dynamic behavior switching based on real-time environmental context. This system allows robots to react instantly to changes in their internal state or external environment without complex, brittle if/else chains in your main loop.
 
-Events are used by matching them to 'Actions'; an Action is meant to be executed at runtime once the Event is triggered.
+An Event in Sugarcoat monitors a specific **ROS2 Topic**. It inspects a specific *Attribute* within that message and compares it against a *Trigger Value*. When the condition is met, the Event triggers its associated [`Action`](actions.md)(s).
 
-## Available Events:
-- [OnAny](#onany-event)
-- [OnEqual](#onequal-event)
-- [OnDifferent](#ondifferent-event)
-- [OnChange](#onchange-event)
-- [OnChangeEqual](#onchangeequal-event)
-- [OnGreater](#ongreater-event)
-- [OnLess](#onless-event)
-- [OnContainsAll](#oncontainsall-event)
-- [OnContainsAny](#oncontainsany-event)
-- [OnChangeContainsAll](#onchangecontainsall-event)
-- [OnChangeNotContain](#onchangenotcontain-event)
-- [OnChangeContainsAny](#onchangecontainsany-event)
-
-## OnAny Event
-
-OnEqual Event is triggered whenever a message is published to the event topic, regardless of the value.
-
-*Example usage scenario:*
-- Event when a message is published to the clicked point topic in RVIZ to trigger a corresponding planning and/or control action:
-
-```python
-from ros_sugar.events import OnAny
-from ros_sugar.io import Topic
-
-# On any clicked point
-event_clicked_point = event.OnAny(
-    "rviz_goal",
-    Topic(name="/clicked_point", msg_type="PointStamped"),
-)
-```
-
-## OnEqual Event
-
-OnEqual Event is triggered when a given topic attribute value is equal to a given trigger value.
-
-*Example usage scenario:*
-- Event when the Component encountered an algorithm failure
-
-```python
-from ros_sugar.events import OnEqual
-from ros_sugar.io import Topic
-from automatika_ros_sugar.msg import ComponentStatus
-
-algorithm_failure_event = OnEqual(
-    "algorithm_failure",
-    Topic(name="/status_topic_name", msg_type=ComponentStatus),
-    ComponentStatus.STATUS_FAILURE_ALGORITHM_LEVEL,  # we can also add `1` here without importing the msg
-    "status",
-)
-```
-
-## OnDifferent Event
-OnDifferent Event is triggered when a given topic attribute value is different from a given trigger value.
-
-
-## OnChange Event
-OnChange Event is triggered when a given topic attribute changes in value from any initial value to any new value. The target attribute value is registered on the first recept of a message on the target topic, then the event is triggered on a change in that value. After a change the new value is registered and the event is triggered again on any new change, ...etc.
-
-*Example usage scenario:*
-- Event on a change in the number of detected people of the robot by a vision system to play a friendly message.
-
-```python
-from ros_sugar.events import OnChange
-from ros_sugar.io import Topic
-
-# Raise event when the number of detected people change
-number_people_change = OnChange(
-    "number_people_change",
-    Topic(name="/people_count", msg_type="Int"),
-)
-```
-
-## OnChangeEqual Event
-OnChangeEqual Event is a combination of OnChange and OnEqual events. OnChangeEqual is triggered when a given topic attribute changes in value from any initial value to *given trigger goal* value.
-
-:::{note} The difference between using OnChangeEqual as opposite to OnEqual or OnChange is that:
-- OnEqual will keep getting triggered every time a new message value is received that is equal to the trigger.
-- OnChange will keep getting triggered every time a new message value is received that is different from a previous value
-- OnChangeEqual will get triggered once when the topic message value reaches the trigger, making it convenient for many applications
+:::{tip} Events can be paired with Sugarcoat [`Action`](actions.md)(s) or with any standard [ROS2 Launch Action](https://docs.ros.org/en/kilted/Tutorials/Intermediate/Launch/Using-Event-Handlers.html)
 :::
 
-*Example usage scenarios:*
-- Event on the robot reaching a navigation goal point: reach_end Boolean topic OnChangeEqual to True (triggered once when reaching, does not trigger again if the robot is static and staying in 'goal reaching' state)
-- Event on an Enum value of a message attribute to detect reaching a given state.
-- Event of reaching 100% charge level of a robot to end charging.
+## Available Event Types
 
+| Event Class | Description | Use Case |
+| :--- | :--- | :--- |
+| **`OnAny`** | Triggers on **every** message received. | Logging, heartbeat monitoring, continuous data processing. |
+| **`OnEqual`** | Triggers when the value **equals** the trigger value. | State matching (e.g., `status == "IDLE"`), detecting specific object IDs. |
+| **`OnDifferent`** | Triggers when the value is **not equal** to the trigger value. | Detecting configuration changes or mode mismatches. |
+| **`OnGreater`** | Triggers when value **>** trigger value (supports `or_equal=True`). | Altitude limits, temperature warnings, speed thresholds. |
+| **`OnLess`** | Triggers when value **<** trigger value (supports `or_equal=True`). | Low battery, proximity alerts, signal strength drop. |
+| **`OnChange`** | Triggers whenever the value **changes** from its previous reading. | Reacting to any new command, mode switch, or distinct sensor reading. |
+| **`OnChangeEqual`** | Triggers when the value changes and becomes equal to the trigger (change from `!=` to `==`). | Goal reaching (trigger *only* the moment status becomes "ARRIVED"). |
+| **`OnContainsAny`** | Triggers if the attribute (list) contains **any** of the trigger values. | Checking if *any* error code in a list matches a known critical error. |
+| **`OnContainsAll`** | Triggers if the attribute (list) contains **all** trigger values. | Verifying all required subsystems are present in a status list. |
+| **`OnChangeContainsAny`** | Triggers **once** when the list changes to contain **any** of the trigger values (after not containing any of the values). | Alerting when a specific hazard enters a detected objects list. |
+| **`OnChangeContainsAll`** | Triggers **once** when the list changes to contain **all** of the trigger values (after not containing all of the values). | Confirming a complex condition is fully met after being partial. |
+| **`OnChangeNotContain`** | Triggers **once** when the list changes to **not** contain the trigger values (after containing some or all of the values). | Detecting when a tracked object is lost or a required resource is removed. |
+
+## Usage Examples
+
+### 1. Automatic Adaptation (Terrain Switching)
+Scenario: A perception or ML node publishes a string to `/terrain_type`. We want to change the robot's gait when it sees stairs.
+
+```{code-block} python
+:caption: quadruped_controller.py
+:linenos:
+
+from typing import Literal
+from ros_sugar.component import BaseComponent
+
+class QuadrupedController(BaseComponent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Some logic
+
+    def activate_stairs_controller(self):
+        self.get_logger().info("Stairs detected! Switching gait.")
+        # Logic to change controller parameters...
+
+    def switch_gait_controller(self, controller_type: Literal['stairs', 'sand', 'snow', 'gravel']):
+        self.get_logger().info("New terrain detected! Switching gait.")
+        # Logic to change controller parameters...
+```
+
+```{code-block} python
+:caption: quadruped_controller_recipe.py
+:linenos:
+
+from my_pkg.components import QuadrupedController
+from ros_sugar.events import OnChange, OnEqual
+from ros_sugar.action import Action
+from ros_sugar.io import Topic
+from ros_sugar import Launcher
+
+quad_controller = QuadrupedController(component_name="quadruped_controller")
+
+# Define the Event Topic (Can be the output of some perception system or an ML model)
+terrain_topic = Topic(name="/terrain_type", msg_type="String")
+
+# Define the Event
+# Trigger when the terrain changes to 'stairs'. Uses 'OnChangeEqual' to trigger the switch only the first time stairs are detected
+stairs_event = OnChangeEqual(
+    event_name="stairs_detected",
+    event_source=terrain_topic,
+    nested_attributes="data",
+    trigger_value="stairs"
+)
+
+# Define the Action
+# Call self.activate_stairs_controller() when triggered
+change_gait_action = Action(method=self.activate_stairs_controller)
+
+# Register
+my_launcher = Launcher()
+my_launcher.add_pkg(
+            components=[quad_controller],
+            events_actions={stairs_event: change_gait_action},
+        )
+```
+
+### 2. Intelligent Interaction (Follow to Patrol)
+Scenario: A vision system tracks a target. If the target is lost (`target_visible` becomes False, or label 'person' is no longer in the detections list, etc.), the robot should switch to a search/patrol pattern.
 
 ```python
 from ros_sugar.events import OnChangeEqual
 from ros_sugar.io import Topic
 
-# Raise event when end is reached
-reached_end = OnChangeEqual(
-    "reached_end",
-    Topic(name="/reach_end", msg_type="Bool"),
-    True,
-    ("data")
+tracking_status_topic = Topic(name='target_visible', msg_type="Bool")
+
+# Trigger ONLY when target_visible changes from True to False
+target_lost_event = OnChangeEqual(
+    event_name="target_lost",
+    event_source=tracking_status_topic,
+    nested_attributes="data",
+    trigger_value=False
 )
 ```
 
-## OnGreater Event
+### 3. Nested Attributes
 
-OnGreater Event is triggered when a given topic attribute value is greater than a given trigger value.
+You can access deeply nested fields in ROS messages using a list of strings for nested_attributes.
 
-*Example usage scenario:*
-- Event when a drone is higher than a certain allowed elevation (location z coordinate > elevation level), to bring the drone down into allowed limits.
+**Example**: Checking the Z position in a *geometry_msgs/PoseStamped* (i.e. access msg.pose.position.z)
 
 ```python
-from ros_sugar.events import OnGreater
-from ros_sugar.io import Topic
-
-# Raise event when elevation is more than 100 meters
-crossed_100m_elevation = OnGreater(
-    "crossed_elevation",
-    Topic(name="/odom", msg_type="Odometry"),
-    100.0,
-    ("pose", "pose", "position", "z")
+high_altitude_event = OnGreater(
+    event_name="altitude_limit",
+    event_source=pose_topic,
+    # Access msg.pose -> .position -> .z
+    nested_attributes=["pose", "position", "z"],
+    trigger_value=50.0 # meters
 )
 ```
 
-## OnLess Event
+## Advanced Configuration
 
-OnLess Event is triggered when a given topic attribute value is less than a given trigger value.
-
-*Example usage scenario:*
-- Event when the robot battery level falls under a certain low limit, to go back to the charging station, for example.
+### Handling Once
+If an event should only fire a single time during the lifecycle of the system (e.g., initialization triggers), set handle_once=True.
 
 ```python
-from ros_sugar.events import OnLess
-from ros_sugar.io import Topic
-
-# Raise event when battery is low
-low_battery = OnLess(
-    "low_battery",
-    Topic(name="/battery_level", msg_type="Int"),
-    15,
-    ("data")
-)
+init_event = OnEqual(..., handle_once=True)
 ```
 
-## OnContainsAll Event
-
-OnContainsAll Event is triggered when the topic attribute value contains **all** elements of a given set of trigger values. This applied to attributes of type `list`.
-
-*Example usage scenario:*
-- Event triggered when a health status topic provides all given components as the error source.
+### Event Delay (Debouncing)
+To prevent an event from firing too rapidly (e.g., sensor noise flickering around a threshold), use keep_event_delay.
 
 ```python
-from ros_sugar.events import OnContainsAll
-from ros_sugar.io import Topic
-
-components_names = ["component_1", "component_2", "component_3"]
-all_failure_event = OnContainsAll(
-    "all_failure",
-    Topic(name="/status_topic_name", msg_type="ComponentStatus"),
-    components_names,
-    "src_components",
-)
+# Once triggered, ignore subsequent triggers for 2.0 seconds
+stable_event = OnGreater(..., keep_event_delay=2.0)
 ```
 
-## OnContainsAny Event
+## Dynamic Event Parsers
 
-OnContainsAny Event is triggered when the topic attribute value contains **any** element from a given set of trigger values. This applies to attributes of type `list`.
+While basic Events trigger a pre-defined action (e.g., detecting an obstacle triggers a stop() command), **real-world autonomy often requires the data that triggered the event to determine how to react**.
 
-## OnChangeContainsAll Event
-OnChangeContainsAll Event is a combination of OnChange and OnContainsAll events. This event is triggered when the topic attribute value contains **all** element from a given set of trigger values, after not containing all of it in a previous message. This applies to attributes of type `list`.
+<span class="text-blue">**Event Parsers** allow you to extract specific information from the triggering ROS2 message and inject it dynamically as arguments into your Action function.</span>
 
-## OnChangeNotContain Event
-OnChangeContainsAll Event is the inverse of OnChangeContainsAll event.
+### Why use Event Parsers?
+- **Data-Driven Actions**: Instead of just knowing that an event occurred, your component receives context about what happened (e.g., knowing the specific "Terrain Type" detected, rather than just "Terrain Changed").
 
-## OnChangeContainsAny Event
-OnChangeContainsAll Event is a combination of OnChange and OnContainsAll events. This event is triggered when the topic attribute value contains **any** element from a given set of trigger values, after not containing any of it in a previous message. This applies to attributes of type `list`.
+- **Code Reusability**: You can write a single, generic action method (e.g., switch_controller(mode_name)) and use it for dozens of different triggers, rather than writing a separate wrapper function for every possible state.
+
+- **Separation of Concerns**: The logic for extracting data (the parser) is kept separate from the logic for acting on data (the component method).
+
+### How it works
+
+The pipeline transforms a standard event trigger into a parameterized function call:
+
+1. **Trigger**: The Event detects a condition on a Topic.
+
+2. **Parse**: The `event_parser` function receives the raw ROS2 message. It extracts the relevant data (e.g., a string, a coordinate, an ID).
+
+3. **Map**: The extracted data is mapped to a specific keyword argument (`output_mapping`) of the target Action.
+
+4. **Execute**: The Action is executed with the dynamic data passed in.
+
+### Example
+
+In [the previous example](#1-automatic-adaptation-terrain-switching), actions were hard-coded (e.g., "If stairs, run activate_stairs_controller"). However, often you want a single generic method (e.g., switch_controller) that dynamically adapts based on the data received in the event.
+
+You can achieve this using the `event_parser` method on an Action.
+
+Scenario: The perception system publishes various terrain types ("sand", "gravel", "stairs") to `/terrain_type`. We want to trigger the generic `switch_gait_controller` method and pass the detected terrain type as an argument.
+
+```python
+# Import the component
+from my_pkg.components import QuadrupedController
+from ros_sugar.events import OnChange, OnEqual
+from ros_sugar.action import Action
+from ros_sugar.io import Topic
+from ros_sugar import Launcher
+
+quad_controller = QuadrupedController(component_name="quadruped_controller")
+
+# Define the Event Topic (Can be the output of some perception system or an ML model)
+terrain_topic = Topic(name="/terrain_type", msg_type="String")
+
+# Define the Event
+# Trigger when the terrain changes
+terrain_change_event = OnChange(
+    event_name="terrain_changed",
+    event_source=terrain_topic,
+    nested_attributes="data",
+)
+
+# Define a Helper Parser Function
+# The Event automatically passes the triggering 'msg' to the action/parser.
+def parse_terrain_data(msg: String) -> str:
+    """Extracts the data string from the ROS message."""
+    return msg.data
+
+# Define the Action with a Parser
+# First, define the action targeting the generic method
+dynamic_switch_action = Action(method=quad_controller.switch_gait_controller)
+
+# Next, attach the parser.
+# - method: The function that processes the incoming ROS msg.
+# - output_mapping: The name of the argument in 'switch_gait_controller'
+#   that receives the return value of 'parse_terrain_data'.
+dynamic_switch_action.event_parser(
+    method=parse_terrain_data,
+    output_mapping="controller_type"
+)
+
+# Alternatively, since this was a simple parser we could have used a lambda function as well
+# dynamic_switch_action.event_parser(
+#     method=(lambda msg: msg.data),
+#     output_mapping="controller_type"
+# )
+
+# Register
+my_launcher = Launcher()
+my_launcher.add_pkg(
+            components=[quad_controller],
+            events_actions={terrain_change_event: dynamic_switch_action},
+        )
+```

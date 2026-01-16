@@ -153,4 +153,3 @@ Sugarcoat は [Automatika Robotics](https://automatikarobotics.com/) と [Inria]
 
 - [**FastHTML**](https://www.fastht.ml/): HTMX をベースにしたフレームワークで、動的な Web インターフェイスの自動生成を可能にします。
 - [**MonsterUI**](https://monsterui.answer.ai/): 直感的でスタイリッシュな UI コンポーネントを提供します。
-
