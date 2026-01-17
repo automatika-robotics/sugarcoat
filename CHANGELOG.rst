@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.4.3 (2026-01-17)
+------------------
 * (refactor) Organizes UI custom javascript into three functional scripts
 * (docs) Improves the core concepts documentation
 * (fix) Fixes check for None max_retries value in fallback
