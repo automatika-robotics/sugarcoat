@@ -1,8 +1,10 @@
 """Fallbacks"""
 
-from typing import List, Optional, Union
-
+from typing import List, Optional, Union, Dict
+import json
 from attrs import define, field
+
+from automatika_ros_sugar.msg import ComponentStatus
 
 from .action import Action
 
@@ -14,6 +16,7 @@ class Fallback:
     action: Union[List[Action], Action] = field()
     max_retries: Optional[int] = field(default=None)
 
+    # Internal values to keep track of retry attempts and the unique action index within a set of actions
     action_idx: int = field(default=0, init=False)
     retry_idx: int = field(default=0, init=False)
 
@@ -29,6 +32,18 @@ class Fallback:
         """Reset the current action and the retries index to zero"""
         self.reset_current_idx()
         self.reset_retries()
+
+    @property
+    def dictionary(self) -> Dict:
+        """Getter of fallback as a dictionary for serialization
+
+        :return: Fallback dict
+        :rtype: Dict
+        """
+        return {
+            "action": self.action.dictionary,
+            "max_retries": self.max_retries,
+        }
 
 
 class ComponentFallbacks:
@@ -93,6 +108,7 @@ class ComponentFallbacks:
 
         # Flag to indicate that all fallbacks failed and no more fallbacks are available
         self.__giveup: bool = False
+        self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
 
     @property
     def giveup(self) -> bool:
@@ -103,6 +119,37 @@ class ComponentFallbacks:
         :rtype: bool
         """
         return self.__giveup
+
+    @property
+    def latest_status(self) -> int:
+        """Get the latest health status updated by the fallback execution
+
+        :return: Health status code
+        :rtype: int
+        """
+        return self.__latest_state_value
+
+    @property
+    def json(self) -> Union[str, bytes, bytearray]:
+        """Getter of serialized component fallbacks for component multi-process execution serialization/deserialization
+
+        :return: Serialized ComponentFallbacks
+        :rtype: Union[str, bytes, bytearray]
+        """
+        fallbacks_dict = {
+            "on_any_fail": self.on_any_fail.dictionary if self.on_any_fail else None,
+            "on_component_fail": self.on_component_fail.dictionary
+            if self.on_component_fail
+            else None,
+            "on_algorithm_fail": self.on_algorithm_fail.dictionary
+            if self.on_algorithm_fail
+            else None,
+            "on_system_fail": self.on_system_fail.dictionary
+            if self.on_system_fail
+            else None,
+            "on_giveup": self.on_giveup.dictionary if self.on_giveup else None,
+        }
+        return json.dumps(fallbacks_dict)
 
     def reset(self) -> None:
         """Reset all fallback execution tracking indices to 0 and the retries tracking indices to 0"""
@@ -129,7 +176,7 @@ class ComponentFallbacks:
         if self.on_system_fail:
             self.on_system_fail.reset_retries()
 
-    def _execute_fallback(self, fallback: Optional[Fallback]) -> None:
+    def _execute_fallback(self, fallback: Fallback) -> None:
         """
         Execute a fallback from given fallbacks methods
 
@@ -140,26 +187,18 @@ class ComponentFallbacks:
 
         :raises ValueError: If the list of fallback methods is None
         """
-        if not fallback:
-            # try executing the generic fallback
-            if self.on_any_fail:
-                self.execute_generic_fallback()
-                return
-            else:
-                raise ValueError("No fallback actions are defined for detected failure")
-
         if not isinstance(fallback.action, List):
             # Only one fallback action is available
 
-            # None max_retries == Never give up
-            if not fallback.max_retries:
-                fallback.action()
-                fallback.retry_idx += 1
-                self.__giveup = False
-                return
-
-            if fallback.retry_idx < fallback.max_retries:
-                fallback.action()
+            # None max_retries == Never give up, or max_retries not reached yet
+            if fallback.max_retries is None or fallback.retry_idx < fallback.max_retries:
+                try:
+                    success = fallback.action()
+                except Exception:
+                    success = False
+                if success:
+                    # Fallback ran successfully -> reset the status to healthy
+                    self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
                 fallback.retry_idx += 1
                 self.__giveup = False
             else:
@@ -167,7 +206,7 @@ class ComponentFallbacks:
             return
 
         # Fallback with a list of actions cannot have None max_retries as it will remain stuck on first action
-        if not fallback.max_retries:
+        if fallback.max_retries is None:
             fallback.max_retries = 1
 
         if fallback.retry_idx < fallback.max_retries:
@@ -179,7 +218,13 @@ class ComponentFallbacks:
             fallback.action_idx += 1
 
         if fallback.action_idx < len(fallback.action):
-            fallback.action[fallback.action_idx]()
+            try:
+                success = fallback.action[fallback.action_idx]()
+            except Exception:
+                success = False
+            if success:
+                # Fallback ran successfully -> reset the status to healthy
+                self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
             self.__giveup = False
         else:
             self.__giveup = True
@@ -197,6 +242,7 @@ class ComponentFallbacks:
         :return: Giveup: If no more fallbacks are available to be executed
         :rtype: bool
         """
+        self.__latest_state_value = ComponentStatus.STATUS_FAILURE_COMPONENT_LEVEL
         self._execute_fallback(self.on_component_fail)
         return self.__giveup
 
@@ -207,6 +253,7 @@ class ComponentFallbacks:
         :return: Giveup: If no more fallbacks are available to be executed
         :rtype: bool
         """
+        self.__latest_state_value = ComponentStatus.STATUS_FAILURE_ALGORITHM_LEVEL
         self._execute_fallback(self.on_algorithm_fail)
         return self.__giveup
 
@@ -217,6 +264,7 @@ class ComponentFallbacks:
         :return: Giveup: If no more fallbacks are available to be executed
         :rtype: bool
         """
+        self.__latest_state_value = ComponentStatus.STATUS_FAILURE_SYSTEM_LEVEL
         self._execute_fallback(self.on_system_fail)
         return self.__giveup
 
@@ -227,5 +275,6 @@ class ComponentFallbacks:
         :return: Giveup: If no more fallbacks are available to be executed
         :rtype: bool
         """
+        self.__latest_state_value = ComponentStatus.STATUS_GENERAL_FAILURE
         self._execute_fallback(self.on_any_fail)
         return self.__giveup

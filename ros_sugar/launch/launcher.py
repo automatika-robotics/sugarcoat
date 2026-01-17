@@ -7,6 +7,7 @@ import sys
 import socket
 import json
 from typing import (
+    TypeVar,
     Awaitable,
     Callable,
     Dict,
@@ -16,6 +17,7 @@ from typing import (
     Union,
     Any,
     Tuple,
+    Mapping,
 )
 from concurrent.futures import ThreadPoolExecutor
 
@@ -31,6 +33,7 @@ from launch.actions import (
     OpaqueCoroutine,
     OpaqueFunction,
     Shutdown,
+    SetEnvironmentVariable,
 )
 from launch_ros.actions import LifecycleNode as LifecycleNodeLaunchAction
 from launch_ros.actions import Node as NodeLaunchAction
@@ -49,6 +52,7 @@ from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
 from .launch_actions import ComponentLaunchAction
+from ..base_clients import ServiceClientConfig, ActionClientConfig
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
 from ..ui_node import UINode, UINodeConfig
 
@@ -66,6 +70,9 @@ m_pack.patch()
 
 
 UI_EXTENSIONS = {}
+
+# For type hinting events_actions dict: This represents "Any type that is a subclass of Event"
+EventT = TypeVar("EventT", bound=Event)
 
 
 class Launcher:
@@ -159,8 +166,8 @@ class Launcher:
         package_name: Optional[str] = None,
         executable_entry_point: Optional[str] = "executable",
         events_actions: Optional[
-            Dict[
-                Event,
+            Mapping[
+                EventT,
                 Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
             ]
         ] = None,
@@ -243,11 +250,14 @@ class Launcher:
 
     def enable_ui(
         self,
-        inputs: Optional[List[Topic]] = None,
+        inputs: Optional[
+            List[Union[Topic, ServiceClientConfig, ActionClientConfig]]
+        ] = None,
         outputs: Optional[List[Topic]] = None,
         port: int = 5001,
         ssl_keyfile_path: str = "key.pem",
         ssl_certificate_path: str = "cert.pem",
+        hide_settings_panel: bool = False,
     ):
         """
         Enables the user interface (UI) subsystem for recipes, initializing all UI extensions
@@ -281,13 +291,17 @@ class Launcher:
             Path to the SSL/TLS certificate file used to authenticate the UI server.
             Defaults to ``"cert.pem"``.
         :type ssl_certificate_path: str
+
+        :param hide_settings_panel:
+            Disable the components settings panel in the UI.
+        :type hide_settings_panel: bool, default False
         """
 
         self._ui_input_elements = []
         self._ui_output_elements = []
         for ext in UI_EXTENSIONS:
             input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
-            # serialize inputs
+            # Additional input/output elements are used for UI elements coming from derived packages
             for key, element in input_elements_dict.items():
                 self._ui_input_elements.append((
                     f"{key.__module__}.{key.__qualname__}",
@@ -308,6 +322,7 @@ class Launcher:
             port=port,
             ssl_keyfile=ssl_keyfile_path,
             ssl_certificate=ssl_certificate_path,
+            hide_settings=hide_settings_panel,
         )
 
     def _setup_component_events_handlers(self, comp: BaseComponent):
@@ -344,8 +359,8 @@ class Launcher:
     def __rewrite_actions_for_components(
         self,
         components_list: List[BaseComponent],
-        actions_dict: Dict[
-            Event, Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
+        actions_dict: Mapping[
+            EventT, Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
         ],
     ):
         """
@@ -688,7 +703,7 @@ class Launcher:
         :param nodes_in_processes: If nodes are being launched in separate processes, defaults to True
         :type nodes_in_processes: bool, optional
         """
-        logger.info("UI enabled. Setting up ui node.")
+        logger.info(f"UI enabled. Setting up ui node: {self._ui_input_topics}")
 
         # Setup the client node
         component_configs = {comp.node_name: comp.config for comp in self._components}
@@ -708,6 +723,8 @@ class Launcher:
             json.dumps(self._ui_input_elements),
             "--ui_output_elements",
             json.dumps(self._ui_output_elements),
+            "--ui_service_clients",
+            ui_node._client_inputs_json,
             "--ros-args",
             "--log-level",
             "info",
@@ -737,7 +754,7 @@ class Launcher:
                 continue
             # TODO: Retrieve errors
             data = msgpack.unpackb(data)
-            result = func(**data)
+            result = func(*data["output"])
             logger.debug(f"Got result from external processor: {result}")
             result = msgpack.packb(result)
             conn.sendall(result)
@@ -969,6 +986,11 @@ class Launcher:
         self._setup_monitor_node()
 
         group_action = GroupAction(self._launch_group)
+
+        # Force colorized output (for multi-processing)
+        self._description.add_action(
+            SetEnvironmentVariable("RCUTILS_COLORIZED_OUTPUT", "1")
+        )
 
         self._description.add_action(group_action)
 

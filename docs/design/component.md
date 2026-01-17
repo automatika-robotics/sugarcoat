@@ -1,10 +1,19 @@
 # Components
 
-A Component is the main execution unit, every Component is equivalent to a [ROS2 Lifecycle Node](http://design.ros2.org/articles/node_lifecycle.html) comprising of:
+In the Sugarcoat ecosystem, a Component (any `BaseComponent` derived object) is the fundamental unit of execution. It replaces the standard ROS2 node with a robust, Lifecycle-managed, and Configurable entity designed for real-world autonomy.
 
-- [Input and Outputs](#inputs-and-outputs)
-- [Health Status](#health-status)
-- [Fallbacks](#fallbacks)
+While a standard ROS2 node requires you to manually handle parameter callbacks, timer loops, error catching, and lifecycle transitions, a Sugarcoat Component handles this boilerplate automatically, letting you focus entirely on your algorithm.
+
+## Why use BaseComponent?
+
+- **Lifecycle Native**: Every component is a lifecycle node by default. It supports configure, activate, deactivate, and shutdown states out of the box.
+
+- **Health Aware**: Built-in [Health Status](#health-status) broadcast and connection to the system.
+
+- **Self-Healing**: Native support for when things go wrong using [Fallbacks](#fallbacks-self-healing).
+
+- **Type-Safe Config**: Configurations are validated using `attrs` models, not loose dictionaries.
+
 
 ```{figure} /_static/images/diagrams/component_dark.png
 :class: only-dark
@@ -21,9 +30,13 @@ Component Structure
 Component Structure
 ```
 
-Each Component must serve one main functionality which can be executed in different modes or [ComponentRunType](../apidocs/ros_sugar/ros_sugar.config.base_config.md/#classes) (Example below), additionally the Component can offer any number of additional services.
+## Execution (Run) Types
 
-Available ComponentRunType are:
+Each Component must serve (at least) one main functionality which can be executed in different modes or [ComponentRunType](../apidocs/ros_sugar/ros_sugar.config.base_config.md/#classes) (Example below)
+
+The Component can offer any number of additional services.
+
+Available `ComponentRunType` are:
 
 ```{list-table}
 :widths: 20 20 50
@@ -68,6 +81,7 @@ comp.run_type = "Server"    # or ComponentRunType.SERVER
 
 Each component can be configured with a set of input topics and output topics. When launched the component will automatically create ROS2 subscribers, publishers and callbacks to the associated inputs/outputs.
 
+Sugarcoat defines a set of callbacks and publishers for each of its supported types. These 'converter' methods help parse ROS2 types to/from standard python types automatically. You can modify or extend these callbacks and publishers in your "Sugarcoated" package.
 
 ```python
 from ros_sugar.core import BaseComponent
@@ -85,12 +99,34 @@ comp = BaseComponent(component_name='test', inputs=[map_topic, image_topic], out
 :::{seealso} Check how to configure a topic for the component input or output [here](topics.md)
 :::
 
+:::{seealso} Check a list of the available callbacks/publishers for Sugarcoat supported message types [here](../advanced/types.md)
+:::
+
+
 ## Health Status
 
-Each Component comes with an associated health status to express the well or mal-function of the component. Health status is always available internally and can in the component by associating failure status to a [Fallback](#fallbacks) behavior allowing the component to self-recover. Component also have the option to declare the status back to the system by publishing on a Topic. This can be configured in the [BaseComponentConfig](../apidocs/ros_sugar/ros_sugar.config.base_config.md/#classes) class.
+A Sugarcoat component does more than just run; it actively reports its operational state. Instead of simply crashing or hanging when an error occurs, the Health Status allows the component to explicitly declare what went wrong (e.g., "Algorithm Convergence Failed," "Camera Driver Disconnected," or "Missing Input Topic").
 
-Learn more on using health status in the component [here](status.md).
+This status is both:
 
-## Fallbacks
+- Internal: Used immediately by the component to trigger local recovery strategies (see [fallbacks](fallbacks.md)).
 
-Component fallbacks are aet of techniques to be applied internally in case of failure to allow self-recovery within the component. Check the fallbacks [dedicated page](fallbacks.md) to learn how to use and configure your own fallbacks.
+- External: Broadcast to the system Monitor (configurable via `BaseComponentConfig`) to alert other nodes or the operator.
+
+> More details [here](status.md) on how to report granular failure levels.
+
+## Fallbacks (Self-Healing)
+
+Fallbacks are the "immune system" of your component. They define a set of recovery actions that are automatically triggered when the Health Status reports a failure. Instead of writing complex try/catch/restart logic inside your main loops, you can declaratively configure strategies such as:
+- Retry: Re-attempt the operation $N$ times.
+- Reconfigure: specific parameters to loosen constraints.
+- Restart: Reboot the specific lifecycle node (without killing the whole process).
+
+> Learn more on how to configure recovery behaviors [here](fallbacks.md).
+
+## Best Practices
+- **Keep __init__ Light**: Do not load heavy resources or start threads in __init__. Use custom_on_configure or custom_on_activate. This ensures your node starts up instantly and can be introspected before it starts doing heavy work.
+
+- **Always Report Status**: Make it a habit to call `self.health_status.set_healthy()` at the end of a successful _execution_step.
+
+- **Use Exception Handling**: Wrap your logic in try/except blocks and report `set_fail_algorithm` or `set_fail_component` instead of letting the node crash. This allows your system to execute fallbacks and avoid process crashing. More on reporting the status [here](status.md)

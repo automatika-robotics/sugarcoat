@@ -41,6 +41,9 @@ def _parse_args() -> Tuple[argparse.Namespace, List[str]]:
         "--actions", type=str, help="Actions associated with the component Events"
     )
     parser.add_argument(
+        "--fallbacks", type=str, help="Fallbacks to be executed on component Failure"
+    )
+    parser.add_argument(
         "--algorithms_config",
         type=str,
         help="User defined configuration for component algorithms",
@@ -114,18 +117,11 @@ def _parse_ros_args(args_names: List[str]) -> List[str]:
     return ros_specific_args
 
 
-def setup_component(
-    *, list_of_components: List[Type], list_of_configs: List[Type]
-) -> object:
-    args, args_names = _parse_args()
-
-    # Initialize rclpy with the ros-specific arguments
-    rclpy.init(args=_parse_ros_args(args_names))
-
-    component_type = args.component_type or None
-
+def _parse_component_class(
+    list_of_components: List[Type], component_type, component_name
+):
     if not component_type:
-        raise ValueError("Cannot launch withput providing a component_type")
+        raise ValueError("Cannot launch without providing a component_type")
 
     comp_class = next(
         (
@@ -141,9 +137,6 @@ def setup_component(
             f"Cannot launch unknown component type '{component_type}'. Known types are: '{list_of_components}'"
         )
 
-    # Get name
-    component_name = args.node_name or None
-
     if not component_name:
         raise ValueError("Cannot launch component without specifying a name")
 
@@ -154,7 +147,27 @@ def setup_component(
         setproctitle.setproctitle(component_name)
     except ImportError:
         pass
+    return comp_class
 
+
+def setup_component(
+    *, list_of_components: List[Type], list_of_configs: List[Type]
+) -> object:
+    args, args_names = _parse_args()
+
+    # Initialize rclpy with the ros-specific arguments
+    rclpy.init(args=_parse_ros_args(args_names))
+
+    # Get type and name
+    component_type = args.component_type or None
+    component_name = args.node_name or None
+
+    # Parse the component class
+    comp_class = _parse_component_class(
+        list_of_components, component_type, component_name
+    )
+
+    # Parse the config class
     config = _parse_component_config(args, list_of_configs)
 
     # Get config file if provided
@@ -173,14 +186,11 @@ def setup_component(
         component.set_additional_types(args.additional_types)
 
     # Set inputs/outputs
-    inputs_json = args.inputs or None
-    outputs_json = args.outputs or None
-
     try:
-        if inputs_json:
+        if inputs_json := args.inputs:
             component._inputs_json = inputs_json
 
-        if outputs_json:
+        if outputs_json := args.outputs:
             component._outputs_json = outputs_json
     except (ValueError, TypeError) as e:
         logging.warning(
@@ -196,9 +206,12 @@ def setup_component(
         component._actions_json = actions_json
 
     # Set algorithms configuration
-    algorithms_json = args.algorithms_config or None
-    if algorithms_json:
+    if algorithms_json := args.algorithms_config:
         component._algorithms_json = algorithms_json
+
+    # Set fallbacks
+    if fallbacks_json := args.fallbacks:
+        component._fallbacks_json = fallbacks_json
 
     return component
 

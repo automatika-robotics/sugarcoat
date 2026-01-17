@@ -20,8 +20,11 @@ class FHApp:
         configs: Dict,
         in_topics: Sequence[Topic],
         out_topics: Sequence[Topic],
+        srv_clients_configs: Optional[Sequence[Dict]] = None,
+        action_clients_configs: Optional[Sequence[Dict]] = None,
         additional_input_elements: Optional[List[Tuple]] = None,
         additional_output_elements: Optional[List[Tuple]] = None,
+        hide_settings_panel: bool = False,
     ):
         # --- Application Setup ---
         static_src = Path(__file__).resolve().parent / "static"
@@ -30,6 +33,12 @@ class FHApp:
             Theme.red.headers(),  # Get theme from MonsterUI
             Script(
                 src="custom.js",
+            ),
+            Script(
+                src="audio_manager.js",
+            ),
+            Script(
+                src="video_manager.js",
             ),
             Link(rel="stylesheet", href="custom.css", type="text/css"),
         )
@@ -40,7 +49,9 @@ class FHApp:
         if not configs:
             logging.warning("No component configs provided to the UI")
 
-        # Add any additional elements
+        # Add any additional UI elements from derived packages (if any)
+        # This method will populate the global elements._INPUT_ELEMENTS and elements._OUTPUT_ELEMENTS dictionaries
+        # with the additional elements coming from derived packages
         elements.add_additional_ui_elements(
             input_elements=additional_input_elements,
             output_elements=additional_output_elements,
@@ -48,16 +59,60 @@ class FHApp:
 
         # Create settings UI
         self.configs = configs
-        self.settings = self._create_component_settings_ui(configs)
+        self.hide_settings_panel: bool = hide_settings_panel
+        self.toggle_settings = False
+
+        # Inputs and Outputs
         self.in_topics = in_topics
         self.out_topics = out_topics
         self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
         self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
-        self.toggle_settings = False
+
+        # Setup service clients
+        self.srv_clients = (
+            elements.styled_main_service_clients_container(
+                srv_clients_configs, container_name="Services"
+            )
+            if srv_clients_configs
+            else None
+        )
+
+        # Setup action clients
+        self.action_clients_ft: Dict[str, elements.Task] = {}
+        if action_clients_configs:
+            for client in action_clients_configs:
+                self.action_clients_ft[client["name"]] = elements.Task(
+                    name=client["name"],
+                    client_type=client["type"],
+                    fields=client["fields"],
+                )
+
         setup_toasts(self.app)
 
         # persistent elements
         self.outputs_log = elements.initial_logging_card()
+
+    @property
+    def action_clients(self) -> FT:
+        if not self.action_clients_ft:
+            return None
+        all_clients_cards = Div(id="all_actions")
+        for value in self.action_clients_ft.values():
+            all_clients_cards(value.card)
+        actions_main_card = Card(
+            DivHStacked(
+                H4("Actions", cls="cool-subtitle-mini"),
+                elements._toggle_button(div_to_toggle="all_actions"),
+                cls="space-x-0",
+            ),
+            cls="main-card max-h-[80vh] overflow-y-auto",
+            id="actions",
+            # NOTE: It is important to add these two variables to link this DOM element to the websocket.
+            # This way any 'send' function applied from this websocket callback will update the element with the same class 'id'
+            hx_ext="ws_actions",
+            ws_connect="/ws_actions",
+        )
+        return actions_main_card(all_clients_cards)
 
     @property
     def _settings_button(self) -> str:
@@ -111,7 +166,10 @@ class FHApp:
         for idx, inp in enumerate(inputs):
             input_divs.append(
                 elements.input_topic_card(
-                    inp.name, inp.msg_type.__name__, inputs_columns_cls[idx]
+                    topic_name=inp.name,
+                    topic_type=inp.msg_type.__name__,
+                    ros_msg_type=inp.ros_msg_type,
+                    column_class=inputs_columns_cls[idx],
                 ),
             )
         return inputs_container(input_grid(*input_divs, id=grid_id))
@@ -189,77 +247,160 @@ class FHApp:
         """Returns the current time as HH:MM."""
         return datetime.now().strftime("%H:%M")
 
-    def get_settings(self):
+    @property
+    def settings(self):
         """Get components settings"""
-        return self.settings
+        return (
+            self._create_component_settings_ui(self.configs)
+            if not self.hide_settings_panel
+            else None
+        )
 
     @property
-    def _main(self):
-        if not self.toggle_settings:
-            main_grid = Grid(
-                id="modal-container",
-                cols=2,
+    def _main_content(self):
+        """Get the current main page content"""
+        # Return the settings page if toggle button is pressed and settings display is allowed
+        if self.toggle_settings and not self.hide_settings_panel:
+            return self.settings
+
+        # Otherwise return the main page
+        main_grid = Grid(
+            id="modal-container",
+            cols=2,
+        )
+        if self.outputs:
+            main_grid(
+                Div(
+                    elements.output_logging_card(self.outputs_log),
+                    id="log-frontend",
+                ),
+                Div(self.outputs, id="outputs-frontend"),
             )
-            if self.outputs:
-                main_grid(
-                    Div(elements.output_logging_card(self.outputs_log)),
-                    Div(self.outputs),
+        else:
+            main_grid(
+                Div(
+                    elements.output_logging_card(self.outputs_log),
+                    cls="col-span-full",
+                    id="log-frontend",
+                ),
+            )
+        if self.inputs:
+            main_grid(
+                Div(
+                    self.inputs,
+                    cls="col-span-full",
+                    id="inputs-frontend",
+                ),
+            )
+        if self.srv_clients:
+            main_grid(
+                Div(
+                    self.srv_clients,
+                    cls="col-span-full",
+                    id="srv-frontend",
                 )
-            else:
-                main_grid(
-                    Div(
-                        elements.output_logging_card(self.outputs_log),
-                        cls="col-span-full",
+            )
+        if self.action_clients:
+            main_grid(
+                Div(
+                    self.action_clients,
+                    cls="col-span-full",
+                    id="actions-frontend",
+                )
+            )
+
+        return Main(
+            main_grid,
+            Div(id="result"),
+            id="main",
+            cls="pt-2 pb-2",
+            # connect to the default websocket
+            hx_ext="ws",
+            ws_connect="/ws",
+            # NOTE: Function defined in custon js to reconnect streaming websockets
+            # HTMX fires "htmx:afterSwap" after content is swapped into the DOM,
+            # and "htmx:afterOnLoad" / "htmx:afterRequest" for other lifecycle stages
+            # Respond to afterSwap and afterOnLoad to be safe.
+            hx_on__after_on_load="ensureConnectionsForPresentFrames",
+            hx_on__after_swap="ensureConnectionsForPresentFrames",
+        )
+
+    @property
+    def _nav_bar(self) -> FT:
+        # Case 1: Settings page is displayed
+        if self.toggle_settings and not self.hide_settings_panel:
+            nav_bar_items = [
+                Button(
+                    self._settings_button,
+                    id="settings-button",
+                    hx_get="/settings/show",
+                    hx_target="#main",
+                    hx_swap="outerHTML",
+                    cls="primary-button",
+                ),
+            ]
+        # Case 2: Main page
+        else:
+            nav_bar_items = [
+                elements.filter_tag_button(name="log", div_to_hide="log-frontend")
+            ]
+            if self.outputs:
+                nav_bar_items.append(
+                    elements.filter_tag_button(
+                        name="outputs", div_to_hide="outputs-frontend"
                     ),
                 )
             if self.inputs:
-                main_grid(
-                    Div(self.inputs, cls="col-span-full"),
+                nav_bar_items.append(
+                    elements.filter_tag_button(
+                        name="inputs", div_to_hide="inputs-frontend"
+                    ),
                 )
-
-            return Main(
-                main_grid,
-                Div(id="result"),
-                id="main",
-                cls="pt-2 pb-2",
-                # connect to the default websocket
-                hx_ext="ws",
-                ws_connect="/ws",
-                # NOTE: Function defined in custon js to reconnect streaming websockets
-                # HTMX fires "htmx:afterSwap" after content is swapped into the DOM,
-                # and "htmx:afterOnLoad" / "htmx:afterRequest" for other lifecycle stages
-                # Respond to afterSwap and afterOnLoad to be safe.
-                hx_on__after_on_load="ensureConnectionsForPresentFrames",
-                hx_on__after_swap="ensureConnectionsForPresentFrames",
-            )
-        return self.settings
+            if self.srv_clients:
+                nav_bar_items.append(
+                    elements.filter_tag_button(
+                        name="services", div_to_hide="srv-frontend"
+                    ),
+                )
+            if self.action_clients:
+                nav_bar_items.append(
+                    elements.filter_tag_button(
+                        name="actions", div_to_hide="actions-frontend"
+                    ),
+                )
+            # If user is allowed to access the settings panel -> add the toggle button
+            if not self.hide_settings_panel:
+                nav_bar_items.append(
+                    Button(
+                        self._settings_button,
+                        id="settings-button",
+                        hx_get="/settings/show",
+                        hx_target="#main",
+                        hx_swap="outerHTML",
+                        cls="primary-button",
+                    ),
+                )
+        nav_bar = NavBar(
+            *nav_bar_items,
+            brand=DivLAligned(
+                Img(
+                    src="https://automatikarobotics.com/Emos_dark.png",
+                    style="width:6vw",
+                )
+            ),
+        )
+        return nav_bar
 
     def get_main_page(self):
         """Serves the main page of the UI"""
         # Serve main page
-        self.settings = self._create_component_settings_ui(self.configs)
         return (
             Favicon(light_icon="automatika-icon.png", dark_icon="automatika-icon.png"),
             Title("EMOS UI"),
             Div(
                 Container(
-                    NavBar(
-                        Button(
-                            self._settings_button,
-                            id="settings-button",
-                            hx_get="/settings/show",
-                            hx_target="#main",
-                            hx_swap="outerHTML",
-                            cls="primary-button",
-                        ),
-                        brand=DivLAligned(
-                            Img(
-                                src="https://automatikarobotics.com/Emos_dark.png",
-                                style="width:6vw",
-                            )
-                        ),
-                    ),
-                    self._main,
+                    self._nav_bar,
+                    self._main_content,
                     id="main",
                     cls="mt-0 mb-0",
                 ),

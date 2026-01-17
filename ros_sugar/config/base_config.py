@@ -296,6 +296,11 @@ class BaseComponentConfig(BaseConfig):
         default=None, converter=_get_str_from_callbackgroup, alias="_callback_group"
     )
 
+    _lifecycle_state_transition_timeout: float = field(
+        default=10.0,
+        validator=base_validators.in_range(min_value=1.0, max_value=1e9),
+    )  # Component wait time for node to come back online after restart (used to avoid infinite loops). Recommended to use a high value
+
     wait_for_restart_time: float = field(
         default=6000.0,
         validator=base_validators.in_range(min_value=10.0, max_value=1e9),

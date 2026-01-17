@@ -1,15 +1,27 @@
 # Actions
 
-Actions are methods or routines executed by a component or by the system monitor.
+Actions are methods or routines executed by a Component or by the System Monitor. They are the "Outputs" of the Event-Driven system.
 
-Actions can either be:
-- Actions paired with Events: in this case the Action is executed by a system monitor when an event is detected (see more details in [Monitor](monitor.md), [Launcher](launcher.md))
-- Actions paired with Fallbacks: in this case the Action is executed by a Component when a failure is detected
+Actions can be triggered in two ways:
 
-Actions are defined with:
-- method to be executed (Callable)
-- args: Arguments to be passed to the method when executing the action
-- kwargs: Keyword arguments to be passed to the method when executing the action
+- **Event-Driven**: Executed when a specific Event is detected.
+
+- **Fallback-Driven**: Executed by a Component when an internal Health Status failure is detected.
+
+## The `Action` Class
+The `Action` class is a generic wrapper for any `callable`. It allows you to package a function and its arguments to be executed later.
+
+```python
+class Action:
+    def __init__(self, method: Callable, args: tuple = (), kwargs: Optional[Dict] = None):
+```
+
+- method: The function to be executed.
+
+- args: Tuple of positional arguments.
+
+- kwargs: Dictionary of keyword arguments.
+
 
 ## Usage Example:
 ```python
@@ -28,25 +40,39 @@ Actions are defined with:
     action3 = Action(method=function)
 ```
 
-## Available Defined Actions:
+## Pre-defined Actions
+
+While you can wrap any `function` in an Action, Sugarcoat provides the [`ComponentActions`](../apidocs/ros_sugar/ros_sugar.core.component_actions.md) module with a suite of pre-defined, thread-safe actions for managing components and system resources.
+
+These actions are divided into Component-Level (affecting a specific component's lifecycle or config) and System-Level (general ROS2 utilities).
 
 Sugarcoat comes with a set of pre-defined component level actions and system level actions
 
-### Component-level Actions:
-- stop: Deactivate the lifecycle Component
-- start: Activate the lifecycle Component
-- restart: stop then start
-- reconfigure: Send new ComponentConfig class object to the Component
-- update_parameter: Update the value of one parameter in the ComponentConfig
-- update_parameters: Update the value of a set of parameters in the ComponentConfig
+### Component-Level Actions
 
-### System-level Actions:
-- log: Log a message
-- publish_message: Publish a ROS2 message to a given topic
-- send_srv_request: Send a ROS2 service request
-- send_action_goal: Send a ROS2 action goal
+These actions directly manipulate the state or configuration of a specific `BaseComponent` derived object.
 
-:::{tip} The previous pre-defined Actions are all keyword only
+| Action Method | Arguments | Description |
+| :--- | :--- | :--- |
+| **`start`** | `component` | Triggers the component's Lifecycle transition to **Active**. |
+| **`stop`** | `component` | Triggers the component's Lifecycle transition to **Inactive** (stops execution loops). |
+| **`restart`** | `component`<br>`wait_time` (opt) | Stops the component, waits `wait_time` seconds (default 0), and Starts it again. |
+| **`reconfigure`** | `component`<br>`new_config`<br>`keep_alive` | Reloads the component with a new configuration object or any configuration file path. |
+| **`update_parameter`** | `component`<br>`param_name`<br>`new_value`<br>`keep_alive` | Updates a **single** configuration parameter. <br>`keep_alive=True` (default) keeps the node running during update. |
+| **`update_parameters`** | `component`<br>`params_names`<br>`new_values`<br>`keep_alive` | Updates **multiple** configuration parameters simultaneously. |
+
+### System-Level Actions
+
+These actions interact with the broader ROS2 system and are executed by the central `Monitor`.
+
+| Action Method | Arguments | Description |
+| :--- | :--- | :--- |
+| **`log`** | `msg`<br>`logger_name` (opt) | Logs a message to the ROS console. |
+| **`publish_message`** | `topic`<br>`msg`<br>`publish_rate`/`period` | Publishes a message to a specific topic. Can be single-shot or periodic. |
+| **`send_srv_request`** | `srv_name`<br>`srv_type`<br>`srv_request_msg` | Sends a request to a ROS 2 Service. |
+| **`send_action_goal`** | `action_name`<br>`action_type`<br>`action_request_msg` | Sends a goal to a ROS 2 Action Server. |
+
+:::{tip} The pre-defined Actions are all keyword only
 :::
 
 ### Usage Example:
@@ -58,11 +84,17 @@ Sugarcoat comes with a set of pre-defined component level actions and system lev
     action2 = ComponentActions.log(msg="I am executing a cool action!")
 ```
 
-## Events Parsers in Actions
+## Dynamic Arguments (Event Parsers)
 
-In the previous examples ComponentActions are defined with fixed arguments, however, when ComponentActions are used with Events, it might be required in some applications to update an argument during runtime based on the value on the event's topic. For this purpose, each event passes the full value of the incoming ROS2 message and it's trigger attribute value to the action using two keyword argument: `msg` and `trigger`. An Action can then be configured to use these value with its **`event_parser`**.
+In standard usage, arguments are fixed at definition time. However, when paired with an `Event`, you often need to use data from the triggering message (e.g., "Go to this location" where this is the location defined in the triggering event message).
 
-We configure an `event_parser` using a parsing `Callable` and an `output_mapping: str`. This allows us to add a method that will be executed before the main action executable. The returned value from the method will be passed to the action executable as a keyword argument using the `output_mapping`.
+:::{seealso} See more on how the event parser affects the event management [here](events.md)
+:::
+
+You can use the `.event_parser()` method to map data from the event to the action's arguments.
+
+
+### Example
 
 Let's see how this can work in a small example: We will take the example used in [Kompass tutorial](https://automatika-robotics.github.io/kompass/tutorials/events_actions.html) where a `send_action_goal` action is used to send a ROS2 ActionServer goal by parsing a value from a published topic.
 

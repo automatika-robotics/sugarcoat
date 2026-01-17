@@ -24,6 +24,7 @@ from rclpy.subscription import Subscription
 from rclpy.client import Client
 from tf2_ros.transform_listener import TransformListener
 from builtin_interfaces.msg import Time
+from lifecycle_msgs.msg import State as LifecycleStateMsg
 
 from automatika_ros_sugar.msg import ComponentStatus
 from automatika_ros_sugar.srv import (
@@ -56,6 +57,7 @@ from ..utils import (
     get_methods_with_decorator,
     log_srv,
 )
+from ..base_clients import ActionClientConfig
 from ..robot_plugin import RobotPluginServiceClient
 from ..tf import TFListener, TFListenerConfig
 
@@ -144,14 +146,7 @@ class BaseComponent(lifecycle.Node):
 
         self._config_file = config_file
 
-        # NOTE: Default fallback for any failure is set to broadcast status and max retries to None (i.e. component keeps executing on_any_fail action)
-        if not fallbacks:
-            fallbacks = ComponentFallbacks(
-                on_any_fail=Fallback(
-                    action=Action(method=self.broadcast_status), max_retries=None
-                )
-            )
-        self.__fallbacks = fallbacks
+        self.__fallbacks = fallbacks or ComponentFallbacks()
         self.__fallbacks_giveup: bool = False
 
         if self.config._use_without_launcher:
@@ -388,6 +383,19 @@ class BaseComponent(lifecycle.Node):
                 nested_root_name=f"{self.node_name}.{algo_config_name.partition('Config')[0]}",
             )
         return algo_config
+
+    @property
+    def ui_main_action_input(self) -> Optional[ActionClientConfig]:
+        """Get a UI input for the the component's main action server (if present)
+
+        :return: Client config for the component's main action
+        :rtype: Optional[ActionClientConfig]
+        """
+        if self.main_action_name and self.action_type:
+            return ActionClientConfig(
+                action_type=self.action_type, name=self.main_action_name
+            )
+        return None
 
     # Managing Inputs/Outputs
     def _add_ros_subscriber(self, callback: GenericCallback):
@@ -823,7 +831,7 @@ class BaseComponent(lifecycle.Node):
         if not self.__events or not self.__actions:
             return
         self.__event_listeners = []
-        for event, actions in zip(self.__events, self.__actions):
+        for event, actions in zip(self.__events, self.__actions, strict=True):
             # Register action to event callback to get executed on trigger
             event.register_actions(actions)
             # Create listener to the event trigger topic
@@ -835,6 +843,18 @@ class BaseComponent(lifecycle.Node):
                 callback_group=MutuallyExclusiveCallbackGroup(),
             )
             self.__event_listeners.append(listener)
+
+    def _add_event_action_pair(self, event: Event, action: Union[Action, List[Action]]):
+        """Add an event/action pair.
+        This method is supposed to be used by child components if required
+        """
+        action_set = action if isinstance(action, List) else [action]
+        if self.__events and self.__actions:
+            self.__events.append(event)
+            self.__actions.append(action_set)
+        else:
+            self.__events = [event]
+            self.__actions = [action_set]
 
     def got_all_inputs(
         self,
@@ -972,7 +992,7 @@ class BaseComponent(lifecycle.Node):
         events_actions_names = {}
         if not self.__events or not self.__actions:
             return {}
-        for event, action_set in zip(self.__events, self.__actions):
+        for event, action_set in zip(self.__events, self.__actions, strict=True):
             events_actions_names[event.name] = action_set
         return events_actions_names
 
@@ -986,8 +1006,10 @@ class BaseComponent(lifecycle.Node):
         :type events_actions_dict: Dict[Event, List[Action]]
         :raises ValueError: If a given Action does not correspond to a valid component method
         """
-        self.__events = []
-        self.__actions = []
+        # Initialize only if one of events/actions is None
+        if not self.__events or not self.__actions:
+            self.__events = []
+            self.__actions = []
         for event_serialized, actions in events_actions_dict.items():
             action_set = actions if isinstance(actions, list) else [actions]
             for action in action_set:
@@ -1060,6 +1082,9 @@ class BaseComponent(lifecycle.Node):
         if self.__actions:
             self.launch_cmd_args = ["--actions", self._actions_json]
 
+        if self.__fallbacks:
+            self.launch_cmd_args = ["--fallbacks", self._fallbacks_json]
+
         if self._external_processors:
             self.launch_cmd_args = [
                 "--external_processors",
@@ -1117,6 +1142,66 @@ class BaseComponent(lifecycle.Node):
                     raise AttributeError(
                         f"Component '{self.node_name}' does not contain requested Action method '{action_dict['action_name']}'"
                     )
+                method = getattr(self, action_dict["action_name"])
+                reconstructed_action = Action(
+                    method=method,
+                    args=action_dict["args"],
+                    kwargs=action_dict["kwargs"],
+                )
+                reconstructed_action_list.append(reconstructed_action)
+            self.__actions.append(reconstructed_action_list)
+
+    @property
+    def _fallbacks_json(self) -> Union[str, bytes]:
+        """Getter of serialized component Fallbacks
+
+        :return: Serialized Fallbacks: {fallback_type: serialized_fallback}
+        :rtype: Union[str, bytes]
+        """
+        return self.__fallbacks.json
+
+    @_fallbacks_json.setter
+    def _fallbacks_json(self, serialized_fallbacks: Union[str, bytes]):
+        deserialized_fallbacks = json.loads(serialized_fallbacks)
+        fallbacks_kwargs = {}
+        for key, value in deserialized_fallbacks.items():
+            # If a fallback was defined
+            if (value is not None) and (
+                fallback_serialized_action := value.get("action", None)
+            ):
+                if not hasattr(self, fallback_serialized_action["action_name"]):
+                    raise AttributeError(
+                        f"Component '{self.node_name}' does not contain requested Fallback Action method '{fallback_serialized_action['action_name']}'"
+                    )
+                method = getattr(self, fallback_serialized_action["action_name"])
+                reconstructed_action = Action(
+                    method=method,
+                    args=fallback_serialized_action["args"],
+                    kwargs=fallback_serialized_action["kwargs"],
+                )
+                reconstructed_fallback = Fallback(
+                    reconstructed_action, value.get("max_retries", None)
+                )
+                fallbacks_kwargs[key] = reconstructed_fallback
+        self.__fallbacks = ComponentFallbacks(**fallbacks_kwargs)
+
+    @_actions_json.setter
+    def _actions_json(self, actions_serialized: Union[str, bytes]):
+        """Setter of component events from JSON serialized actions
+
+        :param actions_serialized: Serialized Actions List
+        :type actions_serialized: Union[str, bytes]
+        """
+        self.__actions = []
+        actions_dict: Dict = json.loads(actions_serialized)
+        for action_list in actions_dict.values():
+            reconstructed_action_list = []
+            for action_dict in action_list:
+                if not hasattr(self, action_dict["action_name"]):
+                    raise AttributeError(
+                        f"Component '{self.node_name}' does not contain requested Action method '{action_dict['action_name']}'"
+                    )
+                # reparse the method using the given action name
                 method = getattr(self, action_dict["action_name"])
                 reconstructed_action = Action(
                     method=method,
@@ -1248,14 +1333,15 @@ class BaseComponent(lifecycle.Node):
             for idx, func_name in enumerate(processor_data[0]):
                 sock_file = f"/tmp/{self.node_name}_{key}_{func_name}.socket"
                 if not os.path.exists(sock_file):
-                    self.get_logger().error(
+                    raise RuntimeError(
                         f"File {sock_file} doesn't exists. The external processors have not been setup properly. Exiting .. "
                     )
-                    raise KeyboardInterrupt()
 
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.settimeout(1)  # timeout set to 1s
                 sock.connect(sock_file)
+                # The processessing functions are a list which is the first element of the tuple
+                # stored in _external_processors dict
                 processor_data[0][idx] = sock
 
     @property
@@ -1349,7 +1435,7 @@ class BaseComponent(lifecycle.Node):
 
     # MAIN ACTION SERVER HELPER METHODS AND CALLBACKS
     @abstractmethod
-    def main_action_callback(self, goal_handle):
+    def main_action_callback(self, goal_handle) -> Any:
         """
         Component main action server callback - used if component started with run_as_action_server=True
 
@@ -1359,7 +1445,7 @@ class BaseComponent(lifecycle.Node):
         if self.run_type == ComponentRunType.ACTION_SERVER:
             raise NotImplementedError
 
-    def _main_action_goal_callback(self, _):
+    def _main_action_goal_callback(self, _) -> GoalResponse:
         """
         Goal callback for the main component action server
 
@@ -1385,7 +1471,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().info("Goal accepted")
             self._main_goal_handle.execute()
 
-    def _main_action_cancel_callback(self, _):
+    def _main_action_cancel_callback(self, _) -> GoalResponse:
         """Main component action server callback when handle is canceled
 
         :param goal_handle: _description_
@@ -1607,11 +1693,21 @@ class BaseComponent(lifecycle.Node):
             response.success = False
             response.error_msg = error_msg
 
-        while not self.lifecycle_state == 3:
+        timeout_counter = 0  # Add timeout to avoid an infinite loop
+        while self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE and (
+            timeout_counter < self.config.wait_for_restart_time
+        ):
             self.get_logger().warn(
                 f"Component {self.node_name} is not in ACTIVE state. Waiting for it to become active again.",
                 once=True,
             )
+            time.sleep(1 / self.config.loop_rate)
+            timeout_counter += 1 / self.config.loop_rate
+
+        if self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
+            response.success = False
+            response.error_msg = "Error restarting the component"
+            self.health_status.set_fail_component()
 
         return response
 
@@ -1646,7 +1742,7 @@ class BaseComponent(lifecycle.Node):
         response.success = []
         response.error_msg = []
 
-        for name, val in zip(param_names, param_str_values):
+        for name, val in zip(param_names, param_str_values, strict=True):
             error_msg = self._update_config_param_from_str_value(name, val)
 
             if not error_msg:
@@ -1717,8 +1813,6 @@ class BaseComponent(lifecycle.Node):
 
     def _update_inactive_input_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new input topic"""
-        self.get_logger().info("Updating inactive topic lists (Parent implementation)")
-
         # Update in_topics list
         try:
             idx = self.in_topics.index(old_topic)
@@ -1786,8 +1880,6 @@ class BaseComponent(lifecycle.Node):
 
     def _update_inactive_output_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new output topic"""
-        self.get_logger().info("Updating inactive topic lists (Parent implementation)")
-
         # Update out_topics list
         try:
             idx = self.out_topics.index(old_topic)
@@ -2051,6 +2143,38 @@ class BaseComponent(lifecycle.Node):
             timeout += 1 / self.config.loop_rate
         return timeout < self.config.wait_for_restart_time
 
+    def __wait_for_state_transition(self) -> bool:
+        """Waits until the component is not in a transitioning state in:
+        TRANSITION_STATE_CONFIGURING = 10
+        TRANSITION_STATE_CLEANINGUP = 11
+        TRANSITION_STATE_SHUTTINGDOWN = 12
+        TRANSITION_STATE_ACTIVATING = 13
+        TRANSITION_STATE_DEACTIVATING = 14
+        TRANSITION_STATE_ERRORPROCESSING = 15
+
+            :return: _description_
+            :rtype: bool
+        """
+        timeout_counter = 0  # Add timeout to avoid an infinite loop
+        while (
+            self.lifecycle_state >= LifecycleStateMsg.TRANSITION_STATE_CONFIGURING
+        ) and (timeout_counter < self.config._lifecycle_state_transition_timeout):
+            self.get_logger().warn(
+                "Waiting for ongoing transition to end before executing new transition",
+                once=True,
+            )
+            time.sleep(1 / self.config.loop_rate)
+            timeout_counter += 1 / self.config.loop_rate
+
+        if self.lifecycle_state >= LifecycleStateMsg.TRANSITION_STATE_CONFIGURING:
+            self.get_logger().debug(
+                "Error: Component stuck in lifecycle transition",
+            )
+            self.health_status.set_fail_component()
+            return False
+        return True
+
+    @component_action
     def start(self) -> bool:
         """
         Start the component - trigger_activate
@@ -2058,21 +2182,22 @@ class BaseComponent(lifecycle.Node):
         :return: If the component is started
         :rtype: bool
         """
-        current_state = self.lifecycle_state
-
-        if current_state == 3:
+        if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             # Component already active
             return True
 
-        elif current_state in [1, 4]:
+        elif self.lifecycle_state in [
+            LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
+            LifecycleStateMsg.PRIMARY_STATE_FINALIZED,
+        ]:
             # unconfigured or finalized -> configure again before starting
             self.trigger_configure()
 
-        while current_state > 4:
-            self.get_logger().warn(
-                "Waiting for ongoing transition to end before executing new transition",
-                once=True,
-            )
+        transition_done = self.__wait_for_state_transition()
+
+        if not transition_done:
+            return False
+
         # configured and inactive
         self.trigger_activate()
 
@@ -2086,23 +2211,20 @@ class BaseComponent(lifecycle.Node):
         :return: If the component is stopped
         :rtype: bool
         """
-        if self.lifecycle_state in [1, 2, 4]:
+        if self.lifecycle_state in [
+            LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
+            LifecycleStateMsg.PRIMARY_STATE_INACTIVE,
+            LifecycleStateMsg.PRIMARY_STATE_FINALIZED,
+        ]:
             # Already not active
             return True
 
-        while self.lifecycle_state > 4:
-            self.get_logger().warn(
-                "Waiting for ongoing transition to end before executing new transition",
-                once=True,
-            )
+        transition_done = self.__wait_for_state_transition()
+
+        if not transition_done:
+            return False
 
         self.trigger_deactivate()
-
-        while self.lifecycle_state not in [1, 2, 4]:
-            self.get_logger().warn(
-                "Waiting for node to be completely stopped",
-                once=True,
-            )
 
         return True
 
@@ -2131,20 +2253,21 @@ class BaseComponent(lifecycle.Node):
 
         initial_state = self.lifecycle_state
 
-        if initial_state == 2:
+        reactivate = initial_state >= LifecycleStateMsg.PRIMARY_STATE_ACTIVE
+
+        if initial_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
             # Already configured -> cleanup first
             self.trigger_cleanup()
 
-        if initial_state == 3:
+        if initial_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             # active -> deactivate then cleanup
             self.trigger_deactivate()
             self.trigger_cleanup()
 
-        while initial_state > 4:
-            self.get_logger().warn(
-                "Waiting for ongoing transition to end before executing new transition",
-                once=True,
-            )
+        transition_done = self.__wait_for_state_transition()
+
+        if not transition_done:
+            return False
 
         # set new config as params attr
         if isinstance(new_config, str):
@@ -2155,7 +2278,7 @@ class BaseComponent(lifecycle.Node):
         # configure and go to configure (or active if the component was already active)
         self.trigger_configure()
 
-        if initial_state >= 3:
+        if reactivate:
             self.trigger_activate()
             return self.__wait_for_node_start()
 
@@ -2169,19 +2292,18 @@ class BaseComponent(lifecycle.Node):
         :return: If the component is Reconfigured
         :rtype: bool
         """
-        current_state = self.lifecycle_state
 
-        if current_state == 1:
+        if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
             self.trigger_configure()
 
-        if current_state == 3:
+        if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             self.trigger_deactivate()
 
-        while current_state > 4:
-            self.get_logger().warn(
-                "Waiting for ongoing transition to end before executing new transition",
-                once=True,
-            )
+        transition_done = self.__wait_for_state_transition()
+
+        if not transition_done:
+            # timeout
+            return False
 
         if wait_time:
             self.get_logger().warn(
@@ -2244,11 +2366,11 @@ class BaseComponent(lifecycle.Node):
         """
         try:
             if keep_alive:
-                for param_name, new_value in zip(params_names, new_values):
+                for param_name, new_value in zip(params_names, new_values, strict=True):
                     self.config.update_value(param_name, new_value)
             else:
                 self.stop()
-                for param_name, new_value in zip(params_names, new_values):
+                for param_name, new_value in zip(params_names, new_values, strict=True):
                     self.config.update_value(param_name, new_value)
                 self.start()
         except Exception:
@@ -2270,9 +2392,13 @@ class BaseComponent(lifecycle.Node):
             if self.__fallbacks_giveup:
                 # All fallbacks are already exhausted
                 self.get_logger().error(
-                    "All possible fallbacks are exhausted -> Component is givingup"
+                    "All possible fallbacks are exhausted -> Component is givingup",
+                    once=True,
                 )
-                self.__fallbacks.execute_giveup()
+                if self.__fallbacks.on_giveup:
+                    self.__fallbacks.execute_giveup()
+                    self.health_status.value = self.__fallbacks.latest_status
+                return
 
             elif (
                 self.health_status.is_algorithm_fail
@@ -2298,8 +2424,11 @@ class BaseComponent(lifecycle.Node):
                 )
                 self.__fallbacks_giveup = self.__fallbacks.execute_system_fallback()
 
-            else:
+            elif self.__fallbacks.on_any_fail:
                 self.__fallbacks_giveup = self.__fallbacks.execute_generic_fallback()
+
+            # Update the health status from the fallback after execution
+            self.health_status.value = self.__fallbacks.latest_status
 
         except ValueError:
             # ValueError is thrown when no fallbacks are defined for detected failure
@@ -2429,6 +2558,20 @@ class BaseComponent(lifecycle.Node):
                 action=action, max_retries=max_retries
             )
 
+    def on_giveup(
+        self, action: Union[List[Action], Action], max_retries: int = 1
+    ) -> None:
+        """
+        Set the fallback strategy (action) on giveup
+
+        :param action: Action to be executed on give up
+        :type action: Union[List[Action], Action]
+        """
+        if self._is_valid_fallback_action(action):
+            self.__fallbacks.on_giveup = Fallback(
+                action=action, max_retries=max_retries
+            )
+
     @component_fallback
     def broadcast_status(self) -> None:
         """
@@ -2436,7 +2579,10 @@ class BaseComponent(lifecycle.Node):
         Used as the default fallback strategy for any system (external) failure
         """
         # If node is active publish status
-        if hasattr(self, "health_status_publisher") and self.lifecycle_state == 3:
+        if (
+            hasattr(self, "health_status_publisher")
+            and self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE
+        ):
             self.health_status_publisher.publish(self.health_status())
 
     # LIFECYCLE ON TRANSITIONS CUSTOM METHODS
@@ -2479,7 +2625,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition to state 'configured': {e}"
             )
-            self.health_status.set_fail_component(component_names=[self.get_name()])
+            return self.on_error(state)
 
         return super().on_configure(state)
 
@@ -2523,7 +2669,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition to state 'active': {e}"
             )
-            self.health_status.set_fail_component(component_names=[self.get_name()])
+            return self.on_error(state)
 
         return super().on_activate(state)
 
@@ -2557,7 +2703,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition to state 'inactive': {e}"
             )
-            self.health_status.set_fail_component(component_names=[self.get_name()])
+            return self.on_error(state)
 
         return super().on_deactivate(state)
 
@@ -2585,7 +2731,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition to state 'finalized': {e}"
             )
-            self.health_status.set_fail_component(component_names=[self.get_name()])
+            return self.on_error(state)
 
         return super().on_shutdown(state)
 
@@ -2614,6 +2760,8 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().error(
                 f"Transition error for node {self.get_name()} to transition from state 'unconfigured': {e}"
             )
+            return self.on_error(state)
+
         return super().on_cleanup(state)
 
     def on_error(
@@ -2627,8 +2775,32 @@ class BaseComponent(lifecycle.Node):
         self.get_logger().error(
             f"Transition error for node {self.get_name()} - {state}"
         )
-        self.health_status.set_fail_component(component_names=[self.get_name()])
         self.custom_on_error()
+        self.health_status.set_fail_component(component_names=[self.get_name()])
+
+        # Trigger fallbacks manually if the fallback check timer is not already active
+        if not hasattr(self, "__fallbacks_check_timer"):
+            self._fallbacks_check_callback()
+
+        # TODO: Make the sleep duration a parameter?
+        # Wait before trying to retrigger failed transition
+        self.get_logger().warning("Retriggering failed transition in 1 sec...")
+        time.sleep(1)
+
+        # Attempt retriggering the transition
+        if self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_CONFIGURING:
+            return self.on_configure(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_ACTIVATING:
+            return self.on_activate(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_DEACTIVATING:
+            return self.on_deactivate(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_CLEANINGUP:
+            return self.on_cleanup(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_SHUTTINGDOWN:
+            return self.on_shutdown(state)
+        elif self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_ERRORPROCESSING:
+            return self.on_shutdown(state)
+
         return super().on_error(state)
 
     def custom_on_configure(self) -> None:

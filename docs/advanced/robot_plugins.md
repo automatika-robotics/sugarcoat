@@ -73,7 +73,7 @@ launcher = Launcher(robot_plugin="myrobot_plugin")
 
 ## An Example Robot Plugin
 
-Lets explore an example of a custom plugin called [`myrobot_plugin`]((https://github.com/automatika-robotics/robot-plugin-example)). The plugin is made to bridge a standard robot commands (`Twist`) and a standard feedback (`Odometry`) to two custom interfaces.
+Lets explore an example of a custom plugin called [`myrobot_plugin`](https://github.com/automatika-robotics/robot-plugin-example). The plugin is made to bridge a standard robot commands (`Twist`) and a standard feedback (`Odometry`) to two custom interfaces.
 
 ### 1. Custom Interfaces
 

@@ -3,6 +3,7 @@
 from typing import Any, Union, Optional, List, Dict
 import base64
 import numpy as np
+import importlib
 
 # GEOMETRY MSGS SUPPORTED ROS TYPES
 from geometry_msgs.msg import Point as ROSPoint
@@ -42,6 +43,7 @@ from .utils import numpy_to_multiarray
 _additional_types = {}
 
 
+# GENERIC HELPER FUNCTIONS
 def _update_supportedtype_callback(existing_class: type, new_class: type) -> None:
     if not new_class.callback or new_class.callback == existing_class.callback:
         # If new type has no callback or it is the same as the current callback -> exit
@@ -91,6 +93,7 @@ def _update_supportedtype_conversion(existing_class: type, new_class: type) -> N
             ]
 
 
+# FOR DERIVED PACKGES
 def add_additional_datatypes(types: List[type]) -> None:
     """Add additional SupportedType classes to the list of supported ROS2 messages
 
@@ -126,6 +129,106 @@ def add_additional_datatypes(types: List[type]) -> None:
             )
 
 
+# HELPER FUNCTIONS FOR UI CREATION
+def get_ros_msg_fields_dict(msg_class: type) -> Dict[str, Any]:
+    """
+    Parses the fields names and types from any ROS message into a dict.
+    Handles nested messages and arrays.
+
+    :return: Dict where value is type string, or nested dict (or list of dicts for arrays)
+    """
+    parsed_dict = {}
+    msg_fields = msg_class.get_fields_and_field_types()
+
+    for field_name, field_type_str in msg_fields.items():
+        # Check if it is an array (dynamic '[]' or static '[3]')
+        is_array = "[" in field_type_str
+
+        # Extract base type (remove array notation)
+        base_type = field_type_str.split("[")[0]
+
+        # Check if it is a complex type (contains slash)
+        if "/" in base_type:
+            try:
+                module_str_name, msg_str_name = base_type.split("/")
+                msg_module = importlib.import_module(f"{module_str_name}.msg")
+                nested_msg_class = getattr(msg_module, msg_str_name)
+                # Get fields dict for nested type
+                nested_schema = get_ros_msg_fields_dict(nested_msg_class)
+                # If it's an array, wrap the schema in a list to indicate iterable structure
+                parsed_dict[field_name] = [nested_schema] if is_array else nested_schema
+
+            except (ModuleNotFoundError, ValueError, AttributeError):
+                # Fallback to store the complex type as it is
+                parsed_dict[field_name] = field_type_str
+        else:
+            # Simple types
+            parsed_dict[field_name] = field_type_str
+
+    return parsed_dict
+
+
+def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
+    """
+    Creates a ROS message object from a dictionary structure.
+
+    :param msg_class: The ROS message class to instantiate (e.g., geometry_msgs.msg.Point)
+    :param data_dict: Dictionary containing the values (keys must match message fields)
+    :return: An instance of msg_class populated with data
+    """
+    # Instantiate the message
+    msg = msg_class()
+
+    # Get the type definitions
+    msg_fields_types = msg_class.get_fields_and_field_types()
+
+    for field_name, field_value in data_dict.items():
+        # Skip keys in the dict that don't exist in the message definition
+        if field_name not in msg_fields_types:
+            continue
+
+        ros_type = msg_fields_types[field_name]
+
+        # Check if the field is an array/list (contains '[')
+        is_array = "[" in ros_type
+
+        # Handle Complex Types (nested messages, e.g., 'geometry_msgs/Point')
+        if "/" in ros_type:
+            # Extract base type name (remove array brackets if present)
+            base_type = ros_type.split("[")[0]
+            (module_str_name, msg_str_name) = base_type.split("/")
+
+            try:
+                msg_module = importlib.import_module(f"{module_str_name}.msg")
+                nested_msg_class = getattr(msg_module, msg_str_name)
+
+                if is_array:
+                    # If it's a list of complex objects, recurse for each item
+                    # field_value is expected to be a list of dicts
+                    complex_array = []
+                    for item in field_value:
+                        complex_array.append(
+                            set_ros_msg_from_dict(nested_msg_class, item)
+                        )
+                    setattr(msg, field_name, complex_array)
+                else:
+                    # Single complex object, recurse once
+                    # field_value is expected to be a dict
+                    nested_msg = set_ros_msg_from_dict(nested_msg_class, field_value)
+                    setattr(msg, field_name, nested_msg)
+
+            except (ModuleNotFoundError, ValueError, AttributeError) as e:
+                print(f"Error instantiating nested message for {field_name}: {e}")
+
+        # Handle Simple Types (int, float, string, etc.)
+        else:
+            attr_type = type(getattr(msg, field_name))
+            setattr(msg, field_name, attr_type(field_value))
+
+    return msg
+
+
+# SUPPORTED TYPES
 class Meta(type):
     """Meta."""
 

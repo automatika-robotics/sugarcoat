@@ -1,13 +1,20 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Callable, Union, Any
 import re
 import sys
 import base64
 import numpy as np
-from nav_msgs.msg import Odometry
 import cv2
-import std_msgs.msg as std_msg
+from socket import socket
 
 from rclpy.logging import get_logger
+import std_msgs.msg as std_msg
+from nav_msgs.msg import Odometry
+
+import msgpack
+import msgpack_numpy as m_pack
+
+# patch msgpack for numpy arrays
+m_pack.patch()
 
 
 def convert_img_to_jpeg_str(img, node_name: str = "util") -> str:
@@ -532,7 +539,7 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
 
     # Set up the layout
     msg.layout.dim = []
-    for size, stride, label in zip(arr.shape, strides, labels):
+    for size, stride, label in zip(arr.shape, strides, labels, strict=True):
         dim = std_msg.MultiArrayDimension()
         dim.label = label
         dim.size = size
@@ -543,3 +550,56 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
     msg.data = arr.flatten().tolist()
 
     return msg
+
+
+def run_external_processor(
+    logger_name: str, topic_name: str, processor: Union[Callable, socket], *output
+) -> Any:
+    """
+    Execute external processing using a callable or a Unix socket.
+
+    This utility function is designed to handle two scenarios:
+    1. When the processor is a callable (e.g., a function), it invokes the callable with the provided `*output` arguments.
+    2. When the processor is a Unix socket, it sends the `*output` data packed in msgpack format to the connected process and waits for a response.
+
+    :param logger_name: The name of the logger to use for logging messages.
+    :type logger_name: str
+
+    :param topic_name: A descriptive name for the processing topic, used in log messages.
+    :type topic_name: str
+
+    :param processor: The external processor, which can be either a callable or a Unix socket.
+                      If it's a callable, it will be directly invoked with `*output`.
+                      If it's a Unix socket, data will be sent and received over this socket.
+    :type processor: Union[Callable, socket]
+
+    :param output: Variable length argument list to be passed to the external processor.
+    :type output: Any
+
+    :return: The result of the external processing. This can vary depending on the type of processor used.
+             For a callable, it's whatever the function returns.
+             For a Unix socket, it's the unpacked response received from the connected process.
+    :rtype: Any
+
+    :raises Exception: If an error occurs during the execution of the external processor or communication over the socket,
+                       an exception is logged with an appropriate error message.
+    """
+    if isinstance(processor, Callable):
+        return processor(*output)
+
+    try:
+        out_dict = {"output": output}
+        payload = msgpack.packb(out_dict)
+        if payload:
+            processor.sendall(payload)
+        else:
+            get_logger(logger_name).error(
+                f"Could not pack arguments for external processor in external function provided for {topic_name}"
+            )
+        result_b = processor.recv(1024)
+        result = msgpack.unpackb(result_b)
+        return result
+    except Exception as e:
+        get_logger(logger_name).error(
+            f"Error in external processor for {topic_name}: {e}"
+        )
