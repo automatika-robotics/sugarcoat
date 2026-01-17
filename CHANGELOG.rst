@@ -2,6 +2,35 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (refactor) Organizes UI custom javascript into three functional scripts
+* (docs) Improves the core concepts documentation
+* (fix) Fixes check for None max_retries value in fallback
+* (fix) Fixes logging colors in multi-process execution
+* (feature) Adds parameter for lifecycle transition timeout
+* (fix) Add error catching during all fallbacks action execution
+* (fix) Fixes fallback init and exposes on_giveup fallback
+* (fix) Adds fallbacks serialization to support multi-process execution
+* (fix) Removes optional fallback in execute method
+* (fix) Updates health status after executing the fallback in component
+* (fix) Adds fallback to component lifecycle transition errors
+* (feature) Adds method to add event/action pairs from inside child components
+* (docs) Adds generation of llms.txt to docs
+* (feature) Adds Task UI element to track action requests
+* (feature) Adds option to hide the settings panel in the UI
+* (feature) Adds property to get a UI input for a component's main action server
+* (feature) Adds action clients to UI inputs
+* (feature) Improves ActionClient with methods to cancel requests and monitor feedback
+* (feature) Adds parsing ROS messages from/to dictionary
+* (docs) Fixes installation instructions in readme
+* (fix) Fixes external processor argument passing in the launcher
+* (refactor) Adds utility function for running external processors
+* (feature) Adds service clients to UINode inputs in order to send service calls directly from the UI
+* (feature) Adds method to send a service request using data from a dictionary
+  This method is useful to send requests without initializing the request class. Used in the UI node to send requests from an input form data
+* Contributors: ahr, mkabtoul
+
 0.4.2 (2025-11-30)
 ------------------
 * (docs) Adds robot plugins tutorial to docs
