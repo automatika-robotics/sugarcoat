@@ -1,0 +1,755 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta content="cQVj-BaADcGVOGB7GOvfbkgJjxni10C2fYWCZ03jOeo" name="google-site-verification" />
+
+    <title>Fallbacks &#8212; Sugarcoat 0.4.3 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=8eace815" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=0f4711b3"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'design/fallbacks';</script>
+    <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/design/fallbacks.html" />
+    <link rel="icon" href="../_static/favicon.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Launcher" href="launcher.html" />
+    <link rel="prev" title="Actions" href="actions.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/SUGARCOAT_LIGHT.png" class="logo__image only-light" alt="Sugarcoat 0.4.3 documentation - Home"/>
+    <script>document.write(`<img src="../_static/SUGARCOAT_DARK.png" class="logo__image only-dark" alt="Sugarcoat 0.4.3 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://automatikarobotics.com/" title="Automatika" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><img src="../_static/automatika-logo.png" class="icon-link-image" alt="Automatika"/></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/automatika-robotics/sugarcoat" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/B9ZU6qjzND" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Overview</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Sugarcoat 🍬</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Design Concepts</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="component.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="topics.html">Topics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="status.html">Health Status</a></li>
+<li class="toctree-l1"><a class="reference internal" href="events.html">Events</a></li>
+<li class="toctree-l1"><a class="reference internal" href="actions.html">Actions</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Fallbacks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="launcher.html">Launcher</a></li>
+<li class="toctree-l1"><a class="reference internal" href="monitor.html">Monitor</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Using Sugarcoat</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/web_ui.html">Using the Dynamic Web UI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/create_service.html">Converting a Sugarcoat Python Script into a systemd Service</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/config.html">Don’t Like YAML? We’ve Got You 😎</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/robot_plugins.html">Custom Robot Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">References</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../apidocs/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component_actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component_actions</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.events.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.events</span></code></a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/blob/main/docs/design/fallbacks.md?plain=1" target="_blank"
+   class="btn btn-sm btn-source-file-button dropdown-item"
+   title="Show source"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-code"></i>
+  </span>
+<span class="btn__text-container">Show source</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/edit/main/docs/design/fallbacks.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/issues/new?title=Issue%20on%20page%20%2Fdesign/fallbacks.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/design/fallbacks.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Fallbacks</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#failure-hierarchy">Failure Hierarchy</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#fallback-strategies">Fallback Strategies</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#single-action-strategy">Single Action Strategy</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#multi-step-strategy-list-of-actions">Multi-Step Strategy (List of Actions)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#the-give-up-state">The Give Up State</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#declaring-failures">Declaring Failures</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#defining-custom-fallbacks-in-your-component">Defining Custom Fallbacks in your Component</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#programming-fallbacks-in-your-recipe">Programming Fallbacks in your Recipe</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="fallbacks">
+<h1>Fallbacks<a class="headerlink" href="#fallbacks" title="Link to this heading">#</a></h1>
+<p><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html#classes"><span class="std std-ref">Fallbacks</span></a> are the self-healing mechanism of a Sugarcoat component. They define the set of Actions to be executed when a failure is detected in the component’s <a class="reference internal" href="status.html"><span class="std std-doc">Health Status</span></a>.</p>
+<p>Instead of crashing or stopping when an error occurs, a Component can be configured to attempt recovery strategies, such as restarting a specific algorithm, re-initializing a driver, or, in the worst case, shutting down or broadcasting a failure to the rest of the system.</p>
+<figure class="align-default" id="fig-fallbacks">
+<a class="reference internal image-reference" href="../_images/fallbacks_light.png"><img alt="Fallbacks and Health Status" src="../_images/fallbacks_light.png" style="width: 900px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Component Fallbacks</span><a class="headerlink" href="#fig-fallbacks" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<section id="failure-hierarchy">
+<h2>Failure Hierarchy<a class="headerlink" href="#failure-hierarchy" title="Link to this heading">#</a></h2>
+<p>The Component checks its internal health status at the defined component <code class="docutils literal notranslate"><span class="pre">loop_rate</span></code>. If a failure is detected, it selects the appropriate fallback strategy based on the specific type of failure. The priority is handled in the following order:</p>
+<ul class="simple">
+<li><p><strong>System Failure</strong> (on_system_fail): Failure external to the component (e.g, “Failed to collect all required inputs”), or a critical system-level failure (e.g., “Out of memory”).</p></li>
+<li><p><strong>Component Failure</strong> (on_component_fail): Failures of the component shell or node (e.g., “Driver disconnected”).</p></li>
+<li><p><strong>Algorithm Failure</strong> (on_algorithm_fail): Failures specific to the internal logic/algorithm (e.g., “Path planner failed to find a path”, or “ML model client failed to connect to the server”).</p></li>
+<li><p><strong>Generic/Any Failure</strong> (on_any_fail): A catch-all strategy for any failure not handled by a specific policy above.</p></li>
+</ul>
+<p><strong>If a specific fallback is not defined (is None), the system checks the next applicable level (usually falling through to on_any_fail).</strong></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Components do not have any default fallback behavior. Fallbacks can be defined per component or for the whole component graph.</p>
+</div>
+</section>
+<section id="fallback-strategies">
+<h2>Fallback Strategies<a class="headerlink" href="#fallback-strategies" title="Link to this heading">#</a></h2>
+<p>A Fallback consists of an <strong>Action</strong> (or a list of Actions) and a <strong>Retry Policy</strong>.</p>
+<section id="single-action-strategy">
+<h3>Single Action Strategy<a class="headerlink" href="#single-action-strategy" title="Link to this heading">#</a></h3>
+<p>When a single action is defined, it is executed every time the associated failure is caught until:</p>
+<ul class="simple">
+<li><p>The action returns <code class="docutils literal notranslate"><span class="pre">True</span></code> (indicating successful execution and the component is considered healthy again).</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">max_retries</span></code> count is reached. If <code class="docutils literal notranslate"><span class="pre">max_retries</span></code> is <code class="docutils literal notranslate"><span class="pre">None</span></code> then the action will be re-tried indefinitely.</p></li>
+</ul>
+<p><strong>If max_retries is reached, the component enters the Give Up state.</strong></p>
+</section>
+<section id="multi-step-strategy-list-of-actions">
+<h3>Multi-Step Strategy (List of Actions)<a class="headerlink" href="#multi-step-strategy-list-of-actions" title="Link to this heading">#</a></h3>
+<p>You can define a sequence of actions to try in order. This is useful for tiered recovery (e.g., “First try to reset the connection. If that fails, try restarting the whole node”).</p>
+<ul class="simple">
+<li><p>Execution Flow: The system attempts the first action in the list.</p></li>
+<li><p>Retries: Each action in the list is attempted <code class="docutils literal notranslate"><span class="pre">max_retries</span></code> times.</p></li>
+<li><p>Progression: If an action fails (doesn’t return <code class="docutils literal notranslate"><span class="pre">True</span></code>) after its retries are exhausted, the system moves to the next action in the list.</p></li>
+<li><p>Give Up: If the last action in the list fails after its retries, the component enters the Give Up state.</p></li>
+</ul>
+</section>
+<section id="the-give-up-state">
+<h3>The Give Up State<a class="headerlink" href="#the-give-up-state" title="Link to this heading">#</a></h3>
+<p>When all strategies have failed (all retries of all actions exhausted), the component executes the <code class="docutils literal notranslate"><span class="pre">on_giveup</span></code> fallback. This is typically used for final cleanup or to permanently mark the node as dead.</p>
+</section>
+</section>
+<section id="declaring-failures">
+<h2>Declaring Failures<a class="headerlink" href="#declaring-failures" title="Link to this heading">#</a></h2>
+<p><strong>Important</strong>: Fallbacks are only triggered if the component reports a failure. When writing custom components, it is your responsibility to detect errors in your main loop or callbacks and update the <code class="docutils literal notranslate"><span class="pre">self.health_status</span></code> object.</p>
+<p>You should use the following methods to report status:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">self.health_status.set_fail_algorithm(optional_failed_algorithm_name_or_names)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">self.health_status.set_fail_component(optional_failed_component_name_or_names)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">self.health_status.set_fail_system(optional_failed_topics_name_or_names)</span></code></p></li>
+</ul>
+<p>Once the status is set to a failure state, the component internal check will automatically begin executing the configured fallback actions.</p>
+</section>
+<section id="defining-custom-fallbacks-in-your-component">
+<h2>Defining Custom Fallbacks in your Component<a class="headerlink" href="#defining-custom-fallbacks-in-your-component" title="Link to this heading">#</a></h2>
+<p>You can create custom recovery methods in your component. These methods should return <code class="docutils literal notranslate"><span class="pre">bool</span></code> (<code class="docutils literal notranslate"><span class="pre">True</span></code> if recovery succeeded, <code class="docutils literal notranslate"><span class="pre">False</span></code> otherwise). You can also use the <code class="docutils literal notranslate"><span class="pre">&#64;component_fallback</span></code> decorator to ensure that fallback methods can only be called after the component is configured and running.</p>
+<p><strong>Example</strong>: Custom Driver with Health Checks
+In this example, the _execution_step checks the hardware connection. If it fails, it sets the component status to failed. This triggers the try_reconnect fallback.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">ros_sugar.component</span> <span class="kn">import</span> <span class="n">BaseComponent</span><span class="p">,</span> <span class="n">component_fallback</span>
+<span class="kn">from</span> <span class="nn">ros_sugar.action</span> <span class="kn">import</span> <span class="n">Action</span>
+
+<span class="k">class</span> <span class="nc">MyDriver</span><span class="p">(</span><span class="n">BaseComponent</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="c1"># Configure the fallback behavior</span>
+        <span class="c1"># If the component fails, try to reconnect</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">on_system_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">Action</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">try_reconnect</span><span class="p">),</span> <span class="n">max_retries</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+        <span class="c1"># If reconnection fails 3 times, give up and shutdown</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">on_giveup</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">Action</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">safe_shutdown</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">_execution_step</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Main loop of the driver&quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Normal operation</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hardware_interface</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">publish_data</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+            <span class="c1"># Explicitly mark as healthy if successful</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">health_status</span><span class="o">.</span><span class="n">set_healthy</span><span class="p">()</span>
+
+        <span class="k">except</span> <span class="ne">ConnectionError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">get_logger</span><span class="p">()</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Hardware error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="c1"># [IMPORTANT] Declare the failure to trigger the fallback!</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">health_status</span><span class="o">.</span><span class="n">set_fail_system</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hardware_interface</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="nd">@component_fallback</span>
+    <span class="k">def</span> <span class="nf">try_reconnect</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attempt to reconnect to the hardware&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_logger</span><span class="p">()</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Fallback: Attempting to reconnect...&quot;</span><span class="p">)</span>
+        <span class="n">success</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hardware_interface</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">get_logger</span><span class="p">()</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Reconnection successful!&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span> <span class="c1"># Signals that recovery worked</span>
+
+        <span class="k">return</span> <span class="kc">False</span> <span class="c1"># Signals that recovery failed, will retry or move to next step</span>
+
+    <span class="nd">@component_fallback</span>
+    <span class="k">def</span> <span class="nf">safe_shutdown</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Park the robot and stop&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_logger</span><span class="p">()</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Giving up: Shutting down driver.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">robot</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+        <span class="k">return</span> <span class="kc">True</span>
+</pre></div>
+</div>
+</section>
+<section id="programming-fallbacks-in-your-recipe">
+<h2>Programming Fallbacks in your Recipe<a class="headerlink" href="#programming-fallbacks-in-your-recipe" title="Link to this heading">#</a></h2>
+<p>You can configure a component’s fallbacks directly in your recipe by calling:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">on_fail(action,</span> <span class="pre">max_retries=None)</span></code>: Sets the fallback for Any failure (the catch-all). <code class="docutils literal notranslate"><span class="pre">max_retries=None</span></code> implies infinite retries for a single action.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">on_component_fail(action,</span> <span class="pre">max_retries=None)</span></code>: Sets the fallback specifically for component-level failures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">on_algorithm_fail(action,</span> <span class="pre">max_retries=None)</span></code>: Sets the fallback specifically for algorithm-level failures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">on_system_fail(action,</span> <span class="pre">max_retries=None)</span></code>: Sets the fallback for system-level failures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">on_giveup(action)</span></code>: Sets the final action to execute when all other fallbacks have failed.</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">BaseComponent</span>
+    <span class="kn">from</span> <span class="nn">ros_sugar.actions</span> <span class="kn">import</span> <span class="n">ComponentActions</span>
+
+    <span class="n">my_component</span> <span class="o">=</span> <span class="n">BaseComponent</span><span class="p">(</span><span class="n">component_name</span><span class="o">=</span><span class="s1">&#39;test_component&#39;</span><span class="p">)</span>
+
+    <span class="c1"># Set fallback for component failure to restart the component</span>
+    <span class="n">my_component</span><span class="o">.</span><span class="n">on_component_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">ComponentActions</span><span class="o">.</span><span class="n">restart</span><span class="p">(</span><span class="n">component</span><span class="o">=</span><span class="n">my_component</span><span class="p">))</span>
+
+    <span class="c1"># Change fallback for any failure</span>
+    <span class="n">my_component</span><span class="o">.</span><span class="n">on_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">Action</span><span class="p">(</span><span class="n">my_component</span><span class="o">.</span><span class="n">restart</span><span class="p">))</span>
+
+    <span class="c1"># First broadcast status, if another failure happens -&gt; restart</span>
+    <span class="n">my_component</span><span class="o">.</span><span class="n">on_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="p">[</span><span class="n">Action</span><span class="p">(</span><span class="n">my_component</span><span class="o">.</span><span class="n">broadcast_status</span><span class="p">),</span> <span class="n">Action</span><span class="p">(</span><span class="n">my_component</span><span class="o">.</span><span class="n">restart</span><span class="p">)])</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="actions.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Actions</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="launcher.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Launcher</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#failure-hierarchy">Failure Hierarchy</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#fallback-strategies">Fallback Strategies</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#single-action-strategy">Single Action Strategy</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#multi-step-strategy-list-of-actions">Multi-Step Strategy (List of Actions)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#the-give-up-state">The Give Up State</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#declaring-failures">Declaring Failures</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#defining-custom-fallbacks-in-your-component">Defining Custom Fallbacks in your Component</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#programming-fallbacks-in-your-recipe">Programming Fallbacks in your Recipe</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By Automatika Robotics
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2026, Automatika Robotics.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

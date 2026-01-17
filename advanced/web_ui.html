@@ -1,0 +1,695 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta content="cQVj-BaADcGVOGB7GOvfbkgJjxni10C2fYWCZ03jOeo" name="google-site-verification" />
+
+    <title>Using the Dynamic Web UI &#8212; Sugarcoat 0.4.3 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=8eace815" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=0f4711b3"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'advanced/web_ui';</script>
+    <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/advanced/web_ui.html" />
+    <link rel="icon" href="../_static/favicon.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Converting a Sugarcoat Python Script into a systemd Service" href="create_service.html" />
+    <link rel="prev" title="Creating your ROS2 package using Sugarcoat" href="use.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/SUGARCOAT_LIGHT.png" class="logo__image only-light" alt="Sugarcoat 0.4.3 documentation - Home"/>
+    <script>document.write(`<img src="../_static/SUGARCOAT_DARK.png" class="logo__image only-dark" alt="Sugarcoat 0.4.3 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://automatikarobotics.com/" title="Automatika" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><img src="../_static/automatika-logo.png" class="icon-link-image" alt="Automatika"/></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/automatika-robotics/sugarcoat" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/B9ZU6qjzND" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Overview</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Sugarcoat 🍬</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Design Concepts</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../design/concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/component.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/topics.html">Topics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/status.html">Health Status</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/events.html">Events</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/actions.html">Actions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/launcher.html">Launcher</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../design/monitor.html">Monitor</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Using Sugarcoat</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Using the Dynamic Web UI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="create_service.html">Converting a Sugarcoat Python Script into a systemd Service</a></li>
+<li class="toctree-l1"><a class="reference internal" href="srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Don’t Like YAML? We’ve Got You 😎</a></li>
+<li class="toctree-l1"><a class="reference internal" href="robot_plugins.html">Custom Robot Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">References</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../apidocs/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component_actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component_actions</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.events.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.events</span></code></a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/blob/main/docs/advanced/web_ui.md?plain=1" target="_blank"
+   class="btn btn-sm btn-source-file-button dropdown-item"
+   title="Show source"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-code"></i>
+  </span>
+<span class="btn__text-container">Show source</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/edit/main/docs/advanced/web_ui.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/issues/new?title=Issue%20on%20page%20%2Fadvanced/web_ui.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/advanced/web_ui.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Using the Dynamic Web UI</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#key-capabilities">Key Capabilities</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#automatic-ui-generation-in-action">🚀 Automatic UI Generation in Action</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-define-your-topics">Step 1 — Define Your Topics</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-define-your-components-and-initialize-the-launcher">Step 2 — Define your Components and Initialize the Launcher</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-3-enable-the-web-ui">Step 3 — Enable the Web UI</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#resulting-interface">Resulting Interface</a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="using-the-dynamic-web-ui">
+<h1>Using the Dynamic Web UI<a class="headerlink" href="#using-the-dynamic-web-ui" title="Link to this heading">#</a></h1>
+<p>The <strong>Dynamic Web UI</strong> brings an entirely new level of <strong>system visibility</strong>, <strong>control</strong>, and <strong>ease of use</strong> to Sugarcoat Recipes.
+Built with <a class="reference external" href="https://www.fastht.ml/"><strong>FastHTML</strong></a> and <a class="reference external" href="https://monsterui.answer.ai/"><strong>MonsterUI</strong></a>, it <strong>automatically generates a responsive, extensible web interface</strong> for any Sugarcoat recipe — eliminating the need for manual front-end work.</p>
+<p>With zero configuration, your ROS2 system instantly becomes a <strong>fully monitorable and configurable web application</strong>, complete with real-time data streaming and visual feedback.</p>
+<section id="key-capabilities">
+<h2>Key Capabilities<a class="headerlink" href="#key-capabilities" title="Link to this heading">#</a></h2>
+<p>The Dynamic Web UI acts as a <strong>universal dashboard</strong> for your Sugarcoat recipes. Once enabled, it introspects your recipe’s <code class="docutils literal notranslate"><span class="pre">Components</span></code>, <code class="docutils literal notranslate"><span class="pre">Inputs</span></code>, and <code class="docutils literal notranslate"><span class="pre">Outputs</span></code>, and automatically builds a front-end to match your running system.</p>
+<p>You can view, control, and debug every part of your ROS2 application directly from the browser — no manual HTML, JavaScript, or dashboard setup required.</p>
+<ul class="simple">
+<li><p><strong>Automatic Settings UI</strong>
+Dynamically generates interfaces for configuring the parameters and settings of all <code class="docutils literal notranslate"><span class="pre">Components</span></code> used in your recipe.</p></li>
+<li><p><strong>Auto I/O Visualization</strong>
+Automatically builds front-end controls and data visualizations for all defined UI <code class="docutils literal notranslate"><span class="pre">Inputs</span></code> and <code class="docutils literal notranslate"><span class="pre">Outputs</span></code>.</p></li>
+<li><p><strong>WebSocket-Based Streaming</strong>
+Provides bidirectional, low-latency communication for <strong>text</strong>, <strong>image</strong>, and <strong>audio</strong> data streams.</p></li>
+<li><p><strong>Responsive Layouts</strong>
+Uses grid-based, adaptive layouts for clear visualization of system elements, optimized for both desktop and mobile.</p></li>
+<li><p><strong>Extensible Design</strong>
+Developers can extend the UI to support <strong>custom message types</strong>, <strong>interactive widgets</strong>, or <strong>bespoke visualizations</strong>.</p></li>
+</ul>
+</section>
+<section id="automatic-ui-generation-in-action">
+<h2>🚀 Automatic UI Generation in Action<a class="headerlink" href="#automatic-ui-generation-in-action" title="Link to this heading">#</a></h2>
+<p>Lets see the <strong>Dynamic Web UI</strong> in action by automatically generating a fully functional, real-time interface for interacting with your Sugarcoat recipe.</p>
+<p>In the example below, we show how to enable the UI directly within a recipe to send and receive text messages, visualize detections, or stream live camera images from your robot — all without writing a single line of code.</p>
+<p>For a complete, real-world example, see how a similar UI is used in the VLM agent recipe from <a class="reference external" href="https://automatika-robotics.github.io/embodied-agents/"><strong>EmbodiedAgents</strong></a>.</p>
+<section id="step-1-define-your-topics">
+<h3>Step 1 — Define Your Topics<a class="headerlink" href="#step-1-define-your-topics" title="Link to this heading">#</a></h3>
+<p>Begin by declaring the topics that represent your system’s <strong>inputs</strong> and <strong>outputs</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">ros_sugar</span> <span class="kn">import</span> <span class="n">Launcher</span>
+<span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+
+<span class="c1"># Configure your Topics</span>
+<span class="n">image_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;image_raw&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Image&quot;</span><span class="p">)</span>     <span class="c1"># the robot camera topic</span>
+<span class="n">detections_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;detections&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Detections&quot;</span><span class="p">)</span>      <span class="c1"># a detections component topic (see EmbodiedAgents)</span>
+
+<span class="n">text_query</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;text0&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;String&quot;</span><span class="p">)</span>
+<span class="n">text_answer</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;text1&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;String&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="step-2-define-your-components-and-initialize-the-launcher">
+<h3>Step 2 — Define your Components and Initialize the Launcher<a class="headerlink" href="#step-2-define-your-components-and-initialize-the-launcher" title="Link to this heading">#</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Configure your actual components here</span>
+<span class="c1"># my_component_1 = ...</span>
+<span class="c1"># my_component_2 = ...</span>
+
+<span class="n">launcher</span> <span class="o">=</span> <span class="n">Launcher</span><span class="p">()</span>
+
+<span class="c1"># Add your configured components to the launcher</span>
+<span class="c1"># launcher.add_pkg(</span>
+<span class="c1">#     package_name=&quot;my package&quot;,</span>
+<span class="c1">#     components=[my_component_1, my_component_2],</span>
+<span class="c1">#     multiprocessing=True,    # Optionally enable multi-processing</span>
+<span class="c1"># )</span>
+</pre></div>
+</div>
+</section>
+<section id="step-3-enable-the-web-ui">
+<h3>Step 3 — Enable the Web UI<a class="headerlink" href="#step-3-enable-the-web-ui" title="Link to this heading">#</a></h3>
+<p>Enable the Dynamic Web UI by calling <code class="docutils literal notranslate"><span class="pre">enable_ui</span></code> method on your <code class="docutils literal notranslate"><span class="pre">Launcher</span></code> instance. In this example:</p>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">text_query</span></code> topic is set as a UI input, allowing the user to send text messages (publish to ROS2 topic) directly from the browser.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">text_answer</span></code> and <code class="docutils literal notranslate"><span class="pre">detections_topic</span></code> (or <code class="docutils literal notranslate"><span class="pre">image_topic</span></code>) are UI outputs, meaning the UI automatically subscribes to these topics and displays messages in real time.</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">launcher</span><span class="o">.</span><span class="n">enable_ui</span><span class="p">(</span>
+    <span class="n">inputs</span><span class="o">=</span><span class="p">[</span><span class="n">text_query</span><span class="p">],</span>
+    <span class="n">outputs</span><span class="o">=</span><span class="p">[</span><span class="n">text_answer</span><span class="p">,</span> <span class="n">detections_topic</span><span class="p">],</span>
+<span class="p">)</span>
+
+<span class="c1"># Bringup you recipe</span>
+<span class="n">launcher</span><span class="o">.</span><span class="n">bringup</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="resulting-interface">
+<h3>Resulting Interface<a class="headerlink" href="#resulting-interface" title="Link to this heading">#</a></h3>
+<p>When the recipe runs, a dynamic web interface like the one below is automatically generated — ready to send, receive, and visualize data from your components.</p>
+<p align="center">
+<picture align="center">
+  <img alt="EmbodiedAgents UI Example GIF" src="../_static/images/agents_ui.gif" width="90%">
+</picture>
+</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The UI also automatically renders configuration panels for all registered components, allowing you to inspect and modify parameters in real time — no manual UI setup required.</p>
+</div>
+</section>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="use.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Creating your ROS2 package using Sugarcoat</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="create_service.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Converting a Sugarcoat Python Script into a systemd Service</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#key-capabilities">Key Capabilities</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#automatic-ui-generation-in-action">🚀 Automatic UI Generation in Action</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-define-your-topics">Step 1 — Define Your Topics</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-define-your-components-and-initialize-the-launcher">Step 2 — Define your Components and Initialize the Launcher</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#step-3-enable-the-web-ui">Step 3 — Enable the Web UI</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#resulting-interface">Resulting Interface</a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By Automatika Robotics
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2026, Automatika Robotics.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

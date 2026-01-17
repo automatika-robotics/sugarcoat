@@ -1,0 +1,889 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta content="cQVj-BaADcGVOGB7GOvfbkgJjxni10C2fYWCZ03jOeo" name="google-site-verification" />
+
+    <title>Events &#8212; Sugarcoat 0.4.3 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=8eace815" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=0f4711b3"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'design/events';</script>
+    <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/design/events.html" />
+    <link rel="icon" href="../_static/favicon.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Actions" href="actions.html" />
+    <link rel="prev" title="Health Status" href="status.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/SUGARCOAT_LIGHT.png" class="logo__image only-light" alt="Sugarcoat 0.4.3 documentation - Home"/>
+    <script>document.write(`<img src="../_static/SUGARCOAT_DARK.png" class="logo__image only-dark" alt="Sugarcoat 0.4.3 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://automatikarobotics.com/" title="Automatika" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><img src="../_static/automatika-logo.png" class="icon-link-image" alt="Automatika"/></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/automatika-robotics/sugarcoat" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/B9ZU6qjzND" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Overview</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Sugarcoat 🍬</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Design Concepts</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="component.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="topics.html">Topics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="status.html">Health Status</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Events</a></li>
+<li class="toctree-l1"><a class="reference internal" href="actions.html">Actions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="launcher.html">Launcher</a></li>
+<li class="toctree-l1"><a class="reference internal" href="monitor.html">Monitor</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Using Sugarcoat</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/web_ui.html">Using the Dynamic Web UI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/create_service.html">Converting a Sugarcoat Python Script into a systemd Service</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/config.html">Don’t Like YAML? We’ve Got You 😎</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/robot_plugins.html">Custom Robot Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">References</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../apidocs/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component_actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component_actions</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.events.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.events</span></code></a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/blob/main/docs/design/events.md?plain=1" target="_blank"
+   class="btn btn-sm btn-source-file-button dropdown-item"
+   title="Show source"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-code"></i>
+  </span>
+<span class="btn__text-container">Show source</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/edit/main/docs/design/events.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/automatika-robotics/sugarcoat/issues/new?title=Issue%20on%20page%20%2Fdesign/events.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/design/events.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Events</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#available-event-types">Available Event Types</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#usage-examples">Usage Examples</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#automatic-adaptation-terrain-switching">1. Automatic Adaptation (Terrain Switching)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#intelligent-interaction-follow-to-patrol">2. Intelligent Interaction (Follow to Patrol)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nested-attributes">3. Nested Attributes</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#advanced-configuration">Advanced Configuration</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#handling-once">Handling Once</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#event-delay-debouncing">Event Delay (Debouncing)</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dynamic-event-parsers">Dynamic Event Parsers</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-use-event-parsers">Why use Event Parsers?</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#how-it-works">How it works</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#example">Example</a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="events">
+<h1>Events<a class="headerlink" href="#events" title="Link to this heading">#</a></h1>
+<p>Sugarcoat’s Event-Driven architecture enables dynamic behavior switching based on real-time environmental context. This system allows robots to react instantly to changes in their internal state or external environment without complex, brittle if/else chains in your main loop.</p>
+<p>An Event in Sugarcoat monitors a specific <strong>ROS2 Topic</strong>. It inspects a specific <em>Attribute</em> within that message and compares it against a <em>Trigger Value</em>. When the condition is met, the Event triggers its associated <a class="reference internal" href="actions.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">Action</span></code></span></a>(s).</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Events can be paired with Sugarcoat <a class="reference internal" href="actions.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">Action</span></code></span></a>(s) or with any standard <a class="reference external" href="https://docs.ros.org/en/kilted/Tutorials/Intermediate/Launch/Using-Event-Handlers.html">ROS2 Launch Action</a></p>
+</div>
+<section id="available-event-types">
+<h2>Available Event Types<a class="headerlink" href="#available-event-types" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head text-left"><p>Event Class</p></th>
+<th class="head text-left"><p>Description</p></th>
+<th class="head text-left"><p>Use Case</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnAny</span></code></strong></p></td>
+<td class="text-left"><p>Triggers on <strong>every</strong> message received.</p></td>
+<td class="text-left"><p>Logging, heartbeat monitoring, continuous data processing.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnEqual</span></code></strong></p></td>
+<td class="text-left"><p>Triggers when the value <strong>equals</strong> the trigger value.</p></td>
+<td class="text-left"><p>State matching (e.g., <code class="docutils literal notranslate"><span class="pre">status</span> <span class="pre">==</span> <span class="pre">&quot;IDLE&quot;</span></code>), detecting specific object IDs.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnDifferent</span></code></strong></p></td>
+<td class="text-left"><p>Triggers when the value is <strong>not equal</strong> to the trigger value.</p></td>
+<td class="text-left"><p>Detecting configuration changes or mode mismatches.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnGreater</span></code></strong></p></td>
+<td class="text-left"><p>Triggers when value <strong>&gt;</strong> trigger value (supports <code class="docutils literal notranslate"><span class="pre">or_equal=True</span></code>).</p></td>
+<td class="text-left"><p>Altitude limits, temperature warnings, speed thresholds.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnLess</span></code></strong></p></td>
+<td class="text-left"><p>Triggers when value <strong>&lt;</strong> trigger value (supports <code class="docutils literal notranslate"><span class="pre">or_equal=True</span></code>).</p></td>
+<td class="text-left"><p>Low battery, proximity alerts, signal strength drop.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnChange</span></code></strong></p></td>
+<td class="text-left"><p>Triggers whenever the value <strong>changes</strong> from its previous reading.</p></td>
+<td class="text-left"><p>Reacting to any new command, mode switch, or distinct sensor reading.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnChangeEqual</span></code></strong></p></td>
+<td class="text-left"><p>Triggers when the value changes and becomes equal to the trigger (change from <code class="docutils literal notranslate"><span class="pre">!=</span></code> to <code class="docutils literal notranslate"><span class="pre">==</span></code>).</p></td>
+<td class="text-left"><p>Goal reaching (trigger <em>only</em> the moment status becomes “ARRIVED”).</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnContainsAny</span></code></strong></p></td>
+<td class="text-left"><p>Triggers if the attribute (list) contains <strong>any</strong> of the trigger values.</p></td>
+<td class="text-left"><p>Checking if <em>any</em> error code in a list matches a known critical error.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnContainsAll</span></code></strong></p></td>
+<td class="text-left"><p>Triggers if the attribute (list) contains <strong>all</strong> trigger values.</p></td>
+<td class="text-left"><p>Verifying all required subsystems are present in a status list.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnChangeContainsAny</span></code></strong></p></td>
+<td class="text-left"><p>Triggers <strong>once</strong> when the list changes to contain <strong>any</strong> of the trigger values (after not containing any of the values).</p></td>
+<td class="text-left"><p>Alerting when a specific hazard enters a detected objects list.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnChangeContainsAll</span></code></strong></p></td>
+<td class="text-left"><p>Triggers <strong>once</strong> when the list changes to contain <strong>all</strong> of the trigger values (after not containing all of the values).</p></td>
+<td class="text-left"><p>Confirming a complex condition is fully met after being partial.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">OnChangeNotContain</span></code></strong></p></td>
+<td class="text-left"><p>Triggers <strong>once</strong> when the list changes to <strong>not</strong> contain the trigger values (after containing some or all of the values).</p></td>
+<td class="text-left"><p>Detecting when a tracked object is lost or a required resource is removed.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="usage-examples">
+<h2>Usage Examples<a class="headerlink" href="#usage-examples" title="Link to this heading">#</a></h2>
+<section id="automatic-adaptation-terrain-switching">
+<h3>1. Automatic Adaptation (Terrain Switching)<a class="headerlink" href="#automatic-adaptation-terrain-switching" title="Link to this heading">#</a></h3>
+<p>Scenario: A perception or ML node publishes a string to <code class="docutils literal notranslate"><span class="pre">/terrain_type</span></code>. We want to change the robot’s gait when it sees stairs.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">quadruped_controller.py</span><a class="headerlink" href="#id1" title="Link to this code">#</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Literal</span>
+<span class="linenos"> 2</span><span class="kn">from</span> <span class="nn">ros_sugar.component</span> <span class="kn">import</span> <span class="n">BaseComponent</span>
+<span class="linenos"> 3</span>
+<span class="linenos"> 4</span><span class="k">class</span> <span class="nc">QuadrupedController</span><span class="p">(</span><span class="n">BaseComponent</span><span class="p">):</span>
+<span class="linenos"> 5</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="linenos"> 6</span>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<span class="linenos"> 7</span>        <span class="c1"># Some logic</span>
+<span class="linenos"> 8</span>
+<span class="linenos"> 9</span>    <span class="k">def</span> <span class="nf">activate_stairs_controller</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="linenos">10</span>        <span class="bp">self</span><span class="o">.</span><span class="n">get_logger</span><span class="p">()</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Stairs detected! Switching gait.&quot;</span><span class="p">)</span>
+<span class="linenos">11</span>        <span class="c1"># Logic to change controller parameters...</span>
+<span class="linenos">12</span>
+<span class="linenos">13</span>    <span class="k">def</span> <span class="nf">switch_gait_controller</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">controller_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;stairs&#39;</span><span class="p">,</span> <span class="s1">&#39;sand&#39;</span><span class="p">,</span> <span class="s1">&#39;snow&#39;</span><span class="p">,</span> <span class="s1">&#39;gravel&#39;</span><span class="p">]):</span>
+<span class="linenos">14</span>        <span class="bp">self</span><span class="o">.</span><span class="n">get_logger</span><span class="p">()</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;New terrain detected! Switching gait.&quot;</span><span class="p">)</span>
+<span class="linenos">15</span>        <span class="c1"># Logic to change controller parameters...</span>
+</pre></div>
+</div>
+</div>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">quadruped_controller_recipe.py</span><a class="headerlink" href="#id2" title="Link to this code">#</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">from</span> <span class="nn">my_pkg.components</span> <span class="kn">import</span> <span class="n">QuadrupedController</span>
+<span class="linenos"> 2</span><span class="kn">from</span> <span class="nn">ros_sugar.events</span> <span class="kn">import</span> <span class="n">OnChange</span><span class="p">,</span> <span class="n">OnEqual</span>
+<span class="linenos"> 3</span><span class="kn">from</span> <span class="nn">ros_sugar.action</span> <span class="kn">import</span> <span class="n">Action</span>
+<span class="linenos"> 4</span><span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+<span class="linenos"> 5</span><span class="kn">from</span> <span class="nn">ros_sugar</span> <span class="kn">import</span> <span class="n">Launcher</span>
+<span class="linenos"> 6</span>
+<span class="linenos"> 7</span><span class="n">quad_controller</span> <span class="o">=</span> <span class="n">QuadrupedController</span><span class="p">(</span><span class="n">component_name</span><span class="o">=</span><span class="s2">&quot;quadruped_controller&quot;</span><span class="p">)</span>
+<span class="linenos"> 8</span>
+<span class="linenos"> 9</span><span class="c1"># Define the Event Topic (Can be the output of some perception system or an ML model)</span>
+<span class="linenos">10</span><span class="n">terrain_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/terrain_type&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;String&quot;</span><span class="p">)</span>
+<span class="linenos">11</span>
+<span class="linenos">12</span><span class="c1"># Define the Event</span>
+<span class="linenos">13</span><span class="c1"># Trigger when the terrain changes to &#39;stairs&#39;. Uses &#39;OnChangeEqual&#39; to trigger the switch only the first time stairs are detected</span>
+<span class="linenos">14</span><span class="n">stairs_event</span> <span class="o">=</span> <span class="n">OnChangeEqual</span><span class="p">(</span>
+<span class="linenos">15</span>    <span class="n">event_name</span><span class="o">=</span><span class="s2">&quot;stairs_detected&quot;</span><span class="p">,</span>
+<span class="linenos">16</span>    <span class="n">event_source</span><span class="o">=</span><span class="n">terrain_topic</span><span class="p">,</span>
+<span class="linenos">17</span>    <span class="n">nested_attributes</span><span class="o">=</span><span class="s2">&quot;data&quot;</span><span class="p">,</span>
+<span class="linenos">18</span>    <span class="n">trigger_value</span><span class="o">=</span><span class="s2">&quot;stairs&quot;</span>
+<span class="linenos">19</span><span class="p">)</span>
+<span class="linenos">20</span>
+<span class="linenos">21</span><span class="c1"># Define the Action</span>
+<span class="linenos">22</span><span class="c1"># Call self.activate_stairs_controller() when triggered</span>
+<span class="linenos">23</span><span class="n">change_gait_action</span> <span class="o">=</span> <span class="n">Action</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">activate_stairs_controller</span><span class="p">)</span>
+<span class="linenos">24</span>
+<span class="linenos">25</span><span class="c1"># Register</span>
+<span class="linenos">26</span><span class="n">my_launcher</span> <span class="o">=</span> <span class="n">Launcher</span><span class="p">()</span>
+<span class="linenos">27</span><span class="n">my_launcher</span><span class="o">.</span><span class="n">add_pkg</span><span class="p">(</span>
+<span class="linenos">28</span>            <span class="n">components</span><span class="o">=</span><span class="p">[</span><span class="n">quad_controller</span><span class="p">],</span>
+<span class="linenos">29</span>            <span class="n">events_actions</span><span class="o">=</span><span class="p">{</span><span class="n">stairs_event</span><span class="p">:</span> <span class="n">change_gait_action</span><span class="p">},</span>
+<span class="linenos">30</span>        <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="intelligent-interaction-follow-to-patrol">
+<h3>2. Intelligent Interaction (Follow to Patrol)<a class="headerlink" href="#intelligent-interaction-follow-to-patrol" title="Link to this heading">#</a></h3>
+<p>Scenario: A vision system tracks a target. If the target is lost (<code class="docutils literal notranslate"><span class="pre">target_visible</span></code> becomes False, or label ‘person’ is no longer in the detections list, etc.), the robot should switch to a search/patrol pattern.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">ros_sugar.events</span> <span class="kn">import</span> <span class="n">OnChangeEqual</span>
+<span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+
+<span class="n">tracking_status_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s1">&#39;target_visible&#39;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Bool&quot;</span><span class="p">)</span>
+
+<span class="c1"># Trigger ONLY when target_visible changes from True to False</span>
+<span class="n">target_lost_event</span> <span class="o">=</span> <span class="n">OnChangeEqual</span><span class="p">(</span>
+    <span class="n">event_name</span><span class="o">=</span><span class="s2">&quot;target_lost&quot;</span><span class="p">,</span>
+    <span class="n">event_source</span><span class="o">=</span><span class="n">tracking_status_topic</span><span class="p">,</span>
+    <span class="n">nested_attributes</span><span class="o">=</span><span class="s2">&quot;data&quot;</span><span class="p">,</span>
+    <span class="n">trigger_value</span><span class="o">=</span><span class="kc">False</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="nested-attributes">
+<h3>3. Nested Attributes<a class="headerlink" href="#nested-attributes" title="Link to this heading">#</a></h3>
+<p>You can access deeply nested fields in ROS messages using a list of strings for nested_attributes.</p>
+<p><strong>Example</strong>: Checking the Z position in a <em>geometry_msgs/PoseStamped</em> (i.e. access msg.pose.position.z)</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">high_altitude_event</span> <span class="o">=</span> <span class="n">OnGreater</span><span class="p">(</span>
+    <span class="n">event_name</span><span class="o">=</span><span class="s2">&quot;altitude_limit&quot;</span><span class="p">,</span>
+    <span class="n">event_source</span><span class="o">=</span><span class="n">pose_topic</span><span class="p">,</span>
+    <span class="c1"># Access msg.pose -&gt; .position -&gt; .z</span>
+    <span class="n">nested_attributes</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;pose&quot;</span><span class="p">,</span> <span class="s2">&quot;position&quot;</span><span class="p">,</span> <span class="s2">&quot;z&quot;</span><span class="p">],</span>
+    <span class="n">trigger_value</span><span class="o">=</span><span class="mf">50.0</span> <span class="c1"># meters</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="advanced-configuration">
+<h2>Advanced Configuration<a class="headerlink" href="#advanced-configuration" title="Link to this heading">#</a></h2>
+<section id="handling-once">
+<h3>Handling Once<a class="headerlink" href="#handling-once" title="Link to this heading">#</a></h3>
+<p>If an event should only fire a single time during the lifecycle of the system (e.g., initialization triggers), set handle_once=True.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">init_event</span> <span class="o">=</span> <span class="n">OnEqual</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">handle_once</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="event-delay-debouncing">
+<h3>Event Delay (Debouncing)<a class="headerlink" href="#event-delay-debouncing" title="Link to this heading">#</a></h3>
+<p>To prevent an event from firing too rapidly (e.g., sensor noise flickering around a threshold), use keep_event_delay.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Once triggered, ignore subsequent triggers for 2.0 seconds</span>
+<span class="n">stable_event</span> <span class="o">=</span> <span class="n">OnGreater</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">keep_event_delay</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="dynamic-event-parsers">
+<h2>Dynamic Event Parsers<a class="headerlink" href="#dynamic-event-parsers" title="Link to this heading">#</a></h2>
+<p>While basic Events trigger a pre-defined action (e.g., detecting an obstacle triggers a stop() command), <strong>real-world autonomy often requires the data that triggered the event to determine how to react</strong>.</p>
+<p><span class="text-blue"><strong>Event Parsers</strong> allow you to extract specific information from the triggering ROS2 message and inject it dynamically as arguments into your Action function.</span></p>
+<section id="why-use-event-parsers">
+<h3>Why use Event Parsers?<a class="headerlink" href="#why-use-event-parsers" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>Data-Driven Actions</strong>: Instead of just knowing that an event occurred, your component receives context about what happened (e.g., knowing the specific “Terrain Type” detected, rather than just “Terrain Changed”).</p></li>
+<li><p><strong>Code Reusability</strong>: You can write a single, generic action method (e.g., switch_controller(mode_name)) and use it for dozens of different triggers, rather than writing a separate wrapper function for every possible state.</p></li>
+<li><p><strong>Separation of Concerns</strong>: The logic for extracting data (the parser) is kept separate from the logic for acting on data (the component method).</p></li>
+</ul>
+</section>
+<section id="how-it-works">
+<h3>How it works<a class="headerlink" href="#how-it-works" title="Link to this heading">#</a></h3>
+<p>The pipeline transforms a standard event trigger into a parameterized function call:</p>
+<ol class="arabic simple">
+<li><p><strong>Trigger</strong>: The Event detects a condition on a Topic.</p></li>
+<li><p><strong>Parse</strong>: The <code class="docutils literal notranslate"><span class="pre">event_parser</span></code> function receives the raw ROS2 message. It extracts the relevant data (e.g., a string, a coordinate, an ID).</p></li>
+<li><p><strong>Map</strong>: The extracted data is mapped to a specific keyword argument (<code class="docutils literal notranslate"><span class="pre">output_mapping</span></code>) of the target Action.</p></li>
+<li><p><strong>Execute</strong>: The Action is executed with the dynamic data passed in.</p></li>
+</ol>
+</section>
+<section id="example">
+<h3>Example<a class="headerlink" href="#example" title="Link to this heading">#</a></h3>
+<p>In <a class="reference internal" href="#automatic-adaptation-terrain-switching">the previous example</a>, actions were hard-coded (e.g., “If stairs, run activate_stairs_controller”). However, often you want a single generic method (e.g., switch_controller) that dynamically adapts based on the data received in the event.</p>
+<p>You can achieve this using the <code class="docutils literal notranslate"><span class="pre">event_parser</span></code> method on an Action.</p>
+<p>Scenario: The perception system publishes various terrain types (“sand”, “gravel”, “stairs”) to <code class="docutils literal notranslate"><span class="pre">/terrain_type</span></code>. We want to trigger the generic <code class="docutils literal notranslate"><span class="pre">switch_gait_controller</span></code> method and pass the detected terrain type as an argument.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Import the component</span>
+<span class="kn">from</span> <span class="nn">my_pkg.components</span> <span class="kn">import</span> <span class="n">QuadrupedController</span>
+<span class="kn">from</span> <span class="nn">ros_sugar.events</span> <span class="kn">import</span> <span class="n">OnChange</span><span class="p">,</span> <span class="n">OnEqual</span>
+<span class="kn">from</span> <span class="nn">ros_sugar.action</span> <span class="kn">import</span> <span class="n">Action</span>
+<span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+<span class="kn">from</span> <span class="nn">ros_sugar</span> <span class="kn">import</span> <span class="n">Launcher</span>
+
+<span class="n">quad_controller</span> <span class="o">=</span> <span class="n">QuadrupedController</span><span class="p">(</span><span class="n">component_name</span><span class="o">=</span><span class="s2">&quot;quadruped_controller&quot;</span><span class="p">)</span>
+
+<span class="c1"># Define the Event Topic (Can be the output of some perception system or an ML model)</span>
+<span class="n">terrain_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/terrain_type&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;String&quot;</span><span class="p">)</span>
+
+<span class="c1"># Define the Event</span>
+<span class="c1"># Trigger when the terrain changes</span>
+<span class="n">terrain_change_event</span> <span class="o">=</span> <span class="n">OnChange</span><span class="p">(</span>
+    <span class="n">event_name</span><span class="o">=</span><span class="s2">&quot;terrain_changed&quot;</span><span class="p">,</span>
+    <span class="n">event_source</span><span class="o">=</span><span class="n">terrain_topic</span><span class="p">,</span>
+    <span class="n">nested_attributes</span><span class="o">=</span><span class="s2">&quot;data&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Define a Helper Parser Function</span>
+<span class="c1"># The Event automatically passes the triggering &#39;msg&#39; to the action/parser.</span>
+<span class="k">def</span> <span class="nf">parse_terrain_data</span><span class="p">(</span><span class="n">msg</span><span class="p">:</span> <span class="n">String</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extracts the data string from the ROS message.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">msg</span><span class="o">.</span><span class="n">data</span>
+
+<span class="c1"># Define the Action with a Parser</span>
+<span class="c1"># First, define the action targeting the generic method</span>
+<span class="n">dynamic_switch_action</span> <span class="o">=</span> <span class="n">Action</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="n">quad_controller</span><span class="o">.</span><span class="n">switch_gait_controller</span><span class="p">)</span>
+
+<span class="c1"># Next, attach the parser.</span>
+<span class="c1"># - method: The function that processes the incoming ROS msg.</span>
+<span class="c1"># - output_mapping: The name of the argument in &#39;switch_gait_controller&#39;</span>
+<span class="c1">#   that receives the return value of &#39;parse_terrain_data&#39;.</span>
+<span class="n">dynamic_switch_action</span><span class="o">.</span><span class="n">event_parser</span><span class="p">(</span>
+    <span class="n">method</span><span class="o">=</span><span class="n">parse_terrain_data</span><span class="p">,</span>
+    <span class="n">output_mapping</span><span class="o">=</span><span class="s2">&quot;controller_type&quot;</span>
+<span class="p">)</span>
+
+<span class="c1"># Alternatively, since this was a simple parser we could have used a lambda function as well</span>
+<span class="c1"># dynamic_switch_action.event_parser(</span>
+<span class="c1">#     method=(lambda msg: msg.data),</span>
+<span class="c1">#     output_mapping=&quot;controller_type&quot;</span>
+<span class="c1"># )</span>
+
+<span class="c1"># Register</span>
+<span class="n">my_launcher</span> <span class="o">=</span> <span class="n">Launcher</span><span class="p">()</span>
+<span class="n">my_launcher</span><span class="o">.</span><span class="n">add_pkg</span><span class="p">(</span>
+            <span class="n">components</span><span class="o">=</span><span class="p">[</span><span class="n">quad_controller</span><span class="p">],</span>
+            <span class="n">events_actions</span><span class="o">=</span><span class="p">{</span><span class="n">terrain_change_event</span><span class="p">:</span> <span class="n">dynamic_switch_action</span><span class="p">},</span>
+        <span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="status.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Health Status</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="actions.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Actions</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#available-event-types">Available Event Types</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#usage-examples">Usage Examples</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#automatic-adaptation-terrain-switching">1. Automatic Adaptation (Terrain Switching)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#intelligent-interaction-follow-to-patrol">2. Intelligent Interaction (Follow to Patrol)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nested-attributes">3. Nested Attributes</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#advanced-configuration">Advanced Configuration</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#handling-once">Handling Once</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#event-delay-debouncing">Event Delay (Debouncing)</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dynamic-event-parsers">Dynamic Event Parsers</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-use-event-parsers">Why use Event Parsers?</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#how-it-works">How it works</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#example">Example</a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By Automatika Robotics
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2026, Automatika Robotics.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
