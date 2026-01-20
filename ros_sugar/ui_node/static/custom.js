@@ -10,6 +10,22 @@ function persistForm(form) {
     }
 }
 
+function openAtButton(btnId, dialogId) {
+    const btn = document.getElementById(btnId);
+    const dialog = document.getElementById(dialogId);
+
+    if (btn && dialog) {
+        // Get button position
+        const rect = btn.getBoundingClientRect();
+
+        // Position dialog next to button
+        dialog.style.top = `${rect.top - 50}px`;
+        dialog.style.left = `${rect.right + 10}px`;
+
+        dialog.showModal();
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     // 1. Logging Auto-scroll
     const log_parent = document.getElementById("logging-card-parent");

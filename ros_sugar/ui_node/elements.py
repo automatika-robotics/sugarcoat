@@ -5,6 +5,8 @@ from ..io.supported_types import SupportedType, get_ros_msg_fields_dict
 
 from .utils import parse_type
 
+import subprocess
+
 try:
     from fasthtml.common import *
     from monsterui.all import *
@@ -42,6 +44,21 @@ class Task:
         self._name = name
         self._type = client_type
         self._fields = fields
+        self._feedback_card = Card(
+            header=H6(">> Feedback Log", cls="tomorrow-night-green"),
+            cls="terminal-container ml-2 mr-2 mt-0 overflow-y-auto ",
+            id="feedback-log",
+        )
+        self._serving_component: Optional[str] = self.__get_server_node()
+        self.total_calls = 0
+
+    def is_active(self) -> bool:
+        """Check if the task is active (running/active/accepted)
+
+        :return: True if the task is active
+        :rtype: bool
+        """
+        return self._status in ["running", "active", "accepted"]
 
     def update(
         self,
@@ -70,17 +87,29 @@ class Task:
         :rtype: FT
         """
         client_card = Card(
-            DivHStacked(H4(self._name), self._badge),
+            header=DivHStacked(
+                H4(self._name),
+                self._badge,
+                Button(
+                    "?",
+                    cls="info-btn",
+                    id=f"{self._name}-info-btn",
+                    onclick=f"openAtButton('{self._name}-info-btn', '{self._name}-modal')",  # Method openAtButton implemented in custom.js
+                ),
+                self._info,
+            ),
+            header_cls="mb-0",
             cls="m-2 max-h-[40vh] overflow-y-auto inner-main-card",
             id=self._name,
             ws_send=True,
         )
         # TODO: Format the feedback message and add a display card
-        # if self.feedback:
-        #     client_card(self.feedback)
-        return client_card(
-            _in_action_client_element(self._name, self._type, self._fields)
-        )
+        inside = Grid(cls="gap-2 ml-1 mr-1", cols=1)
+        if self.feedback:
+            self._feedback_card(self.feedback)
+            inside(self._feedback_card)
+        inside(_in_action_client_element(self._name, self._type, self._fields))
+        return client_card(inside)
 
     @property
     def feedback(self):
@@ -89,6 +118,73 @@ class Task:
             return None
         else:
             return P(self._feedback)
+
+    @property
+    def _info(self):
+        """Gets the action server info"""
+        # Get the server node name
+        if self._serving_component is None:
+            # Try to search again
+            self._serving_component = self.__get_server_node()
+        return (
+            Dialog(
+                Card(
+                    Grid(
+                        P(
+                            Strong("Active Serving Component: "),
+                            self._serving_component or "Not found",
+                        ),
+                        P(Strong("Total Sent Calls: "), self.total_calls),
+                        P(Strong("Type: "), self._type),
+                        cols=1,
+                        cls="gap-1",
+                    ),
+                    header=DivHStacked(
+                        Button(
+                            "✕",
+                            cls="info-btn",
+                            onclick="this.closest('dialog').close()",
+                        ),
+                        H5("Task Info", cls="cool-subtitle-mini-blue"),
+                    ),
+                ),
+                id=f"{self._name}-modal",
+            ),
+        )
+
+    def __get_server_node(self) -> Optional[str]:
+        """
+        Executes 'ros2 action info <action_name>' and returns the active server node name if found.
+        """
+        try:
+            # Execute the command
+            result = subprocess.run(
+                ["ros2", "action", "info", self._name],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            output = result.stdout
+
+            logging.warning(f"GOT'{output}'")
+
+        except Exception:
+            return None
+
+        # The output format is standard:
+        # Action: /turtle1/rotate_absolute
+        # Action clients: 1
+        #     /teleop_turtle
+        # Action servers: 1
+        #     /turtlesim
+        for key, line in enumerate(output.splitlines()):
+            line = line.strip()
+            if line.startswith("Action servers:"):
+                if line.removeprefix("Action servers:").strip() == "0":
+                    return None
+                else:
+                    return output.splitlines()[key + 1].strip()
 
     @property
     def _badge(self):
@@ -617,17 +713,18 @@ def _in_action_client_element(
     else:
         ui_fields = _generic_message_form(request_fields)
     _loading_content_send = DivHStacked(
-        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending Action Goal")
+        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending Start Call")
     )
     _loading_content_cancel = DivHStacked(
-        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Cancelling Action Goal")
+        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Cancelling Ongoing Task")
     )
-    return action_form(
-        ui_fields,
-        DivCentered(
+    _pop_up_content = Div(
+        Div(
+            H4("Task request Values", cls="cool-subtitle-mini-blue"),
+            ui_fields,
             DivHStacked(
                 Button(
-                    "Send Action Goal",
+                    "Send",
                     cls="primary-button",
                     hx_post="/action/goal",
                     hx_target="#main",
@@ -637,7 +734,32 @@ def _in_action_client_element(
                         """,
                 ),
                 Button(
-                    "Cancel Action Goal",
+                    "Cancel",
+                    cls="secondary-button",
+                    onclick="this.closest('.custom-overlay').style.display='none'",
+                ),
+                cls="space-x-2 justify-center mt-4",
+            ),
+            cls="modal-box",
+            onclick="event.stopPropagation()",
+        ),
+        cls="custom-overlay",
+        id=f"{action_name}-request-from",
+        # Logic: Clicking the dark background (the overlay) closes itself
+        onclick="this.style.display='none'",
+    )
+    return action_form(
+        _pop_up_content,
+        DivCentered(
+            DivHStacked(
+                Button(
+                    "Start",
+                    cls="primary-button",
+                    id=f"{action_name}-form-btn",
+                    onclick=f"document.getElementById('{action_name}-request-from').style.display='grid'",
+                ),
+                Button(
+                    "Cancel",
                     cls="primary-button",
                     hx_post="/action/cancel",
                     hx_target="#main",

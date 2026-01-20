@@ -101,7 +101,7 @@ class FHApp:
             all_clients_cards(value.card)
         actions_main_card = Card(
             DivHStacked(
-                H4("Actions", cls="cool-subtitle-mini"),
+                H4("Tasks", cls="cool-subtitle-mini"),
                 elements._toggle_button(div_to_toggle="all_actions"),
                 cls="space-x-0",
             ),

@@ -129,26 +129,28 @@ def main():
         """Send a ROS2 action goal from the client"""
         form_data = await request.form()
         data_dict = dict(form_data.items())
-        # Add request to logging card
-        elements.update_logging_card(
-            fh.outputs_log,
-            f"Sending action server goal: '{data_dict}'",
-            data_type="String",
-            data_src="user",
-        )
+        action_name = data_dict.get("action_name", "")
+        if (
+            action_name in fh.action_clients_ft
+            and fh.action_clients_ft[action_name].is_active()
+        ):
+            fh.toasting(
+                "Cannot send a new goal while the current goal is still active. Cancel ongoing goal first.",
+                session,
+                "error",
+                duration=100000,
+            )
+            return fh.get_main_page()
         result_code, result = ros_node.send_action_goal(data_dict)
         if not result_code:
             fh.toasting(result, session, "error", duration=100000)
         else:
             fh.toasting(f"Action goal sent: {result}", session, "info", duration=100000)
-        # Add response to logging card
-        elements.update_logging_card(
-            fh.outputs_log,
-            f"{result}",
-            data_type="String",
-            data_src="robot",
-        )
-        # TODO: Add sending feedback to the log
+            fh.action_clients_ft[action_name].update(
+                status="accepted",
+                duration=0,
+            )
+            fh.action_clients_ft[action_name].total_calls += 1
         return fh.get_main_page()
 
     @app.post("/action/cancel")
@@ -157,25 +159,11 @@ def main():
         form_data = await request.form()
         data_dict = dict(form_data.items())
         action_name = data_dict.get("action_name")
-        # Add request to logging card
-        elements.update_logging_card(
-            fh.outputs_log,
-            f"Sending action goal cancellation for action: '{action_name}'",
-            data_type="String",
-            data_src="user",
-        )
         result_code, result = ros_node.cancel_action(action_name)
         if not result_code:
             fh.toasting(result, session, "error", duration=100000)
         else:
             fh.toasting(f"{result}", session, "info", duration=100000)
-        # Add response to logging card
-        elements.update_logging_card(
-            fh.outputs_log,
-            f"{result}",
-            data_type="String",
-            data_src="robot",
-        )
         return fh.get_main_page()
 
     # -- WS handling --
@@ -229,7 +217,7 @@ def main():
                     feedback=data["feedback"],
                     duration=data["duration_secs"],
                 )
-                await send(fh.action_clients_ft[action_name].card)
+                await send(fh.action_clients)
 
         ros_node.attach_client_feedback_callback(feedback_callback, action_name)
 
