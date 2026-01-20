@@ -8,7 +8,7 @@ import pytest
 from ros_sugar.core import BaseComponent
 from ros_sugar import Launcher
 from ros_sugar.config import ComponentRunType
-from ros_sugar.actions import ComponentActions
+from ros_sugar import actions
 from ros_sugar import events
 from ros_sugar.io import Topic
 
@@ -73,7 +73,7 @@ def generate_test_description():
     event_on_health_status = events.OnAny(
         event_name="on_any_status", event_source=status_topic, handle_once=True
     )
-    srv_call = ComponentActions.send_srv_request(
+    srv_call = actions.send_srv_request(
         srv_name="test_component/set_map",
         srv_request_msg=SetMap.Request(),
         srv_type=SetMap,

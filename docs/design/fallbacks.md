@@ -143,12 +143,12 @@ You can configure a component's fallbacks directly in your recipe by calling:
 
 ```python
     from ros_sugar.core import BaseComponent
-    from ros_sugar.actions import ComponentActions
+    from ros_sugar.actions import restart
 
     my_component = BaseComponent(component_name='test_component')
 
     # Set fallback for component failure to restart the component
-    my_component.on_component_fail(fallback=ComponentActions.restart(component=my_component))
+    my_component.on_component_fail(fallback=restart(component=my_component))
 
     # Change fallback for any failure
     my_component.on_fail(fallback=Action(my_component.restart))

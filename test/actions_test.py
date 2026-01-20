@@ -11,7 +11,7 @@ from ros_sugar.io import Topic
 from ros_sugar.core import BaseComponent
 from ros_sugar import Launcher
 from ros_sugar.utils import component_action
-from ros_sugar.actions import Action, ComponentActions
+from ros_sugar.actions import Action, publish_message
 
 from std_msgs.msg import Float32
 from launch.actions import Shutdown
@@ -87,7 +87,7 @@ def generate_test_description():
         inline_action_py_event.set()
 
     msg = Float32()
-    publish_message = ComponentActions.publish_message(topic=test_topic, msg=msg)
+    publish_message_action = publish_message(topic=test_topic, msg=msg)
 
     launcher = Launcher()
 
@@ -99,7 +99,7 @@ def generate_test_description():
                     method=inline_method
                 ),  # An inline method -> should be parsed into a ros action OpaqueFunction
                 Action(method=component.test_action),  # A component action
-                publish_message,  # Action handled by the monitor
+                publish_message_action,  # Action handled by the monitor
             ],
             event_on_published_message: Shutdown(),  # ros launch action
         },

@@ -42,7 +42,7 @@ class Action:
 
 ## Pre-defined Actions
 
-While you can wrap any `function` in an Action, Sugarcoat provides the [`ComponentActions`](../apidocs/ros_sugar/ros_sugar.core.component_actions.md) module with a suite of pre-defined, thread-safe actions for managing components and system resources.
+While you can wrap any `function` in an Action, Sugarcoat provides the [`Actions`](../apidocs/ros_sugar/ros_sugar.actions.md) module with a suite of pre-defined, thread-safe actions for managing components and system resources.
 
 These actions are divided into Component-Level (affecting a specific component's lifecycle or config) and System-Level (general ROS2 utilities).
 
@@ -77,11 +77,11 @@ These actions interact with the broader ROS2 system and are executed by the cent
 
 ### Usage Example:
 ```python
-    from ros_sugar.actions import ComponentActions
+    from ros_sugar import actions
 
     my_component = BaseComponent(node_name='test_component')
-    action1 = ComponentActions.start(component=my_component)
-    action2 = ComponentActions.log(msg="I am executing a cool action!")
+    action1 = actions.start(component=my_component)
+    action2 = actions.log(msg="I am executing a cool action!")
 ```
 
 ## Dynamic Arguments (Event Parsers)
@@ -101,11 +101,11 @@ Let's see how this can work in a small example: We will take the example used in
 First we define the action that sends the action server goal:
 
 ```python
-from ros_sugar.actions import ComponentActions
+from ros_sugar.actions import send_action_goal
 from kompass_interfaces.action import PlanPath
 
 # Define an Action to send a goal to the planner ActionServer
-send_goal: Action = ComponentActions.send_action_goal(
+send_goal: Action = send_action_goal_from_topic(
     action_name="/planner/plan_path",
     action_type=PlanPath,
     action_request_msg=PlanPath.Goal(),

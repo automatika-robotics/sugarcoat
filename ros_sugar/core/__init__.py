@@ -6,7 +6,6 @@ from .status import Status
 from .monitor import Monitor
 from .event import Event, InternalEvent, OnInternalEvent
 from .action import Action
-from .component_actions import ComponentActions
 
 __all__ = [
     "BaseComponent",
@@ -18,5 +17,4 @@ __all__ = [
     "InternalEvent",
     "OnInternalEvent",
     "Action",
-    "ComponentActions",
 ]
