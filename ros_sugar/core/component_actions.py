@@ -1,13 +1,14 @@
 """Component Actions"""
 
 from functools import wraps
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, List, Optional, Union, Type
 
 from .action import Action
 from .component import BaseComponent
 from ..utils import InvalidAction
 from ..io.topic import Topic
 from .action import LogInfo
+from ..launch import logger
 
 
 def _validate_component_action(function: Callable):
@@ -43,6 +44,97 @@ def _validate_component_action(function: Callable):
         return function(*args, **kwargs)
 
     return _wrapper
+
+
+def _create_auto_topic_parser(input_msg_type: Type, target_msg_type: Type) -> Callable:
+    """Creates a parser function that attempts to convert an input_msg_type
+    into the target_msg_type.
+
+    :param input_msg_type: Input message type
+    :type input_msg_type: Type
+    :param target_msg_type: Target type after parsing
+    :type target_msg_type: Type
+    :raises ValueError: If not automatic parsing is found
+
+    :return: automatic parsing method
+    :rtype: Callable
+    """
+    target_msg = target_msg_type()
+    msg = input_msg_type()
+
+    # Case 1: Direct Type Match
+    # If the input message is exactly the target type, return it directly.
+    if isinstance(msg, target_msg_type):
+        logger.info(
+            f"Added direct types match parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}'"
+        )
+        return lambda *, msg: msg
+
+    # Otherwise, Inspect fields
+    target_msg_fields_dict = target_msg.get_fields_and_field_types()
+    input_msg_fields_dict = msg.get_fields_and_field_types()
+    matches_found = True
+
+    # Case 2: Same Field Names and Types (Duck Typing)
+    for key, field_type in input_msg_fields_dict.items():
+        if (
+            key not in target_msg_fields_dict
+            or field_type != target_msg_fields_dict[key]
+        ):
+            matches_found = False
+            break
+
+    if matches_found:
+        logger.info(
+            f"Added direct types parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}'"
+        )
+
+        # Define the duck taping parser
+        def auto_parser(*, msg: Any, **_) -> Any:
+            for key in input_msg_fields_dict.keys():
+                setattr(target_msg, key, getattr(msg, key))
+            return target_msg
+
+        return auto_parser
+
+    matching_dict = {}
+    matches_found = True
+    # Case 3: Different Field Names but same unique Types
+    for key, field_type in input_msg_fields_dict.items():
+        if key not in target_msg_fields_dict:
+            # Check if any field in input has the same type
+            type_matched = False
+            for out_key, in_field_type in target_msg_fields_dict.items():
+                if (
+                    field_type == in_field_type
+                    and out_key not in matching_dict.values()
+                ):
+                    matching_dict[key] = out_key
+                    type_matched = True
+                    break
+            if not type_matched:
+                matches_found = False
+                break
+
+    if matches_found:
+        logger.warning(
+            f"Added type-based parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}' matching the following fields: {matching_dict}. Re-write a custom parser if a different mapping is desired."
+        )
+
+        # Define the type-based parser
+        def auto_parser(*, msg: Any, **_) -> Any:
+            for key, out_key in matching_dict.items():
+                setattr(target_msg, out_key, getattr(msg, key))
+            return target_msg
+
+        return auto_parser
+
+    # Case 4: No Match Found
+    raise ValueError(
+        f"Auto-parsing failed: Could not map input message of type '{input_msg_type.__name__}' "
+        f"to target action/service type '{target_msg_type.__name__}'. "
+        f"Fields do not match by name or type. Please provide a custom parser method that takes in an input 'msg' of type '{input_msg_type.__name__}' and return a parsed message of type '{target_msg_type.__name__}'."
+    )
 
 
 class ComponentActions:
@@ -102,6 +194,46 @@ class ComponentActions:
         return stack_action
 
     @classmethod
+    def send_srv_request_from_topic(
+        cls,
+        *,
+        srv_name: str,
+        srv_type: type,
+        topic: Any,
+        custom_parser: Optional[Callable] = None,
+    ) -> "Action":
+        """
+        Creates an Action to send a ROS2 service request, automatically parsing the
+        request from the event topic message.
+
+        :param srv_name: Service name
+        :param srv_type: Service type
+        :param topic: The topic object containing the message to parse
+        :param custom_parser: Optional custom parser method
+        :return: Sending request action with parser attached
+        """
+        request_msg_type = srv_type.Request
+
+        # Create the base action
+        action = cls.send_srv_request(
+            srv_name=srv_name,
+            srv_type=srv_type,
+            srv_request_msg=request_msg_type(),  # Default empty request
+        )
+
+        input_msg_type = topic.ros_msg_type
+
+        # Use provided parser if provided, otherwise create an automatic parser
+        auto_parser_method = custom_parser or _create_auto_topic_parser(
+            input_msg_type, request_msg_type
+        )
+
+        # Attach the parser
+        action.event_parser(auto_parser_method, output_mapping="srv_request_msg")
+
+        return action
+
+    @classmethod
     def send_action_goal(
         cls, *, action_name: str, action_type: type, action_request_msg: Any
     ) -> Action:
@@ -128,6 +260,46 @@ class ComponentActions:
         stack_action.action_name = "send_action_goal"
         stack_action._is_monitor_action = True
         return stack_action
+
+    @classmethod
+    def send_action_goal_from_topic(
+        cls,
+        *,
+        action_name: str,
+        action_type: type,
+        topic: Any,
+        custom_parser: Optional[Callable] = None,
+    ) -> "Action":
+        """
+        Creates an Action to send a ROS2 action goal, automatically parsing the
+        goal from the event topic message.
+
+        :param action_name: Action name
+        :param action_type: Action type
+        :param topic: The topic object containing the message to parse
+        :param custom_parser: Optional custom parser method
+        :return: Sending request action with parser attached
+        """
+        request_msg_type = action_type.Goal
+
+        # Create the base action
+        action = cls.send_action_goal(
+            action_name=action_name,
+            action_type=action_type,
+            action_request_msg=request_msg_type(),  # Default empty request
+        )
+
+        input_msg_type = topic.ros_msg_type
+
+        # Use provided parser if provided, otherwise create an automatic parser
+        auto_parser_method = custom_parser or _create_auto_topic_parser(
+            input_msg_type, request_msg_type
+        )
+
+        # Attach the parser
+        action.event_parser(auto_parser_method, output_mapping="action_request_msg")
+
+        return action
 
     @classmethod
     def publish_message(
@@ -161,6 +333,49 @@ class ComponentActions:
         stack_action = Action(method=lambda *_: None, kwargs=kwargs)
         stack_action.action_name = "publish_message"
         stack_action._is_monitor_action = True
+        return stack_action
+
+    @classmethod
+    def publish_message_from_parsed_topic(
+        cls,
+        *,
+        in_topic: Topic,
+        out_topic: Topic,
+        publish_rate: Optional[float] = None,
+        publish_period: Optional[float] = None,
+        custom_parser: Optional[Callable] = None,
+    ) -> Action:
+        """Action to send a ROS2 action goal using the Monitor
+
+        :param action_name: ROS2 action name
+        :type action_name: str
+        :param action_type: ROS2 action type
+        :type action_type: type
+        :param action_request_msg: ROS2 action goal message
+        :type action_request_msg: Any
+
+        :return: Sending goal action
+        :rtype: Action
+        """
+        # Combine positional arguments and keyword arguments
+        kwargs = {
+            "topic": out_topic,
+            "msg": out_topic.ros_msg_type(),
+            "publish_rate": publish_rate,
+            "publish_period": publish_period,
+        }
+
+        stack_action = Action(method=lambda *_: None, kwargs=kwargs)
+        stack_action.action_name = "publish_message"
+        stack_action._is_monitor_action = True
+
+        # Create the automatic parser logic
+        parser_method = custom_parser or _create_auto_topic_parser(
+            input_msg_type=in_topic.ros_msg_type,
+            target_msg_type=out_topic.ros_msg_type,
+        )
+        stack_action.event_parser(parser_method, output_mapping="msg")
+
         return stack_action
 
     @classmethod
