@@ -233,6 +233,14 @@ class Launcher:
                 self.__components_to_activate_on_start_threaded.extend(components)
 
         # Parse provided Events/Actions
+
+        # Check if any component already has internal events_actions defined
+        if any(events_actions_dits := [comp._events_actions if comp._events_actions else None for comp in self._components]):
+            # add to events actions dict
+            for events_actions_dit in events_actions_dits:
+                if events_actions_dit:
+                    events_actions.update(events_actions_dit)
+
         if events_actions and self.__enable_monitoring:
             # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
             self.__rewrite_actions_for_components(self._components, events_actions)
@@ -339,7 +347,7 @@ class Launcher:
                 if comp.node_name == action.parent_component:
                     self.__update_dict_list(comp_dict, event_serialized, action)
         if comp_dict:
-            comp.events_actions = comp_dict
+            comp._events_actions = comp_dict
 
     def __update_dict_list(self, dictionary: Dict[str, List], name: str, value: Any):
         """Helper method to add or update an item in a dictionary
@@ -359,8 +367,8 @@ class Launcher:
     def __rewrite_actions_for_components(
         self,
         components_list: List[BaseComponent],
-        actions_dict: Mapping[
-            EventT, Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
+        events_actions_dict: Mapping[
+            Union[EventT, str], Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
         ],
     ):
         """
@@ -373,9 +381,9 @@ class Launcher:
 
         :raises ValueError: If given component action corresponds to unknown component
         """
-        self.__events_names.extend(event.name for event in actions_dict)
-        for condition, raw_action in actions_dict.items():
-            serialized_condition: str = condition.json
+        self.__events_names.extend(event.name for event in events_actions_dict)
+        for condition, raw_action in events_actions_dict.items():
+            serialized_condition: str = condition.json if isinstance(condition, Event) else condition
             action_set: List[Union[Action, ROSLaunchAction]] = (
                 raw_action if isinstance(raw_action, list) else [raw_action]
             )

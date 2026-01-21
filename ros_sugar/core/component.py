@@ -983,7 +983,7 @@ class BaseComponent(lifecycle.Node):
         self.config.loop_rate = value
 
     @property
-    def events_actions(self) -> Dict[str, List[Action]]:
+    def _events_actions(self) -> Dict[str, List[Action]]:
         """Getter of component Events/Actions
 
         :return: Dictionary of monitored Events and associated Actions
@@ -996,8 +996,8 @@ class BaseComponent(lifecycle.Node):
             events_actions_names[event.name] = action_set
         return events_actions_names
 
-    @events_actions.setter
-    def events_actions(
+    @_events_actions.setter
+    def _events_actions(
         self, events_actions_dict: Dict[str, Union[Action, List[Action]]]
     ):
         """Setter of component Events/Actions
@@ -1119,7 +1119,7 @@ class BaseComponent(lifecycle.Node):
         :rtype: Union[str, bytes]
         """
         actions_dict = {}
-        for event_name, action_set in self.events_actions.items():
+        for event_name, action_set in self._events_actions.items():
             actions_serialized = []
             for action in action_set:
                 actions_serialized.append(action.dictionary)
