@@ -111,7 +111,7 @@ def _create_auto_topic_parser(input_msg_type: Type, target_msg_type: Type) -> Ca
         logger.info(
             f"Added direct types match parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}'"
         )
-        return lambda *, msg: msg
+        return lambda *, msg, **_: msg
 
     # Otherwise, Inspect fields
     target_msg_fields_dict = target_msg.get_fields_and_field_types()
@@ -200,7 +200,37 @@ def send_srv_request(*, srv_name: str, srv_type: type, srv_request_msg: Any) -> 
         "srv_request_msg": srv_request_msg,
     }
     # Action with an empty callable
-    stack_action = Action(method=lambda *_: None, kwargs=kwargs)
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
+    stack_action.action_name = "send_srv_request"
+    stack_action._is_monitor_action = True
+    return stack_action
+
+
+def trigger_service(*, srv_name: str, srv_type: type) -> Action:
+    """Action to trigger a ROS2 service
+
+    :param srv_name: Service name
+    :type srv_name: str
+    :param srv_type: Service type (ROS2 service)
+    :type srv_type: type
+
+    :return: Sending request action
+    :rtype: Action
+    """
+    # Combine positional arguments and keyword arguments
+    kwargs = {
+        "srv_name": srv_name,
+        "srv_type": srv_type,
+        "srv_request_msg": srv_type.Request(),  # Empty request
+    }
+
+    # Defines the method to save a unique function.__name__ in the Action
+    # and distinguish it from other send_action_goal actions
+    def trigger_method(*args, **kwargs):
+        return None
+
+    # Action with an empty callable
+    stack_action = Action(method=trigger_method, kwargs=kwargs)
     stack_action.action_name = "send_srv_request"
     stack_action._is_monitor_action = True
     return stack_action
@@ -240,7 +270,7 @@ def send_srv_request_from_topic(
     )
 
     # Attach the parser
-    action.event_parser(auto_parser_method, output_mapping="srv_request_msg")
+    action.add_event_parser(auto_parser_method, output_mapping="srv_request_msg")
 
     return action
 
@@ -267,7 +297,36 @@ def send_action_goal(
         "action_request_msg": action_request_msg,
     }
 
-    stack_action = Action(method=lambda *_: None, kwargs=kwargs)
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
+    stack_action.action_name = "send_action_goal"
+    stack_action._is_monitor_action = True
+    return stack_action
+
+
+def trigger_action_server(*, action_name: str, action_type: type) -> Action:
+    """Action to trigger a ROS2 action server
+
+    :param action_name: ROS2 action name
+    :type action_name: str
+    :param action_type: ROS2 action type
+    :type action_type: type
+
+    :return: Sending goal action
+    :rtype: Action
+    """
+    # Combine positional arguments and keyword arguments
+    kwargs = {
+        "action_name": action_name,
+        "action_type": action_type,
+        "action_request_msg": action_type.Goal(),  # Empty request
+    }
+
+    # Defines the method to save a unique function.__name__ in the Action
+    # and distinguish it from other send_action_goal actions
+    def trigger_method(*args, **kwargs):
+        return None
+
+    stack_action = Action(method=trigger_method, kwargs=kwargs)
     stack_action.action_name = "send_action_goal"
     stack_action._is_monitor_action = True
     return stack_action
@@ -307,7 +366,7 @@ def send_action_goal_from_topic(
     )
 
     # Attach the parser
-    action.event_parser(auto_parser_method, output_mapping="action_request_msg")
+    action.add_event_parser(auto_parser_method, output_mapping="action_request_msg")
 
     return action
 
@@ -339,7 +398,7 @@ def publish_message(
         "publish_period": publish_period,
     }
 
-    stack_action = Action(method=lambda *_: None, kwargs=kwargs)
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
     stack_action.action_name = "publish_message"
     stack_action._is_monitor_action = True
     return stack_action
@@ -373,7 +432,7 @@ def publish_message_from_parsed_topic(
         "publish_period": publish_period,
     }
 
-    stack_action = Action(method=lambda *_: None, kwargs=kwargs)
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
     stack_action.action_name = "publish_message"
     stack_action._is_monitor_action = True
 
@@ -382,7 +441,7 @@ def publish_message_from_parsed_topic(
         input_msg_type=in_topic.ros_msg_type,
         target_msg_type=out_topic.ros_msg_type,
     )
-    stack_action.event_parser(parser_method, output_mapping="msg")
+    stack_action.add_event_parser(parser_method, output_mapping="msg")
 
     return stack_action
 
@@ -468,7 +527,7 @@ def reconfigure(
             f"Incompatible config type '{type(new_config)}'. Cannot reconfigure {component.node_name}. config should be either a '{component.config.__class__}' instance or 'str' with path to valid config file (yaml, json, toml)"
         )
     # Action with an empty callable
-    stack_action = Action(method=lambda *_: None, kwargs=kwargs)
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
     stack_action.action_name = "configure_component"
     stack_action._is_monitor_action = True
     return stack_action
@@ -502,7 +561,7 @@ def update_parameter(
         "keep_alive": keep_alive,
     }
     # Action with an empty callable
-    stack_action = Action(method=lambda *_: None, kwargs=kwargs)
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
     stack_action.action_name = "update_parameter"
     stack_action._is_monitor_action = True
     return stack_action
@@ -537,7 +596,7 @@ def update_parameters(
     }
 
     # Action with an empty callable
-    stack_action = Action(method=lambda *_: None, kwargs=kwargs)
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
     # Setup Monitor action
     stack_action.action_name = "update_parameters"
     stack_action._is_monitor_action = True
