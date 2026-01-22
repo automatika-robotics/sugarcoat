@@ -591,7 +591,7 @@ class BaseComponent(lifecycle.Node):
             # Create status publisher
             self.health_status_publisher: ROSPublisher = self.create_publisher(
                 msg_type=ComponentStatus,
-                topic=f"{self.get_name()}_status",
+                topic=f"{self.get_name()}/status",
                 qos_profile=1,
             )
         # Create publisher and attach it to output publisher object

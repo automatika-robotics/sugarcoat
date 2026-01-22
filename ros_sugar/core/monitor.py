@@ -539,7 +539,7 @@ class Monitor(Node):
             logger.debug(f"Creating health status subscriber for: {component_name}")
             self.create_subscription(
                 ComponentStatus,
-                topic=f"{component_name}_status",
+                topic=f"{component_name}/status",
                 callback=partial(
                     self._status_check_callback, component_name=component_name
                 ),
