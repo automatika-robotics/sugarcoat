@@ -156,7 +156,7 @@ The pipeline transforms a standard event trigger into a parameterized function c
 
 1. **Trigger**: The Event detects a condition on a Topic.
 
-2. **Parse**: The `event_parser` function receives the raw ROS2 message. It extracts the relevant data (e.g., a string, a coordinate, an ID).
+2. **Parse**: The `add_event_parser` function receives the raw ROS2 message. It extracts the relevant data (e.g., a string, a coordinate, an ID).
 
 3. **Map**: The extracted data is mapped to a specific keyword argument (`output_mapping`) of the target Action.
 
@@ -166,7 +166,7 @@ The pipeline transforms a standard event trigger into a parameterized function c
 
 In [the previous example](#1-automatic-adaptation-terrain-switching), actions were hard-coded (e.g., "If stairs, run activate_stairs_controller"). However, often you want a single generic method (e.g., switch_controller) that dynamically adapts based on the data received in the event.
 
-You can achieve this using the `event_parser` method on an Action.
+You can achieve this using the `add_event_parser` method on an Action.
 
 Scenario: The perception system publishes various terrain types ("sand", "gravel", "stairs") to `/terrain_type`. We want to trigger the generic `switch_gait_controller` method and pass the detected terrain type as an argument.
 
@@ -205,13 +205,13 @@ dynamic_switch_action = Action(method=quad_controller.switch_gait_controller)
 # - method: The function that processes the incoming ROS msg.
 # - output_mapping: The name of the argument in 'switch_gait_controller'
 #   that receives the return value of 'parse_terrain_data'.
-dynamic_switch_action.event_parser(
+dynamic_switch_action.add_event_parser(
     method=parse_terrain_data,
     output_mapping="controller_type"
 )
 
 # Alternatively, since this was a simple parser we could have used a lambda function as well
-# dynamic_switch_action.event_parser(
+# dynamic_switch_action.add_event_parser(
 #     method=(lambda msg: msg.data),
 #     output_mapping="controller_type"
 # )

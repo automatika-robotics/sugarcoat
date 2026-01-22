@@ -388,6 +388,9 @@ class Launcher:
                 raw_action if isinstance(raw_action, list) else [raw_action]
             )
             for action in action_set:
+                # Verify that the action parsers are compatible with the condition topic
+                if isinstance(condition, Event):
+                    action._verify_against_event_topic(condition.event_topic)
                 # Check if it is a component action:
                 if isinstance(action, Action) and action.component_action:
                     action_object = action.executable.__self__

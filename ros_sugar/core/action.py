@@ -4,14 +4,15 @@ import inspect
 import json
 from rclpy.lifecycle import Node as LifecycleNode
 from launch.actions import OpaqueCoroutine, OpaqueFunction
-from functools import wraps
-from typing import Callable, Dict, Optional, Union
+from functools import partial, wraps
+from typing import Any, Callable, Dict, Optional, Union, List
 
 from launch import LaunchContext
 import launch
 from launch.actions import LogInfo as LogInfoROSAction
 
 from ..launch import logger
+from ..io.topic import _MsgPathBuilder
 
 
 class Action:
@@ -64,8 +65,15 @@ class Action:
         self._is_monitor_action: bool = False
         self._is_lifecycle_action: bool = False
         self._function = method
-        self._args = args
+        self._args = args if isinstance(args, tuple) else (args,)
         self._kwargs = kwargs if kwargs else {}
+
+        # List of registered parsers to execute before the main method
+        # Each entry is a dict: {'method': Callable, 'output_mapping': str|None, 'arg_index': int|None}
+        self._event_parsers: List[Dict[str, Any]] = []
+        self.__parsed_topics : Dict[str, type] = {}
+
+        self.__verify_args_kwargs()
 
         # Check if it is a component action and update parent and keyname
         if hasattr(self._function, "__self__"):
@@ -78,34 +86,140 @@ class Action:
                 self.action_name = self._function.__name__
                 self.__component_action = True
 
+    def __verify_args_kwargs(self):
+        """
+        Verify that args and kwargs are correct for the action executable
+
+        :raises ValueError: If args or kwargs are not compatible with the action executable
+        """
+        _topic_parsing: Dict[Union[int, str], _MsgPathBuilder] = {}
+        function_parameters = inspect.signature(self.executable).parameters
+
+        # Check args
+        if len(list(self.args)) > len(function_parameters):
+            raise ValueError(
+                f"Too many arguments provided for action '{self.action_name}': expected maximum {len(function_parameters)}, got {len(self.args)}"
+            )
+
+        for idx, value in enumerate(self.args):
+            if isinstance(value, _MsgPathBuilder):
+                _topic_parsing[idx] = value
+
+        # Check kwargs
+        for key, value in self.kwargs.items():
+            if isinstance(value, _MsgPathBuilder):
+                _topic_parsing[key] = value
+
+        for position, topic_path in _topic_parsing.items():
+            topic_msg_attributes = topic_path.as_tuple()
+            self.__parsed_topics[topic_path.name] = topic_path.type
+
+            # Parser method to extract attribute from msg
+            def parser_method(topic_msg_attributes, msg, **_):
+                attribute_value = msg
+                for attr in topic_msg_attributes:
+                    attribute_value = getattr(attribute_value, attr)
+                return attribute_value
+
+            if isinstance(position, int):
+                # Positional argument replacement
+                self.add_event_parser(
+                    method=partial(parser_method, topic_msg_attributes),
+                    arg_index=position,
+                )
+            else:
+                # Keyword argument replacement
+                self.add_event_parser(
+                    method=partial(parser_method, topic_msg_attributes),
+                    output_mapping=position,
+                )
+
     def __call__(self, **kwargs):
         """
-        Execute the action
-
-        :return: _description_
-        :rtype: _type_
+        Execute the action.
+        Iterates through all parsers to prepare dynamic arguments based on the event (kwargs).
         """
-        if hasattr(self, "_event_parser_method"):
-            output = self._event_parser_method(**kwargs)
-            if self._event_parser_mapping:
-                self.kwargs.update({self._event_parser_mapping: output})
-        return self.executable(*self.args, **self.kwargs)
+        # Create mutable copies of args and kwargs for this specific execution
+        call_args = list(self.args)
+        call_kwargs = self.kwargs.copy()
 
-    def event_parser(
-        self, method: Callable, output_mapping: Optional[str] = None, **new_kwargs
+        # Values to prepend to args (legacy support for parsers with no mapping)
+        # Using a list to collect them, then we will prepend them in reverse order or bulk
+        prepend_values = []
+
+        # Iterate over all registered parsers
+        for parser in self._event_parsers:
+            method = parser["method"]
+            output_mapping = parser["output_mapping"]
+            arg_index = parser["arg_index"]
+
+            # Execute the parser method with the event context (e.g. msg)
+            try:
+                output = method(**kwargs)
+            except TypeError:
+                # Fallback if parser doesn't accept kwargs, though parsers created internally handle it
+                output = method()
+
+            if output_mapping is not None:
+                # Update specific keyword argument
+                call_kwargs[output_mapping] = output
+            elif arg_index is not None:
+                # Replace specific positional argument (previously a placeholder)
+                # Ensure we don't go out of bounds
+                if arg_index < len(call_args):
+                    call_args[arg_index] = output
+                else:
+                    raise IndexError(
+                        f"Parser argument index {arg_index} out of range for args {call_args}"
+                    )
+            else:
+                # No specific target: Prepend to arguments (Stack behavior)
+                prepend_values.insert(0, output)
+
+        # Assemble final arguments
+        final_args = tuple(prepend_values) + tuple(call_args)
+
+        return self.executable(*final_args, **call_kwargs)
+
+    def add_event_parser(
+        self,
+        method: Callable,
+        output_mapping: Optional[str] = None,
+        arg_index: Optional[int] = None,
+        **new_kwargs,
     ):
-        """Add an event parser to the action. This method will be executed before the main action executable. The returned value from the method will be passed to the action executable as a keyword argument using output_mapping
+        """
+        Add an event parser to the action.
 
         :param method: Method to be executed before the main action executable
-        :type method: callable
-        :param output_mapping: keyword argument name to pass the parser returned value to the action main method, defaults to None
-        :type output_mapping: Optional[str], optional
+        :param output_mapping: Name of the keyword argument to replace/inject
+        :param arg_index: Index of the positional argument to replace
+        :param new_kwargs: Additional static kwargs to add to the action configuration
         """
         if new_kwargs:
             self.kwargs.update(new_kwargs)
 
-        self._event_parser_method = method
-        self._event_parser_mapping = output_mapping
+        self._event_parsers.append({
+            "method": method,
+            "output_mapping": output_mapping,
+            "arg_index": arg_index,
+        })
+
+    def _verify_against_event_topic(self, event_topic) -> None:
+        """Verify the action topic parsers (if present) against an event.
+           Raises a 'ValueError' if there is a mismatch.
+
+        :param event_topic: Event topic to verify against
+        :type event_topic: Topic
+        :raises ValueError: If the action parser topics are different from the event topic
+        """
+        # TODO: Support additional subscribers to required topics other than the event topic?
+        # For example: If battery is low event triggers an action that reads from /odom topic?
+        for topic_name, topic_ros_type in self.__parsed_topics.items():
+            if topic_name != event_topic.name or topic_ros_type != event_topic.ros_msg_type:
+                raise ValueError(
+                    f"Action parser topic mismatch. Actions only have access to associated events topics. Action '{self.action_name}' is associated with event topic 'Topic(name={event_topic.name}, msg_type={event_topic.ros_msg_type})', but got parser topic 'Topic(name={topic_name}, msg_type={topic_ros_type})'"
+                )
 
     @property
     def executable(self):
@@ -223,6 +337,7 @@ class Action:
         :return: Event description dictionary
         :rtype: Dict
         """
+        # TODO: Handle parsers?
         return {
             "action_name": self.action_name,
             "parent_name": self.parent_component,
