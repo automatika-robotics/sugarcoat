@@ -1,7 +1,7 @@
 import inspect
 from enum import IntEnum as BaseIntEnum
 from functools import wraps
-from typing import Callable, List, Union, TypeVar, Type, Any
+from typing import Callable, List, Union, TypeVar
 
 from rclpy.utilities import ok as rclpy_is_ok
 from rclpy.lifecycle import Node as LifecycleNode

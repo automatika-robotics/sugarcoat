@@ -1,28 +1,46 @@
 """Actions
 
-Pre-defined component and system level actions
+Pre-defined component and system level actions.
 
 ## Component-level Actions:
-- stop
+These actions operate directly on Sugarcoat `BaseComponent` instances to manage lifecycle, configuration, or intrinsic interfaces.
 - start
+- stop
 - restart
 - reconfigure
 - update_parameter
 - update_parameters
+- trigger_component_service
+- trigger_component_action_server
 
 ## System-level Actions:
+These actions interact with standard ROS2 interfaces (Topics, Services, Actions) and system utilities.
 - log
 - publish_message
+- publish_message_from_parsed_topic
 - send_srv_request
+- send_srv_request_from_topic
+- trigger_service
 - send_action_goal
+- send_action_goal_from_topic
+- trigger_action_server
 
 ## Usage Example:
 ```python
     from ros_sugar.actions import Actions
 
+    # Component Lifecycle Action
     my_component = BaseComponent(node_name='test_component')
-    action1 = Actions.start(component=my_component)
-    action2 = Actions.log(msg="I am executing a cool action!")
+    action_start = Actions.start(component=my_component)
+
+    # System/Logic Action
+    action_log = Actions.log(msg="I am executing a cool action!")
+
+    # ROS2 Interface Action
+    action_srv = Actions.trigger_service(
+        srv_name='/add_two_ints',
+        srv_type=AddTwoInts
+    )
 ```
 
 """

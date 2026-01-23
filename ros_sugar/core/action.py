@@ -161,6 +161,7 @@ class Action:
 
         # List of registered parsers to execute before the main method
         # Each entry is a dict: {'method': Callable, 'output_mapping': str|None, 'arg_index': int|None}
+        # TODO: Handle parser method execution in multi-processing
         self._event_parsers: List[Dict[str, Any]] = []
         self.__parsed_topics: Dict[str, type] = {}
 
