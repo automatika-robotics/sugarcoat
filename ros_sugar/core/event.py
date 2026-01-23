@@ -11,7 +11,8 @@ import numpy as np
 
 from ..io.topic import Topic
 from .action import Action
-from ..utils import SomeEntitiesType, Condition
+from ..condition import Condition
+from ..utils import SomeEntitiesType
 
 
 def _access_attribute(obj: Any, nested_attributes: List[Union[str, int]]) -> Any:
@@ -465,7 +466,7 @@ class Event:
         if hasattr(self, "_attrs"):
             event_dict["_attrs"] = self._attrs
         if hasattr(self, "_operator"):
-            event_dict["_operator"] = self._operator
+            event_dict["_operator"] = Condition.serialized_operator(self._operator)
         return event_dict
 
     @dictionary.setter
@@ -491,7 +492,7 @@ class Event:
             if dict_obj.get("_attrs") is not None:
                 self._attrs = dict_obj["_attrs"]
             if dict_obj.get("_operator") is not None:
-                self._operator = dict_obj["_operator"]
+                self._operator = Condition.deserialized_operator(dict_obj["_operator"])
         except Exception as e:
             logging.error(f"Cannot set Event from incompatible dictionary. {e}")
             raise
@@ -608,25 +609,18 @@ class Event:
         for action in self._registered_on_trigger_actions:
             action(*args, **kwargs)
 
-    # @abstractmethod
-    # def _update_trigger(self, *_, **__) -> None:
-    #     """
-    #     Custom trigger update
-    #     """
-    #     raise NotImplementedError
-
     def _update_trigger(self, *_, **__) -> None:
         """
         Concrete trigger update implementation.
         Uses the stored operator to compare the message Operand against the reference value.
         """
         try:
-            # self._operator is e.g., operator.gt
-            # self._event_value is an Operand
-            # Operand implements __gt__, __eq__, etc.
             if self._on_any:
                 new_trigger = True
             else:
+                # self._operator is e.g., operator.gt
+                # self._event_value is an Operand
+                # Operand implements __gt__, __eq__, etc.
                 new_trigger = self._operator(self._event_value, self.trigger_ref_value)
             # If the event is to be check only 'on_change' in the value
             # then check if:

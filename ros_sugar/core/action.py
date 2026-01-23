@@ -12,7 +12,7 @@ import launch
 from launch.actions import LogInfo as LogInfoROSAction
 
 from ..launch import logger
-from ..utils import _MsgConditionBuilder
+from ..condition import MsgConditionBuilder
 
 
 def _create_auto_topic_parser(input_msg_type: Type, target_msg_type: Type) -> Callable:
@@ -183,7 +183,7 @@ class Action:
 
         :raises ValueError: If args or kwargs are not compatible with the action executable
         """
-        _topic_parsing: Dict[Union[int, str], _MsgConditionBuilder] = {}
+        _topic_parsing: Dict[Union[int, str], MsgConditionBuilder] = {}
         function_parameters = inspect.signature(self.executable).parameters
 
         # Check args
@@ -193,12 +193,12 @@ class Action:
             )
 
         for idx, value in enumerate(self.args):
-            if isinstance(value, _MsgConditionBuilder):
+            if isinstance(value, MsgConditionBuilder):
                 _topic_parsing[idx] = value
 
         # Check kwargs
         for key, value in self.kwargs.items():
-            if isinstance(value, _MsgConditionBuilder):
+            if isinstance(value, MsgConditionBuilder):
                 _topic_parsing[key] = value
 
         for position, topic_path in _topic_parsing.items():

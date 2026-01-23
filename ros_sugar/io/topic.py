@@ -6,7 +6,8 @@ from typing import List, Optional, Union, Dict, Type, Generic
 from attrs import Factory, define, field
 from ..config import BaseAttrs, QoSConfig, base_validators
 from . import supported_types
-from ..utils import _MsgConditionBuilder, MsgT
+from ..utils import MsgT
+from ..condition import MsgConditionBuilder
 
 
 def get_all_msg_types(
@@ -155,7 +156,7 @@ class Topic(BaseAttrs, Generic[MsgT]):
     additional_types: List[Type[supported_types.SupportedType]] = field(
         default=Factory(list)
     )
-    __msg: _MsgConditionBuilder = field(init=False)
+    __msg: MsgConditionBuilder = field(init=False)
 
     @msg_type.validator
     def _msg_type_validator(self, _, val):
@@ -166,10 +167,10 @@ class Topic(BaseAttrs, Generic[MsgT]):
             )
         # Set ros type
         self.ros_msg_type = val.get_ros_type()
-        self.__msg = _MsgConditionBuilder(self)
+        self.__msg = MsgConditionBuilder(self)
 
     @property
-    def msg(self) -> _MsgConditionBuilder:
+    def msg(self) -> MsgConditionBuilder:
         """Get the ROS message object path builder associated with this Topic
            Used for parsing topic message attributes for Actions and Event parsers
 
