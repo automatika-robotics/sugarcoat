@@ -14,25 +14,36 @@ from .action import Action
 from ..utils import SomeEntitiesType, Condition
 
 
-def _access_attribute(obj: Any, nested_attributes: List[str]):
-    """
-    Access nested attribute (specified by attrs) in a given object
+def _access_attribute(obj: Any, nested_attributes: List[Union[str, int]]) -> Any:
+    """Access nested attribute (specified by attrs) in a given object, int are allowed to access specific indices in array attributes
 
-    :param obj: Object
+    :param obj: _description_
     :type obj: Any
-
+    :param nested_attributes: _description_
+    :type nested_attributes: List[Union[str, int]]
     :raises AttributeError: If nested attribute does not exist in object
-
-    :return: Nested attribute
+    :return: result
     :rtype: Any
     """
-    try:
-        result = obj
-        for attr in nested_attributes:
-            result = getattr(result, attr)
-        return result
-    except AttributeError as e:
-        raise AttributeError(f"Given attribute is not part of class {type(obj)}") from e
+    result = obj
+    for attr in nested_attributes:
+        if isinstance(attr, int):
+            # Handle list index
+            try:
+                result = result[attr]
+            except (IndexError, TypeError) as e:
+                raise AttributeError(
+                    f"Cannot access index {attr} in {type(result)}"
+                ) from e
+        else:
+            try:
+                # Handle standard attribute
+                result = getattr(result, attr)
+            except AttributeError as e:
+                raise AttributeError(
+                    f"Given attribute {attr} is not part of class {type(result)} in object {type(object)}"
+                ) from e
+    return result
 
 
 def _get_attribute_type(cls: Any, attrs: tuple):
@@ -447,7 +458,7 @@ class Event:
             "topic": self.event_topic.to_json(),
             "handle_once": self._handle_once,
             "event_delay": self._keep_event_delay,
-            "on_change": self._on_change
+            "on_change": self._on_change,
         }
         if hasattr(self, "trigger_ref_value"):
             event_dict["trigger_ref_value"] = self.trigger_ref_value
@@ -623,8 +634,10 @@ class Event:
             # and 2. if the new_trigger is on
             # If on_change and 1 and 2 -> activate the trigger
             if (
-                self._on_change and self._previous_event_value is not None
-                and self._event_value.value != self._previous_event_value and new_trigger
+                self._on_change
+                and self._previous_event_value is not None
+                and self._event_value.value != self._previous_event_value
+                and new_trigger
             ):
                 self.trigger = True
             else:

@@ -146,6 +146,15 @@ class _MsgConditionBuilder:
         self._check_similar_type(other)
         return self._make_condition(operator.ge, other)
 
+    def __invert__(self) -> Condition:
+        """
+        Shorthand for checking if a boolean is False.
+        Usage: ~topic.msg.is_enabled  (Equivalent to is_enabled == False)
+        """
+        self._check_similar_type(False)
+        # You can map this to == False, or a specific NOT operator if you have one
+        return self._make_condition(operator.eq, False)
+
     def is_in(self, other: Union[List, tuple]) -> Condition:
         """
         Check if the topic value is inside the provided list/tuple.
@@ -227,6 +236,42 @@ class _MsgConditionBuilder:
             return not all(item in val_list for item in ref_list)
 
         return self._make_condition(_check_not_all, other)
+
+    def is_true(self) -> Condition:
+        """
+        Create a condition checking if the boolean attribute is True.
+        Usage: topic.msg.is_enabled.is_true()
+        """
+        # Ensure we are comparing against a boolean type in the msg
+        self._check_similar_type(True)
+        return self._make_condition(operator.eq, True)
+
+    def is_false(self) -> Condition:
+        """
+        Create a condition checking if the boolean attribute is False.
+        Usage: topic.msg.is_enabled.is_false()
+        """
+        self._check_similar_type(False)
+        return self._make_condition(operator.eq, False)
+
+    def __getitem__(self, key: int):
+        """
+        Allow array indexing in the path.
+        Usage: topic.msg.data[0] > 5
+        """
+        if not isinstance(key, int):
+            raise TypeError("Only integer indices are supported for arrays.")
+
+        # Add the integer index to the path
+        augmented_base = self._base + [key]
+
+        # Validation Logic (Optional but recommended)
+        # We need to temporarily check if the current object is indexable
+        # This is harder to validate statically with types, but we can try:
+        # start = self._get_value_at_current_path()
+        # if not hasattr(start, '__getitem__'): error...
+
+        return _MsgConditionBuilder(self._topic, augmented_base)
 
 
 class IncompatibleSetup(Exception):
