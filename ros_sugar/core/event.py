@@ -3,7 +3,6 @@
 import json
 import time
 import logging
-from abc import abstractmethod
 from typing import Any, Callable, Dict, List, Union
 from launch.event import Event as ROSLaunchEvent
 from launch.event_handler import EventHandler as ROSLaunchEventHandler
@@ -12,7 +11,7 @@ import numpy as np
 
 from ..io.topic import Topic
 from .action import Action
-from ..utils import SomeEntitiesType
+from ..utils import SomeEntitiesType, Condition
 
 
 def _access_attribute(obj: Any, nested_attributes: List[str]):
@@ -300,9 +299,10 @@ class Event:
     def __init__(
         self,
         event_name: str,
-        event_source: Union[Topic, str, Dict],
-        trigger_value: Union[float, int, bool, str, List, None],
-        nested_attributes: Union[str, List[str]],
+        event_source: Union[Topic, str, Dict, Condition],
+        trigger_value: Union[float, int, bool, str, List, None] = None,
+        nested_attributes: Union[str, List[str], None] = None,
+        on_change: bool = False,
         handle_once: bool = False,
         keep_event_delay: float = 0.0,
     ) -> None:
@@ -328,8 +328,18 @@ class Event:
         self.__name = event_name
         self._handle_once: bool = handle_once
         self._keep_event_delay: float = keep_event_delay
+        self._on_change: bool = on_change
+        self._previous_event_value = None
+
+        # Case 1: Init from Condition Expression (topic.msg.data > 5)
+        if isinstance(event_source, Condition):
+            self.event_topic = event_source.topic_source
+            self._attrs = event_source.attribute_path
+            self.trigger_ref_value = event_source.ref_value
+            self._operator = event_source.operator_func
+
         # Init the event from the json values
-        if isinstance(event_source, str):
+        elif isinstance(event_source, str):
             self.json = event_source
 
         # Init from dictionary values
@@ -349,7 +359,7 @@ class Event:
 
         else:
             raise AttributeError(
-                "Cannot initialize Event class. Must provide 'event_source' as a Topic or a valid config from json or dictionary"
+                f"Cannot initialize Event class. Must provide 'event_source' as a Topic or a valid config from json or dictionary or a condition, got {type(event_source)}"
             )
 
         # Check if given trigger is of valid type
@@ -435,11 +445,14 @@ class Event:
             "topic": self.event_topic.to_json(),
             "handle_once": self._handle_once,
             "event_delay": self._keep_event_delay,
+            "on_change": self._on_change
         }
         if hasattr(self, "trigger_ref_value"):
             event_dict["trigger_ref_value"] = self.trigger_ref_value
         if hasattr(self, "_attrs"):
             event_dict["_attrs"] = self._attrs
+        if hasattr(self, "_operator"):
+            event_dict["_operator"] = self._operator
         return event_dict
 
     @dictionary.setter
@@ -459,10 +472,13 @@ class Event:
             self.event_topic.from_json(dict_obj["topic"])
             self._handle_once = dict_obj["handle_once"]
             self._keep_event_delay = dict_obj["event_delay"]
+            self._on_change = dict_obj["on_change"]
             if dict_obj.get("trigger_ref_value") is not None:
                 self.trigger_ref_value = dict_obj["trigger_ref_value"]
             if dict_obj.get("_attrs") is not None:
                 self._attrs = dict_obj["_attrs"]
+            if dict_obj.get("_operator") is not None:
+                self._operator = dict_obj["_operator"]
         except Exception as e:
             logging.error(f"Cannot set Event from incompatible dictionary. {e}")
             raise
@@ -510,6 +526,9 @@ class Event:
         :param msg: Event trigger topic message
         :type msg: Any
         """
+        if hasattr(self, "_event_value"):
+            self._previous_event_value = self._event_value.value
+
         if self._handle_once and self._processed_once:
             return
 
@@ -576,12 +595,41 @@ class Event:
         for action in self._registered_on_trigger_actions:
             action(*args, **kwargs)
 
-    @abstractmethod
+    # @abstractmethod
+    # def _update_trigger(self, *_, **__) -> None:
+    #     """
+    #     Custom trigger update
+    #     """
+    #     raise NotImplementedError
+
     def _update_trigger(self, *_, **__) -> None:
         """
-        Custom trigger update
+        Concrete trigger update implementation.
+        Uses the stored operator to compare the message Operand against the reference value.
         """
-        raise NotImplementedError
+        try:
+            # self._operator is e.g., operator.gt
+            # self._event_value is an Operand
+            # Operand implements __gt__, __eq__, etc.
+            new_trigger = self._operator(self._event_value, self.trigger_ref_value)
+            # If the event is to be check only 'on_change' in the value
+            # then check if:
+            # 1. the event previous value is different from the event current value (there is a change)
+            # and 2. if the new_trigger is on
+            # If on_change and 1 and 2 -> activate the trigger
+            if (
+                self._on_change and self._previous_event_value is not None
+                and self._event_value.value != self._previous_event_value and new_trigger
+            ):
+                self.trigger = True
+            else:
+                # If:
+                # 1. on_change is not required
+                # or 2. the event previous value is the same as the current value (no change happened)
+                # then just directly update the trigger
+                self.trigger = new_trigger
+        except Exception as e:
+            raise NotImplementedError from e
 
     def __bool__(self) -> bool:
         """

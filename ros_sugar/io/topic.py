@@ -2,13 +2,11 @@
 
 import inspect
 from types import ModuleType
-from typing import List, Optional, Union, Dict, Type, TypeVar, Generic
+from typing import List, Optional, Union, Dict, Type, Generic
 from attrs import Factory, define, field
 from ..config import BaseAttrs, QoSConfig, base_validators
 from . import supported_types
-
-# Define a generic type variable for topic message types
-MsgT = TypeVar("MsgT")
+from ..utils import _MsgConditionBuilder, MsgT
 
 
 def get_all_msg_types(
@@ -119,47 +117,6 @@ def _make_qos_config(qos_profile: Union[Dict, QoSConfig]) -> QoSConfig:
     return QoSConfig(**qos_profile)
 
 
-class _MsgPathBuilder:
-    """Helper class to build paths for accessing ROS message attributes in topics.
-    Used for parsing topic message attributes for Actions and Event parsers.
-    """
-
-    def __init__(self, name, ros_msg_type, path=None):
-        self._name = name
-        self._type = ros_msg_type
-        self._base = path or []
-
-    def __getattr__(self, name):
-        # Validate that the attribute exists in the message type
-        augmented_base = self._base + [name]
-        start = self._type()
-        for key, attribute_name in enumerate(augmented_base):
-            if not hasattr(start, attribute_name):
-                old_bases = ".".join(augmented_base[:key])
-                error = (
-                    f"Available attributes: {start.get_fields_and_field_types()}"
-                    if hasattr(start, "get_fields_and_field_types")
-                    else ""
-                )
-                raise AttributeError(
-                    f"Message '{self._type.__name__}.{old_bases}' has no attribute: '{augmented_base[key]}'. "
-                    + error
-                )
-            start = getattr(start, attribute_name)
-        return _MsgPathBuilder(self._name, self._type, augmented_base)
-
-    def as_tuple(self) -> tuple:
-        return tuple(self._base)
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def type(self) -> Type[MsgT]:
-        return self._type
-
-
 @define(kw_only=True)
 class Topic(BaseAttrs, Generic[MsgT]):
     """
@@ -198,7 +155,7 @@ class Topic(BaseAttrs, Generic[MsgT]):
     additional_types: List[Type[supported_types.SupportedType]] = field(
         default=Factory(list)
     )
-    __msg: Optional[_MsgPathBuilder] = field(default=None, init=False)
+    __msg: Optional[_MsgConditionBuilder] = field(default=None, init=False)
 
     @msg_type.validator
     def _msg_type_validator(self, _, val):
@@ -209,10 +166,10 @@ class Topic(BaseAttrs, Generic[MsgT]):
             )
         # Set ros type
         self.ros_msg_type = val.get_ros_type()
-        self.__msg = _MsgPathBuilder(self.name, self.ros_msg_type)
+        self.__msg = _MsgConditionBuilder(self)
 
     @property
-    def msg(self) -> _MsgPathBuilder:
+    def msg(self) -> _MsgConditionBuilder:
         """Get the ROS message object path builder associated with this Topic
            Used for parsing topic message attributes for Actions and Event parsers
 
