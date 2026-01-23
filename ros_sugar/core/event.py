@@ -460,6 +460,7 @@ class Event:
             "handle_once": self._handle_once,
             "event_delay": self._keep_event_delay,
             "on_change": self._on_change,
+            "on_any": self._on_any
         }
         if hasattr(self, "trigger_ref_value"):
             event_dict["trigger_ref_value"] = self.trigger_ref_value
@@ -487,6 +488,7 @@ class Event:
             self._handle_once = dict_obj["handle_once"]
             self._keep_event_delay = dict_obj["event_delay"]
             self._on_change = dict_obj["on_change"]
+            self._on_any = dict_obj["on_any"]
             if dict_obj.get("trigger_ref_value") is not None:
                 self.trigger_ref_value = dict_obj["trigger_ref_value"]
             if dict_obj.get("_attrs") is not None:
@@ -546,7 +548,7 @@ class Event:
         if self._handle_once and self._processed_once:
             return
 
-        self._event_value = Operand(msg, self._attrs)
+        self._event_value = Operand(msg, getattr(self, "_attrs", []))
 
         self._update_trigger()
         # Process event if trigger is up and the event is not already under processing

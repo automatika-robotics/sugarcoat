@@ -1,6 +1,8 @@
 from typing import Any, List, Callable, Union, Type, Dict
 from attrs import define
 import operator
+import array
+import numpy as np
 
 from .config.base_attrs import BaseAttrs
 from .utils import MsgT
@@ -246,23 +248,30 @@ class MsgConditionBuilder:
             val = getattr(val, attribute_name)
         return val
 
-    # --- Dunder Methods for Conditional Parsing ---
-
     def _check_similar_type(self, other):
-        """Helper method to insure compatible condition types"""
-        if (val_type := type(self._get_value())) is not type(other):
-            raise TypeError(
-                f"Cannot construct condition from incompatible types: Topic attribute type is '{val_type}', and reference type is '{type(other)}'"
-            )
+        """Helper method to ensure compatible condition types"""
+        val = self._get_value()
 
-    def _check_similar_list_type(self, other):
-        """Helper method to insure compatible condition types"""
-        if not other or not isinstance(other, List):
+        # Allow Exact Match
+        if type(val) is type(other):
             return
-        if (val_type := type(self._get_value())) is not type(other[0]):
-            raise TypeError(
-                f"Cannot construct condition from incompatible types: Topic attribute type is '{val_type}', and reference type is list containing '{type(other[0])}' values"
-            )
+
+        # Allow Numeric Compatibility (int vs float)
+        if isinstance(val, (int, float)) and isinstance(other, (int, float)):
+            return
+
+        # Allow Sequence Compatibility (list vs array.array vs tuple)
+        # We explicitly check for list-like types excluding strings
+        sequence_types = (list, tuple, array.array, np.ndarray)
+        if isinstance(val, sequence_types) and isinstance(other, sequence_types):
+            return
+
+        # If none of the above passed, types are incompatible
+        raise TypeError(
+            f"Cannot construct condition from incompatible types: "
+            f"Topic attribute type is '{type(val).__name__}', "
+            f"and reference type is '{type(other).__name__}'"
+        )
 
     def _make_condition(self, op: Callable, value: Any) -> Condition:
         return Condition(
@@ -271,6 +280,8 @@ class MsgConditionBuilder:
             operator_func=op,
             ref_value=value,
         )
+
+    # --- Dunder Methods for Conditional Parsing ---
 
     def __eq__(self, other) -> Condition:
         self._check_similar_type(other)
@@ -316,7 +327,6 @@ class MsgConditionBuilder:
         if isinstance(other, str):
             self._check_similar_type(other)
             return self._make_condition(ConditionOperators.is_in, other)
-        self._check_similar_list_type(other)
         return self._make_condition(ConditionOperators.is_in, other)
 
     def not_in(self, other: Union[List, tuple, str]) -> Condition:
@@ -328,7 +338,6 @@ class MsgConditionBuilder:
             self._check_similar_type(other)
             return self._make_condition(ConditionOperators.not_in, other)
 
-        self._check_similar_list_type(other)
         return self._make_condition(ConditionOperators.not_in, other)
 
     # --- Helper to safely get list from Operand ---
@@ -343,9 +352,6 @@ class MsgConditionBuilder:
         True if the topic value contains AT LEAST ONE of the values in 'other'.
         Equivalent to: set(topic) & set(other) is not empty
         """
-
-        self._check_similar_list_type(other)
-
         return self._make_condition(ConditionOperators.contains_any, other)
 
     def contains_all(self, other: Union[List, tuple]) -> Condition:
@@ -353,8 +359,6 @@ class MsgConditionBuilder:
         True if the topic value contains ALL of the values in 'other'.
         Equivalent to: set(other).issubset(set(topic))
         """
-
-        self._check_similar_list_type(other)
         return self._make_condition(ConditionOperators.contains_all, other)
 
     def contains(self, other: Union[List, tuple, str]) -> Condition:
@@ -374,9 +378,6 @@ class MsgConditionBuilder:
         True if the topic value contains NONE of the values in 'other'.
         Equivalent to: set(topic).isdisjoint(set(other))
         """
-
-        self._check_similar_list_type(other)
-
         return self._make_condition(ConditionOperators.not_contains_any, other)
 
     def not_contains_all(self, other: Union[List, tuple]) -> Condition:
@@ -384,9 +385,6 @@ class MsgConditionBuilder:
         True if the topic value is MISSING at least one value from 'other'.
         Inverse of contains_all.
         """
-
-        self._check_similar_list_type(other)
-
         return self._make_condition(ConditionOperators.not_contains_all, other)
 
     def not_contains(self, other: Union[List, tuple, str]) -> Condition:

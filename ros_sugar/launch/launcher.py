@@ -389,7 +389,7 @@ class Launcher:
             )
             for action in action_set:
                 # Verify that the action parsers are compatible with the condition topic
-                if isinstance(condition, Event):
+                if isinstance(condition, Event) and isinstance(action, Action):
                     action._verify_against_event_topic(condition.event_topic)
                 # Check if it is a component action:
                 if isinstance(action, Action) and action.component_action:

@@ -1,29 +1,28 @@
 import unittest
 from functools import partial
-from threading import Event
+from threading import Event as threadingEvent
 import launch_testing
 import launch_testing.actions
 import launch_testing.markers
 import pytest
 import numpy as np
 
-from ros_sugar import events
 from ros_sugar.io import Topic
-from ros_sugar.core import BaseComponent
+from ros_sugar.core import BaseComponent, Event
 from ros_sugar import Launcher
 from automatika_ros_sugar.msg import ComponentStatus
 from ros_sugar.actions import Action, LogInfo
 
 # Threading Events
-on_any_py_event = Event()
-on_equal_py_event = Event()
-on_diff_py_event = Event()
-on_greater_py_event = Event()
-on_less_py_event = Event()
-on_contains_any_py_event = Event()
-on_contains_all_py_event = Event()
-on_change_py_event = Event()
-on_change_eq_py_event = Event()
+on_any_py_event = threadingEvent()
+on_equal_py_event = threadingEvent()
+on_diff_py_event = threadingEvent()
+on_greater_py_event = threadingEvent()
+on_less_py_event = threadingEvent()
+on_contains_any_py_event = threadingEvent()
+on_contains_all_py_event = threadingEvent()
+on_change_py_event = threadingEvent()
+on_change_eq_py_event = threadingEvent()
 
 
 class ChildComponent(BaseComponent):
@@ -68,7 +67,7 @@ def generate_test_description():
     """
 
     # health status topic
-    status_topic = Topic(name="publisher_component_status", msg_type="ComponentStatus")
+    status_topic = Topic(name="publisher_component/status", msg_type="ComponentStatus")
 
     # float array topic
     float_array_topic = Topic(name="float_array", msg_type="Float64MultiArray")
@@ -79,71 +78,53 @@ def generate_test_description():
         change_data=True,
     )
 
-    event_on_any = events.OnAny(
+    event_on_any = Event(
         event_name="on_any",
         event_source=status_topic,
     )
 
-    event_on_equal = events.OnEqual(
+    event_on_equal = Event(
         event_name="on_equal",
-        event_source=status_topic,
-        trigger_value=ComponentStatus.STATUS_HEALTHY,
-        nested_attributes="status",
+        event_source=status_topic.msg.status == ComponentStatus.STATUS_HEALTHY,
     )
 
-    event_on_diff = events.OnDifferent(
+    event_on_diff = Event(
         event_name="on_different",
-        event_source=status_topic,
-        trigger_value=ComponentStatus.STATUS_FAILURE_ALGORITHM_LEVEL,
-        nested_attributes="status",
+        event_source=status_topic.msg.status
+        != ComponentStatus.STATUS_FAILURE_ALGORITHM_LEVEL,
     )
 
-    event_on_greater = events.OnGreater(
+    event_on_greater = Event(
         event_name="on_greater",
-        event_source=status_topic,
-        trigger_value=-1,
-        nested_attributes="status",
+        event_source=status_topic.msg.status > -1,
     )
 
-    event_on_less = events.OnLess(
+    event_on_less = Event(
         event_name="on_less",
-        event_source=status_topic,
-        trigger_value=ComponentStatus.STATUS_FAILURE_COMPONENT_LEVEL,
-        nested_attributes="status",
+        event_source=status_topic.msg.status
+        < ComponentStatus.STATUS_FAILURE_COMPONENT_LEVEL,
     )
 
-    event_on_contains_any = events.OnContainsAny(
+    event_on_contains_any = Event(
         event_name="on_contains_any",
-        event_source=float_array_topic,
-        trigger_value=[1.0, 10.0],
-        nested_attributes="data",
+        event_source=float_array_topic.msg.data.contains_any([1.0, 10.0]),
     )
 
-    event_on_contains_any = events.OnContainsAny(
-        event_name="on_contains_any",
-        event_source=float_array_topic,
-        trigger_value=[1.0, 10.0],
-        nested_attributes="data",
-    )
-
-    event_on_contains_all = events.OnContainsAll(
+    event_on_contains_all = Event(
         event_name="on_contains_all",
-        event_source=float_array_topic,
-        trigger_value=[1.0, 2.0, 3.0],
-        nested_attributes="data",
+        event_source=float_array_topic.msg.data.contains_all([1.0, 2.0, 3.0]),
     )
 
-    event_on_change = events.OnChange(
+    event_on_change = Event(
         event_name="on_change",
         event_source=float_array_topic,
-        nested_attributes="data",
+        on_change=True,
     )
 
-    event_on_change_eq = events.OnChangeEqual(
+    event_on_change_eq = Event(
         event_name="on_change_eq",
-        event_source=float_array_topic,
-        nested_attributes="data",
-        trigger_value=[30.0, 40.0],
+        event_source=float_array_topic.msg.data == [30.0, 40.0],
+        on_change=True
     )
 
     def trigger_event(on_event: Event):

@@ -1,12 +1,12 @@
 import unittest
-from threading import Event
+from threading import Event as threadingEvent
 import launch_testing
 import launch_testing.actions
 import launch_testing.markers
 import pytest
 import logging
 
-from ros_sugar import events
+from ros_sugar.core import Event
 from ros_sugar.io import Topic
 from ros_sugar.core import BaseComponent
 from ros_sugar import Launcher
@@ -17,8 +17,8 @@ from std_msgs.msg import Float32
 from launch.actions import Shutdown
 
 # Threading Events
-inline_action_py_event = Event()
-component_action_py_event = Event()
+inline_action_py_event = threadingEvent()
+component_action_py_event = threadingEvent()
 
 
 class ChildComponent(BaseComponent):
@@ -69,15 +69,16 @@ def generate_test_description():
     component = ChildComponent(component_name="test_component")
 
     # health status topic
-    status_topic = Topic(name="test_component_status", msg_type="ComponentStatus")
+    status_topic = Topic(name="test_component/status", msg_type="ComponentStatus")
 
     test_topic = Topic(name="test_topic", msg_type="Float32")
 
-    event_on_health_status = events.OnAny(
+    # On any
+    event_on_health_status = Event(
         event_name="on_any_status", event_source=status_topic, handle_once=True
     )
 
-    event_on_published_message = events.OnAny(
+    event_on_published_message = Event(
         event_name="on_any_published", event_source=test_topic, handle_once=True
     )
 

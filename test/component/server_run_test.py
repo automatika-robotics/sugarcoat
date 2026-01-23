@@ -67,7 +67,7 @@ def generate_test_description():
     component.run_type = ComponentRunType.SERVER
 
     # health status topic
-    status_topic = Topic(name="test_component_status", msg_type="ComponentStatus")
+    status_topic = Topic(name="test_component/status", msg_type="ComponentStatus")
 
     # Dummy event to send an automatic service call to the component main service post launch
     event_on_health_status = events.OnAny(
