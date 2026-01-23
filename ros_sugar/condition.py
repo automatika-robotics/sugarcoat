@@ -65,14 +65,10 @@ class ConditionOperators:
 
     _registry = {}
 
-    # --- Internal Decorator (The Fix) ---
-    # We define a plain function (not a method) to use as a decorator inside the class.
-    # We pass '_registry' as a default arg to capture it from the local class scope.
+    # --- Internal Decorator ---
     def _register(func, registry=_registry):
         registry[func.__name__] = func
         return func
-
-    # --- Public API ---
 
     @classmethod
     def get_operator(cls, name: str) -> Callable:
@@ -161,6 +157,18 @@ class ConditionOperators:
     def not_in(op_obj, ref_list):
         """Checks if Topic Value is NOT IN Reference List"""
         return ConditionOperators._unwrap(op_obj) not in ref_list
+
+    @staticmethod
+    @_register
+    def contains(op_obj, ref_val):
+        """Topic (string) contains a reference string"""
+        return ref_val in op_obj
+
+    @staticmethod
+    @_register
+    def not_contains(op_obj, ref_val):
+        """Topic (string) does not contain a reference string"""
+        return ref_val not in op_obj
 
     @staticmethod
     @_register
@@ -297,7 +305,7 @@ class MsgConditionBuilder:
         # You can map this to == False, or a specific NOT operator if you have one
         return self._make_condition(ConditionOperators.equals, False)
 
-    def is_in(self, other: Union[List, tuple]) -> Condition:
+    def is_in(self, other: Union[List, tuple, str]) -> Condition:
         """
         Check if the topic value is inside the provided list/tuple.
         Usage: topic.msg.status.is_in([1, 2, 3])
@@ -305,16 +313,22 @@ class MsgConditionBuilder:
         # We use operator.contains.
         # When Event executes: operator.contains(Operand(msg_val), [1,2,3])
         # This calls Operand.__contains__([1,2,3])
+        if isinstance(other, str):
+            self._check_similar_type(other)
+            return self._make_condition(ConditionOperators.is_in, other)
         self._check_similar_list_type(other)
         return self._make_condition(ConditionOperators.is_in, other)
 
-    def not_in(self, other: Union[List, tuple]) -> Condition:
+    def not_in(self, other: Union[List, tuple, str]) -> Condition:
         """
         Check if the topic value is NOT inside the provided list/tuple.
         Usage: topic.msg.status.not_in([0, -1])
         """
-        self._check_similar_list_type(other)
+        if isinstance(other, str):
+            self._check_similar_type(other)
+            return self._make_condition(ConditionOperators.not_in, other)
 
+        self._check_similar_list_type(other)
         return self._make_condition(ConditionOperators.not_in, other)
 
     # --- Helper to safely get list from Operand ---
@@ -341,8 +355,19 @@ class MsgConditionBuilder:
         """
 
         self._check_similar_list_type(other)
-
         return self._make_condition(ConditionOperators.contains_all, other)
+
+    def contains(self, other: Union[List, tuple, str]) -> Condition:
+        """
+        If value contains another string
+        If other is a list: works same as contains_all
+        """
+        # We use operator.contains.
+        # When Event executes: operator.contains(Operand(msg_val), "some string")
+        if isinstance(other, str):
+            self._check_similar_type(other)
+            return self._make_condition(ConditionOperators.contains, other)
+        return self.contains_all(other)
 
     def not_contains_any(self, other: Union[List, tuple]) -> Condition:
         """
@@ -363,6 +388,18 @@ class MsgConditionBuilder:
         self._check_similar_list_type(other)
 
         return self._make_condition(ConditionOperators.not_contains_all, other)
+
+    def not_contains(self, other: Union[List, tuple, str]) -> Condition:
+        """
+        If value does not contain another string
+        If other is a list: works same as not_contains_all
+        """
+        # We use operator.contains.
+        # When Event executes: operator.contains(Operand(msg_val), "some string")
+        if isinstance(other, str):
+            self._check_similar_type(other)
+            return self._make_condition(ConditionOperators.not_contains, other)
+        return self.not_contains_all(other)
 
     def is_true(self) -> Condition:
         """
