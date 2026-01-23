@@ -329,6 +329,7 @@ class Event:
         self._handle_once: bool = handle_once
         self._keep_event_delay: float = keep_event_delay
         self._on_change: bool = on_change
+        self._on_any: bool = False
         self._previous_event_value = None
 
         # Case 1: Init from Condition Expression (topic.msg.data > 5)
@@ -356,7 +357,8 @@ class Event:
                 )
             if trigger_value is not None:
                 self.trigger_ref_value = trigger_value
-
+            if not nested_attributes and not trigger_value:
+                self._on_any = True
         else:
             raise AttributeError(
                 f"Cannot initialize Event class. Must provide 'event_source' as a Topic or a valid config from json or dictionary or a condition, got {type(event_source)}"
@@ -611,7 +613,10 @@ class Event:
             # self._operator is e.g., operator.gt
             # self._event_value is an Operand
             # Operand implements __gt__, __eq__, etc.
-            new_trigger = self._operator(self._event_value, self.trigger_ref_value)
+            if self._on_any:
+                new_trigger = True
+            else:
+                new_trigger = self._operator(self._event_value, self.trigger_ref_value)
             # If the event is to be check only 'on_change' in the value
             # then check if:
             # 1. the event previous value is different from the event current value (there is a change)
