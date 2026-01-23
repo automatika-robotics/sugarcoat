@@ -75,11 +75,11 @@ def generate_test_description():
 
     # On any
     event_on_health_status = Event(
-        event_name="on_any_status", event_source=status_topic, handle_once=True
+        event_name="on_any_status", event_condition=status_topic, handle_once=True
     )
 
     event_on_published_message = Event(
-        event_name="on_any_published", event_source=test_topic, handle_once=True
+        event_name="on_any_published", event_condition=test_topic, handle_once=True
     )
 
     def inline_method():

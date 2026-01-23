@@ -235,7 +235,12 @@ class Launcher:
         # Parse provided Events/Actions
 
         # Check if any component already has internal events_actions defined
-        if any(events_actions_dits := [comp._events_actions if comp._events_actions else None for comp in self._components]):
+        if any(
+            events_actions_dits := [
+                comp._events_actions if comp._events_actions else None
+                for comp in self._components
+            ]
+        ):
             # add to events actions dict
             for events_actions_dit in events_actions_dits:
                 if events_actions_dit:
@@ -368,7 +373,8 @@ class Launcher:
         self,
         components_list: List[BaseComponent],
         events_actions_dict: Mapping[
-            Union[EventT, str], Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
+            Union[EventT, str],
+            Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
         ],
     ):
         """
@@ -383,7 +389,9 @@ class Launcher:
         """
         self.__events_names.extend(event.name for event in events_actions_dict)
         for condition, raw_action in events_actions_dict.items():
-            serialized_condition: str = condition.json if isinstance(condition, Event) else condition
+            serialized_condition: str = (
+                condition.json if isinstance(condition, Event) else condition
+            )
             action_set: List[Union[Action, ROSLaunchAction]] = (
                 raw_action if isinstance(raw_action, list) else [raw_action]
             )

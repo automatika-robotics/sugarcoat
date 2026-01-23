@@ -1,6 +1,7 @@
 """Monitor"""
 
 import os
+import json
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Union
 from rclpy.node import Node
@@ -19,7 +20,6 @@ from .component import BaseComponent
 from ..config import BaseConfig
 from ..io.topic import Topic
 from .event import Event
-from ..events import event_from_json
 from .action import Action
 from ..launch import logger
 
@@ -399,7 +399,11 @@ class Monitor(Node):
         )
 
     def send_srv_request(
-        self, srv_request_msg: Any = None, srv_name: Optional[str] = None, srv_type: Optional[type] = None, **_
+        self,
+        srv_request_msg: Any = None,
+        srv_name: Optional[str] = None,
+        srv_type: Optional[type] = None,
+        **_,
     ) -> None:
         """Action to send a ROS2 service request during runtime
 
@@ -421,7 +425,11 @@ class Monitor(Node):
         srv_client.send_request(srv_request_msg, executor=self.executor)
 
     def send_action_goal(
-        self, action_request_msg: Any = None, action_name: Optional[str] = None, action_type: Optional[type] = None, **_
+        self,
+        action_request_msg: Any = None,
+        action_name: Optional[str] = None,
+        action_type: Optional[type] = None,
+        **_,
     ) -> None:
         """Action to send a ROS2 action goal during runtime
 
@@ -518,7 +526,8 @@ class Monitor(Node):
         """
         if self._events_actions:
             for serialized_event, actions in self._events_actions.items():
-                event = event_from_json(serialized_event)
+                event_dict = json.loads(serialized_event)
+                event = Event(event_dict["event_name"], event_dict)
                 for action in actions:
                     method = getattr(self, action.action_name)
                     # register action to the event

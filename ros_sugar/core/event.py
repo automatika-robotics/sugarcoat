@@ -311,9 +311,7 @@ class Event:
     def __init__(
         self,
         event_name: str,
-        event_source: Union[Topic, str, Dict, Condition],
-        trigger_value: Union[float, int, bool, str, List, None] = None,
-        nested_attributes: Union[str, List[str], None] = None,
+        event_condition: Union[Topic, str, Dict, Condition],
         on_change: bool = False,
         handle_once: bool = False,
         keep_event_delay: float = 0.0,
@@ -345,45 +343,38 @@ class Event:
         self._previous_event_value = None
 
         # Case 1: Init from Condition Expression (topic.msg.data > 5)
-        if isinstance(event_source, Condition):
-            self.event_topic = event_source.topic_source
-            self._attrs = event_source.attribute_path
-            self.trigger_ref_value = event_source.ref_value
-            self._operator = event_source.operator_func
+        if isinstance(event_condition, Condition):
+            self.event_topic = event_condition.topic_source
+            self._attrs = event_condition.attribute_path
+            self.trigger_ref_value = event_condition.ref_value
+            self._operator = event_condition.operator_func
 
         # Init the event from the json values
-        elif isinstance(event_source, str):
-            self.json = event_source
+        elif isinstance(event_condition, str):
+            self.json = event_condition
 
         # Init from dictionary values
-        elif isinstance(event_source, Dict):
-            self.dictionary = event_source
+        elif isinstance(event_condition, Dict):
+            self.dictionary = event_condition
 
-        elif isinstance(event_source, Topic):
-            self.event_topic = event_source
-            if nested_attributes is not None:
-                self._attrs: List[str] = (
-                    nested_attributes
-                    if isinstance(nested_attributes, List)
-                    else [nested_attributes]
-                )
-            if trigger_value is not None:
-                self.trigger_ref_value = trigger_value
-            if not nested_attributes and not trigger_value:
-                self._on_any = True
+        # Topics are passed for on_any event
+        elif isinstance(event_condition, Topic):
+            self.event_topic = event_condition
+            self._on_any = True
+            self.trigger_ref_value = None
         else:
             raise AttributeError(
-                f"Cannot initialize Event class. Must provide 'event_source' as a Topic or a valid config from json or dictionary or a condition, got {type(event_source)}"
+                f"Cannot initialize Event class. Must provide 'event_source' as a Topic or a valid config from json or dictionary or a condition, got {type(event_condition)}"
             )
 
         # Check if given trigger is of valid type
-        if trigger_value is not None and not _check_attribute(
+        if self.trigger_ref_value is not None and not _check_attribute(
             self.event_topic.msg_type.get_ros_type(),
             type(self.trigger_ref_value),
             self._attrs,
         ):
             raise TypeError(
-                f"Event Initialization error. Cannot initiate nested attribute '{self._attrs}' for class '{self.event_topic.msg_type.get_ros_type()}' with trigger of type '{type(trigger_value)}'. Should be '{_get_attribute_type(self.event_topic.msg_type.get_ros_type(), self._attrs)}'"
+                f"Event Initialization error. Cannot initiate nested attribute '{self._attrs}' for class '{self.event_topic.msg_type.get_ros_type()}' with trigger of type '{type(self.trigger_ref_value)}'. Should be '{_get_attribute_type(self.event_topic.msg_type.get_ros_type(), self._attrs)}'"
             )
 
         # Init trigger as False
@@ -455,12 +446,11 @@ class Event:
         """
         event_dict = {
             "event_name": self.name,
-            "event_class": self.__class__.__name__,
             "topic": self.event_topic.to_json(),
             "handle_once": self._handle_once,
             "event_delay": self._keep_event_delay,
             "on_change": self._on_change,
-            "on_any": self._on_any
+            "on_any": self._on_any,
         }
         if hasattr(self, "trigger_ref_value"):
             event_dict["trigger_ref_value"] = self.trigger_ref_value
@@ -489,10 +479,8 @@ class Event:
             self._keep_event_delay = dict_obj["event_delay"]
             self._on_change = dict_obj["on_change"]
             self._on_any = dict_obj["on_any"]
-            if dict_obj.get("trigger_ref_value") is not None:
-                self.trigger_ref_value = dict_obj["trigger_ref_value"]
-            if dict_obj.get("_attrs") is not None:
-                self._attrs = dict_obj["_attrs"]
+            self.trigger_ref_value = dict_obj.get("trigger_ref_value", None)
+            self._attrs = dict_obj.get("_attrs", [])
             if dict_obj.get("_operator") is not None:
                 self._operator = Condition.deserialized_operator(dict_obj["_operator"])
         except Exception as e:
@@ -644,30 +632,6 @@ class Event:
                 self.trigger = new_trigger
         except Exception as e:
             raise NotImplementedError from e
-
-    def __bool__(self) -> bool:
-        """
-        Bool method for Event object
-        """
-        return self.trigger
-
-    def __and2__(self, __value) -> bool:
-        """
-        AND for 2 Event objects
-        """
-        return isinstance(__value, Event) and self.trigger and __value.trigger
-
-    def __or2__(self, __value) -> bool:
-        """
-        OR for 2 Event objects
-        """
-        return isinstance(__value, Event) and (self.trigger or __value.trigger)
-
-    def __invert__(self) -> bool:
-        """
-        ~ for Event object
-        """
-        return not self.trigger
 
     def __str__(self) -> str:
         """

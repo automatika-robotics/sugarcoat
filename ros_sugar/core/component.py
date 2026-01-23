@@ -7,6 +7,7 @@ import yaml
 import toml
 import socket
 from abc import abstractmethod
+from copy import deepcopy
 import threading
 from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple, Type
 from functools import wraps
@@ -37,7 +38,6 @@ from automatika_ros_sugar.srv import (
 
 from .action import Action
 from .event import Event
-from ..events import json_to_events_list, event_from_json
 from ..io.callbacks import GenericCallback
 from ..config.base_config import (
     BaseComponentConfig,
@@ -1017,7 +1017,10 @@ class BaseComponent(lifecycle.Node):
                     raise ValueError(
                         f"Component '{self.node_name}' does not support action '{action.action_name}'"
                     )
-            self.__events.append(event_from_json(event_serialized))
+            event_dict = json.loads(event_serialized)
+            self.__events.append(
+                Event(event_name=event_dict["event_name"], event_condition=event_dict)
+            )
             self.__actions.append(action_set)
 
     # SERIALIZATION AND DESERIALIZATION
@@ -1109,7 +1112,15 @@ class BaseComponent(lifecycle.Node):
         :param events_serialized: Serialized Events List
         :type events_serialized: Union[str, bytes]
         """
-        self.__events = json_to_events_list(events_serialized)
+        list_obj = json.loads(events_serialized)
+
+        self.__events = []
+        for event_serialized in list_obj:
+            event_dict = json.loads(event_serialized)
+            new_event = Event(event_dict["event_name"], event_condition=event_dict)
+            self.__events.append(
+                deepcopy(new_event)
+            )  # deepcopy is needed to avoid copying the previous event
 
     @property
     def _actions_json(self) -> Union[str, bytes]:
