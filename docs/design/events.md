@@ -207,13 +207,13 @@ dynamic_switch_action = Action(method=quad_controller.switch_gait_controller)
 #   that receives the return value of 'parse_terrain_data'.
 dynamic_switch_action.add_event_parser(
     method=parse_terrain_data,
-    output_mapping="controller_type"
+    keyword_argument_name="controller_type"
 )
 
 # Alternatively, since this was a simple parser we could have used a lambda function as well
 # dynamic_switch_action.add_event_parser(
 #     method=(lambda msg: msg.data),
-#     output_mapping="controller_type"
+#     keyword_argument_name="controller_type"
 # )
 
 # Register

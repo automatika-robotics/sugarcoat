@@ -399,7 +399,7 @@ class Monitor(Node):
         )
 
     def send_srv_request(
-        self, srv_name: str, srv_type: type, srv_request_msg: Any, **_
+        self, srv_request_msg: Any = None, srv_name: Optional[str] = None, srv_type: Optional[type] = None, **_
     ) -> None:
         """Action to send a ROS2 service request during runtime
 
@@ -410,11 +410,18 @@ class Monitor(Node):
         :param srv_request_msg: Service request message
         :type srv_request_msg: Any
         """
+        if not srv_name or not srv_type:
+            self.get_logger().error(
+                f"Cannot send service request to unknown ROS2 service with name: {srv_name} and type {srv_type}"
+            )
+        if not srv_request_msg:
+            # If request is not provided create an empty one
+            srv_request_msg = srv_type.Request()
         srv_client = self.__get_srv_client(srv_name, srv_type)
         srv_client.send_request(srv_request_msg, executor=self.executor)
 
     def send_action_goal(
-        self, action_name: str, action_type: type, action_request_msg: Any, **_
+        self, action_request_msg: Any = None, action_name: Optional[str] = None, action_type: Optional[type] = None, **_
     ) -> None:
         """Action to send a ROS2 action goal during runtime
 
@@ -425,6 +432,13 @@ class Monitor(Node):
         :param action_request_msg: ROS2 action goal message
         :type action_request_msg: Any
         """
+        if not action_name or not action_type:
+            self.get_logger().error(
+                f"Cannot send service request to unknown ROS2 service with name: {action_name} and type {action_type}"
+            )
+        if not action_request_msg:
+            # If request is not provided create an empty one
+            action_request_msg = action_type.Goal()
         action_client = self.__get_action_client(action_name, action_type)
         action_client.send_request(action_request_msg)
 

@@ -5,14 +5,105 @@ import json
 from rclpy.lifecycle import Node as LifecycleNode
 from launch.actions import OpaqueCoroutine, OpaqueFunction
 from functools import partial, wraps
-from typing import Any, Callable, Dict, Optional, Union, List
+from typing import Any, Callable, Dict, Optional, Union, List, Type
 
 from launch import LaunchContext
 import launch
 from launch.actions import LogInfo as LogInfoROSAction
 
 from ..launch import logger
-from ..io.topic import _MsgPathBuilder
+from ..utils import _MsgConditionBuilder
+
+
+def _create_auto_topic_parser(input_msg_type: Type, target_msg_type: Type) -> Callable:
+    """Creates a parser function that attempts to convert an input_msg_type
+    into the target_msg_type.
+
+    :param input_msg_type: Input message type
+    :type input_msg_type: Type
+    :param target_msg_type: Target type after parsing
+    :type target_msg_type: Type
+    :raises ValueError: If not automatic parsing is found
+
+    :return: automatic parsing method
+    :rtype: Callable
+    """
+    target_msg = target_msg_type()
+    msg = input_msg_type()
+
+    # Case 1: Direct Type Match
+    # If the input message is exactly the target type, return it directly.
+    if isinstance(msg, target_msg_type):
+        logger.info(
+            f"Added direct types match parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}'"
+        )
+        return lambda *, msg, **_: msg
+
+    # Otherwise, Inspect fields
+    target_msg_fields_dict = target_msg.get_fields_and_field_types()
+    input_msg_fields_dict = msg.get_fields_and_field_types()
+    matches_found = True
+
+    # Case 2: Same Field Names and Types (Duck Typing)
+    for key, field_type in input_msg_fields_dict.items():
+        if (
+            key not in target_msg_fields_dict
+            or field_type != target_msg_fields_dict[key]
+        ):
+            matches_found = False
+            break
+
+    if matches_found:
+        logger.info(
+            f"Added direct types parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}'"
+        )
+
+        # Define the duck taping parser
+        def auto_parser(*, msg: Any, **_) -> Any:
+            for key in input_msg_fields_dict.keys():
+                setattr(target_msg, key, getattr(msg, key))
+            return target_msg
+
+        return auto_parser
+
+    matching_dict = {}
+    matches_found = True
+    # Case 3: Different Field Names but same unique Types
+    for key, field_type in input_msg_fields_dict.items():
+        if key not in target_msg_fields_dict:
+            # Check if any field in input has the same type
+            type_matched = False
+            for out_key, in_field_type in target_msg_fields_dict.items():
+                if (
+                    field_type == in_field_type
+                    and out_key not in matching_dict.values()
+                ):
+                    matching_dict[key] = out_key
+                    type_matched = True
+                    break
+            if not type_matched:
+                matches_found = False
+                break
+
+    if matches_found:
+        logger.warning(
+            f"Added type-based parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}' matching the following fields: {matching_dict}. Re-write a custom parser if a different mapping is desired."
+        )
+
+        # Define the type-based parser
+        def auto_parser(*, msg: Any, **_) -> Any:
+            for key, out_key in matching_dict.items():
+                setattr(target_msg, out_key, getattr(msg, key))
+            return target_msg
+
+        return auto_parser
+
+    # Case 4: No Match Found
+    raise ValueError(
+        f"Auto-parsing failed: Could not map input message of type '{input_msg_type.__name__}' "
+        f"to target action/service type '{target_msg_type.__name__}'. "
+        f"Fields do not match by name or type. Please provide a custom parser method that takes in an input 'msg' of type '{input_msg_type.__name__}' and return a parsed message of type '{target_msg_type.__name__}'."
+    )
 
 
 class Action:
@@ -71,7 +162,7 @@ class Action:
         # List of registered parsers to execute before the main method
         # Each entry is a dict: {'method': Callable, 'output_mapping': str|None, 'arg_index': int|None}
         self._event_parsers: List[Dict[str, Any]] = []
-        self.__parsed_topics : Dict[str, type] = {}
+        self.__parsed_topics: Dict[str, type] = {}
 
         self.__verify_args_kwargs()
 
@@ -92,7 +183,7 @@ class Action:
 
         :raises ValueError: If args or kwargs are not compatible with the action executable
         """
-        _topic_parsing: Dict[Union[int, str], _MsgPathBuilder] = {}
+        _topic_parsing: Dict[Union[int, str], _MsgConditionBuilder] = {}
         function_parameters = inspect.signature(self.executable).parameters
 
         # Check args
@@ -102,12 +193,12 @@ class Action:
             )
 
         for idx, value in enumerate(self.args):
-            if isinstance(value, _MsgPathBuilder):
+            if isinstance(value, _MsgConditionBuilder):
                 _topic_parsing[idx] = value
 
         # Check kwargs
         for key, value in self.kwargs.items():
-            if isinstance(value, _MsgPathBuilder):
+            if isinstance(value, _MsgConditionBuilder):
                 _topic_parsing[key] = value
 
         for position, topic_path in _topic_parsing.items():
@@ -131,7 +222,7 @@ class Action:
                 # Keyword argument replacement
                 self.add_event_parser(
                     method=partial(parser_method, topic_msg_attributes),
-                    output_mapping=position,
+                    keyword_argument_name=position,
                 )
 
     def __call__(self, **kwargs):
@@ -174,7 +265,7 @@ class Action:
                     )
             else:
                 # No specific target: Prepend to arguments (Stack behavior)
-                prepend_values.insert(0, output)
+                prepend_values.append(output)
 
         # Assemble final arguments
         final_args = tuple(prepend_values) + tuple(call_args)
@@ -184,7 +275,7 @@ class Action:
     def add_event_parser(
         self,
         method: Callable,
-        output_mapping: Optional[str] = None,
+        keyword_argument_name: Optional[str] = None,
         arg_index: Optional[int] = None,
         **new_kwargs,
     ):
@@ -201,9 +292,64 @@ class Action:
 
         self._event_parsers.append({
             "method": method,
-            "output_mapping": output_mapping,
+            "keyword_argument_name": keyword_argument_name,
             "arg_index": arg_index,
         })
+
+    def _set_dynamic_argument_types(self, types: Dict[str, Union[Type, List[Type]]]):
+        """Used to set the missing (dynamic) argument type in derived pre-built actions
+
+        :param types: Required types by the action method
+        :type types: Dict[str, Union[Type, List[Type]]]
+        """
+        self._dynamic_argument_types = types
+
+    def add_automatic_parser_from_msg_type(
+        self,
+        input_topic_msg_type: Type,
+        action_argument_type: Optional[Type] = None,
+        keyword_argument_name: Optional[str] = None,
+        arg_index: Optional[int] = None,
+        **new_kwargs,
+    ):
+        """
+        Add an automatic parser from a given topic to the required dynamic type
+
+        :param input_topic_msg_type: Type of the input topic message (to be parsed to the dynamic argument type)
+        :param keyword_argument_name: Name of the keyword argument to replace/inject
+        :param arg_index: Index of the positional argument to replace
+        :param new_kwargs: Additional static kwargs to add to the action configuration
+        """
+        if not hasattr(self, "_dynamic_argument_types") and not action_argument_type:
+            logger.debug(
+                "Action does not have any required 'dynamic_argument_types' and 'action_argument_type' is None. Skipping automatic parser..."
+            )
+            return
+
+        if action_argument_type:
+            parser_method = _create_auto_topic_parser(
+                input_msg_type=input_topic_msg_type,
+                target_msg_type=action_argument_type,
+            )
+        else:
+            if keyword_argument_name:
+                dynamic_type = self._dynamic_argument_types.get(
+                    keyword_argument_name, None
+                )
+            elif arg_index is not None:
+                dynamic_type = self._dynamic_argument_types.values()[arg_index]
+            else:
+                # Get the first type by default
+                dynamic_type = self._dynamic_argument_types.values()[0]
+            parser_method = _create_auto_topic_parser(
+                input_msg_type=input_topic_msg_type, target_msg_type=dynamic_type
+            )
+        self.add_event_parser(
+            method=parser_method,
+            keyword_argument_name=keyword_argument_name,
+            arg_index=arg_index,
+            **new_kwargs,
+        )
 
     def _verify_against_event_topic(self, event_topic) -> None:
         """Verify the action topic parsers (if present) against an event.
@@ -216,9 +362,12 @@ class Action:
         # TODO: Support additional subscribers to required topics other than the event topic?
         # For example: If battery is low event triggers an action that reads from /odom topic?
         for topic_name, topic_ros_type in self.__parsed_topics.items():
-            if topic_name != event_topic.name or topic_ros_type != event_topic.ros_msg_type:
+            if (
+                topic_name != event_topic.name
+                or topic_ros_type != event_topic.ros_msg_type
+            ):
                 raise ValueError(
-                    f"Action parser topic mismatch. Actions only have access to associated events topics. Action '{self.action_name}' is associated with event topic 'Topic(name={event_topic.name}, msg_type={event_topic.ros_msg_type})', but got parser topic 'Topic(name={topic_name}, msg_type={topic_ros_type})'"
+                    f"Action parser topic mismatch. Actions only have access to associated events topics. Action '{self.action_name}' is associated with event topic '{event_topic.name}', but got topic '{topic_name}'"
                 )
 
     @property

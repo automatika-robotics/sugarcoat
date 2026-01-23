@@ -131,7 +131,7 @@ def goal_point_parser(*, msg: PointStamped, **_):
     return action_request
 
 # Adds the parser method as an Event parser of the send_goal action
-send_goal.add_event_parser(goal_point_parser, output_mapping="action_request_msg")
+send_goal.add_event_parser(goal_point_parser, keyword_argument_name="action_request_msg")
 ```
 
 As we see the defined `goal_point_parser` method takes the PointStamped message and turns it into a `PlanPath` goal request. Then at each event trigger the value of the `action_request` will be passed to the `send_action_goal` executable as the `action_request_msg`
