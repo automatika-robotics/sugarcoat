@@ -151,11 +151,11 @@ class Topic(BaseAttrs, Generic[MsgT]):
     qos_profile: Union[Dict, QoSConfig] = field(
         default=Factory(QoSConfig), converter=_make_qos_config
     )
-    ros_msg_type: Optional[Type[MsgT]] = field(default=None, init=False)
+    ros_msg_type: Type[MsgT] = field(init=False)
     additional_types: List[Type[supported_types.SupportedType]] = field(
         default=Factory(list)
     )
-    __msg: Optional[_MsgConditionBuilder] = field(default=None, init=False)
+    __msg: _MsgConditionBuilder = field(init=False)
 
     @msg_type.validator
     def _msg_type_validator(self, _, val):
