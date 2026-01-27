@@ -58,7 +58,7 @@ Check the [robot plugin example details](#an-example-robot-plugin) below for a c
 
 ## How to Use a Plugin in your Recipe
 
-Using a robot plugin in your Sugarcoat automation recipe is extremly straightforward. After building and installing your plugin package, all you need to do is to specify the plugin package name when initializing the `Launcher` and Sugarcoat will take it from there!
+Using a robot plugin in your Sugarcoat automation recipe is extremely straightforward. After building and installing your plugin package, all you need to do is to specify the plugin package name when initializing the `Launcher` and Sugarcoat will take it from there!
 
 ```python
 from ros_sugar import Launcher
@@ -138,13 +138,13 @@ A `server_node.py` is provided to simulate the robot's ROS2 server. It spins a m
 
 Here the example plugin is tested with [**Kompass**](https://github.com/automatika-robotics/kompass) which is an event-driven navigation framework build on top of Sugarcoat.
 
-- To recplicate this test, start by installing Kompass from source by following the instructions [here](https://automatika-robotics.github.io/kompass/install.html)
+- To replicate this test, start by installing Kompass from source by following the instructions [here](https://automatika-robotics.github.io/kompass/install.html)
 
 - Pull the [myrobot_plugin_interface](https://github.com/automatika-robotics/robot-plugin-example) to your ROS2 workspace and build it.
 
 Start by running the [`turtlebot3_test`](https://github.com/automatika-robotics/kompass/blob/main/kompass/recipes/turtlebot3.py) without the plugin and observe the subscribed and published topics. You will see that the components are subscribed to `/odometry/filtered` topic of type `Odometry`. The `DriveManager` component will also be publishing the robot commands as `Twist` messages on `/cmd_vel` topic (or `TwistStamped` based on your ROS2 distribution).
 
-To enable the plugin, just edit one line in the recipe to change the exisitng launcher initialization from the following:
+To enable the plugin, just edit one line in the recipe to change the existing launcher initialization from the following:
 ```python
 
 launcher = Launcher(robot_plugin="myrobot_plugin")

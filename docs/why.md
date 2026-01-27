@@ -9,76 +9,102 @@ Whether you're building scalable robotic systems, deploying distributed edge app
 
 ### Intuitive Python API with Event-Driven Architecture
 
-- Design systems using the **event-driven paradigm** — natively supported with Events and Actions.
-- Trigger `Component` behaviors like start/stop/reconfigure at runtime with minimal overhead.
+No need to write verbose callbacks just to check a sensor value. Sugarcoat allows you to define complex system behaviors using natural Python expressions to execute data-driven actions
 
-### Abstraction Over ROS2 Primitives
+* **Standard ROS2:** Write a custom subscriber class in your component $\rightarrow$ hardcode a custom callback $\rightarrow$ check `if msg.data <= 20.0` $\rightarrow$ call function.
 
-- Forget boilerplate — Sugarcoat **abstracts away repetitive tasks** like:
-  - Creating publishers, subscribers, services, and clients.
-  - Type checking and validation.
-- The developer can focus on logic implementation, not plumbing.
+* **Sugarcoat:**
+    ```python
+    # Trigger an action when battery is low
+    Event("my_awesome_event", battery.msg.data <= 20.0)
+    ```
+
 
 ### ROS2 Nodes Reimagined as Components
 
-- Each `Component` is a self-contained execution unit augmenting a traditional ROS node with:
-  - Configurable Inputs/Outputs.
-  - Defined Fallbacks for fault-tolerant behavior.
-  - Integrated Lifecycle Management and Health Status tracking.
+Sugarcoat wraps standard ROS2 nodes into powerful **Components** that come pre-equipped with:
 
-### Built-in Health Monitoring
+* **Configurable Inputs/Outputs** with automatic handling of subscribers and publishers creation.
+* **Managed Lifecycle:** Automatic handling of Configure, Activate, Deactivate, and Cleanup states.
+* **Configuration Management:** Type-safe configuration validation using `attrs`.
+* **Health Monitoring:** Built-in heartbeats and status tracking.
+* **Fallbacks:** Define specific recovery behaviors if a component crashes or stalls.
 
-- Each component continuously updates its **Health Status** and can execute its own **Fallbacks**.
-- Internal `Monitor` tracks components and responds to failures via Events/Actions.
-- Reduces the need for writing custom watchdogs or error-handling routines.
+With Sugarcoat Components you can forget about boilerplate code and focus on logic implementation, not plumbing.
 
-### Runtime Dynamism and Flexibility
+### Zero-Code Dynamic Web UI
 
-- Dynamically:
-  - Start/stop components.
-  - Modify configurations.
-  - Trigger transitions or actions — all during runtime using defined Events and Actions.
+The **Dynamic Web UI** automatically generates a fully functional control interface for your entire system — **no front-end coding required.**. This feature instantly transforms your complex, multinode ROS2 system into a **monitorable and configurable web application**.
 
-### Multithreaded & Multi-process Execution
-
-- `Launcher` supports both multi-threaded and multi-process component execution.
-- Adapt to performance or isolation needs without changing component logic.
-
-
-### Dynamic Web UI for Sugarcoat Recipes
-
-The **Dynamic Web UI** takes system visibility and control to the next level by **automatically generating** a fully dynamic and extensible web interface for any recipe — **no front-end coding required.**
-
-This feature instantly transforms your complex, multinode ROS2 system into a **monitorable and configurable web application**.
-
-Key Highlights:
-- **Automatic Settings UI:** Interfaces for configuring all `Component` settings are generated instantly.
-- **Auto I/O Visualization:** Inputs and Outputs are automatically visualized as interactive web elements.
-- **WebSocket-Based Streaming:** Enables **bidirectional**, **low-latency** streaming of text, images, and audio.
+* **Auto I/O Visualization:** Inputs/Outputs are automatically visualized (Text, Images, Audio, Pose, Maps, etc.).
+* **Live Configuration:** Tweak component parameters in real-time directly from the UI.
+* **Bidirectional Streaming:** Low-latency WebSocket streaming for and to the robot.
 - **Responsive Layouts:** Components are organized in adaptive, grid-based layouts for clear visibility.
 - **Extensible Design:** Add new message types or custom widgets through lightweight extensions.
 
 :::{seealso} Check how you can enable the dynamic UI for your recipe [here](./advanced/web_ui.md)
 :::
 
----
+### Hardware Agnosticism (Robot Plugins)
+Sugarcoat introduces [**Robot Plugins**](./advanced/robot_plugins.md) to seamlessly bridge your automation recipes with diverse robot hardware.
+
+* **No Vendor Lock-in:** Different manufacturers use custom ROS2 interfaces (messages/services). Sugarcoat Plugins act as a translation layer, handling type conversions behind the scenes.
+* **True Portability:** Write your automation logic once using standard types. Switch from a simulation to a physical robot simply by changing the `robot_plugin` configuration—**zero code changes required**.
 
 ## Standard ROS2 vs. Sugarcoat
 
-### 🔧 Basic Launch and System Architecture
+### 🔧 Code, Architecture and Developer Experience
 
-| **ROS2 Launch**                                                                                   | **With Sugarcoat**                                                                                            |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| ROS2 Launch files are powerful but **verbose**, and and **hard to maintain** for large projects   | Sugarcoat builds on top of ROS2 Launch with **simplified Pythonic syntax** that is easy to debug and maintain |
-| **No native Lifecycle Node Integration**. Manual lifecycle transition implementation is required. | **Built-in lifecycle automation** for all Components with native support.                                     |
-| **Clunky Launch Composition**. Including other launch files is verbose and hard to modularize.    | **Easily reusable components and launch configurations** through simple Python imports.                       |
+| **Standard ROS2 Pattern** | **With Sugarcoat** |
+| :--- | :--- |
+| **Verbose Boilerplate**<br>Requires manual setup of Publishers, Subscribers, Service Clients, and Parameter servers for every node. | <span class="text-red">**Declarative & Concise**</span><br>Define Inputs, Outputs, and Configs declaratively. The framework handles the setup, threading, and cleanup. |
+| **Manual Logic Glue**<br>Writing custom "Manager Nodes" just to wire the output of Node A to the input of Node B's action. | <span class="text-red">**Auto-Parsers & Events**</span><br>Directly wire Topic data into Action arguments in your launch recipe without writing intermediate glue code. |
+| **Steep learning curve**<br>Limited examples in the docs                                                   | <span class="text-red">**Intuitive Pythonic interface**</span><br>Full developer docs, tutorials, and API references.                                       |
 
 
-### ⚙️ Runtime and Developer Experience
+### ⚙️ Runtime and Reliability
 
-| **Standard ROS2**                                                                                            | **With Sugarcoat**                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Low Runtime Flexibility**. Limited behaviors for starting or stopping nodes dynamically during runtime     | **Full dynamic launch** with easy transitions during runtime using the event-based design                                       |
-| **Limited event-based behaviors**. No interface to configure event behaviors from runtime system information | Supports ROS2 launch events with an **additional interfaces to configure events based on any Topic information during runtime** |
-| **Steep learning curve** with limited examples in the docs                                                   | **Intuitive Pythonic interface** with full developer docs, tutorials, and API references.                                       |
-| **No integrated system visualization or web control.**                                                       | **Dynamic Web UI** for automatic real-time visualization and control of any Sugarcoat recipe — no manual front-end needed.      |
+| **Standard ROS2 Pattern** | **With Sugarcoat** |
+| :--- | :--- |
+| **Static Launch Files**<br>XML/Python launch files are often static and hard to introspect at runtime. | <span class="text-red">**Dynamic Universal Recipes**</span><br>Hardware-agnostic applications that auto-generate a Web UI and allow full runtime introspection, live reconfiguration, and interactive control. |
+| **Opaque Failures**<br>When a node dies, the system often keeps running in an undefined state unless you write custom watchdogs. | <span class="text-red">**Built-in Health Monitor**</span><br>A central Monitor tracks every component. If one fails, defined **Fallback Actions** (e.g., specific restarts or safety stops) trigger automatically. |
+| **Manual Lifecycle Management**<br>Implementing the `LifecycleNode` state machine correctly is complex and often skipped. | <span class="text-red">**Native Lifecycle Support**</span><br>Every Sugarcoat Component is a Lifecycle Node by default, with automated transitions and error handling. |
+| **No Native UI**<br>Visualizing custom data requires writing custom RQt plugins or web bridges. | <span class="text-red">**Instant Web Interface**</span><br>Every topic, parameter, and log is accessible via an auto-generated, responsive Web UI immediately upon launch. |
+
+
+
+## See it in Action
+
+-  Before (Standard ROS2 Approach):
+
+*You write a "Battery Monitor" node.*
+
+1.  Import rclpy, create class.
+2.  Create subscription to `/battery`.
+3.  Create client for `/navigation/stop`.
+4.  In callback: check voltage.
+5.  If low: wait for service, create request, call service.
+6.  Handle service errors / timeouts.
+
+- After (Sugarcoat Approach):
+
+*You write a Recipe!*
+
+```python
+# 1. Define Source & Action
+batt_topic = Topic("/battery", "Float32")
+stop_action = Action(method=nav_component.stop)
+
+# 2. Define Logic
+emergency_event = Event(
+    event_name="low_battery",
+    event_condition=batt_topic.msg.data <= 15.0,
+    on_change=True # Trigger once when threshold is crossed
+)
+
+# 3. Launch
+launcher.add_pkg(
+    components=[nav_component],
+    events_actions={emergency_event: stop_action}
+)
+```
