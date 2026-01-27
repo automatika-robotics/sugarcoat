@@ -168,6 +168,13 @@ class BaseComponent(lifecycle.Node):
             str, Dict
         ] = {}  # Dictionary of user defined algorithms configuration
 
+        # Health status topic
+        self.__health_status_topic = (
+            Topic(name=f"{self.node_name}/status", msg_type=ComponentStatus)
+            if self.__enable_health_publishing
+            else None
+        )
+
         # Main goal handle (to execute one goal at a time)
         # TODO: add config parameter (one goal vs goal queue)
         self._main_goal_handle = None
@@ -397,6 +404,15 @@ class BaseComponent(lifecycle.Node):
             )
         return None
 
+    @property
+    def status_topic(self) -> Topic:
+        """Get the component health status topic
+
+        :return: Health status topic
+        :rtype: Topic
+        """
+        return self.__health_status_topic
+
     # Managing Inputs/Outputs
     def _add_ros_subscriber(self, callback: GenericCallback):
         """Creates a subscriber to be attached to an input message.
@@ -590,8 +606,8 @@ class BaseComponent(lifecycle.Node):
         if self.__enable_health_publishing:
             # Create status publisher
             self.health_status_publisher: ROSPublisher = self.create_publisher(
-                msg_type=ComponentStatus,
-                topic=f"{self.get_name()}/status",
+                msg_type=self.__health_status_topic.ros_msg_type,
+                topic=self.__health_status_topic.name,
                 qos_profile=1,
             )
         # Create publisher and attach it to output publisher object
