@@ -27,7 +27,6 @@ from tf2_ros.transform_listener import TransformListener
 from builtin_interfaces.msg import Time
 from lifecycle_msgs.msg import State as LifecycleStateMsg
 
-from automatika_ros_sugar.msg import ComponentStatus
 from automatika_ros_sugar.srv import (
     ChangeParameter,
     ChangeParameters,
@@ -170,7 +169,7 @@ class BaseComponent(lifecycle.Node):
 
         # Health status topic
         self.__health_status_topic = (
-            Topic(name=f"{self.node_name}/status", msg_type=ComponentStatus)
+            Topic(name=f"{self.node_name}/status", msg_type="ComponentStatus")
             if self.__enable_health_publishing
             else None
         )

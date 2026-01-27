@@ -2,6 +2,7 @@ from typing import Any, List, Callable, Union, Type
 from attrs import define
 import operator
 import array
+import copy
 import numpy as np
 
 from .config.base_attrs import BaseAttrs
@@ -212,24 +213,33 @@ class MsgConditionBuilder:
         self._topic = topic
         self._base = path or []
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str):
         # Validate that the attribute exists in the message type
-        augmented_base = self._base + [name]
-        start = self._type()
-        for key, attribute_name in enumerate(augmented_base):
-            if not hasattr(start, attribute_name):
-                old_bases = ".".join(augmented_base[:key])
-                error = (
-                    f"Available attributes: {start.get_fields_and_field_types()}"
-                    if hasattr(start, "get_fields_and_field_types")
-                    else ""
-                )
-                raise AttributeError(
-                    f"Message '{self._type.__name__}.{old_bases}' has no attribute: '{augmented_base[key]}'. "
-                    + error
-                )
-            start = getattr(start, attribute_name)
-        return MsgConditionBuilder(self._topic, augmented_base)
+        try:
+            augmented_base = self._base + [name]
+            start = self._type()
+            for key, attribute_name in enumerate(augmented_base):
+                if not hasattr(start, attribute_name):
+                    old_bases = ".".join(augmented_base[:key])
+                    error = (
+                        f"Available attributes: {start.get_fields_and_field_types()}"
+                        if hasattr(start, "get_fields_and_field_types")
+                        else ""
+                    )
+                    raise AttributeError(
+                        f"Message '{self._type.__name__}.{old_bases}' has no attribute: '{augmented_base[key]}'. "
+                        + error
+                    )
+                start = getattr(start, attribute_name)
+            return MsgConditionBuilder(self._topic, augmented_base)
+        except Exception:
+            # NOTE: This exception is added to avoid bugs when using an object of the class with system introspection (like pickle or inspect).
+            return None
+
+    def __deepcopy__(self, memo):
+        # Manually create the new object to avoid errors from deepcopy which creates empty object instances before populating their dictionary.
+        new_obj = MsgConditionBuilder(self._topic, copy.deepcopy(self._base, memo))
+        return new_obj
 
     def as_tuple(self) -> tuple:
         return tuple(self._base)
@@ -282,7 +292,6 @@ class MsgConditionBuilder:
         )
 
     # --- Dunder Methods for Conditional Parsing ---
-
     def __eq__(self, other) -> Condition:
         self._check_similar_type(other)
         return self._make_condition(ConditionOperators.equals, other)
