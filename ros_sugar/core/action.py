@@ -2,10 +2,22 @@
 
 import inspect
 import json
+import numpy as np
 from rclpy.lifecycle import Node as LifecycleNode
 from launch.actions import OpaqueCoroutine, OpaqueFunction
 from functools import partial, wraps
-from typing import Any, Callable, Dict, Optional, Union, List, Type
+import array
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Optional,
+    Union,
+    List,
+    Type,
+    get_origin,
+    get_args,
+)
 
 from launch import LaunchContext
 import launch
@@ -15,94 +27,293 @@ from ..launch import logger
 from ..condition import MsgConditionBuilder
 
 
-def _create_auto_topic_parser(input_msg_type: Type, target_msg_type: Type) -> Callable:
-    """Creates a parser function that attempts to convert an input_msg_type
-    into the target_msg_type.
-
-    :param input_msg_type: Input message type
-    :type input_msg_type: Type
-    :param target_msg_type: Target type after parsing
-    :type target_msg_type: Type
-    :raises ValueError: If not automatic parsing is found
-
-    :return: automatic parsing method
-    :rtype: Callable
+def _create_auto_topic_parser(input_msg_type: Type, target_type: Type) -> Callable:
     """
-    target_msg = target_msg_type()
-    msg = input_msg_type()
+    Factory function to create an automatic parser from a ROS message type
+    to a target type (either another ROS message or a Python primitive/structure).
 
-    # Case 1: Direct Type Match
-    # If the input message is exactly the target type, return it directly.
-    if isinstance(msg, target_msg_type):
-        logger.info(
-            f"Added direct types match parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}'"
+    :param input_msg_type: The source ROS message class.
+    :param target_type: The destination type (ROS msg class, int, float, list, etc.).
+    :return: A callable parser function: (msg=...) -> target_type
+    """
+    if not hasattr(input_msg_type, "get_fields_and_field_types"):
+        raise ValueError(
+            f"Cannot create an automatic parser. 'input_msg_type' should be a valid ROS2 message type, but got {input_msg_type}"
         )
+    # Check if target is a ROS Message (has field types method)
+    if hasattr(target_type, "get_fields_and_field_types"):
+        return _create_auto_ros_msg_parser(input_msg_type, target_type)
+    else:
+        return _parse_to_python_type(input_msg_type, target_type)
+
+
+def _get_ros_field_type_map(msg_cls: Type) -> Dict[str, str]:
+    """Helper to safely get field types map from a ROS message class."""
+    if hasattr(msg_cls, "get_fields_and_field_types"):
+        return msg_cls.get_fields_and_field_types()
+    return {}
+
+
+def _is_compatible_primitive(ros_type_str: str, python_type: Type) -> bool:
+    """
+    Check if a ROS type string (e.g., 'int32', 'boolean') is compatible with a Python type.
+    """
+    # Clean ROS type string (remove 'sequence<...>', 'string<...>')
+    base_ros_type = ros_type_str.split("<")[0]
+
+    # Mapping ROS string types to Python types
+    type_map = {
+        "boolean": bool,
+        "bool": bool,
+        "octet": (int, bytes),
+        "float": float,
+        "double": float,
+        "int": int,
+        "uint": int,
+        "string": str,
+        "char": (int, str),
+    }
+
+    # Handle standard python types
+    for key, val in type_map.items():
+        if key in base_ros_type:
+            if isinstance(val, tuple):
+                if python_type in val:
+                    return True
+            elif python_type == val:
+                return True
+
+            # Allow float -> int (if desired, though risky for precision) or int -> float
+            if python_type is float and val is int:
+                return True
+
+            # Allow numpy types
+            if python_type.__module__ == "numpy":
+                if np.issubdtype(python_type, np.integer) and val is int:
+                    return True
+                if np.issubdtype(python_type, np.floating) and val is float:
+                    return True
+
+    return False
+
+
+def _parse_to_python_type(input_msg_type: Type, python_type: Type) -> Callable:
+    """
+    Creates a parser to extract a standard Python type (int, float, list, etc.)
+    from a ROS message.
+    """
+    msg_dummy = input_msg_type()
+
+    # 0. Handle 'Any' or specific ignore cases if needed
+    if python_type == Any:
         return lambda *, msg, **_: msg
 
-    # Otherwise, Inspect fields
-    target_msg_fields_dict = target_msg.get_fields_and_field_types()
-    input_msg_fields_dict = msg.get_fields_and_field_types()
-    matches_found = True
+    # Inspect ROS message fields
+    fields = _get_ros_field_type_map(input_msg_type)
 
-    # Case 2: Same Field Names and Types (Duck Typing)
-    for key, field_type in input_msg_fields_dict.items():
-        if (
-            key not in target_msg_fields_dict
-            or field_type != target_msg_fields_dict[key]
-        ):
-            matches_found = False
-            break
+    # 2. Single Field Extraction (The "data" pattern)
+    # Common in std_msgs (e.g. Int32.data, String.data) or simple messages.
+    # We look for a field that matches the target python type.
 
-    if matches_found:
+    candidates = []
+
+    # Handle generic List[T]
+    origin_type = get_origin(python_type)
+    args_type = get_args(python_type)
+    is_list_target = origin_type in (list, List) or python_type is list
+    is_numpy_target = inspect.isclass(python_type) and issubclass(
+        python_type, np.ndarray
+    )
+
+    for field_name, field_ros_type in fields.items():
+        # Get the actual python attribute value from the dummy message to check its type
+        # This is more reliable than parsing the ROS string type manually
+        field_value = getattr(msg_dummy, field_name)
+
+        # A. Exact Python Type Match
+        if type(field_value) is python_type:
+            candidates.append(field_name)
+            continue
+
+        # B. Compatible Primitives (e.g. ROS int32 -> Python int)
+        if _is_compatible_primitive(field_ros_type, python_type):
+            candidates.append(field_name)
+            continue
+
+        # C. List / Array Handling
+        if is_list_target or is_numpy_target:
+            # Check if field is a sequence/array
+            if isinstance(field_value, (list, tuple, np.ndarray, array.array)):
+                # If target is generic List (no subtypes specified), accept it
+                if not args_type and is_list_target:
+                    candidates.append(field_name)
+                # If target is specific List[int], check inner types if list is not empty
+                # (Hard to check on empty dummy msg, so we rely on ROS string type usually)
+                elif is_list_target and args_type:
+                    # Check if 'sequence' or '[' is in ros type definition
+                    if "sequence" in field_ros_type or "[" in field_ros_type:
+                        # Heuristic: assume it matches if the container matches
+                        candidates.append(field_name)
+                elif is_numpy_target:
+                    candidates.append(field_name)
+
+    # Decision Logic
+    if len(candidates) == 1:
+        field_name = candidates[0]
         logger.info(
-            f"Added direct types parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}'"
+            f"Auto-parser created: Extracting field '{field_name}' from '{input_msg_type.__name__}' "
+            f"to satisfy target '{python_type.__name__ if hasattr(python_type, '__name__') else str(python_type)}'."
         )
 
-        # Define the duck taping parser
-        def auto_parser(*, msg: Any, **_) -> Any:
-            for key in input_msg_fields_dict.keys():
-                setattr(target_msg, key, getattr(msg, key))
-            return target_msg
+        def extraction_parser(*, msg: Any, **_) -> Any:
+            val = getattr(msg, field_name)
 
-        return auto_parser
+            # Post-processing for List/Numpy conversions
+            if is_list_target and isinstance(val, (np.ndarray, array.array)):
+                return val.tolist()
+            if is_numpy_target and isinstance(val, list):
+                return np.array(val)
+            if is_numpy_target and isinstance(val, np.ndarray):
+                return val  # Already numpy
 
-    matching_dict = {}
-    matches_found = True
-    # Case 3: Different Field Names but same unique Types
-    for key, field_type in input_msg_fields_dict.items():
-        if key not in target_msg_fields_dict:
-            # Check if any field in input has the same type
-            type_matched = False
-            for out_key, in_field_type in target_msg_fields_dict.items():
-                if (
-                    field_type == in_field_type
-                    and out_key not in matching_dict.values()
-                ):
-                    matching_dict[key] = out_key
-                    type_matched = True
-                    break
-            if not type_matched:
-                matches_found = False
+            return val
+
+        return extraction_parser
+
+    elif len(candidates) > 1:
+        # Ambiguity - prefer 'data' if it exists (standard ROS convention)
+        if "data" in candidates:
+            logger.warning(
+                f"Ambiguous fields {candidates} found for target type '{python_type}'. "
+                f"Defaulting to 'data' field."
+            )
+            return lambda *, msg, **_: getattr(msg, "data", None)
+
+        raise ValueError(
+            f"Auto-parsing ambiguous: Multiple fields {candidates} in '{input_msg_type.__name__}' "
+            f"match target type '{python_type}'. Please provide a custom parser."
+        )
+
+    # 3. Last Resort: Recursion / Duck Typing for wrapped types
+    # e.g., input: Wrapper(data=Int32), target: int
+    # This is complex to implement generically without infinite recursion risks,
+    # but we can try 1 level deep if there is only 1 field in the message.
+    if len(fields) == 1:
+        single_field = list(fields.keys())[0]
+        field_val = getattr(msg_dummy, single_field)
+
+        # If the single field is a ROS Message, try to recurse
+        if hasattr(field_val, "get_fields_and_field_types"):
+            try:
+                # Recursively create a parser from that inner field to our target
+                inner_parser = _parse_to_python_type(type(field_val), python_type)
+
+                logger.info(
+                    f"Auto-parser recursive: unwrapping '{single_field}' to match target."
+                )
+
+                def recursive_parser(*, msg: Any, **kwargs) -> Any:
+                    inner_msg = getattr(msg, single_field)
+                    return inner_parser(msg=inner_msg, **kwargs)
+
+                return recursive_parser
+            except ValueError:
+                pass  # Recursion failed, continue to raise error
+
+    raise ValueError(
+        f"Auto-parsing failed: No field in '{input_msg_type.__name__}' matches Python type "
+        f"'{python_type}'. Matches attempted on fields: {list(fields.keys())}."
+    )
+
+
+def _create_auto_ros_msg_parser(
+    input_msg_type: Type, target_msg_type: Type
+) -> Callable:
+    """
+    Creates a parser to map one ROS message type to another ROS message type.
+    Logic:
+    1. Exact Match.
+    2. Duck Typing (Same field names & types).
+    3. Type Matching (Different names, same types - heuristic).
+    """
+    msg_dummy = input_msg_type()
+
+    # Case 1: Direct Type Match
+    if isinstance(msg_dummy, target_msg_type):
+        return lambda *, msg, **_: msg
+
+    target_fields = _get_ros_field_type_map(target_msg_type)
+    input_fields = _get_ros_field_type_map(input_msg_type)
+
+    # Case 2: Duck Typing (Name & Type Match)
+    # Check if all fields in target exist in input with same type string
+    common_fields = []
+    for key, f_type in target_fields.items():
+        if key in input_fields and input_fields[key] == f_type:
+            common_fields.append(key)
+
+    # If we found matches for ALL target fields, this is a strong match subset
+    # Or if we found matches for ALL input fields
+    # Let's be strict: If target has fields, we need to fill them.
+    # If target is fully covered by input:
+    if (len(common_fields) == len(target_fields) and len(target_fields) > 0) or (
+        len(common_fields) == len(input_fields)
+        and len(input_fields) < len(target_fields)
+    ):
+        logger.info(
+            f"Added name-based parser from '{input_msg_type.__name__}' to '{target_msg_type.__name__}'."
+        )
+
+        def duck_parser(*, msg: Any, **_) -> Any:
+            out = target_msg_type()
+            for key in common_fields:
+                setattr(out, key, getattr(msg, key))
+            return out
+
+        return duck_parser
+
+    # Case 3: Type-based matching (Heuristic)
+    # If names don't match, but types do uniquely
+    # e.g. Input(x: float), Target(data: float)
+    matching_map = {}  # target_field -> input_field
+    used_inputs = set()
+
+    possible_match = True
+
+    for tgt_key, tgt_type in target_fields.items():
+        found_source = None
+        for inp_key, inp_type in input_fields.items():
+            if inp_key in used_inputs:
+                continue
+            if inp_type == tgt_type:
+                found_source = inp_key
                 break
 
-    if matches_found:
+        if found_source:
+            matching_map[tgt_key] = found_source
+            used_inputs.add(found_source)
+        else:
+            possible_match = False
+            break
+
+    if possible_match and matching_map:
         logger.warning(
-            f"Added type-based parser from topic message type '{input_msg_type.__name__}' to target type '{target_msg_type.__name__}' matching the following fields: {matching_dict}. Re-write a custom parser if a different mapping is desired."
+            f"Added type-based parser (heuristic) from '{input_msg_type.__name__}' to '{target_msg_type.__name__}' "
+            f"mapping: {matching_map}. Verify this logic."
         )
 
-        # Define the type-based parser
-        def auto_parser(*, msg: Any, **_) -> Any:
-            for key, out_key in matching_dict.items():
-                setattr(target_msg, out_key, getattr(msg, key))
-            return target_msg
+        def type_parser(*, msg: Any, **_) -> Any:
+            out = target_msg_type()
+            for t_key, i_key in matching_map.items():
+                setattr(out, t_key, getattr(msg, i_key))
+            return out
 
-        return auto_parser
+        return type_parser
 
-    # Case 4: No Match Found
+    # Case 4: No Match
     raise ValueError(
-        f"Auto-parsing failed: Could not map input message of type '{input_msg_type.__name__}' "
-        f"to target action/service type '{target_msg_type.__name__}'. "
-        f"Fields do not match by name or type. Please provide a custom parser method that takes in an input 'msg' of type '{input_msg_type.__name__}' and return a parsed message of type '{target_msg_type.__name__}'."
+        f"Auto-parsing failed: Could not map ROS message '{input_msg_type.__name__}' "
+        f"to target ROS message '{target_msg_type.__name__}'."
     )
 
 
@@ -217,7 +428,7 @@ class Action:
                 # Positional argument replacement
                 self.add_event_parser(
                     method=partial(parser_method, topic_msg_attributes),
-                    arg_index=position,
+                    argument_index=position,
                 )
             else:
                 # Keyword argument replacement
@@ -242,8 +453,8 @@ class Action:
         # Iterate over all registered parsers
         for parser in self._event_parsers:
             method = parser["method"]
-            output_mapping = parser["output_mapping"]
-            arg_index = parser["arg_index"]
+            output_mapping = parser["keyword_argument_name"]
+            arg_index = parser["argument_index"]
 
             # Execute the parser method with the event context (e.g. msg)
             try:
@@ -277,7 +488,7 @@ class Action:
         self,
         method: Callable,
         keyword_argument_name: Optional[str] = None,
-        arg_index: Optional[int] = None,
+        argument_index: Optional[int] = None,
         **new_kwargs,
     ):
         """
@@ -294,7 +505,7 @@ class Action:
         self._event_parsers.append({
             "method": method,
             "keyword_argument_name": keyword_argument_name,
-            "arg_index": arg_index,
+            "argument_index": argument_index,
         })
 
     def _set_dynamic_argument_types(self, types: Dict[str, Union[Type, List[Type]]]):
@@ -348,7 +559,7 @@ class Action:
         self.add_event_parser(
             method=parser_method,
             keyword_argument_name=keyword_argument_name,
-            arg_index=arg_index,
+            argument_index=arg_index,
             **new_kwargs,
         )
 
