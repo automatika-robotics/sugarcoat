@@ -41,6 +41,7 @@ from ..io.callbacks import GenericCallback
 from ..config.base_config import (
     BaseComponentConfig,
     ComponentRunType,
+    ExternalProcessorType,
     BaseAttrs,
     QoSConfig,
 )
@@ -155,7 +156,7 @@ class BaseComponent(lifecycle.Node):
         self.action_type = main_action_type
         self.service_type = main_srv_type
         self._external_processors: Dict[
-            str, Tuple[List[Union[Callable, socket.socket]], str]
+            str, Tuple[List[Union[Callable, socket.socket]], ExternalProcessorType]
         ] = {}
 
         self.__events: Optional[List[Event]] = None
@@ -490,7 +491,7 @@ class BaseComponent(lifecycle.Node):
             else:
                 self._external_processors[input_topic.name] = (
                     [self._pre_post_processor_closure(func)],
-                    "postprocessor",
+                    ExternalProcessorType.MSG_POST_PROCESSOR,
                 )
 
     def add_publisher_preprocessor(self, output_topic: Topic, func: Callable) -> None:
@@ -515,7 +516,7 @@ class BaseComponent(lifecycle.Node):
             else:
                 self._external_processors[output_topic.name] = (
                     [self._pre_post_processor_closure(func)],
-                    "preprocessor",
+                    ExternalProcessorType.MSG_PRE_PROCESSOR,
                 )
         else:
             raise TypeError(
@@ -1314,7 +1315,7 @@ class BaseComponent(lifecycle.Node):
         :rtype: Union[str, bytes]
         """
         return json.dumps({
-            topic_name: ([p.__name__ for p in processors], processor_type)  # type: ignore
+            topic_name: ([p.__name__ for p in processors], str(processor_type))  # type: ignore
             for topic_name, (
                 processors,
                 processor_type,
@@ -1328,10 +1329,26 @@ class BaseComponent(lifecycle.Node):
         :param processors_serialized: Serialized Processors Dict
         :type processors_serialized: Union[str, bytes]
         """
-        self._external_processors = json.loads(processors_serialized)
-        # Create sockets out of function names and connect them
-        for key, processor_data in self._external_processors.items():
-            for idx, func_name in enumerate(processor_data[0]):
+        loaded_processors = json.loads(processors_serialized)
+
+        # reconstruct the dictionary, validating the processor type string
+        self._external_processors = {}
+
+        for key, processor_data in loaded_processors.items():
+            # get processor data and type
+            func_names = processor_data[0]
+            proc_type_str = processor_data[1]
+
+            # Validate string back to Enum-compatible string
+            valid_proc_type = ExternalProcessorType(proc_type_str)
+
+            # Initialize the list with function names
+            self._external_processors[key] = (func_names, valid_proc_type)
+
+            # Create sockets out of function names and connect them
+            current_processors_list = self._external_processors[key][0]
+
+            for idx, func_name in enumerate(current_processors_list):
                 sock_file = f"/tmp/{self.node_name}_{key}_{func_name}.socket"
                 if not os.path.exists(sock_file):
                     raise RuntimeError(
@@ -2021,9 +2038,9 @@ class BaseComponent(lifecycle.Node):
             processors,
             processor_type,
         ) in self._external_processors.items():
-            if processor_type == "preprocessor":
+            if processor_type == ExternalProcessorType.MSG_PRE_PROCESSOR:
                 self.publishers_dict[topic_name].add_pre_processors(processors)
-            elif processor_type == "postprocessor":
+            elif processor_type == ExternalProcessorType.MSG_POST_PROCESSOR:
                 self.callbacks[topic_name].add_post_processors(processors)
 
     def _destroy_external_processors(self):

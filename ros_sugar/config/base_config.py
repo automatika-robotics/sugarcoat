@@ -200,6 +200,60 @@ def _convert_runtype_to_enum(
         raise ValueError(f"Unsupported ComponentRunTime value '{value}'")
 
 
+class ExternalProcessorType(Enum):
+    """
+    External processor type:
+    - MSG_PRE_PROCESSOR: Executes before publishing a ros msg
+    - MSG_POST_PROCESSOR: Executes after receiving a ros msg in a callback
+    - ActionProcessor: Executed by an action, usually for event parsing
+    """
+
+    MSG_PRE_PROCESSOR = "MsgPreProcessor"
+    MSG_POST_PROCESSOR = "MsgPostProcessor"
+
+    @classmethod
+    def values(cls):
+        return [member.value for member in cls]
+
+    def __str__(self) -> str:
+        """
+        Gets value of enum
+
+        :return: Enum value
+        :rtype: str
+        """
+        return self.value
+
+    def __repr__(self) -> str:
+        """
+        Gets value of enum
+
+        :return: Enum value
+        :rtype: str
+        """
+        return self.value
+
+    @classmethod
+    def to_str(cls, enum_value) -> str:
+        """
+        Return string value corresponding to enum value if exists
+
+        :param enum_value: _description_
+        :type enum_value: ExternalProcessorType | str
+        :raises ValueError: If the enum value is not from this class
+
+        :return: String value
+        :rtype: str
+        """
+        if isinstance(enum_value, ExternalProcessorType):
+            return enum_value.value
+        # If the value is already given as a string check if it valid and return it
+        elif isinstance(enum_value, str):
+            if enum_value in cls.values():
+                return enum_value
+        raise ValueError(f"{enum_value} is not a valid ExternalProcessorType value")
+
+
 def _convert_logging_severity_to_str(
     value: Union[LoggingSeverity, str],
 ) -> str:
