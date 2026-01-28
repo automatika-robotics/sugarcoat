@@ -75,8 +75,8 @@ class FHApp:
         # Inputs and Outputs
         self.in_topics = in_topics
         self.out_topics = out_topics
-        self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
         self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
+        self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
 
         # Setup service clients
         self.srv_clients = (
@@ -184,6 +184,8 @@ class FHApp:
             number_of_inputs=len(inputs)
         )
 
+        has_map = True if self.get_all_map_outputs() else False
+
         for idx, inp in enumerate(inputs):
             input_divs.append(
                 elements.input_topic_card(
@@ -191,6 +193,7 @@ class FHApp:
                     topic_type=inp.msg_type.__name__,
                     ros_msg_type=inp.ros_msg_type,
                     column_class=inputs_columns_cls[idx],
+                    ft_has_map_element=has_map,
                 ),
             )
         return inputs_container(input_grid(*input_divs, id=grid_id))

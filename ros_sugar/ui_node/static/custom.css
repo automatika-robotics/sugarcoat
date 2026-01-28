@@ -207,6 +207,40 @@ body {
     align-items: center;
 }
 
+/* Custom Tooltip Styling for Map Buttons */
+.uk-tooltip {
+    background-color: rgba(20, 20, 20, 0.9) !important;
+    /* Dark semi-transparent bg */
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    text-transform: none;
+    /* Prevent uppercase transformation if set globally */
+    z-index: 10000;
+    /* Ensure it appears above the map overlay */
+}
+
+/* Optional: Add a subtle animation */
+.uk-tooltip.uk-active {
+    animation: uk-fade 0.2s ease-out;
+}
+
+/* Active Map Button State - Uses Brand Red */
+.active-brand-red {
+    background-color: var(--color-brand-red) !important;
+    /* #E83F3F */
+    color: var(--color-text-light) !important;
+    border: 1px solid var(--color-brand-red) !important;
+    opacity: 1 !important;
+    /* Ensure it's not transparent like the glass buttons */
+    box-shadow: 0 0 10px rgba(232, 63, 63, 0.4);
+    /* Optional glow using your red */
+}
+
 
 /* TITLES */
 .cool-title-mini {
