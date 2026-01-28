@@ -3,6 +3,10 @@
  * - Handles Map Visualization with ROS2DJS.
  */
 
+// State to track if we are in "Publish Point" mode
+const mapInteractionState = {}; // { topicName: { isPublishing: boolean, btn: HTMLElement } }
+
+
 document.addEventListener("DOMContentLoaded", () => {
     const mapElements = document.getElementsByName('map-canvas');
     if (mapElements.length === 0) return;
@@ -12,7 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
-// --- GLOBAL ZOOM FUNCTION (Called by Python Buttons) ---
+// --- EXPORTED FUNCTIONS (Called by Python Buttons) ---
 window.zoomMap = function (topicName, zoomFactor) {
     const container = document.getElementById(topicName);
     if (!container || !container.mapViewer) return;
@@ -21,6 +25,164 @@ window.zoomMap = function (topicName, zoomFactor) {
     applyZoom(viewer, zoomFactor, null); // Null center means zoom to center of view
 };
 
+
+window.togglePublishPoint = function (btn) {
+    const mapElements = document.getElementsByName('map-canvas');
+    // Check if no maps are found
+    if (mapElements.length === 0) {
+        if (typeof UIkit !== 'undefined') {
+            UIkit.notification({
+                message: "<span uk-icon='icon: warning'></span> No available input map elements found.",
+                status: 'danger',
+                pos: 'top-center',
+                timeout: 5000
+            });
+        } else {
+            console.warn("No map elements found.");
+        }
+        return;
+    }
+
+    // 1. Determine if we are turning ON or OFF based on button state
+    const isActive = btn.classList.contains('active-brand-red');
+    const isTurningOn = !isActive;
+
+    // 2. Update Button UI
+    if (isTurningOn) {
+        btn.classList.remove('uk-button-default', 'bg-white/80', 'dark:bg-gray-800/80', 'backdrop-blur');
+        btn.classList.add('active-brand-red');
+    } else {
+        btn.classList.remove('active-brand-red');
+        btn.classList.add('uk-button-default', 'bg-white/80', 'dark:bg-gray-800/80', 'backdrop-blur');
+    }
+
+    // 3. Apply to ALL Maps
+    mapElements.forEach(container => {
+        const topicName = container.id;
+
+        if (!mapInteractionState[topicName]) {
+            mapInteractionState[topicName] = { isPublishing: false, btn: null };
+        }
+        const state = mapInteractionState[topicName];
+
+        state.isPublishing = isTurningOn;
+        // Save the current active button
+        state.btn = btn;
+
+        // Update Cursor
+        container.style.cursor = isTurningOn ? 'crosshair' : 'default';
+
+        // 4. Determine Settings if Turning On
+        if (isTurningOn) {
+            // CASE 1: Click came from the map's own settings button
+            if (btn.id === `${topicName}-publish-btn`) {
+                const settingsForm = document.getElementById(`${topicName}-settings-form`);
+
+                let targetTopic = 'clicked_point';
+                let msgType = 'PointStamped';
+
+                if (state.settings) {
+                    targetTopic = state.settings.topic;
+                    msgType = state.settings.type;
+                } else if (settingsForm) {
+                    const tInput = settingsForm.querySelector('[name="clicked_point_topic"]');
+                    let mInput = settingsForm.querySelector('input[name="clicked_point_type"]');
+                    if (!mInput) mInput = settingsForm.querySelector('select[name="clicked_point_type"]');
+
+                    if (tInput && tInput.value) targetTopic = tInput.value;
+                    if (mInput && mInput.value) msgType = mInput.value;
+
+                    // Cache these initial settings
+                    state.settings = { topic: targetTopic, type: msgType };
+                }
+
+                // Save configuration for this button ID
+                state[btn.id] = { topic: targetTopic, type: msgType };
+
+            } else {
+                // CASE 2: External/Generic Button
+                // Read from data attributes, default to standard if missing
+                const customTopic = btn.getAttribute('data-topic') || 'clicked_point';
+                const customType = btn.getAttribute('data-type') || 'PointStamped';
+
+                state[btn.id] = { topic: customTopic, type: customType };
+            }
+        }
+    });
+};
+
+window.openMapSettings = function (topicName) {
+    const modal = document.getElementById(`${topicName}-settings-modal`);
+    if (!modal) return;
+
+    // 1. Show Modal
+    modal.style.display = 'grid';
+
+    // 2. Restore Saved Values (if they exist)
+    const state = mapInteractionState[topicName];
+    if (state && state.settings) {
+        const form = document.getElementById(`${topicName}-settings-form`);
+        if (form) {
+            // A. Restore Text Input
+            const tInput = form.querySelector('input[name="clicked_point_topic"]');
+            if (tInput) tInput.value = state.settings.topic;
+
+            // B. Restore Dropdown (Complex Component)
+            // We must find the HIDDEN NATIVE SELECT inside the custom component to update the UI
+            // Selector: Find the uk-select with this name, then find the native select inside it
+            const selectContainer = form.querySelector(`uk-select[name="clicked_point_type"]`);
+            if (selectContainer) {
+                const nativeSelect = selectContainer.querySelector('select');
+                if (nativeSelect) {
+                    nativeSelect.value = state.settings.type;
+                    // Dispatch change event so the Custom UI updates its text
+                    nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            } else {
+                // Fallback: try finding any select with that name
+                const simpleSelect = form.querySelector(`select[name="clicked_point_type"]`);
+                if (simpleSelect) simpleSelect.value = state.settings.type;
+            }
+        }
+    }
+};
+
+window.saveMapSettings = function (topicName) {
+    const modal = document.getElementById(`${topicName}-settings-modal`);
+    const form = document.getElementById(`${topicName}-settings-form`);
+
+    // 1. Read & Save Values to Global State
+    if (form) {
+        // A. Get Topic (Standard Input)
+        const tInput = form.querySelector('input[name="clicked_point_topic"]');
+
+        // B. Get Type (Custom Component)
+        // CRITICAL FIX: Explicitly select the 'input' tag to bypass the wrapper
+        const mInput = form.querySelector('input[name="clicked_point_type"]');
+
+        // Fallback checks if the specific input wasn't found (e.g., if structure changes)
+        let typeValue = 'PointStamped';
+        if (mInput) {
+            typeValue = mInput.value;
+        } else {
+            // Try getting it from the select if the input is missing
+            const sInput = form.querySelector('select[name="clicked_point_type"]');
+            if (sInput) typeValue = sInput.value;
+        }
+
+        if (!mapInteractionState[topicName]) mapInteractionState[topicName] = {};
+
+        mapInteractionState[topicName].settings = {
+            topic: tInput ? tInput.value : 'clicked_point',
+            type: typeValue
+        };
+
+        console.log(`[${topicName}] Settings Saved:`, mapInteractionState[topicName].settings);
+    }
+
+    // 2. Hide Modal
+    if (modal) modal.style.display = 'none';
+};
 
 function initSingleMap(container) {
     const topicName = container.id;
@@ -77,6 +239,8 @@ function initSingleMap(container) {
     const wsUrl = `${protocol}//${window.location.host}/ws_${topicName}`;
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
+    container.mapWs = ws; // Store WS for sending data back
+    container.topicName = topicName; // Store the map topic name
 
     ws.onmessage = (event) => {
         try {
@@ -87,8 +251,16 @@ function initSingleMap(container) {
             } else {
                 msgData = JSON.parse(event.data);
             }
-
             let mapMessage = msgData.msg ? msgData.msg : msgData;
+
+            // --- Save Map Metadata for Click Math ---
+            if (mapMessage.info) {
+                container.mapInfo = mapMessage.info;
+            }
+            // --- Save Map Header ---
+            if (mapMessage.header) {
+                container.mapHeader = mapMessage.header;
+            }
 
             if (mapMessage.data && typeof mapMessage.data === 'string') {
                 const binaryString = atob(mapMessage.data);
@@ -99,12 +271,8 @@ function initSingleMap(container) {
                 }
                 mapMessage.data = bytes;
             }
-
             mockRos.emit(topicName, mapMessage);
-
-        } catch (e) {
-            console.error(`[Map ${topicName}] Error:`, e);
-        }
+        } catch (e) { console.error(e); }
     };
 
     // --- 6. Interactions ---
@@ -115,6 +283,55 @@ function initSingleMap(container) {
         resizeMap(container);
     });
     resizeObserver.observe(container);
+}
+
+
+/**
+ * Coordinate Transformation Logic
+ * Screen (Pixels) -> Viewer (Pan/Zoom) -> Grid (Rotated) -> ROS (Meters)
+ */
+function transformScreenToRos(container, screenX, screenY) {
+    const viewer = container.mapViewer;
+    const gridClient = container.mapGridClient;
+    const grid = gridClient.currentGrid;
+
+    if (!grid) return null;
+
+    // 1. Screen -> Stage (Account for Pan/Zoom)
+    const dpr = window.devicePixelRatio || 1;
+    const stageX = (screenX * dpr - viewer.scene.x) / viewer.scene.scaleX;
+    const stageY = (screenY * dpr - viewer.scene.y) / viewer.scene.scaleY;
+
+    // 2. Stage -> Grid (Account for Grid Position & Rotation)
+    const dx = stageX - grid.x;
+    const dy = stageY - grid.y;
+
+    const rad = -grid.rotation * (Math.PI / 180.0); // Inverting the rotation
+    const unrotatedX = dx * Math.cos(rad) - dy * Math.sin(rad);
+    const unrotatedY = dx * Math.sin(rad) + dy * Math.cos(rad);
+
+    const imageX = unrotatedX + grid.regX;
+    const imageY = unrotatedY + grid.regY;
+
+    // 3. Grid Pixels -> ROS Coordinates (Resolution & Origin)
+    // --- KEY FIX: Use the stored info from container ---
+    const info = container.mapInfo;
+
+    if (!info) {
+        console.warn("[Map] Metadata missing. Map not loaded yet?");
+        return null;
+    }
+
+    const res = info.resolution;
+    const originX = info.origin.position.x;
+    const originY = info.origin.position.y;
+    const mapHeight = info.height;
+
+    // Calculate ROS coordinates (Assuming standard ROS bottom-left origin vs Canvas top-left)
+    const rosX = (imageX * res) + originX;
+    const rosY = ((mapHeight - imageY) * res) + originY;
+
+    return { x: rosX, y: rosY, z: 0.0 };
 }
 
 /**
@@ -152,6 +369,40 @@ function applyZoom(viewer, factor, center) {
     }
 }
 
+/**
+ * Helper method to publish a clicked point on a map canvas
+ */
+function publishPoint(container, targetTopic, rosPoint, msgType) {
+    if (!container || !container.mapWs) {
+        console.warn("Cannot publish point: Websocket or Container missing");
+        return;
+    }
+
+    // Default Orientation
+    const defaultOrientation = { ori_x: 0.0, ori_y: 0.0, ori_z: 0.0, ori_w: 1.0 };
+    let messageData = {};
+
+    // Safely get frame_id (Default to 'map' if header is missing)
+    const frameId = (container.mapHeader && container.mapHeader.frame_id) ? container.mapHeader.frame_id : 'map';
+
+    if (msgType === 'Point' || msgType === 'PointStamped') {
+        messageData = rosPoint; // {x, y, z}
+    } else if (msgType === 'Pose' || msgType === 'PoseStamped') {
+        messageData = { ...rosPoint, ...defaultOrientation};
+    }
+
+    const payload = {
+        type: "clicked_point", // Backend identifier
+        topic_name: targetTopic,
+        frame_id: frameId,
+        publish_type: msgType,
+        data: messageData
+    };
+
+    container.mapWs.send(JSON.stringify(payload));
+    console.log(`Published [${msgType}] to [${targetTopic}]`, payload);
+};
+
 
 function setupInteractions(viewer, container) {
     const canvas = viewer.scene.canvas;
@@ -160,14 +411,43 @@ function setupInteractions(viewer, container) {
     let isDragging = false;
     let lastX, lastY;
 
-    // --- PAN (Mouse Down) ---
+    // --- MOUSE DOWN (Handle Clicked Point or Pan) ---
     canvas.addEventListener('mousedown', (event) => {
-        if (event.button === 0 || event.button === 1) { // Left or Middle click
+        let topicName = container.topicName;
+        const state = mapInteractionState[topicName];
+        // --- PUBLISH POINT LOGIC ---
+        if (state && state.isPublishing && event.button === 0) {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+
+            // 1. Get raw point
+            const rosPoint = transformScreenToRos(container, mouseX, mouseY);
+
+            if (rosPoint) {
+                // Determine which settings to use based on the active button
+                let targetTopic = 'clicked_point';
+                let msgType = 'PointStamped';
+
+                if (state.btn && state[state.btn.id]) {
+                    targetTopic = state[state.btn.id].topic;
+                    msgType = state[state.btn.id].type;
+                }
+
+                publishPoint(container, targetTopic, rosPoint, msgType);
+            }
+            // Toggle OFF (Global function, passes the active button)
+            window.togglePublishPoint(state.btn);
+            return;
+        }
+
+        // --- PAN LOGIC ---
+        if (event.button === 0 || event.button === 1) {
             isDragging = true;
             lastX = event.clientX;
             lastY = event.clientY;
             canvas.style.cursor = 'grabbing';
-            event.preventDefault(); // Prevent text selection
+            event.preventDefault();
         }
     });
 
