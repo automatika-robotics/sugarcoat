@@ -173,6 +173,41 @@ body {
         box-shadow 0.3s ease;
 }
 
+/* FULL SCREEN OVERLAY */
+.fullscreen-overlay {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9999;
+    background-color: var(--color-bg-dark);
+    padding: 2rem;
+    margin: 0 !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    overflow-y: auto !important;
+    /* Allow scrolling inside the card */
+}
+
+/* Adjust inner card height when in fullscreen */
+.fullscreen-overlay .inner-main-card {
+    max-height: 90vh !important;
+}
+
+/* Ensure map takes full space when in fullscreen */
+.fullscreen-overlay [name="map-canvas"] {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 90vh;
+    /* Force it to grow */
+    display: flex;
+    /* Helps align content if needed */
+    justify-content: center;
+    align-items: center;
+}
+
+
 /* TITLES */
 .cool-title-mini {
     font-family: var(--font-heading);

@@ -31,11 +31,21 @@ class FHApp:
 
         hdrs = (
             Theme.red.headers(),  # Get theme from MonsterUI
+            # --- 1. Add ROS Dependencies (CDN) ---
+            Script(src="https://code.createjs.com/1.0.0/easeljs.min.js"),
+            Script(
+                src="https://cdn.jsdelivr.net/npm/eventemitter2@6.4.9/lib/eventemitter2.min.js"
+            ),
+            Script(src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"),
+            Script(src="https://cdn.jsdelivr.net/npm/ros2d@0/build/ros2d.min.js"),
             Script(
                 src="custom.js",
             ),
             Script(
                 src="audio_manager.js",
+            ),
+            Script(
+                src="ros_maps.js",
             ),
             Script(
                 src="video_manager.js",
@@ -137,6 +147,17 @@ class FHApp:
             if (
                 elements._OUTPUT_ELEMENTS.get(o.msg_type.__name__, None)
                 == elements._out_image_element
+            )
+        ]
+
+    def get_all_map_outputs(self) -> List[Tuple]:
+        """Return all topics that connect to their own websocket for streaming"""
+        return [
+            (o.name, o.msg_type.__name__)
+            for o in self.out_topics
+            if (
+                elements._OUTPUT_ELEMENTS.get(o.msg_type.__name__, None)
+                == elements._out_map_element
             )
         ]
 

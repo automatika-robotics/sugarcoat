@@ -59,7 +59,9 @@ class UINode(BaseComponent):
         ] = {}
 
         # Initialize websocket callbacks
-        self.default_websocket_callback: Callable = lambda _: asyncio.sleep(0)
+        self.default_websocket_callback: Callable = (
+            lambda *args, **kwargs: asyncio.sleep(0)
+        )
 
         try:
             self.loop = asyncio.get_running_loop()
@@ -264,7 +266,7 @@ class UINode(BaseComponent):
                 payload["payload"] = ui_content
             except Exception as e:
                 return self._return_error(f"Topic callback error: {e}")
-            asyncio.run_coroutine_threadsafe(ws_callback(payload), self.loop)
+            asyncio.run_coroutine_threadsafe(ws_callback(payload, msg=msg), self.loop)
 
         _subscriber = self.create_subscription(
             msg_type=callback.input_topic.ros_msg_type,

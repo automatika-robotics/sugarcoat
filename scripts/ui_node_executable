@@ -13,6 +13,11 @@ from ros_sugar.ui_node import UINode, UINodeConfig
 from ros_sugar.ui_node.frontend import FHApp
 import ros_sugar.ui_node.elements as elements
 
+import base64
+import array
+import numpy as np
+from rosidl_runtime_py.convert import message_to_ordereddict
+
 
 def main():
     """
@@ -191,7 +196,7 @@ def main():
         """When a client connects, register its callback."""
 
         # Callback function for ROS node
-        async def stream_callback(data: Dict):
+        async def stream_callback(data: Dict, **_):
             if data["type"] == "error":
                 await log_data(
                     send, data["payload"], data_type=data["type"], data_src=data["type"]
@@ -201,11 +206,49 @@ def main():
 
         ros_node.attach_websocket_callback(stream_callback, topic_type)
 
+    async def on_conn_map(ws, _, topic_type: str):
+        """When a client connects, register its callback."""
+
+        # Callback function for ROS node
+        async def map_callback(*_, msg):
+            # Convert ROS message to a JSON-serializable dict
+            # Convert header and info normally (they are small)
+            msg_dict = {
+                "header": message_to_ordereddict(msg.header),
+                "info": message_to_ordereddict(msg.info),
+            }
+
+            # FAST CONVERSION of data field
+            # 'data' is typically a list of int8. We want a Base64 string.
+            data_field = msg.data
+            raw_bytes = b""
+
+            if isinstance(data_field, list):
+                # 'b' is signed char (int8), matches ROS int8[]
+                raw_bytes = array.array("b", data_field).tobytes()
+            elif isinstance(data_field, array.array):
+                raw_bytes = data_field.tobytes()
+            elif isinstance(data_field, bytes):
+                raw_bytes = data_field
+            elif isinstance(data_field, np.ndarray):
+                raw_bytes = data_field.tobytes()
+            else:
+                # Fallback (slowest)
+                raw_bytes = bytes(data_field)
+
+            msg_dict["data"] = base64.b64encode(raw_bytes).decode("utf-8")
+
+            response = {"op": "publish", "msg": msg_dict}
+            await ws.send_json(response)
+
+        logging.warning(f"attaching with topic type {topic_type}...")
+        ros_node.attach_websocket_callback(map_callback, topic_type)
+
     async def on_conn_action(_, send, action_name: str):
         """When a client connects, register its callback."""
 
         # Callback function for ROS node
-        async def feedback_callback(data: Dict):
+        async def feedback_callback(data: Dict, **_):
             """Updates an action client with new feedback from the server
 
             :param data: UI data dict (status, feedback, etc.)
@@ -227,6 +270,18 @@ def main():
         @app.ws(
             f"/ws_{topic_name}",
             conn=partial(on_conn_stream, topic_type=topic_type),
+            disconn=on_disconn,
+        )
+        async def _():
+            pass
+
+    # Create websockets for map output topics
+    for topic_name, topic_type in fh.get_all_map_outputs():
+        logging.warning(f"starting map ws for {topic_name}...")
+
+        @app.ws(
+            f"/ws_{topic_name}",
+            conn=partial(on_conn_map, topic_type=topic_type),
             disconn=on_disconn,
         )
         async def _():
@@ -290,7 +345,7 @@ def main():
         """When a client connects, register its callback."""
 
         # Callback function for ROS node
-        async def websocket_callback(data: Dict):
+        async def websocket_callback(data: Dict, **_):
             # Recieve json style data from node and pass to UI with send
             if len(data["payload"]) > 0:
                 await log_data(

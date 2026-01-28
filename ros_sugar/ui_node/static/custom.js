@@ -1,12 +1,36 @@
 /**
  * custom.js
- * Handles general UI interactions, Drag & Drop, HTMX configs, and logging.
+ * Handles general UI interactions, Drag & Drop, Resize, HTMX configs, and logging.
  */
 
 // Helper to persist forms
 function persistForm(form) {
     if (typeof FormPersistence !== "undefined") {
         FormPersistence.persist(form);
+    }
+}
+
+
+// Toggle Fullscreen Mode
+function toggleFullScreen(btn, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // Toggle the class
+    container.classList.toggle('fullscreen-overlay');
+
+    // Toggle icon
+    const icon = btn.querySelector('[uk-icon]') || btn.querySelector('svg');
+    if (icon && icon.hasAttribute('icon')) {
+        const current = icon.getAttribute('icon');
+        icon.setAttribute('icon', current === 'expand' ? 'shrink' : 'expand');
+    }
+
+    // --- RESIZE MAP IF PRESENT ---
+    // Check if this container has a map-canvas inside
+    const mapContainer = container.querySelector('[name="map-canvas"]');
+    if (mapContainer && typeof resizeMap === 'function') {
+        resizeMap(mapContainer);
     }
 }
 
@@ -48,7 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    // 3. Initialize Draggables
+    // 3. Initialize Draggable
     makeDraggable();
 });
 

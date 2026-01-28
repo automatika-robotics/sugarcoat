@@ -257,6 +257,40 @@ def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
     )
 
 
+def _fullscreen_button(div_id: str):
+    """
+    Button to toggle fullscreen mode for a specific div_id.
+    """
+    return Button(
+        UkIcon("expand"),
+        type="button",
+        cls="no-drag",  # Prevent dragging when clicking this
+        onclick=f"toggleFullScreen(this, '{div_id}')",
+    )
+
+
+def _map_zoom_controls(map_id: str):
+    """
+    Overlay buttons for Zoom In/Out.
+    Requires 'zoomMap' function in ros_maps.js.
+    """
+    return DivHStacked(
+        Button(
+            UkIcon("plus"),
+            cls="uk-button uk-button-default uk-button-small bg-white/80 dark:bg-gray-800/80 backdrop-blur shadow-md",
+            onclick=f"zoomMap('{map_id}', 1.2)",  # Zoom IN
+            type="button",
+        ),
+        Button(
+            UkIcon("minus"),
+            cls="uk-button uk-button-default uk-button-small bg-white/80 dark:bg-gray-800/80 backdrop-blur shadow-md",
+            onclick=f"zoomMap('{map_id}', 0.8)",  # Zoom OUT
+            type="button",
+        ),
+        cls="absolute bottom-4 right-4 z-[100] flex flex-col space-y-2 no-drag",
+    )
+
+
 def filter_tag_button(name: str, div_to_hide: str, **kwargs):
     """UI arrow button to use for show/hide toggle of a Div with a given ID
 
@@ -497,6 +531,15 @@ def _out_image_element(topic_name: str, **_):
     )
 
 
+def _out_map_element(topic_name: str, **_):
+    # Must specify explicit height for Canvas to render
+    return Div(
+        id=topic_name,
+        name="map-canvas",
+        style="width: 100%; height: auto; background-color: #333;",
+    )
+
+
 def _log_audio_element(logging_card, output, data_src: str, id: str = "audio"):
     """Adds an Audio output or input to the main logging card"""
     return logging_card(_styled_logging_audio(output, data_src, id))
@@ -532,7 +575,7 @@ _OUTPUT_ELEMENTS: Dict = {
     "Audio": _log_audio_element,
     "Image": _out_image_element,
     "CompressedImage": _out_image_element,
-    "OccupancyGrid": _out_image_element,
+    "OccupancyGrid": _out_map_element,
 }
 
 
@@ -894,12 +937,24 @@ def output_topic_card(topic_name: str, topic_type: str, column_class: str = "") 
     :type topic_type: str
     :return: Output topic UI element
     """
-    card = Card(
-        H4(topic_name),
-        cls=f"m-2 {column_class} h-[48vh] inner-main-card",
-        id=topic_name,
+    if topic_type == "OccupancyGrid":
+        bar_elements = (
+            DivHStacked(
+                H4(topic_name),
+                _fullscreen_button(f"card-{topic_name}"),
+                _map_zoom_controls(topic_name),
+            ),
+        )
+    else:
+        bar_elements = DivHStacked(
+            H4(topic_name), _fullscreen_button(f"card-{topic_name}")
+        )
+    return Card(
+        bar_elements,
+        _OUTPUT_ELEMENTS[topic_type](topic_name),
+        cls=f"m-2 {column_class} max-h-[48vh] inner-main-card",
+        id=f"card-{topic_name}",
     )
-    return card(_OUTPUT_ELEMENTS[topic_type](topic_name))
 
 
 def styled_main_outputs_container(outputs_grid_div_id: str) -> FT:
