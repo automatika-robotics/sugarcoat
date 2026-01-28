@@ -1168,6 +1168,7 @@ class BaseComponent(lifecycle.Node):
                     raise AttributeError(
                         f"Component '{self.node_name}' does not contain requested Action method '{action_dict['action_name']}'"
                     )
+                # reparse the method using the given action name
                 method = getattr(self, action_dict["action_name"])
                 reconstructed_action = Action(
                     method=method,
@@ -1210,32 +1211,6 @@ class BaseComponent(lifecycle.Node):
                 )
                 fallbacks_kwargs[key] = reconstructed_fallback
         self.__fallbacks = ComponentFallbacks(**fallbacks_kwargs)
-
-    @_actions_json.setter
-    def _actions_json(self, actions_serialized: Union[str, bytes]):
-        """Setter of component events from JSON serialized actions
-
-        :param actions_serialized: Serialized Actions List
-        :type actions_serialized: Union[str, bytes]
-        """
-        self.__actions = []
-        actions_dict: Dict = json.loads(actions_serialized)
-        for action_list in actions_dict.values():
-            reconstructed_action_list = []
-            for action_dict in action_list:
-                if not hasattr(self, action_dict["action_name"]):
-                    raise AttributeError(
-                        f"Component '{self.node_name}' does not contain requested Action method '{action_dict['action_name']}'"
-                    )
-                # reparse the method using the given action name
-                method = getattr(self, action_dict["action_name"])
-                reconstructed_action = Action(
-                    method=method,
-                    args=action_dict["args"],
-                    kwargs=action_dict["kwargs"],
-                )
-                reconstructed_action_list.append(reconstructed_action)
-            self.__actions.append(reconstructed_action_list)
 
     def set_additional_types(self, value: str):
         """
