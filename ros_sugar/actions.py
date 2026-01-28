@@ -52,7 +52,6 @@ from .core.action import Action, LogInfo, _create_auto_topic_parser
 from .core.component import BaseComponent
 from .utils import InvalidAction
 from .io.topic import Topic
-from .launch import logger
 
 __all__ = [
     "Action",
@@ -419,7 +418,7 @@ def publish_message_from_parsed_topic(
     # Create the automatic parser logic
     parser_method = custom_parser or _create_auto_topic_parser(
         input_msg_type=in_topic.ros_msg_type,
-        target_msg_type=out_topic.ros_msg_type,
+        target_type=out_topic.ros_msg_type,
     )
     stack_action.add_event_parser(parser_method, keyword_argument_name="msg")
 
