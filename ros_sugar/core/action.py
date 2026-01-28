@@ -104,16 +104,16 @@ def _parse_to_python_type(input_msg_type: Type, python_type: Type) -> Callable:
     """
     msg_dummy = input_msg_type()
 
-    # 0. Handle 'Any' or specific ignore cases if needed
+    # Handle 'Any' or specific ignore cases if needed
     if python_type == Any:
         return lambda *, msg, **_: msg
 
     # Inspect ROS message fields
     fields = _get_ros_field_type_map(input_msg_type)
 
-    # 2. Single Field Extraction (The "data" pattern)
+    # Single Field Extraction
     # Common in std_msgs (e.g. Int32.data, String.data) or simple messages.
-    # We look for a field that matches the target python type.
+    # Look for a field that matches the target python type.
 
     candidates = []
 
@@ -194,10 +194,9 @@ def _parse_to_python_type(input_msg_type: Type, python_type: Type) -> Callable:
             f"match target type '{python_type}'. Please provide a custom parser."
         )
 
-    # 3. Last Resort: Recursion / Duck Typing for wrapped types
+    # Last Resort: Recursion / Duck Typing for wrapped types
     # e.g., input: Wrapper(data=Int32), target: int
-    # This is complex to implement generically without infinite recursion risks,
-    # but we can try 1 level deep if there is only 1 field in the message.
+    # only try 1 level deep recursion if there is only 1 field in the message.
     if len(fields) == 1:
         single_field = list(fields.keys())[0]
         field_val = getattr(msg_dummy, single_field)
@@ -254,7 +253,7 @@ def _create_auto_ros_msg_parser(
 
     # If we found matches for ALL target fields, this is a strong match subset
     # Or if we found matches for ALL input fields
-    # Let's be strict: If target has fields, we need to fill them.
+    # Be strict: If target has fields, we need to fill them.
     # If target is fully covered by input:
     if (len(common_fields) == len(target_fields) and len(target_fields) > 0) or (
         len(common_fields) == len(input_fields)
@@ -322,7 +321,7 @@ class Action:
     Actions are used by Components and by the Launcher to execute specific methods.
 
     Actions can either be:
-    - Actions paired with Events: in this case the Action is executed by a Launcher when an event is detected
+    - Actions paired with Events: in this case the Action is executed when an event is detected. This can be done by a Component if the action is a component method or a Launcher when the action is a system level action or an arbitrary method in the recipe
     - Actions paired with Fallbacks: in this case the Action is executed by a Component when a failure is detected
 
     Actions are defined with:
