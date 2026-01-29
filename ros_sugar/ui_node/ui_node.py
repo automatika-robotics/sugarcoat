@@ -458,6 +458,7 @@ class UINode(BaseComponent):
         """
         topic_name = data.pop("topic_name")
         topic_type_str = data.pop("topic_type")
+        frame_id = data.pop("frame_id", None)
         topic_type = getattr(supported_types, topic_type_str, None)
 
         if not topic_type:
@@ -482,8 +483,13 @@ class UINode(BaseComponent):
             return self._return_error(
                 f'Error occurred when converting {data} to Sugar type "{topic_type_str}": {e}'
             )
+        kwargs = {"output": output}
 
-        self.publishers_dict[topic_name].publish(output=output)
+        # Add the data frame_id if it is sent
+        if frame_id:
+            kwargs["frame_id"] = frame_id
+
+        self.publishers_dict[topic_name].publish(**kwargs)
 
     def _execution_step(self):
         """

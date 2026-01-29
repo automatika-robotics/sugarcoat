@@ -1,5 +1,6 @@
 import importlib
 from typing import List, Dict, Any
+from functools import partial
 import logging
 from ..io.supported_types import SupportedType, get_ros_msg_fields_dict
 
@@ -302,7 +303,6 @@ def _map_settings_modal(map_id: str):
                 Button(
                     "Update",
                     cls="primary-button",
-                    # onclick="this.closest('.custom-overlay').style.display='none'",
                     onclick=f"saveMapSettings('{map_id}')",
                     type="button",
                 ),
@@ -354,14 +354,12 @@ def _map_control_buttons(map_id: str):
         Button(
             UkIcon("settings"),
             cls=_map_controls_button_class,
-            # onclick=f"openAtButton('{map_id}-settings-btn', '{map_id}-settings-modal')",  # Opens the modal defined below
             id=f"{map_id}-settings-btn",
-            # onclick=f"document.getElementById('{map_id}-settings-modal').style.display='grid'",
             onclick=f"openMapSettings('{map_id}')",
             type="button",
             uk_tooltip="title: Settings; pos: left",
         ),
-        # 2. THE SETTINGS MODAL (Hidden by default, popped up by openAtButton)
+        # THE SETTINGS MODAL (Hidden by default, popped up by openMapSettings)
         _map_settings_modal(map_id),
         cls="flex flex-row space-x-2 no-drag",
     )
@@ -497,7 +495,7 @@ def __pop_up_form(topic_name: str, form_elements: tuple):
                 ),
                 cls="space-x-2 space-y-2 mr-2 mb-2",
                 ws_send=True,
-                hx_on__ws_after_send="this.reset(); return false;",
+                hx_on__ws_after_send="this.reset(); this.closest('.custom-overlay').style.display='none'; return false;",
             ),
             cls="modal-box",
             onclick="event.stopPropagation()",
@@ -571,10 +569,9 @@ def __location_element_input(
     )
 
 
-def _in_point_element(topic_name: str, topic_type: str, has_map: bool = False, **_):
+def _in_point_element(topic_name: str, topic_type: str, stamped: bool, has_map: bool = False, **_):
     """FastHTML element for 3D point type"""
-    _point_form_fields = (
-        DivHStacked(
+    elements = DivHStacked(
             Input(
                 placeholder="X",
                 name="x",
@@ -596,6 +593,9 @@ def _in_point_element(topic_name: str, topic_type: str, has_map: bool = False, *
                 required=True,
                 autocomplete="off",
             ),
+        )
+    if stamped:
+        elements(
             Input(
                 placeholder="FrameId",
                 name="frame_id",
@@ -603,17 +603,16 @@ def _in_point_element(topic_name: str, topic_type: str, has_map: bool = False, *
                 required=True,
                 autocomplete="off",
             ),
-        ),
-    )
+        )
     return __location_element_input(
         topic_name=topic_name,
         topic_type=topic_type,
         has_map=has_map,
-        elements=_point_form_fields,
+        elements=(elements,),
     )
 
 
-def _in_pose_element(topic_name: str, topic_type: str, has_map: bool = False, **_):
+def _in_pose_element(topic_name: str, topic_type: str, stamped: bool, has_map: bool = False, **_):
     """FastHTML element for 3D point type"""
     _pose_form_fields = (
         P("Position:"),
@@ -686,6 +685,16 @@ def _in_pose_element(topic_name: str, topic_type: str, has_map: bool = False, **
             cls="space-x-2",
         ),
     )
+    if stamped:
+        _pose_form_fields(
+            Input(
+                placeholder="FrameId",
+                name="frame_id",
+                type="text",
+                required=True,
+                autocomplete="off",
+            ),
+        )
     return __location_element_input(
         topic_name=topic_name,
         topic_type=topic_type,
@@ -743,10 +752,10 @@ _INPUT_ELEMENTS: Dict = {
     "Float64": _in_text_element,
     "Bool": _in_bool_element,
     "Audio": _in_audio_element,
-    "Point": _in_point_element,
-    "PointStamped": _in_point_element,
-    "Pose": _in_pose_element,
-    "PoseStamped": _in_pose_element,
+    "Point": partial(_in_point_element, stamped=False),
+    "PointStamped": partial(_in_point_element, stamped=True),
+    "Pose": partial(_in_pose_element, stamped=False),
+    "PoseStamped": partial(_in_pose_element, stamped=True),
 }
 
 _OUTPUT_ELEMENTS: Dict = {
@@ -1036,8 +1045,6 @@ def styled_main_service_clients_container(
 
 
 # ---- INPUTS CARD ELEMENTS ----
-
-
 def input_topic_card(
     topic_name: str,
     topic_type: str,
@@ -1114,8 +1121,6 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
 
 
 # ---- OUTPUTS CARD ELEMENTS ----
-
-
 def output_topic_card(topic_name: str, topic_type: str, column_class: str = "") -> FT:
     """Creates a UI element for an output topic
 

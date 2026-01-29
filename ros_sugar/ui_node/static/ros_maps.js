@@ -392,10 +392,9 @@ function publishPoint(container, targetTopic, rosPoint, msgType) {
     }
 
     const payload = {
-        type: "clicked_point", // Backend identifier
         topic_name: targetTopic,
         frame_id: frameId,
-        publish_type: msgType,
+        topic_type: msgType,
         data: messageData
     };
 

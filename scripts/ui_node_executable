@@ -284,8 +284,12 @@ def main():
             conn=partial(on_conn_map, topic_type=topic_type),
             disconn=on_disconn,
         )
-        async def _():
-            pass
+        async def _(_, data):
+            # Map websockets send back clicked points (Point, Pose, etc.)
+            # The actual point data is in data.data, but it is expected in the ui node directly in data.x, etc.
+            if message := data.pop("data", None):
+                data.update(message)
+                ros_node.publish_data(data)
 
     for clients_configs_dict in ros_node.action_clients_inputs_dicts():
         logging.warning(
