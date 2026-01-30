@@ -2,22 +2,10 @@
 
 import inspect
 import json
-import numpy as np
 from rclpy.lifecycle import Node as LifecycleNode
 from launch.actions import OpaqueCoroutine, OpaqueFunction
-from functools import partial, wraps
-import array
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Optional,
-    Union,
-    List,
-    Type,
-    get_origin,
-    get_args,
-)
+from functools import wraps
+from typing import Any, Callable, Dict, Optional, Union, List, Type, Tuple
 
 from launch import LaunchContext
 import launch
@@ -25,6 +13,9 @@ from launch.actions import LogInfo as LogInfoROSAction
 
 from ..launch import logger
 from ..condition import MsgConditionBuilder
+from ..io import Topic, get_msg_type
+from ..io.supported_types import SupportedType
+from ..utils import InvalidAction
 
 
 def _create_auto_topic_parser(input_msg_type: Type, target_type: Type) -> Callable:
@@ -41,10 +32,7 @@ def _create_auto_topic_parser(input_msg_type: Type, target_type: Type) -> Callab
             f"Cannot create an automatic parser. 'input_msg_type' should be a valid ROS2 message type, but got {input_msg_type}"
         )
     # Check if target is a ROS Message (has field types method)
-    if hasattr(target_type, "get_fields_and_field_types"):
-        return _create_auto_ros_msg_parser(input_msg_type, target_type)
-    else:
-        return _parse_to_python_type(input_msg_type, target_type)
+    return _create_auto_ros_msg_parser(input_msg_type, target_type)
 
 
 def _get_ros_field_type_map(msg_cls: Type) -> Dict[str, str]:
@@ -54,180 +42,9 @@ def _get_ros_field_type_map(msg_cls: Type) -> Dict[str, str]:
     return {}
 
 
-def _is_compatible_primitive(ros_type_str: str, python_type: Type) -> bool:
-    """
-    Check if a ROS type string (e.g., 'int32', 'boolean') is compatible with a Python type.
-    """
-    # Clean ROS type string (remove 'sequence<...>', 'string<...>')
-    base_ros_type = ros_type_str.split("<")[0]
-
-    # Mapping ROS string types to Python types
-    type_map = {
-        "boolean": bool,
-        "bool": bool,
-        "octet": (int, bytes),
-        "float": float,
-        "double": float,
-        "int": int,
-        "uint": int,
-        "string": str,
-        "char": (int, str),
-    }
-
-    # Handle standard python types
-    for key, val in type_map.items():
-        if key in base_ros_type:
-            if isinstance(val, tuple):
-                if python_type in val:
-                    return True
-            elif python_type == val:
-                return True
-
-            # Allow float -> int (if desired, though risky for precision) or int -> float
-            if python_type is float and val is int:
-                return True
-
-            # Allow numpy types
-            if python_type.__module__ == "numpy":
-                if np.issubdtype(python_type, np.integer) and val is int:
-                    return True
-                if np.issubdtype(python_type, np.floating) and val is float:
-                    return True
-
-    return False
-
-
-def _parse_to_python_type(input_msg_type: Type, python_type: Type) -> Callable:
-    """
-    Creates a parser to extract a standard Python type (int, float, list, etc.)
-    from a ROS message.
-    """
-    msg_dummy = input_msg_type()
-
-    # Handle 'Any' or specific ignore cases if needed
-    if python_type == Any:
-        return lambda *, msg, **_: msg
-
-    # Inspect ROS message fields
-    fields = _get_ros_field_type_map(input_msg_type)
-
-    # Single Field Extraction
-    # Common in std_msgs (e.g. Int32.data, String.data) or simple messages.
-    # Look for a field that matches the target python type.
-
-    candidates = []
-
-    # Handle generic List[T]
-    origin_type = get_origin(python_type)
-    args_type = get_args(python_type)
-    is_list_target = origin_type in (list, List) or python_type is list
-    is_numpy_target = inspect.isclass(python_type) and issubclass(
-        python_type, np.ndarray
-    )
-
-    for field_name, field_ros_type in fields.items():
-        # Get the actual python attribute value from the dummy message to check its type
-        # This is more reliable than parsing the ROS string type manually
-        field_value = getattr(msg_dummy, field_name)
-
-        # A. Exact Python Type Match
-        if type(field_value) is python_type:
-            candidates.append(field_name)
-            continue
-
-        # B. Compatible Primitives (e.g. ROS int32 -> Python int)
-        if _is_compatible_primitive(field_ros_type, python_type):
-            candidates.append(field_name)
-            continue
-
-        # C. List / Array Handling
-        if is_list_target or is_numpy_target:
-            # Check if field is a sequence/array
-            if isinstance(field_value, (list, tuple, np.ndarray, array.array)):
-                # If target is generic List (no subtypes specified), accept it
-                if not args_type and is_list_target:
-                    candidates.append(field_name)
-                # If target is specific List[int], check inner types if list is not empty
-                # (Hard to check on empty dummy msg, so we rely on ROS string type usually)
-                elif is_list_target and args_type:
-                    # Check if 'sequence' or '[' is in ros type definition
-                    if "sequence" in field_ros_type or "[" in field_ros_type:
-                        # Heuristic: assume it matches if the container matches
-                        candidates.append(field_name)
-                elif is_numpy_target:
-                    candidates.append(field_name)
-
-    # Decision Logic
-    if len(candidates) == 1:
-        field_name = candidates[0]
-        logger.info(
-            f"Auto-parser created: Extracting field '{field_name}' from '{input_msg_type.__name__}' "
-            f"to satisfy target '{python_type.__name__ if hasattr(python_type, '__name__') else str(python_type)}'."
-        )
-
-        def extraction_parser(*, msg: Any, **_) -> Any:
-            val = getattr(msg, field_name)
-
-            # Post-processing for List/Numpy conversions
-            if is_list_target and isinstance(val, (np.ndarray, array.array)):
-                return val.tolist()
-            if is_numpy_target and isinstance(val, list):
-                return np.array(val)
-            if is_numpy_target and isinstance(val, np.ndarray):
-                return val  # Already numpy
-
-            return val
-
-        return extraction_parser
-
-    elif len(candidates) > 1:
-        # Ambiguity - prefer 'data' if it exists (standard ROS convention)
-        if "data" in candidates:
-            logger.warning(
-                f"Ambiguous fields {candidates} found for target type '{python_type}'. "
-                f"Defaulting to 'data' field."
-            )
-            return lambda *, msg, **_: getattr(msg, "data", None)
-
-        raise ValueError(
-            f"Auto-parsing ambiguous: Multiple fields {candidates} in '{input_msg_type.__name__}' "
-            f"match target type '{python_type}'. Please provide a custom parser."
-        )
-
-    # Last Resort: Recursion / Duck Typing for wrapped types
-    # e.g., input: Wrapper(data=Int32), target: int
-    # only try 1 level deep recursion if there is only 1 field in the message.
-    if len(fields) == 1:
-        single_field = list(fields.keys())[0]
-        field_val = getattr(msg_dummy, single_field)
-
-        # If the single field is a ROS Message, try to recurse
-        if hasattr(field_val, "get_fields_and_field_types"):
-            try:
-                # Recursively create a parser from that inner field to our target
-                inner_parser = _parse_to_python_type(type(field_val), python_type)
-
-                logger.info(
-                    f"Auto-parser recursive: unwrapping '{single_field}' to match target."
-                )
-
-                def recursive_parser(*, msg: Any, **kwargs) -> Any:
-                    inner_msg = getattr(msg, single_field)
-                    return inner_parser(msg=inner_msg, **kwargs)
-
-                return recursive_parser
-            except ValueError:
-                pass  # Recursion failed, continue to raise error
-
-    raise ValueError(
-        f"Auto-parsing failed: No field in '{input_msg_type.__name__}' matches Python type "
-        f"'{python_type}'. Matches attempted on fields: {list(fields.keys())}."
-    )
-
-
 def _create_auto_ros_msg_parser(
     input_msg_type: Type, target_msg_type: Type
-) -> Callable:
+) -> Optional[Callable]:
     """
     Creates a parser to map one ROS message type to another ROS message type.
     Logic:
@@ -259,9 +76,6 @@ def _create_auto_ros_msg_parser(
         len(common_fields) == len(input_fields)
         and len(input_fields) < len(target_fields)
     ):
-        logger.info(
-            f"Added name-based parser from '{input_msg_type.__name__}' to '{target_msg_type.__name__}'."
-        )
 
         def duck_parser(*, msg: Any, **_) -> Any:
             out = target_msg_type()
@@ -310,10 +124,7 @@ def _create_auto_ros_msg_parser(
         return type_parser
 
     # Case 4: No Match
-    raise ValueError(
-        f"Auto-parsing failed: Could not map ROS message '{input_msg_type.__name__}' "
-        f"to target ROS message '{target_msg_type.__name__}'."
-    )
+    return None
 
 
 class Action:
@@ -346,7 +157,10 @@ class Action:
     """
 
     def __init__(
-        self, method: Callable, args: tuple = (), kwargs: Optional[Dict] = None
+        self,
+        method: Callable,
+        args: Optional[Union[Tuple, List, Any]] = None,
+        kwargs: Optional[Dict] = None,
     ) -> None:
         """
         Action
@@ -358,24 +172,20 @@ class Action:
         :param kwargs: function keyword arguments, defaults to {}
         :type kwargs: dict, optional
         """
-        self.__component_action: bool = False
         self.__parent_component: Optional[str] = None
         self.__action_keyname: Optional[str] = (
             None  # contains the name of the component action as a string
         )
-        self._is_monitor_action: bool = False
-        self._is_lifecycle_action: bool = False
         self._function = method
-        self._args = args if isinstance(args, tuple) else (args,)
-        self._kwargs = kwargs if kwargs else {}
+        self._is_monitor_action = False
+        self._is_lifecycle_action = False
 
-        # List of registered parsers to execute before the main method
-        # Each entry is a dict: {'method': Callable, 'output_mapping': str|None, 'arg_index': int|None}
-        # TODO: Handle parser method execution in multi-processing
-        self._event_parsers: List[Dict[str, Any]] = []
-        self.__parsed_topics: Dict[str, type] = {}
+        # List of registered conversions to execute before the main method
+        # keeps track of mapping (argument_name -> output_type)
+        self.__event_topic_conversions: Dict[str, str] = {}
+        self.__prepared_events_conversions: Dict[str, Callable] = {}
 
-        self.__verify_args_kwargs()
+        self.__verify_args_kwargs(args, kwargs)
 
         # Check if it is a component action and update parent and keyname
         if hasattr(self._function, "__self__"):
@@ -386,181 +196,102 @@ class Action:
             ):
                 self.parent_component = action_object.node_name
                 self.action_name = self._function.__name__
-                self.__component_action = True
 
-    def __verify_args_kwargs(self):
+    def __verify_args_kwargs(self, args, kwargs):
         """
-        Verify that args and kwargs are correct for the action executable
+        Verify that args and kwargs are correct for the action executable.
+        If MsgConditionBuilder objects are found (expressions like topic.msg.data),
+        automatically create event parsers for them.
+        """
+        _args = []
+        self._kwargs = {}
 
-        :raises ValueError: If args or kwargs are not compatible with the action executable
-        """
-        _topic_parsing: Dict[Union[int, str], MsgConditionBuilder] = {}
         function_parameters = inspect.signature(self.executable).parameters
+        # Dict of: arg_index or kwarg name -> input topic message builder
+        self.__input_topics: Dict[Union[str, int], MsgConditionBuilder] = {}
 
-        # Check args
-        if len(list(self.args)) > len(function_parameters):
-            raise ValueError(
-                f"Too many arguments provided for action '{self.action_name}': expected maximum {len(function_parameters)}, got {len(self.args)}"
-            )
-
-        for idx, value in enumerate(self.args):
-            if isinstance(value, MsgConditionBuilder):
-                _topic_parsing[idx] = value
-
-        # Check kwargs
-        for key, value in self.kwargs.items():
-            if isinstance(value, MsgConditionBuilder):
-                _topic_parsing[key] = value
-
-        for position, topic_path in _topic_parsing.items():
-            topic_msg_attributes = topic_path.as_tuple()
-            self.__parsed_topics[topic_path.name] = topic_path.type
-
-            # Parser method to extract attribute from msg
-            def parser_method(topic_msg_attributes, msg, **_):
-                attribute_value = msg
-                for attr in topic_msg_attributes:
-                    attribute_value = getattr(attribute_value, attr)
-                return attribute_value
-
-            if isinstance(position, int):
-                # Positional argument replacement
-                self.add_event_parser(
-                    method=partial(parser_method, topic_msg_attributes),
-                    argument_index=position,
+        # 1. Check & Parse Positional Args
+        if args:
+            args = args if isinstance(args, (Tuple, List)) else (args,)
+            if len(args) > len(function_parameters):
+                raise InvalidAction(
+                    f"Too many arguments provided for action '{self.action_name}': Method expected maximum {len(function_parameters)} arguments, but got {len(args)}"
                 )
-            else:
-                # Keyword argument replacement
-                self.add_event_parser(
-                    method=partial(parser_method, topic_msg_attributes),
-                    keyword_argument_name=position,
-                )
+
+            for idx, value in enumerate(args):
+                if isinstance(value, MsgConditionBuilder):
+                    self.__input_topics[f"arg_{idx}"] = value
+                else:
+                    _args.append(value)
+
+        self._args = tuple(_args)
+        # 2. Check & Parse Keyword Args
+        if kwargs:
+            for key, value in kwargs.items():
+                # Make sure this keyword argument exists in the function
+                if isinstance(value, MsgConditionBuilder):
+                    self.__input_topics[f"kwarg_{key}"] = value
+                else:
+                    self._kwargs[key] = value
 
     def __call__(self, **kwargs):
         """
         Execute the action.
         Iterates through all parsers to prepare dynamic arguments based on the event (kwargs).
         """
+        # TODO: Use any topic as an input.
+        # This now supports topic inputs to be the same as the event topic
         # Create mutable copies of args and kwargs for this specific execution
-        call_args = list(self.args)
-        call_kwargs = self.kwargs.copy()
+        call_args = list(self._args)
+        call_kwargs = self._kwargs.copy()
 
-        # Values to prepend to args (legacy support for parsers with no mapping)
-        # Using a list to collect them, then we will prepend them in reverse order or bulk
-        prepend_values = []
-
-        # Iterate over all registered parsers
-        for parser in self._event_parsers:
-            method = parser["method"]
-            output_mapping = parser["keyword_argument_name"]
-            arg_index = parser["argument_index"]
-
-            # Execute the parser method with the event context (e.g. msg)
-            try:
-                output = method(**kwargs)
-            except TypeError:
-                # Fallback if parser doesn't accept kwargs, though parsers created internally handle it
-                output = method()
-
-            if output_mapping is not None:
-                # Update specific keyword argument
-                call_kwargs[output_mapping] = output
-            elif arg_index is not None:
-                # Replace specific positional argument (previously a placeholder)
-                # Ensure we don't go out of bounds
-                if arg_index < len(call_args):
-                    call_args[arg_index] = output
+        # If the action is executed by an 'Event' the event will pass the triggering message
+        topics = kwargs.get("topics", None)
+        if topics and self.__input_topics:
+            # Collect the required inputs
+            for key, topic_condition in self.__input_topics.items():
+                if related_message := topics.get(topic_condition.name, None):
+                    output = topic_condition.get_value(object_value=related_message)
                 else:
-                    raise IndexError(
-                        f"Parser argument index {arg_index} out of range for args {call_args}"
-                    )
+                    # Related message is not sent -> skip
+                    continue
+                if key.startswith("arg_"):
+                    idx = int(key.removeprefix("arg_"))
+                    call_args.insert(idx, output)
+                elif key.startswith("kwarg_"):
+                    call_kwargs[key.removeprefix("kwarg_")] = output
+
+        for key, (name, conv_func) in self.__prepared_events_conversions.items():
+            if msg := topics.get(name, None):
+                call_kwargs[key] = conv_func(msg)
+
+        return self.executable(*call_args, **call_kwargs)
+
+    def _setup_conversions(self, event_topic_name, event_msg_type):
+        """Method will be invoked from the associated event to setup any required automatic converters
+
+        :param event_msg: _description_
+        :type event_msg: _type_
+        """
+        self.__prepared_events_conversions = {}
+        for key, msg_type in self.__event_topic_conversions.items():
+            func: Optional[Callable] = _create_auto_topic_parser(
+                event_msg_type, msg_type._ros_type
+            )
+            # If failed to find an automatic conversion -> Do not register
+            if func is not None:
+                self.__prepared_events_conversions[key] = (event_topic_name, func)
             else:
-                # No specific target: Prepend to arguments (Stack behavior)
-                prepend_values.append(output)
-
-        # Assemble final arguments
-        final_args = tuple(prepend_values) + tuple(call_args)
-
-        return self.executable(*final_args, **call_kwargs)
-
-    def add_event_parser(
-        self,
-        method: Callable,
-        keyword_argument_name: Optional[str] = None,
-        argument_index: Optional[int] = None,
-        **new_kwargs,
-    ):
-        """
-        Add an event parser to the action.
-
-        :param method: Method to be executed before the main action executable
-        :param output_mapping: Name of the keyword argument to replace/inject
-        :param arg_index: Index of the positional argument to replace
-        :param new_kwargs: Additional static kwargs to add to the action configuration
-        """
-        if new_kwargs:
-            self.kwargs.update(new_kwargs)
-
-        self._event_parsers.append({
-            "method": method,
-            "keyword_argument_name": keyword_argument_name,
-            "argument_index": argument_index,
-        })
-
-    def _set_dynamic_argument_types(self, types: Dict[str, Union[Type, List[Type]]]):
-        """Used to set the missing (dynamic) argument type in derived pre-built actions
-
-        :param types: Required types by the action method
-        :type types: Dict[str, Union[Type, List[Type]]]
-        """
-        self._dynamic_argument_types = types
-
-    def add_automatic_parser_from_msg_type(
-        self,
-        input_topic_msg_type: Type,
-        action_argument_type: Optional[Type] = None,
-        keyword_argument_name: Optional[str] = None,
-        arg_index: Optional[int] = None,
-        **new_kwargs,
-    ):
-        """
-        Add an automatic parser from a given topic to the required dynamic type
-
-        :param input_topic_msg_type: Type of the input topic message (to be parsed to the dynamic argument type)
-        :param keyword_argument_name: Name of the keyword argument to replace/inject
-        :param arg_index: Index of the positional argument to replace
-        :param new_kwargs: Additional static kwargs to add to the action configuration
-        """
-        if not hasattr(self, "_dynamic_argument_types") and not action_argument_type:
-            logger.debug(
-                "Action does not have any required 'dynamic_argument_types' and 'action_argument_type' is None. Skipping automatic parser..."
-            )
-            return
-
-        if action_argument_type:
-            parser_method = _create_auto_topic_parser(
-                input_msg_type=input_topic_msg_type,
-                target_msg_type=action_argument_type,
-            )
-        else:
-            if keyword_argument_name:
-                dynamic_type = self._dynamic_argument_types.get(
-                    keyword_argument_name, None
+                logger.warning(
+                    f"Failed to find automatic conversion from event topic '{event_msg_type}' and the required Action argument type {msg_type._ros_type}"
                 )
-            elif arg_index is not None:
-                dynamic_type = self._dynamic_argument_types.values()[arg_index]
-            else:
-                # Get the first type by default
-                dynamic_type = self._dynamic_argument_types.values()[0]
-            parser_method = _create_auto_topic_parser(
-                input_msg_type=input_topic_msg_type, target_msg_type=dynamic_type
-            )
-        self.add_event_parser(
-            method=parser_method,
-            keyword_argument_name=keyword_argument_name,
-            argument_index=arg_index,
-            **new_kwargs,
-        )
+
+    def set_required_runtime_arguments(
+        self, kwargs: Dict[str, Union[str, SupportedType, Type]]
+    ):
+        """Used to set the missing (dynamic) argument type in derived pre-built actions"""
+        for key, arg in kwargs.items():
+            self.__event_topic_conversions[key] = get_msg_type(arg)
 
     def _verify_against_event_topic(self, event_topic) -> None:
         """Verify the action topic parsers (if present) against an event.
@@ -572,13 +303,13 @@ class Action:
         """
         # TODO: Support additional subscribers to required topics other than the event topic?
         # For example: If battery is low event triggers an action that reads from /odom topic?
-        for topic_name, topic_ros_type in self.__parsed_topics.items():
+        for topic_msg_builder in self.__input_topics.values():
             if (
-                topic_name != event_topic.name
-                or topic_ros_type != event_topic.ros_msg_type
+                topic_msg_builder.name != event_topic.name
+                or topic_msg_builder.type != event_topic.ros_msg_type
             ):
                 raise ValueError(
-                    f"Action parser topic mismatch. Actions only have access to associated events topics. Action '{self.action_name}' is associated with event topic '{event_topic.name}', but got topic '{topic_name}'"
+                    f"Action parser topic mismatch. Actions only have access to associated events topics. Action '{self.action_name}' is associated with event topic '{event_topic.name}', but got topic '{topic_msg_builder.name}'"
                 )
 
     @property
@@ -601,25 +332,15 @@ class Action:
         """
         self._function = value
 
-    @property
-    def args(self):
+    def _reset_args_kwargs(self, args, kwargs, input_topics):
         """
-        Getter of action arguments
+        Reset the arguments
 
         :return: _description_
         :rtype: _type_
         """
-        return self._args
-
-    @property
-    def kwargs(self):
-        """
-        Getter of action keyword arguments
-
-        :return: _description_
-        :rtype: _type_
-        """
-        return self._kwargs
+        self.__verify_args_kwargs(args, kwargs)
+        self.__input_topics = input_topics
 
     @property
     def parent_component(self):
@@ -651,7 +372,16 @@ class Action:
         :return: _description_
         :rtype: str
         """
-        return self.__action_keyname or self._function.__name__
+        if self.__action_keyname:
+            return self.__action_keyname
+        if hasattr(self._function, "__name__"):
+            return self._function.__name__
+        elif hasattr(self._function, "func") and hasattr(
+            self._function.func, "__name__"
+        ):
+            # For partial methods
+            return self._function.func.__name__
+        return ""
 
     @action_name.setter
     def action_name(self, value: str) -> None:
@@ -669,25 +399,7 @@ class Action:
 
         :rtype: bool
         """
-        return self.__component_action
-
-    @component_action.setter
-    def component_action(self, value: bool) -> None:
-        """component_action.
-
-        :param value:
-        :type value: bool
-        :rtype: None
-        """
-        self.__component_action = value
-
-    @property
-    def monitor_action(self) -> bool:
-        return self._is_monitor_action
-
-    @property
-    def lifecycle_action(self) -> bool:
-        return self._is_lifecycle_action
+        return self.__parent_component is not None
 
     @property
     def dictionary(self) -> Dict:
@@ -697,13 +409,65 @@ class Action:
         :return: Event description dictionary
         :rtype: Dict
         """
-        # TODO: Handle parsers?
-        return {
+        dict_value = {
             "action_name": self.action_name,
             "parent_name": self.parent_component,
-            "args": self.args,
-            "kwargs": self.kwargs,
+            "args": self._args,
+            "kwargs": self._kwargs,
+            "input_topics": {
+                key: value.to_json() for key, value in self.__input_topics.items()
+            },
         }
+        if self.__event_topic_conversions:
+            dict_value["event_conversions"] = {
+                key: value.__class__.__name__
+                for key, value in self.__event_topic_conversions
+            }
+        return dict_value
+
+    @classmethod
+    def deserialize_action(
+        cls,
+        serialized_action_dict: Dict,
+        deserialized_method: Callable,
+    ) -> "Action":
+        """Reconstruct Action from serialized action data
+
+        :param serialized_action: Serialized action data
+        :type serialized_action: Union[str, bytearray, bytes]
+        :param deserialized_method:Deserialized action method
+        :type deserialized_method: Callable
+        :return: Reconstructed Action Object
+        :rtype: Action
+        """
+        # Reconstruct the Action: executable and names
+        reconstructed_action = Action(method=deserialized_method)
+        reconstructed_action.action_name = serialized_action_dict["action_name"]
+        reconstructed_action.parent_component = serialized_action_dict["parent_name"]
+
+        # Deserialize the required input topics
+        input_topics: Dict[Union[str, int], MsgConditionBuilder] = {}
+        serialized_input_topics_dict = serialized_action_dict["input_topics"]
+        for key, value in serialized_input_topics_dict.items():
+            deserialized_condition_builder = json.loads(value)
+            deserialized_topic = json.loads(deserialized_condition_builder["topic"])
+            input_topics[key] = MsgConditionBuilder(
+                topic=Topic(**deserialized_topic),
+                path=deserialized_condition_builder["path"],
+            )
+
+        # Set the args/kwargs/input_topics
+        reconstructed_action._reset_args_kwargs(
+            serialized_action_dict["args"],
+            serialized_action_dict["kwargs"],
+            input_topics,
+        )
+
+        if serialized_action_dict.get("event_conversions", None):
+            reconstructed_action.set_required_runtime_arguments(
+                serialized_action_dict["event_conversions"]
+            )
+        return reconstructed_action
 
     @property
     def json(self) -> str:
@@ -726,13 +490,13 @@ class Action:
         :rtype: OpaqueCoroutine | OpaqueFunction
         """
         # Check if it is a stack action and update the executable from the monitor node
-        if self.monitor_action and monitor_node:
+        if self._is_monitor_action and monitor_node:
             if not hasattr(monitor_node, self.action_name):
                 raise ValueError(f"Unknown stack action: {self.action_name}")
             # Get executable from monitor
             self.executable = getattr(monitor_node, self.action_name)
 
-        elif self.monitor_action and not monitor_node:
+        elif self._is_monitor_action and not monitor_node:
             raise ValueError("Monitor node should be provided to parse stack action")
 
         function_parameters = inspect.signature(self.executable).parameters
