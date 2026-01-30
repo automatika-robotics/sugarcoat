@@ -11,33 +11,32 @@ These actions operate directly on Sugarcoat `BaseComponent` instances to manage 
 - update_parameter
 - update_parameters
 - trigger_component_service
+- send_component_service_request
 - trigger_component_action_server
+- send_component_action_server_goal
 
 ## System-level Actions:
 These actions interact with standard ROS2 interfaces (Topics, Services, Actions) and system utilities.
 - log
 - publish_message
-- publish_message_from_parsed_topic
 - send_srv_request
-- send_srv_request_from_topic
 - trigger_service
 - send_action_goal
-- send_action_goal_from_topic
 - trigger_action_server
 
 ## Usage Example:
 ```python
-    from ros_sugar.actions import Actions
+    from ros_sugar.actions import start, log, trigger_service
 
     # Component Lifecycle Action
     my_component = BaseComponent(node_name='test_component')
-    action_start = Actions.start(component=my_component)
+    action_start = start(component=my_component)
 
     # System/Logic Action
-    action_log = Actions.log(msg="I am executing a cool action!")
+    action_log = log(msg="I am executing a cool action!")
 
     # ROS2 Interface Action
-    action_srv = Actions.trigger_service(
+    action_srv = trigger_service(
         srv_name='/add_two_ints',
         srv_type=AddTwoInts
     )
@@ -48,7 +47,7 @@ These actions interact with standard ROS2 interfaces (Topics, Services, Actions)
 from functools import wraps
 from typing import Any, Callable, List, Optional, Union
 
-from .core.action import Action, LogInfo, _create_auto_topic_parser
+from .core.action import Action, LogInfo
 from .core.component import BaseComponent
 from .utils import InvalidAction
 from .io.topic import Topic
@@ -62,12 +61,15 @@ __all__ = [
     "update_parameter",
     "update_parameters",
     "log",
-    "send_srv_request",
-    "send_srv_request_from_topic",
-    "send_action_goal",
-    "send_action_goal_from_topic",
     "publish_message",
-    "publish_message_from_parsed_topic",
+    "send_srv_request",
+    "trigger_service",
+    "send_component_service_request",
+    "trigger_component_service",
+    "send_action_goal",
+    "trigger_action_server",
+    "send_component_action_server_goal",
+    "trigger_component_action_server",
 ]
 
 
@@ -107,7 +109,7 @@ def _validate_component_action(function: Callable):
 
 
 def send_srv_request(*, srv_name: str, srv_type: type, srv_request_msg: Any) -> Action:
-    """Action to send a ROS2 service request using the Monitor
+    """Action to send a ROS2 service request to a given service name/type
 
     :param srv_name: Service name
     :type srv_name: str
@@ -133,7 +135,9 @@ def send_srv_request(*, srv_name: str, srv_type: type, srv_request_msg: Any) -> 
 
 
 def trigger_service(*, srv_name: str, srv_type: type) -> Action:
-    """Action to trigger a ROS2 service
+    """Action to trigger a ROS2 service.
+    The action will try to create the service request out of the incoming event topic,
+    if failed it will trigger the server with a default request value
 
     :param srv_name: Service name
     :type srv_name: str
@@ -154,52 +158,45 @@ def trigger_service(*, srv_name: str, srv_type: type) -> Action:
     stack_action.action_name = "send_srv_request"
     stack_action._is_monitor_action = True
     # Set the type of the required argument (service request)
-    # This is done to enable easily setting an "automatic parser" from within components
-    stack_action._set_dynamic_argument_types({"srv_request_msg": srv_type.Request})
+    # This is done to enable the action to find an automatic parser
+    stack_action.set_required_runtime_arguments({"srv_request_msg": srv_type.Request})
     return stack_action
 
 
-def send_srv_request_from_topic(
-    *,
-    srv_name: str,
-    srv_type: type,
-    topic: Any,
-    custom_parser: Optional[Callable] = None,
-) -> "Action":
+def send_component_service_request(
+    *, component: BaseComponent, srv_request_msg: Any
+) -> Action:
+    """Action to send a ROS2 service request to a component's main service
+
+    :param component: Sugarcoat Component
+    :type component: BaseComponent
+    :param srv_request_msg: Service request message
+    :type srv_request_msg: Any
+
+    :return: Sending request action
+    :rtype: Action
     """
-    Creates an Action to send a ROS2 service request, automatically parsing the
-    request from the event topic message.
-
-    :param srv_name: Service name
-    :param srv_type: Service type
-    :param topic: The topic object containing the message to parse
-    :param custom_parser: Optional custom parser method
-    :return: Sending request action with parser attached
-    """
-    request_msg_type = srv_type.Request
-
-    # Create the base action
-    action = send_srv_request(
-        srv_name=srv_name,
-        srv_type=srv_type,
-        srv_request_msg=request_msg_type(),  # Default empty request
-    )
-
-    input_msg_type = topic.ros_msg_type
-
-    # Use provided parser if provided, otherwise create an automatic parser
-    auto_parser_method = custom_parser or _create_auto_topic_parser(
-        input_msg_type, request_msg_type
-    )
-
-    # Attach the parser
-    action.add_event_parser(auto_parser_method, keyword_argument_name="srv_request_msg")
-
-    return action
+    if not component.main_srv_name or not component.service_type:
+        raise NotImplementedError(
+            f"Cannot use the action 'trigger_component_service' on component '{component.node_name}'. Component {component.node_name} does not have a main service implemented."
+        )
+    # Combine positional arguments and keyword arguments
+    kwargs = {
+        "srv_name": component.main_srv_name,
+        "srv_type": component.service_type,
+        "srv_request_msg": srv_request_msg,
+    }
+    # Action with an empty callable
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
+    stack_action.action_name = "send_srv_request"
+    stack_action._is_monitor_action = True
+    return stack_action
 
 
 def trigger_component_service(*, component: BaseComponent) -> Action:
     """Action to trigger a component's main service
+    The action will try to create the service request out of the incoming event topic,
+    if failed it will trigger the server with a default request value
 
     :param component: Sugarcoat Component
     :type component: BaseComponent
@@ -221,7 +218,7 @@ def trigger_component_service(*, component: BaseComponent) -> Action:
     stack_action.action_name = "send_srv_request"
     stack_action._is_monitor_action = True
     # Set the type of the required argument (service request)
-    stack_action._set_dynamic_argument_types({
+    stack_action.set_required_runtime_arguments({
         "srv_request_msg": component.service_type.Request
     })
     return stack_action
@@ -230,7 +227,7 @@ def trigger_component_service(*, component: BaseComponent) -> Action:
 def send_action_goal(
     *, server_name: str, server_type: type, request_msg: Any
 ) -> Action:
-    """Action to send a ROS2 action goal using the Monitor
+    """Action to send a ROS2 action goal to a given ROS2 action server name and type
 
     :param action_name: ROS2 action name
     :type action_name: str
@@ -256,7 +253,9 @@ def send_action_goal(
 
 
 def trigger_action_server(*, server_name: str, server_type: type) -> Action:
-    """Action to trigger a ROS2 action server
+    """Action to trigger a ROS2 action server with given name and type
+    The action will try to create the service request out of the incoming event topic,
+    if failed it will trigger the server with a default request value
 
     :param action_name: ROS2 action name
     :type action_name: str
@@ -276,12 +275,42 @@ def trigger_action_server(*, server_name: str, server_type: type) -> Action:
     stack_action.action_name = "send_action_goal"
     stack_action._is_monitor_action = True
     # Set the type of the required argument (service request)
-    stack_action._set_dynamic_argument_types({"action_request_msg": server_type.Goal})
+    stack_action.set_required_runtime_arguments({
+        "action_request_msg": server_type.Goal
+    })
+    return stack_action
+
+
+def send_component_action_server_goal(
+    *, component: BaseComponent, request_msg: Any
+) -> Action:
+    """Action to send a ROS2 action to a component's main action server
+
+    :param component: Sugarcoat Component
+    :type component: BaseComponent
+    :param action_request_msg: ROS2 action goal message
+    :type action_request_msg: Any
+
+    :return: Sending goal action
+    :rtype: Action
+    """
+    # Combine positional arguments and keyword arguments
+    kwargs = {
+        "action_name": component.main_action_name,
+        "action_type": component.action_type,
+        "action_request_msg": request_msg,
+    }
+
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
+    stack_action.action_name = "send_action_goal"
+    stack_action._is_monitor_action = True
     return stack_action
 
 
 def trigger_component_action_server(*, component: BaseComponent) -> Action:
     """Action to trigger a component's action server
+    The action will try to create the service request out of the incoming event topic,
+    if failed it will trigger the server with a default request value
 
     :param component: Sugarcoat Component
     :type component: BaseComponent
@@ -302,52 +331,11 @@ def trigger_component_action_server(*, component: BaseComponent) -> Action:
     stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
     stack_action.action_name = "send_action_goal"
     stack_action._is_monitor_action = True
-    # Set the type of the required argument (service request)
-    stack_action._set_dynamic_argument_types({
+    # Set the type of the required argument (action request)
+    stack_action.set_required_runtime_arguments({
         "action_request_msg": component.action_type.Goal
     })
     return stack_action
-
-
-def send_action_goal_from_topic(
-    *,
-    server_name: str,
-    server_type: type,
-    topic: Any,
-    custom_parser: Optional[Callable] = None,
-) -> "Action":
-    """
-    Creates an Action to send a ROS2 action goal, automatically parsing the
-    goal from the event topic message.
-
-    :param action_name: Action name
-    :param action_type: Action type
-    :param topic: The topic object containing the message to parse
-    :param custom_parser: Optional custom parser method
-    :return: Sending request action with parser attached
-    """
-    request_msg_type = server_type.Goal
-
-    # Create the base action
-    action = send_action_goal(
-        server_name=server_name,
-        server_type=server_type,
-        request_msg=request_msg_type(),  # Default empty request
-    )
-
-    input_msg_type = topic.ros_msg_type
-
-    # Use provided parser if provided, otherwise create an automatic parser
-    auto_parser_method = custom_parser or _create_auto_topic_parser(
-        input_msg_type, request_msg_type
-    )
-
-    # Attach the parser
-    action.add_event_parser(
-        auto_parser_method, keyword_argument_name="action_request_msg"
-    )
-
-    return action
 
 
 def publish_message(
@@ -357,16 +345,19 @@ def publish_message(
     publish_rate: Optional[float] = None,
     publish_period: Optional[float] = None,
 ) -> Action:
-    """Action to send a ROS2 action goal using the Monitor
+    """Action to publish a ROS2 message on a given topic.
+    If both publish_rate and publish_period are not provided, the message will be published once
 
-    :param action_name: ROS2 action name
-    :type action_name: str
-    :param action_type: ROS2 action type
-    :type action_type: type
-    :param action_request_msg: ROS2 action goal message
-    :type action_request_msg: Any
+    :param topic: Topic to publish
+    :type topic: Topic
+    :param msg: Message to publish
+    :type msg: Any
+    :param publish_rate: Publishing rate (Hz), defaults to None
+    :type publish_rate: Optional[float], optional
+    :param publish_period: Publishing period (s), defaults to None
+    :type publish_period: Optional[float], optional
 
-    :return: Sending goal action
+    :return: Publish message action
     :rtype: Action
     """
     # Combine positional arguments and keyword arguments
@@ -380,48 +371,6 @@ def publish_message(
     stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
     stack_action.action_name = "publish_message"
     stack_action._is_monitor_action = True
-    return stack_action
-
-
-def publish_message_from_parsed_topic(
-    *,
-    in_topic: Topic,
-    out_topic: Topic,
-    publish_rate: Optional[float] = None,
-    publish_period: Optional[float] = None,
-    custom_parser: Optional[Callable] = None,
-) -> Action:
-    """Action to send a ROS2 action goal using the Monitor
-
-    :param action_name: ROS2 action name
-    :type action_name: str
-    :param action_type: ROS2 action type
-    :type action_type: type
-    :param action_request_msg: ROS2 action goal message
-    :type action_request_msg: Any
-
-    :return: Sending goal action
-    :rtype: Action
-    """
-    # Combine positional arguments and keyword arguments
-    kwargs = {
-        "topic": out_topic,
-        "msg": out_topic.ros_msg_type(),
-        "publish_rate": publish_rate,
-        "publish_period": publish_period,
-    }
-
-    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
-    stack_action.action_name = "publish_message"
-    stack_action._is_monitor_action = True
-
-    # Create the automatic parser logic
-    parser_method = custom_parser or _create_auto_topic_parser(
-        input_msg_type=in_topic.ros_msg_type,
-        target_type=out_topic.ros_msg_type,
-    )
-    stack_action.add_event_parser(parser_method, keyword_argument_name="msg")
-
     return stack_action
 
 
