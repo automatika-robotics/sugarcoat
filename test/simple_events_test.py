@@ -127,7 +127,7 @@ def generate_test_description():
         on_change=True,
     )
 
-    def trigger_event(on_event: Event):
+    def trigger_event(on_event: Event, **_):
         on_event.set()
 
     launcher = Launcher()

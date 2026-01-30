@@ -1,22 +1,21 @@
 import unittest
-from threading import Event
+from threading import Event as threadingEvent
 import launch_testing
 import launch_testing.actions
 import launch_testing.markers
 import pytest
 
-from ros_sugar.core import BaseComponent
+from ros_sugar.core import BaseComponent, Event
 from ros_sugar import Launcher
 from ros_sugar.config import ComponentRunType
 from ros_sugar import actions
-from ros_sugar import events
 from ros_sugar.io import Topic
 
 # Dummy service type for testing
 from nav_msgs.srv import SetMap
 
 # Threading Events
-execution_service_py_event = Event()
+execution_service_py_event = threadingEvent()
 
 
 class ChildComponent(BaseComponent):
@@ -70,8 +69,8 @@ def generate_test_description():
     status_topic = Topic(name="test_component/status", msg_type="ComponentStatus")
 
     # Dummy event to send an automatic service call to the component main service post launch
-    event_on_health_status = events.OnAny(
-        event_name="on_any_status", event_source=status_topic, handle_once=True
+    event_on_health_status = Event(
+        event_name="on_any_status", event_condition=status_topic, handle_once=True
     )
     srv_call = actions.send_srv_request(
         srv_name="test_component/set_map",
@@ -82,7 +81,11 @@ def generate_test_description():
     launcher = Launcher()
 
     launcher.add_pkg(
-        components=[component], events_actions={event_on_health_status: srv_call}
+        components=[component],
+        events_actions={event_on_health_status: srv_call},
+        multiprocessing=False,
+        ros_log_level="debug",
+        rclpy_log_level="debug",
     )
 
     # Setup launch description without bringup for testing
