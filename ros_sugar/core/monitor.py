@@ -1,7 +1,6 @@
 """Monitor"""
 
 import os
-import json
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Union
 from rclpy.node import Node
@@ -475,7 +474,7 @@ class Monitor(Node):
             qos_profile=topic.qos_profile.to_ros(),
         )
         # Publish once
-        if not publish_rate:
+        if not publish_rate and not publish_period:
             publisher.publish(msg)
             self.destroy_publisher(publisher)
         elif not publish_period:
@@ -520,37 +519,70 @@ class Monitor(Node):
             return
         publisher.publish(msg)
 
+    def __event_topic_callback(self, topic_name: str, msg: Any):
+        """
+        Central Handler:
+        1. Updates Cache of all required events topics
+        2. Re-evaluates all events that depend on this topic
+        """
+        # Update Blackboard
+        self._events_topics_blackboard[topic_name] = msg
+
+        # Check Events
+        for event in self.__events_per_topic.get(topic_name, []):
+            # Only check events that actually care about this topic
+            event.check_condition(self._events_topics_blackboard)
+
     def _activate_event_monitoring(self) -> None:
         """
         Turn on all events
         """
+        self.__events = []
         if self._events_actions:
             for serialized_event, actions in self._events_actions.items():
-                event_dict = json.loads(serialized_event)
-                event = Event(event_dict["event_name"], event_dict)
+                event = Event.from_json(serialized_event)
                 for action in actions:
                     method = getattr(self, action.action_name)
                     # register action to the event
-                    action.executable = partial(method, *action.args, **action.kwargs)
+                    action.executable = partial(method, *action._args, **action._kwargs)
                     event.register_actions(action)
-                # Create listener to the event trigger topic
-                self.create_subscription(
-                    msg_type=event.event_topic.ros_msg_type,
-                    topic=event.event_topic.name,
-                    callback=event.callback,
-                    qos_profile=event.event_topic.qos_profile.to_ros(),
-                    callback_group=MutuallyExclusiveCallbackGroup(),
-                )
+                self.__events.append(event)
+
         if self._internal_events:
-            # Turn on monitoring for internal events (to emit back to launcher)
-            for event in self._internal_events:
-                self.create_subscription(
-                    msg_type=event.event_topic.ros_msg_type,
-                    topic=event.event_topic.name,
-                    callback=event.callback,
-                    qos_profile=event.event_topic.qos_profile.to_ros(),
-                    callback_group=MutuallyExclusiveCallbackGroup(),
-                )
+            # Add internal events (to emit back to launcher)
+            self.__events.extend(self._internal_events)
+
+        # TURN ON EVENTS MANAGEMENT
+        # Blackboard to store latest messages for all topics required for all event:
+        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
+        self._events_topics_blackboard: Dict[str, Any] = {}
+
+        # Identify all unique topics required across ALL events
+        unique_topics: Dict[str, Topic] = {}
+        self.__events_per_topic: Dict[str, List[Event]] = {}
+        for event in self.__events:
+            required_topics = event.get_involved_topics()
+            # Ensure topic is not already there, then add to unique topics
+            for topic in required_topics:
+                if topic.name not in unique_topics:
+                    unique_topics[topic.name] = topic
+                # update to keep a record of the events to check for each topic
+                if topic.name not in self.__events_per_topic:
+                    self.__events_per_topic[topic.name] = [event]
+                else:
+                    self.__events_per_topic[topic.name].append(event)
+
+        # Create ONE subscription per Topic
+        self.__event_listeners = []
+        for name, topic_obj in unique_topics.items():
+            listener = self.create_subscription(
+                msg_type=topic_obj.ros_msg_type,
+                topic=topic_obj.name,
+                callback=partial(self.__event_topic_callback, name),
+                qos_profile=topic_obj.qos_profile.to_ros(),
+                callback_group=MutuallyExclusiveCallbackGroup(),
+            )
+            self.__event_listeners.append(listener)
 
     def _create_status_subscribers(self) -> None:
         """

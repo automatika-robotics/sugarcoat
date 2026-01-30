@@ -10,7 +10,7 @@ from abc import abstractmethod
 from copy import deepcopy
 import threading
 from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple, Type
-from functools import wraps
+from functools import wraps, partial
 import importlib
 
 from rclpy import logging as rclpy_logging
@@ -846,19 +846,56 @@ class BaseComponent(lifecycle.Node):
         """
         if not self.__events or not self.__actions:
             return
-        self.__event_listeners = []
+
+        # Blackboard to store latest messages for all topics required for all event:
+        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
+        self._events_topics_blackboard: Dict[str, Any] = {}
+
+        # Identify all unique topics required across ALL events
+        unique_topics = {}
+        self.__events_per_topic: Dict[str, List[Event]] = {}
+        for event in self.__events:
+            required_topics = event.get_involved_topics()
+            # Ensure topic is not already there, then add to unique topics
+            for topic in required_topics:
+                if topic.name not in unique_topics:
+                    unique_topics[topic.name] = topic
+                # update to keep a record of the events to check for each topic
+                if topic.name not in self.__events_per_topic:
+                    self.__events_per_topic[topic.name] = [event]
+                else:
+                    self.__events_per_topic[topic.name].append(event)
+
+        # Register the actions
         for event, actions in zip(self.__events, self.__actions, strict=True):
-            # Register action to event callback to get executed on trigger
+            # Register action to event to get executed on trigger when calling event.check_condition
             event.register_actions(actions)
-            # Create listener to the event trigger topic
+
+        # Create ONE subscription per Topic
+        self.__event_listeners = []
+        for name, topic_obj in unique_topics.items():
             listener = self.create_subscription(
-                msg_type=event.event_topic.ros_msg_type,
-                topic=event.event_topic.name,
-                callback=event.callback,
-                qos_profile=event.event_topic.qos_profile.to_ros(),
+                msg_type=topic_obj.ros_msg_type,
+                topic=topic_obj.name,
+                callback=partial(self.__event_topic_callback, name),
+                qos_profile=topic_obj.qos_profile.to_ros(),
                 callback_group=MutuallyExclusiveCallbackGroup(),
             )
             self.__event_listeners.append(listener)
+
+    def __event_topic_callback(self, topic_name: str, msg: Any):
+        """
+        Central Handler:
+        1. Updates Cache of all required events topics
+        2. Re-evaluates all events that depend on this topic
+        """
+        # Update Blackboard
+        self._events_topics_blackboard[topic_name] = msg
+
+        # Check Events
+        for event in self.__events_per_topic.get(topic_name, []):
+            # Only check events that actually care about this topic
+            event.check_condition(self._events_topics_blackboard)
 
     def _add_event_action_pair(self, event: Event, action: Union[Action, List[Action]]):
         """Add an event/action pair.
@@ -1033,10 +1070,7 @@ class BaseComponent(lifecycle.Node):
                     raise ValueError(
                         f"Component '{self.node_name}' does not support action '{action.action_name}'"
                     )
-            event_dict = json.loads(event_serialized)
-            self.__events.append(
-                Event(event_name=event_dict["event_name"], event_condition=event_dict)
-            )
+            self.__events.append(Event.from_json(event_serialized))
             self.__actions.append(action_set)
 
     # SERIALIZATION AND DESERIALIZATION
@@ -1119,7 +1153,7 @@ class BaseComponent(lifecycle.Node):
         """
         if not self.__events:
             return "[]"
-        return json.dumps([event.json for event in self.__events])
+        return json.dumps([event.to_json() for event in self.__events])
 
     @_events_json.setter
     def _events_json(self, events_serialized: Union[str, bytes]):
@@ -1132,8 +1166,7 @@ class BaseComponent(lifecycle.Node):
 
         self.__events = []
         for event_serialized in list_obj:
-            event_dict = json.loads(event_serialized)
-            new_event = Event(event_dict["event_name"], event_condition=event_dict)
+            new_event = Event.from_json(event_serialized)
             self.__events.append(
                 deepcopy(new_event)
             )  # deepcopy is needed to avoid copying the previous event
@@ -1171,10 +1204,9 @@ class BaseComponent(lifecycle.Node):
                     )
                 # reparse the method using the given action name
                 method = getattr(self, action_dict["action_name"])
-                reconstructed_action = Action(
-                    method=method,
-                    args=action_dict["args"],
-                    kwargs=action_dict["kwargs"],
+                reconstructed_action = Action.deserialize_action(
+                    serialized_action_dict=action_dict,
+                    deserialized_method=method,
                 )
                 reconstructed_action_list.append(reconstructed_action)
             self.__actions.append(reconstructed_action_list)
@@ -2193,7 +2225,7 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def start(self) -> bool:
+    def start(self, **_) -> bool:
         """
         Start the component - trigger_activate
 
@@ -2222,7 +2254,7 @@ class BaseComponent(lifecycle.Node):
         return self.__wait_for_node_start()
 
     @component_action
-    def stop(self) -> bool:
+    def stop(self, **_) -> bool:
         """
         Stop the component - trigger_deactivate
 
@@ -2247,7 +2279,7 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def reconfigure(self, new_config: Any, keep_alive: bool = False) -> bool:
+    def reconfigure(self, new_config: Any, keep_alive: bool = False, **_) -> bool:
         """
         Reconfigure the component - cleanup->stop->trigger_configure->start
 
@@ -2303,7 +2335,7 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def restart(self, wait_time: Optional[float] = None) -> bool:
+    def restart(self, wait_time: Optional[float] = None, **_) -> bool:
         """
         Restart the component - stop->start
 
@@ -2335,7 +2367,7 @@ class BaseComponent(lifecycle.Node):
 
     @component_action
     def set_param(
-        self, param_name: str, new_value: Any, keep_alive: bool = True
+        self, param_name: str, new_value: Any, keep_alive: bool = True, **_
     ) -> bool:
         """
         Change the value of one component parameter
@@ -2365,7 +2397,7 @@ class BaseComponent(lifecycle.Node):
 
     @component_action
     def set_params(
-        self, params_names: List[str], new_values: List, keep_alive: bool = True
+        self, params_names: List[str], new_values: List, keep_alive: bool = True, **_
     ) -> bool:
         """
         Change the value of multiple component parameters
@@ -2591,7 +2623,7 @@ class BaseComponent(lifecycle.Node):
             )
 
     @component_fallback
-    def broadcast_status(self) -> None:
+    def broadcast_status(self, **_) -> None:
         """
         Component fallback defined to only broadcast the current state so it is handled by an external manager.
         Used as the default fallback strategy for any system (external) failure

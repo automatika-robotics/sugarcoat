@@ -107,6 +107,12 @@ class BaseAttrs:
         """
         return asdict(self, filter=filter)
 
+    def to_dict(self) -> Dict:
+        """Convert class to dict.
+        :rtype: dict
+        """
+        return self.asdict()
+
     def __check_value_against_attr_type(
         self, key: str, value: Any, attribute_to_set: Any, attribute_type: type
     ):

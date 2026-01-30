@@ -388,49 +388,48 @@ class Launcher:
         :raises ValueError: If given component action corresponds to unknown component
         """
         self.__events_names.extend(event.name for event in events_actions_dict)
-        for condition, raw_action in events_actions_dict.items():
+        for event, raw_action in events_actions_dict.items():
             serialized_condition: str = (
-                condition.json if isinstance(condition, Event) else condition
+                event.to_json() if isinstance(event, Event) else event
             )
             action_set: List[Union[Action, ROSLaunchAction]] = (
                 raw_action if isinstance(raw_action, list) else [raw_action]
             )
             for action in action_set:
                 # Verify that the action parsers are compatible with the condition topic
-                if isinstance(condition, Event) and isinstance(action, Action):
-                    action._verify_against_event_topic(condition.event_topic)
+                # TODO
+                # if isinstance(condition, Event) and isinstance(action, Action):
+                #     action._verify_against_event_topic(condition)
                 # Check if it is a component action:
                 if isinstance(action, Action) and action.component_action:
                     action_object = action.executable.__self__
                     if components_list.count(action_object) <= 0:
                         raise InvalidAction(
-                            f"Invalid action for condition '{condition.name}'. Action component '{action_object}' is unknown or not added to Launcher"
+                            f"Invalid action for condition '{event.name}'. Action component '{action_object}' is unknown or not added to Launcher"
                         )
-                    if action.lifecycle_action:
+                    if action._is_lifecycle_action:
                         # lifecycle action to parse from the launcher
-                        self.__update_dict_list(
-                            self._ros_actions, condition.name, action
-                        )
+                        self.__update_dict_list(self._ros_actions, event.name, action)
                         if not self._internal_events:
-                            self._internal_events = [condition]
-                        elif condition not in self._internal_events:
-                            self._internal_events.append(condition)
+                            self._internal_events = [event]
+                        elif event not in self._internal_events:
+                            self._internal_events.append(event)
                     else:
                         self.__update_dict_list(
                             self._components_actions, serialized_condition, action
                         )
-                elif isinstance(action, Action) and action.monitor_action:
+                elif isinstance(action, Action) and action._is_monitor_action:
                     # Action to execute through the monitor
                     self.__update_dict_list(
                         self._monitor_actions, serialized_condition, action
                     )
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
-                    self.__update_dict_list(self._ros_actions, condition.name, action)
+                    self.__update_dict_list(self._ros_actions, event.name, action)
                     if not self._internal_events:
-                        self._internal_events = [condition]
-                    elif condition not in self._internal_events:
-                        self._internal_events.append(condition)
+                        self._internal_events = [event]
+                    elif event not in self._internal_events:
+                        self._internal_events.append(event)
 
     def _activate_components_action(self) -> SomeEntitiesType:
         """
@@ -585,8 +584,8 @@ class Launcher:
                 f"Requested action component {action.parent_component} is unknown"
             )
         return action_method(
-            *action.args,
-            **action.kwargs,
+            *action._args,
+            **action._kwargs,
             node_name=action.parent_component,
             component=comp,
         )
@@ -611,7 +610,7 @@ class Launcher:
                     entities_dict[event_name].append(action)
 
                 # Check action type
-                elif action.lifecycle_action:
+                elif action._is_lifecycle_action:
                     # Re-parse action for component related actions
                     entities = self._get_action_launch_entity(action)
                     if isinstance(entities, list):
