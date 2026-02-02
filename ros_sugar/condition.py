@@ -244,7 +244,8 @@ class Condition:
             topics = {}
             for c in self.sub_conditions:
                 new_topics = c._get_involved_topics()
-            return {**topics, **new_topics}  # Return unique involved topics
+                topics = {**topics, **new_topics}
+            return topics  # Return unique involved topics
         return {
             self.topic_name: {
                 "msg_type": self.topic_msg_type,
@@ -281,7 +282,7 @@ class Condition:
         try:
             val = _get_value_from_msg(msg, self.attribute_path)
             # Compare
-            # NOTE: operator_func is None -> 'On Any' condition
+            # NOTE: operator_func is None -> return True for 'On Any' condition (msg is available)
             return (
                 True
                 if self.operator_func is None

@@ -389,17 +389,13 @@ class Launcher:
         """
         self.__events_names.extend(event.name for event in events_actions_dict)
         for event, raw_action in events_actions_dict.items():
-            serialized_condition: str = (
-                event.to_json() if isinstance(event, Event) else event
-            )
             action_set: List[Union[Action, ROSLaunchAction]] = (
                 raw_action if isinstance(raw_action, list) else [raw_action]
             )
             for action in action_set:
-                # Verify that the action parsers are compatible with the condition topic
-                # TODO
-                # if isinstance(condition, Event) and isinstance(action, Action):
-                #     action._verify_against_event_topic(condition)
+                # Verify that the action inputs are available from the event topic(s)
+                if isinstance(event, Event) and isinstance(action, Action):
+                    event.verify_required_action_topics(action)
                 # Check if it is a component action:
                 if isinstance(action, Action) and action.component_action:
                     action_object = action.executable.__self__
@@ -415,11 +411,17 @@ class Launcher:
                         elif event not in self._internal_events:
                             self._internal_events.append(event)
                     else:
+                        serialized_condition: str = (
+                            event.to_json() if isinstance(event, Event) else event
+                        )
                         self.__update_dict_list(
                             self._components_actions, serialized_condition, action
                         )
                 elif isinstance(action, Action) and action._is_monitor_action:
                     # Action to execute through the monitor
+                    serialized_condition: str = (
+                        event.to_json() if isinstance(event, Event) else event
+                    )
                     self.__update_dict_list(
                         self._monitor_actions, serialized_condition, action
                     )

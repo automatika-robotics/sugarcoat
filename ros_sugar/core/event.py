@@ -2,17 +2,17 @@
 
 import json
 import time
-import logging
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Union, Optional
 from launch.event import Event as ROSLaunchEvent
 from launch.event_handler import EventHandler as ROSLaunchEventHandler
 from copy import copy
 from concurrent.futures import ThreadPoolExecutor
 
 from ..io.topic import Topic
-from .action import Action
+from .action import Action, OpaqueCoroutine, OpaqueFunction
 from ..condition import Condition
 from ..utils import SomeEntitiesType
+from ..utils import logger
 
 
 class InternalEvent(ROSLaunchEvent):
@@ -20,7 +20,7 @@ class InternalEvent(ROSLaunchEvent):
     Class to transform a Kompass event to ROS launch event using event key name
     """
 
-    def __init__(self, event_name: str) -> None:
+    def __init__(self, event_name: str, topics_value: Dict) -> None:
         """__init__.
 
         :param event_name:
@@ -29,6 +29,7 @@ class InternalEvent(ROSLaunchEvent):
         """
         super().__init__()
         self.__event_name = event_name
+        self.__topics_value = topics_value
 
     @property
     def event_name(self):
@@ -39,6 +40,26 @@ class InternalEvent(ROSLaunchEvent):
         :rtype: str
         """
         return self.__event_name
+
+    @property
+    def topics_value(self):
+        """
+        Getter of internal event name
+
+        :return: Event name
+        :rtype: str
+        """
+        return self.__topics_value
+
+    @topics_value.setter
+    def topics_value(self, value):
+        """
+        Getter of internal event name
+
+        :return: Event name
+        :rtype: str
+        """
+        self.__topics_value = value
 
 
 class OnInternalEvent(ROSLaunchEventHandler):
@@ -61,7 +82,6 @@ class OnInternalEvent(ROSLaunchEventHandler):
         :type handle_once: bool
         :rtype: None
         """
-
         self.__matcher: Callable[[ROSLaunchEvent], bool] = lambda event: (
             isinstance(event, InternalEvent) and event.event_name == internal_event_name
         )
@@ -69,6 +89,42 @@ class OnInternalEvent(ROSLaunchEventHandler):
         super().__init__(
             matcher=self.__matcher, entities=entities, handle_once=handle_once
         )
+
+    def handle(self, event: ROSLaunchEvent, context) -> Optional[SomeEntitiesType]:
+        """
+        Overriding handle to inject event data into the entities.
+        """
+        # 1. Capture the entities defined in __init__ (via super())
+        entities = super().handle(event, context)
+        new_entities = []
+        # 2. Safety check: Ensure we are dealing with internal event type
+        if entities is not None and isinstance(event, InternalEvent):
+            data = event.topics_value
+
+            # 3. Iterate through entities and inject the data
+            for entity in entities:
+                if isinstance(entity, OpaqueFunction):
+                    # We use partial to inject 'topics_value' into the inner function
+                    # This assumes your inner functions are ready to accept 'topics_value'
+                    kwargs = {**entity.kwargs, "topics": data}
+                    new_entities.append(
+                        OpaqueFunction(
+                            function=entity.function, args=entity.args, kwargs=kwargs
+                        )
+                    )
+                elif isinstance(entity, OpaqueCoroutine):
+                    # We use partial to inject 'topics_value' into the inner function
+                    # This assumes your inner functions are ready to accept 'topics_value'
+                    kwargs = {**entity.kwargs, "topics": data}
+                    new_entities.append(
+                        OpaqueCoroutine(
+                            coroutine=entity.coroutine, args=entity.args, kwargs=kwargs
+                        )
+                    )
+                else:
+                    new_entities.append(entity)
+
+        return new_entities
 
 
 class Event:
@@ -119,6 +175,9 @@ class Event:
         self._previous_trigger = None
         self.__under_processing = False
         self._processed_once: bool = False
+
+        # Additional Action Topics
+        self.__additional_action_topics : List[Topic] = []
 
         # Case 1: Init from Condition Expression (topic.msg.data > 5)
         if isinstance(event_condition, Condition):
@@ -230,7 +289,7 @@ class Event:
                 keep_event_delay=dict_obj["keep_event_delay"],
             )
         except Exception as e:
-            logging.error(f"Cannot set Event from incompatible dictionary. {e}")
+            logger.error(f"Cannot set Event from incompatible dictionary. {e}")
             raise
 
     def to_json(self) -> str:
@@ -255,11 +314,48 @@ class Event:
 
     def get_involved_topics(self) -> List[Topic]:
         required_topics_dict: Dict = self._condition._get_involved_topics()
+
         # Create topic objects
         topics = []
         for topic_name, topic_dict in required_topics_dict.items():
             topics.append(Topic(name=topic_name, **topic_dict))
-        return topics
+        return topics + self.__additional_action_topics
+
+    def add_condition(self, additional_condition: Union[Condition, Topic]) -> None:
+        """Add an additional condition to the event
+        Final condition = old conditions and new condition
+
+        :param additional_condition: New condition
+        :type additional_condition: Union[Condition, Topic]
+        """
+        if isinstance(additional_condition, Condition):
+            self._condition = self._condition & additional_condition
+        elif isinstance(additional_condition, Topic):
+            new_condition = Condition(
+                topic_name=additional_condition.name,
+                topic_msg_type=additional_condition.msg_type.__name__,
+                topic_qos_config=additional_condition.qos_profile.to_dict(),
+                attribute_path=[],
+                operator_func=None,
+                ref_value=None,
+            )
+            self._condition = self._condition & new_condition
+
+    def verify_required_action_topics(self, action: Action) -> None:
+        """Verify the action topic parsers (if present) against an event.
+           Raises a 'ValueError' if there is a mismatch.
+
+        :param event: Event to verify against
+        :type event: Event
+        """
+
+        action_topics: List[Topic] = action.get_required_topics()
+        event_topics = self.get_involved_topics()
+        for topic in action_topics:
+            if topic.name not in [event_topic.name for event_topic in event_topics]:
+                # Add the topic required by the action to the event conditions (as on any)
+                # to ensure getting its message value
+                self.__additional_action_topics.append(topic)
 
     def _execute_actions(self, global_topic_cache: Dict) -> None:
         """
@@ -278,7 +374,6 @@ class Event:
             Event._action_executor.submit(
                 self._async_action_wrapper, global_topic_cache
             )
-            # self._async_action_wrapper(global_topic_cache)
 
     def _async_action_wrapper(self, global_topic_cache: Dict) -> None:
         """
@@ -296,7 +391,7 @@ class Event:
                 time.sleep(self._keep_event_delay)
 
         except Exception as e:
-            logging.error(f"Error executing actions for event '{self.name}': {e}")
+            logger.error(f"Error executing actions for event '{self.name}': {e}")
         finally:
             # Reset the flag only after work + delay are done
             self.under_processing = False
@@ -389,7 +484,7 @@ class Event:
                 self.trigger = triggered
 
         self._execute_actions(global_topic_cache)
-
+        # TODO: When to clear the values of the global_topic_cache???
         return
 
     def __str__(self) -> str:

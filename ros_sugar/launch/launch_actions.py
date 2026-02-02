@@ -77,12 +77,18 @@ class ComponentLaunchAction(NodeLaunchAction):
         """
         try:
             # Create a launch event of type InternalEvent with the event name
-            event = InternalEvent(event_name=event_name)
+            event = InternalEvent(
+                event_name=event_name,
+                topics_value=self.__ros_node._events_topics_blackboard,
+            )
+
+            def func():
+                # Update values from node
+                event.topics_value = self.__ros_node._events_topics_blackboard
+                self.__context.emit_event_sync(event)
 
             # Emit the event to launch context
-            self.__context.asyncio_loop.call_soon_threadsafe(
-                lambda: self.__context.emit_event_sync(event)
-            )
+            self.__context.asyncio_loop.call_soon_threadsafe(func)
         except Exception as exc:
             self.__logger.error("Exception in emitting event': {}".format(exc))
 

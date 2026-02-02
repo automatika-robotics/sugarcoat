@@ -3,9 +3,24 @@
 import inspect
 import json
 from rclpy.lifecycle import Node as LifecycleNode
-from launch.actions import OpaqueCoroutine, OpaqueFunction
+from launch.actions import (
+    OpaqueCoroutine as ROSOpaqueCoroutine,
+    OpaqueFunction as ROSOpaqueFunction,
+)
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, Union, List, Type, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Optional,
+    Union,
+    List,
+    Type,
+    Tuple,
+    Iterable,
+    Text,
+    Awaitable,
+)
 
 from launch import LaunchContext
 import launch
@@ -77,7 +92,7 @@ def _create_auto_ros_msg_parser(
         and len(input_fields) < len(target_fields)
     ):
 
-        def duck_parser(*, msg: Any, **_) -> Any:
+        def duck_parser(msg: Any, **_) -> Any:
             out = target_msg_type()
             for key in common_fields:
                 setattr(out, key, getattr(msg, key))
@@ -91,33 +106,31 @@ def _create_auto_ros_msg_parser(
     matching_map = {}  # target_field -> input_field
     used_inputs = set()
 
-    possible_match = True
-
-    for tgt_key, tgt_type in target_fields.items():
+    for inp_key, inp_type in input_fields.items():
         found_source = None
-        for inp_key, inp_type in input_fields.items():
+        for tgt_key, tgt_type in target_fields.items():
             if inp_key in used_inputs:
                 continue
             if inp_type == tgt_type:
-                found_source = inp_key
+                found_source = tgt_key
                 break
 
         if found_source:
-            matching_map[tgt_key] = found_source
-            used_inputs.add(found_source)
-        else:
-            possible_match = False
-            break
+            matching_map[inp_key] = found_source
+            used_inputs.add(inp_key)
 
-    if possible_match and matching_map:
+    if (len(matching_map) == len(target_fields) and len(target_fields) > 0) or (
+        len(matching_map) == len(input_fields)
+        and len(input_fields) < len(target_fields)
+    ):
         logger.warning(
             f"Added type-based parser (heuristic) from '{input_msg_type.__name__}' to '{target_msg_type.__name__}' "
             f"mapping: {matching_map}. Verify this logic."
         )
 
-        def type_parser(*, msg: Any, **_) -> Any:
+        def type_parser(msg: Any, **_) -> Any:
             out = target_msg_type()
-            for t_key, i_key in matching_map.items():
+            for i_key, t_key in matching_map.items():
                 setattr(out, t_key, getattr(msg, i_key))
             return out
 
@@ -125,6 +138,91 @@ def _create_auto_ros_msg_parser(
 
     # Case 4: No Match
     return None
+
+
+class OpaqueFunction(ROSOpaqueFunction):
+    """
+    Action that executes a Python function.
+
+    The signature of the function should be:
+
+    .. code-block:: python
+
+        def function(
+            context: LaunchContext,
+            *args,
+            **kwargs
+        ) -> Optional[List[LaunchDescriptionEntity]]:
+            ...
+
+    """
+
+    def __init__(
+        self,
+        *,
+        function: Callable,
+        args: Optional[Iterable[Any]] = None,
+        kwargs: Optional[Dict[Text, Any]] = None,
+        **left_over_kwargs,
+    ) -> None:
+        self.function = function
+        self.args = args
+        self.kwargs = kwargs
+        super().__init__(
+            function=function,
+            args=args,
+            kwargs=kwargs,
+            **left_over_kwargs,
+        )
+
+
+class OpaqueCoroutine(ROSOpaqueCoroutine):
+    """
+    Action that adds a Python coroutine function to the launch run loop.
+
+    The signature of the coroutine function should be:
+
+    .. code-block:: python
+
+        async def coroutine_func(
+            context: LaunchContext,
+            *args,
+            **kwargs
+        ):
+            ...
+
+    if ignore_context is False on construction (currently the default), or
+
+    .. code-block:: python
+
+        async def coroutine_func(
+            *args,
+            **kwargs
+        ):
+            ...
+
+    if ignore_context is True on construction.
+    """
+
+    def __init__(
+        self,
+        *,
+        coroutine: Callable[..., Awaitable[None]],
+        args: Optional[Iterable[Any]] = None,
+        kwargs: Optional[Dict[Text, Any]] = None,
+        ignore_context: bool = False,
+        **left_over_kwargs,
+    ) -> None:
+        self.coroutine = coroutine
+        self.args = args
+        self.kwargs = kwargs
+        super().__init__(
+            coroutine=coroutine,
+            args=args,
+            kwargs=kwargs,
+            ignore_context=ignore_context,
+            **left_over_kwargs,
+        )
 
 
 class Action:
@@ -264,8 +362,10 @@ class Action:
         for key, (name, conv_func) in self.__prepared_events_conversions.items():
             if msg := topics.get(name, None):
                 call_kwargs[key] = conv_func(msg)
-
-        return self.executable(*call_args, **call_kwargs)
+        try:
+            return self.executable(*call_args, **call_kwargs)
+        except Exception as e:
+            logger.error(f"Error executing action: {e}")
 
     def _setup_conversions(self, event_topic_name, event_msg_type):
         """Method will be invoked from the associated event to setup any required automatic converters
@@ -276,14 +376,14 @@ class Action:
         self.__prepared_events_conversions = {}
         for key, msg_type in self.__event_topic_conversions.items():
             func: Optional[Callable] = _create_auto_topic_parser(
-                event_msg_type, msg_type._ros_type
+                event_msg_type, msg_type
             )
             # If failed to find an automatic conversion -> Do not register
             if func is not None:
                 self.__prepared_events_conversions[key] = (event_topic_name, func)
             else:
                 logger.warning(
-                    f"Failed to find automatic conversion from event topic '{event_msg_type}' and the required Action argument type {msg_type._ros_type}"
+                    f"Failed to find automatic conversion from event topic '{event_msg_type}' and the required Action argument type {msg_type}"
                 )
 
     def set_required_runtime_arguments(
@@ -293,24 +393,11 @@ class Action:
         for key, arg in kwargs.items():
             self.__event_topic_conversions[key] = get_msg_type(arg)
 
-    def _verify_against_event_topic(self, event_topic) -> None:
-        """Verify the action topic parsers (if present) against an event.
-           Raises a 'ValueError' if there is a mismatch.
-
-        :param event_topic: Event topic to verify against
-        :type event_topic: Topic
-        :raises ValueError: If the action parser topics are different from the event topic
-        """
-        # TODO: Support additional subscribers to required topics other than the event topic?
-        # For example: If battery is low event triggers an action that reads from /odom topic?
-        for topic_msg_builder in self.__input_topics.values():
-            if (
-                topic_msg_builder.name != event_topic.name
-                or topic_msg_builder.type != event_topic.ros_msg_type
-            ):
-                raise ValueError(
-                    f"Action parser topic mismatch. Actions only have access to associated events topics. Action '{self.action_name}' is associated with event topic '{event_topic.name}', but got topic '{topic_msg_builder.name}'"
-                )
+    def get_required_topics(self) -> List[Topic]:
+        return [
+            msg_condition_builder.topic
+            for msg_condition_builder in self.__input_topics.values()
+        ]
 
     @property
     def executable(self):
@@ -510,7 +597,7 @@ class Action:
             :param context: ROS Launch Context
             :type context: LaunchContext
             """
-            self.executable(*args, **kwargs)
+            self(*args, **kwargs)
 
         # HACK: Update function signature - as ROS Launch uses inspect to check signature
         new_parameters = list(function_parameters.values())
