@@ -2,6 +2,7 @@
 
 import os
 from functools import partial
+import time
 from typing import Any, Callable, Dict, List, Optional, Union
 from rclpy.node import Node
 from rclpy.publisher import Publisher
@@ -18,7 +19,7 @@ from .. import base_clients
 from .component import BaseComponent
 from ..config import BaseConfig
 from ..io.topic import Topic
-from .event import Event
+from .event import Event, EventBlackboardEntry
 from .action import Action
 from ..launch import logger
 
@@ -526,12 +527,30 @@ class Monitor(Node):
         2. Re-evaluates all events that depend on this topic
         """
         # Update Blackboard
-        self._events_topics_blackboard[topic_name] = msg
+        self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
+            msg=msg, timestamp=time.time()
+        )
 
-        # Check Events
-        for event in self.__events_per_topic.get(topic_name, []):
-            # Only check events that actually care about this topic
-            event.check_condition(self._events_topics_blackboard)
+        # READ & CLEAN: Identify events dependent on this topic
+        relevant_events = self.__events_per_topic.get(topic_name, [])
+
+        for event in relevant_events:
+            # Instead of passing the raw blackboard
+            # we perform a lazy cleanup right here for the topics THIS event needs.
+
+            clean_cache_subset = {}
+            for topic in event.get_involved_topics():
+                # This call performs the check and DELETES expired data if necessary
+                valid_entry = EventBlackboardEntry.get(
+                    self._events_topics_blackboard,
+                    topic.name,
+                    topic.data_timeout,
+                    event.get_last_processed_id(topic.name),
+                )
+                if valid_entry:
+                    clean_cache_subset[topic.name] = valid_entry
+            # Pass the clean subset to the event
+            event.check_condition(clean_cache_subset)
 
     def _activate_event_monitoring(self) -> None:
         """
@@ -555,7 +574,7 @@ class Monitor(Node):
         # TURN ON EVENTS MANAGEMENT
         # Blackboard to store latest messages for all topics required for all event:
         # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
-        self._events_topics_blackboard: Dict[str, Any] = {}
+        self._events_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
 
         # Identify all unique topics required across ALL events
         unique_topics: Dict[str, Topic] = {}

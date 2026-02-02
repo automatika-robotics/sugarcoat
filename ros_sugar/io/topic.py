@@ -142,6 +142,10 @@ class Topic(BaseAttrs, Generic[MsgT]):
     * - **qos_profile**
       - `QoSConfig | Dict`, `QoSConfig()`
       - QoS (Quality of Service) configuration
+
+    * - **data_timeout**
+      - `float`, `1.0`
+      - Used in event management. Time to hold the topic data for processing before considered "stale" (seconds)
     ```
     """
 
@@ -152,6 +156,7 @@ class Topic(BaseAttrs, Generic[MsgT]):
     qos_profile: Union[Dict, QoSConfig] = field(
         default=Factory(QoSConfig), converter=_make_qos_config
     )
+    data_timeout: float = field(default=1.0, validator=base_validators.gt(0.0))
     ros_msg_type: Type[MsgT] = field(init=False)
     additional_types: List[Type[supported_types.SupportedType]] = field(
         default=Factory(list)

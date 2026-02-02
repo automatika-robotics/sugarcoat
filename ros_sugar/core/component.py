@@ -36,7 +36,7 @@ from automatika_ros_sugar.srv import (
 )
 
 from .action import Action
-from .event import Event
+from .event import Event, EventBlackboardEntry
 from ..io.callbacks import GenericCallback
 from ..config.base_config import (
     BaseComponentConfig,
@@ -849,7 +849,7 @@ class BaseComponent(lifecycle.Node):
 
         # Blackboard to store latest messages for all topics required for all event:
         # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
-        self._events_topics_blackboard: Dict[str, Any] = {}
+        self._events_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
 
         # Identify all unique topics required across ALL events
         unique_topics = {}
@@ -889,13 +889,31 @@ class BaseComponent(lifecycle.Node):
         1. Updates Cache of all required events topics
         2. Re-evaluates all events that depend on this topic
         """
-        # Update Blackboard
-        self._events_topics_blackboard[topic_name] = msg
+        # Update Blackboard with stamped entry
+        self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
+            msg=msg, timestamp=time.time()
+        )
 
-        # Check Events
-        for event in self.__events_per_topic.get(topic_name, []):
-            # Only check events that actually care about this topic
-            event.check_condition(self._events_topics_blackboard)
+        # READ & CLEAN: Identify events dependent on this topic
+        relevant_events = self.__events_per_topic.get(topic_name, [])
+
+        for event in relevant_events:
+            # Instead of passing the raw blackboard
+            # we perform a lazy cleanup right here for the topics THIS event needs.
+
+            clean_cache_subset = {}
+            for topic in event.get_involved_topics():
+                # This call performs the check and DELETES expired data if necessary
+                valid_entry = EventBlackboardEntry.get(
+                    self._events_topics_blackboard,
+                    topic.name,
+                    topic.data_timeout,
+                    event.get_last_processed_id(topic.name),
+                )
+                if valid_entry:
+                    clean_cache_subset[topic.name] = valid_entry
+            # Pass the clean subset to the event
+            event.check_condition(clean_cache_subset)
 
     def _add_event_action_pair(self, event: Event, action: Union[Action, List[Action]]):
         """Add an event/action pair.

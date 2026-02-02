@@ -2,6 +2,8 @@
 
 import json
 import time
+import uuid
+from attrs import define, field
 from typing import Any, Callable, Dict, List, Union, Optional
 from launch.event import Event as ROSLaunchEvent
 from launch.event_handler import EventHandler as ROSLaunchEventHandler
@@ -127,6 +129,64 @@ class OnInternalEvent(ROSLaunchEventHandler):
         return new_entities
 
 
+@define
+class EventBlackboardEntry:
+    """
+    A container for timestamped messages stored in the Event Blackboard.
+
+    This class wraps raw ROS messages with metadata to enable:
+    1. **Time-To-Live (TTL) Checks:** Using ``timestamp`` to invalidate old data.
+    2. **Idempotency:** Using a unique ``id`` to prevent the same message instance
+       from triggering the same event multiple times.
+
+    :param msg: The actual data payload (e.g., a ROS message).
+    :type msg: Any
+    :param timestamp: The standard Unix timestamp (float) when the message was received.
+    :type timestamp: float
+    :param id: A unique UUID4 string identifying this specific message reception instance.
+               Defaults to a new UUID if not provided.
+    :type id: str
+    """
+    msg: Any
+    timestamp: float
+    # A unique identifier for this specific reception instance
+    id: str = field(factory=lambda: str(uuid.uuid4()))
+
+    @classmethod
+    def get(
+        cls,
+        entries_dict: Dict[str, "EventBlackboardEntry"],
+        topic_name: str,
+        timeout: Optional[float],
+        stale_id: Optional[str] = None,
+    ) -> Optional[Any]:
+        """
+        Retrieves data from entries_dict:
+        - If data is missing: returns None
+        - If data is present but expired: Deletes it and returns None (Lazy Expiration)
+        - If data is valid: returns the entry
+        """
+        entry = entries_dict.get(topic_name)
+
+        if entry is None:
+            return None
+
+        if stale_id and entry.id == stale_id:
+            # Return none as this is already stale for one event,
+            # but do not delete as it might be required by others
+            return None
+
+        # Check Timeout (if defined)
+        if timeout is not None:
+            age = time.time() - entry.timestamp
+            if age > timeout:
+                # LAZY DELETION: The data is dead, clean it up now.
+                del entries_dict[topic_name]
+                return None
+
+        return entry
+
+
 class Event:
     """An Event is defined by a change in a ROS2 message value on a specific topic. Events are created to alert a robot software stack to any dynamic change at runtime.
 
@@ -176,9 +236,6 @@ class Event:
         self.__under_processing = False
         self._processed_once: bool = False
 
-        # Additional Action Topics
-        self.__additional_action_topics : List[Topic] = []
-
         # Case 1: Init from Condition Expression (topic.msg.data > 5)
         if isinstance(event_condition, Condition):
             self._condition = event_condition
@@ -207,6 +264,18 @@ class Event:
 
         # Register for on trigger actions
         self._registered_on_trigger_actions: List[Action] = []
+
+        # Required topics registry
+        self.__required_topics: List[Topic] = []
+        required_topics_dict: Dict = self._condition._get_involved_topics()
+        for topic_name, topic_dict in required_topics_dict.items():
+            self.__required_topics.append(Topic(name=topic_name, **topic_dict))
+
+        # Additional Action Topics
+        self.__additional_action_topics: List[Topic] = []
+
+        # Stores the ID of the last processed message for each topic involved
+        self.__last_processed_ids: Dict[str, str] = {}
 
     @property
     def under_processing(self) -> bool:
@@ -313,33 +382,22 @@ class Event:
         return cls.from_dict(dict_obj)
 
     def get_involved_topics(self) -> List[Topic]:
-        required_topics_dict: Dict = self._condition._get_involved_topics()
+        """Get all the topics required for monitoring this event
 
-        # Create topic objects
-        topics = []
-        for topic_name, topic_dict in required_topics_dict.items():
-            topics.append(Topic(name=topic_name, **topic_dict))
-        return topics + self.__additional_action_topics
-
-    def add_condition(self, additional_condition: Union[Condition, Topic]) -> None:
-        """Add an additional condition to the event
-        Final condition = old conditions and new condition
-
-        :param additional_condition: New condition
-        :type additional_condition: Union[Condition, Topic]
+        :return: Required topics
+        :rtype: List[Topic]
         """
-        if isinstance(additional_condition, Condition):
-            self._condition = self._condition & additional_condition
-        elif isinstance(additional_condition, Topic):
-            new_condition = Condition(
-                topic_name=additional_condition.name,
-                topic_msg_type=additional_condition.msg_type.__name__,
-                topic_qos_config=additional_condition.qos_profile.to_dict(),
-                attribute_path=[],
-                operator_func=None,
-                ref_value=None,
-            )
-            self._condition = self._condition & new_condition
+        return self.__required_topics + self.__additional_action_topics
+
+    def get_last_processed_id(self, topic_name: str) -> Optional[str]:
+        """Get the unique ID of the last processed message for a given topic
+
+        :param topic_name: Topic name
+        :type topic_name: str
+        :return: The last unique ID if the topic was processed earlier, otherwise None
+        :rtype: Optional[str]
+        """
+        return self.__last_processed_ids.get(topic_name, None)
 
     def verify_required_action_topics(self, action: Action) -> None:
         """Verify the action topic parsers (if present) against an event.
@@ -452,17 +510,20 @@ class Event:
         for action in self._registered_on_trigger_actions:
             action(*args, **kwargs)
 
-    def check_condition(self, global_topic_cache: Dict[str, Any]) -> None:
+    def check_condition(
+        self, global_topic_cache: Dict[str, EventBlackboardEntry]
+    ) -> None:
         """
         Replaces existing trigger logic.
         Evaluates the root Condition tree against the global cache.
         """
+        topics_dict = {key: value.msg for key, value in global_topic_cache.items()}
         self._previous_trigger = copy(self.trigger)
         if self._on_any:
             self.trigger = True
         else:
             # This assumes self.event_condition is now the root Condition object
-            triggered = self._condition.evaluate(global_topic_cache)
+            triggered = self._condition.evaluate(topics_dict)
 
             # If the event is to be check only 'on_change' in the value
             # then check if:
@@ -483,7 +544,14 @@ class Event:
                 # then just directly update the trigger
                 self.trigger = triggered
 
-        self._execute_actions(global_topic_cache)
+        if self.trigger:
+            # If triggered update the last processed IDs
+            # This prevents handling the same topic data twice in the period before its 'stale'
+            self.__last_processed_ids = {
+                key: value.id for key, value in global_topic_cache.items()
+            }
+
+            self._execute_actions(topics_dict)
         # TODO: When to clear the values of the global_topic_cache???
         return
 
