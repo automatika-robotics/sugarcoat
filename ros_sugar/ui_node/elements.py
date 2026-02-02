@@ -1,7 +1,7 @@
 import importlib
 from typing import List, Dict, Any
 from functools import partial
-import logging
+from ..utils import logger
 from ..io.supported_types import SupportedType, get_ros_msg_fields_dict
 
 from .utils import parse_type
@@ -167,8 +167,6 @@ class Task:
             )
 
             output = result.stdout
-
-            logging.warning(f"GOT'{output}'")
 
         except Exception:
             return None
@@ -569,31 +567,33 @@ def __location_element_input(
     )
 
 
-def _in_point_element(topic_name: str, topic_type: str, stamped: bool, has_map: bool = False, **_):
+def _in_point_element(
+    topic_name: str, topic_type: str, stamped: bool, has_map: bool = False, **_
+):
     """FastHTML element for 3D point type"""
     elements = DivHStacked(
-            Input(
-                placeholder="X",
-                name="x",
-                type="number",
-                required=True,
-                autocomplete="off",
-            ),
-            Input(
-                placeholder="Y",
-                name="y",
-                type="number",
-                required=True,
-                autocomplete="off",
-            ),
-            Input(
-                placeholder="Z",
-                name="z",
-                type="number",
-                required=True,
-                autocomplete="off",
-            ),
-        )
+        Input(
+            placeholder="X",
+            name="x",
+            type="number",
+            required=True,
+            autocomplete="off",
+        ),
+        Input(
+            placeholder="Y",
+            name="y",
+            type="number",
+            required=True,
+            autocomplete="off",
+        ),
+        Input(
+            placeholder="Z",
+            name="z",
+            type="number",
+            required=True,
+            autocomplete="off",
+        ),
+    )
     if stamped:
         elements(
             Input(
@@ -612,7 +612,9 @@ def _in_point_element(topic_name: str, topic_type: str, stamped: bool, has_map: 
     )
 
 
-def _in_pose_element(topic_name: str, topic_type: str, stamped: bool, has_map: bool = False, **_):
+def _in_pose_element(
+    topic_name: str, topic_type: str, stamped: bool, has_map: bool = False, **_
+):
     """FastHTML element for 3D point type"""
     _pose_form_fields = (
         P("Position:"),
@@ -778,22 +780,22 @@ def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
     # Get key type
     module_name_key, _, type_name = k_t.rpartition(".")
     if not module_name_key:
-        logging.error(f"Could not find module name for {k_t}")
+        logger.error(f"Could not find module name for {k_t}")
         return
     # Get item func
     module_name_item, _, func_name = i_t.rpartition(".")
     if not module_name_item:
-        logging.error(f"Could not find module name for {i_t}")
+        logger.error(f"Could not find module name for {i_t}")
         return
     module_key = importlib.import_module(module_name_key)
     module_item = importlib.import_module(module_name_item)
     key = getattr(module_key, type_name)
     if not issubclass(key, SupportedType):
-        logging.error(f"Could not find {type_name} name in {module_key} module")
+        logger.error(f"Could not find {type_name} name in {module_key} module")
         return
     item = getattr(module_item, func_name)
     if not callable(item):
-        logging.error(f"Could not find {func_name} name in {module_item} module")
+        logger.error(f"Could not find {func_name} name in {module_item} module")
         return
     return key, item
 
@@ -1357,7 +1359,7 @@ def settings_ui_element(
     try:
         field_type, type_args = parse_type(setting_details.get("type", ""))
     except Exception as e:
-        logging.error(
+        logger.error(
             f"Could not render setting: {setting_name}, with value: {setting_details} due to error: {e}"
         )
         field_type, type_args = None, None

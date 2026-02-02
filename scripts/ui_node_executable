@@ -4,7 +4,6 @@ from typing import Dict
 from pathlib import Path
 from functools import partial
 import argparse
-import logging
 import threading
 import uvicorn
 from ros_sugar.launch.executable import setup_component, run_component
@@ -12,6 +11,7 @@ from ros_sugar.launch.executable import setup_component, run_component
 from ros_sugar.ui_node import UINode, UINodeConfig
 from ros_sugar.ui_node.frontend import FHApp
 import ros_sugar.ui_node.elements as elements
+from ros_sugar.utils import logger
 
 import base64
 import array
@@ -24,7 +24,7 @@ def main():
     Executable to run a component as a ros node.
     Used to start a node using Launcher
     """
-    logging.info("Starting UI Node executable")
+    logger.info("Starting UI Node executable")
 
     # Start UI helper ROS node in a separate thread
     ros_node: UINode = setup_component(
@@ -241,7 +241,7 @@ def main():
             response = {"op": "publish", "msg": msg_dict}
             await ws.send_json(response)
 
-        logging.warning(f"attaching with topic type {topic_type}...")
+        logger.warning(f"attaching with topic type {topic_type}...")
         ros_node.attach_websocket_callback(map_callback, topic_type)
 
     async def on_conn_action(_, send, action_name: str):
@@ -277,7 +277,7 @@ def main():
 
     # Create websockets for map output topics
     for topic_name, topic_type in fh.get_all_map_outputs():
-        logging.warning(f"starting map ws for {topic_name}...")
+        logger.warning(f"starting map ws for {topic_name}...")
 
         @app.ws(
             f"/ws_{topic_name}",
@@ -292,7 +292,7 @@ def main():
                 ros_node.publish_data(data)
 
     for clients_configs_dict in ros_node.action_clients_inputs_dicts():
-        logging.warning(
+        logger.warning(
             f"starting action clients ws for {clients_configs_dict['name']}..."
         )
 
@@ -320,7 +320,7 @@ def main():
                     "data": data["payload"],
                 })
             except RuntimeError:
-                logging.warning("Runtime error when sending audio")
+                logger.warning("Runtime error when sending audio")
 
             # Send the robot loading dots
             return elements.update_logging_card_with_loading(fh.outputs_log)
@@ -340,7 +340,7 @@ def main():
                     "data": data["payload"],
                 })
             except RuntimeError:
-                logging.warning("Runtime error when sending audio")
+                logger.warning("Runtime error when sending audio")
 
             # Send the robot loading dots
             return elements.update_logging_card_with_loading(fh.outputs_log)
@@ -403,22 +403,22 @@ def main():
         Path(ros_node_config.ssl_keyfile).exists()
         and Path(ros_node_config.ssl_certificate).exists()
     ):
-        logging.info("\n" + "=" * 80)
-        logging.info("WARNING: SSL certificates (key.pem, cert.pem) not found.")
-        logging.info(
+        logger.info("\n" + "=" * 80)
+        logger.info("WARNING: SSL certificates (key.pem, cert.pem) not found.")
+        logger.info(
             "Microphone access will not work when accessing from another machine."
         )
-        logging.info(
+        logger.info(
             "To enable microphone over the network, generate certificates by running"
         )
-        logging.info("the following command:")
-        logging.info(
+        logger.info("the following command:")
+        logger.info(
             '\nopenssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes -subj "/CN=localhost"\n'
         )
-        logging.info(
+        logger.info(
             "And give the path to the certificates to the launcher.enable_ui method"
         )
-        logging.info("=" * 80 + "\n")
+        logger.info("=" * 80 + "\n")
         key_file = None
         certificate_file = None
         protocol = "http"
@@ -427,7 +427,7 @@ def main():
         certificate_file = ros_node_config.ssl_certificate
         protocol = "https"
 
-    logging.info(
+    logger.info(
         f"Access the recipe UI at: {protocol}://<IP_ADDRESS_OF_THE_ROBOT>:{ros_node_config.port}"
     )
     uvicorn.run(
