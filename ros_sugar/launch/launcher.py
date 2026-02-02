@@ -723,7 +723,7 @@ class Launcher:
         :param nodes_in_processes: If nodes are being launched in separate processes, defaults to True
         :type nodes_in_processes: bool, optional
         """
-        logger.info(f"UI enabled. Setting up ui node: {self._ui_input_topics}")
+        logger.info("UI enabled. Setting up the UI node...")
 
         # Setup the client node
         component_configs = {comp.node_name: comp.config for comp in self._components}
@@ -1039,5 +1039,5 @@ class Launcher:
             self._thread_pool.shutdown()
 
         logger.info("------------------------------------")
-        logger.info("ALL COMPONENTS ENDED")
+        logger.info("ALL COMPONENTS EXITED SUCCESSFULLY")
         logger.info("------------------------------------")
