@@ -117,7 +117,7 @@ class ComponentLaunchAction(NodeLaunchAction):
         if isinstance(self.__ros_node, Monitor):
             if self.__ros_node._internal_events:
                 for event in self.__ros_node._internal_events:
-                    self.__logger.info(f"Registering internal event '{event}'")
+                    self.__logger.debug(f"Registering internal event '{event}'")
                     # Register a method to emit the event to the launch context on trigger
                     event.register_method(
                         "emit_to_context", partial(self._on_internal_event, event.id)
@@ -128,7 +128,7 @@ class ComponentLaunchAction(NodeLaunchAction):
                 )
 
             # Adds an emit event for components activation
-            self.__logger.info("Registering Conditional Activation Handle")
+            self.__logger.debug("Registering Conditional Activation Handle")
             self.__ros_node.add_components_activation_event(
                 partial(self._on_internal_event, "activate_all")
             )

@@ -8,7 +8,7 @@ import importlib
 from functools import partial
 
 from ..config.base_attrs import BaseAttrs
-from ..core.component import BaseComponent, BaseComponentConfig
+from ..core.component import BaseComponent, BaseComponentConfig, Publisher
 from .. import base_clients
 from ..io.callbacks import GenericCallback
 from ..io.topic import Topic
@@ -468,7 +468,7 @@ class UINode(BaseComponent):
 
         if self.count_subscribers(topic_name) == 0:
             return self._return_error(
-                f'No subscribers found for the topic "{topic_name}". Please check the topic name in your recipe'
+                f'No subscribers found for the topic "{topic_name}". Please check the topic name and re-send data'
             )
 
         try:
@@ -489,7 +489,31 @@ class UINode(BaseComponent):
         if frame_id:
             kwargs["frame_id"] = frame_id
 
-        self.publishers_dict[topic_name].publish(**kwargs)
+        try:
+            if publisher := self.publishers_dict.get(topic_name, None):
+                # Confirm that the topic type was not updated dynamically in the UI
+                if publisher.output_topic.msg_type.__name__ == topic_type_str:
+                    publisher.publish(**kwargs)
+                    return
+                else:
+                    # Destroy the old publisher to create a new one
+                    self.destroy_publisher(publisher._publisher)
+                    self.get_logger().debug(
+                        f"Destroying old publisher for {topic_name} of type {publisher.output_topic.msg_type.__name__}"
+                    )
+            # Handle creating publishers for dynamically added or modified outputs in the UI
+            self.publishers_dict[topic_name] = Publisher(
+                Topic(name=topic_name, msg_type=topic_type_str), node_name=self.node_name
+            )
+            self.publishers_dict[topic_name].set_node_name(self.node_name)
+            # Set ROS publisher for each output publisher
+            self.publishers_dict[topic_name].set_publisher(
+                self._add_ros_publisher(self.publishers_dict[topic_name])
+            )
+            self.publishers_dict[topic_name].publish(**kwargs)
+            return
+        except Exception as e:
+            self.get_logger().error(f"Error publishing UI input data to topic {topic_name}: {e}")
 
     def _execution_step(self):
         """

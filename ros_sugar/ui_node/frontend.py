@@ -389,7 +389,7 @@ class FHApp:
             if self.action_clients:
                 nav_bar_items.append(
                     elements.filter_tag_button(
-                        name="actions", div_to_hide="actions-frontend"
+                        name="tasks", div_to_hide="actions-frontend"
                     ),
                 )
             # If user is allowed to access the settings panel -> add the toggle button

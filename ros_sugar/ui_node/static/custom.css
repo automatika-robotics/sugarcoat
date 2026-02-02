@@ -196,8 +196,8 @@ body {
 }
 
 /* Ensure map takes full space when in fullscreen */
-.fullscreen-overlay [name="map-canvas"] {
-    width: 100% !important;
+.fullscreen-overlay [name="map-canvas"], .fullscreen-overlay img {
+    width: auto !important;
     height: 100% !important;
     min-height: 90vh;
     /* Force it to grow */
@@ -521,7 +521,6 @@ dialog {
     z-index: 1000;
     place-items: center;
     backdrop-filter: blur(2px);
-
 }
 
 /* 2. The Modal Content Box */
@@ -531,7 +530,7 @@ dialog {
     padding: 2rem;
     border-radius: 12px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-    max-width: 400px;
+    max-width: 50vw;
     width: 90%;
     animation: slideUp 0.3s ease-out;
 }

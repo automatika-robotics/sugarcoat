@@ -101,14 +101,20 @@ class Publisher:
         """
         # Apply any output pre_processors sequentially before publishing, if defined
         if self._publisher is None:
+            get_logger(self.node_name).error(
+                f"No valid ROS2 publisher is available for topic {self.output_topic.name}.. Skipping message publishing"
+            )
             return
         output = self._prepare_for_publish(*output)
         if output is None:
+            get_logger(self.node_name).error(
+                f"No valid output found for topic {self.output_topic.name}.. Skipping message publishing"
+            )
             return
         msg = self.output_topic.msg_type.convert(*output, **kwargs)
         if msg:
             if frame_id and not hasattr(msg, "header"):
-                get_logger(self.node_name).warn(
+                get_logger(self.node_name).debug(
                     f"Cannot add a header to non-stamped message of type '{type(msg)}'"
                 )
             elif hasattr(msg, "header"):
