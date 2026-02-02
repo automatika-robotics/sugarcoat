@@ -75,23 +75,18 @@ def generate_test_description():
     )
 
     event_on_any_and_on_equal = Event(
-        event_name="on_any_and_on_equal",
-        event_condition=status_topic
-        & (float_array_topic.msg.data == [1.0, 2.0, 3.0, 4.0]),
+        status_topic & (float_array_topic.msg.data == [1.0, 2.0, 3.0, 4.0]),
     )
 
     event_on_true_or_on_contains = Event(
-        event_name="on_true_or_on_contains",
-        event_condition=bool_topic.msg.data.is_true()
+        bool_topic.msg.data.is_true()
         | float_array_topic.msg.data.contains_all([
             2.0,
             3.0,
         ]),
     )
 
-    event_on_not_false = Event(
-        event_name="on_not_false", event_condition=~bool_topic.msg.data.is_false()
-    )
+    event_on_not_false = Event(~bool_topic.msg.data.is_false())
 
     def trigger_event(on_event: Event, **_):
         on_event.set()

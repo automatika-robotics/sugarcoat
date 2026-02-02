@@ -387,7 +387,7 @@ class Launcher:
 
         :raises ValueError: If given component action corresponds to unknown component
         """
-        self.__events_names.extend(event.name for event in events_actions_dict)
+        self.__events_names.extend(event.id for event in events_actions_dict)
         for event, raw_action in events_actions_dict.items():
             action_set: List[Union[Action, ROSLaunchAction]] = (
                 raw_action if isinstance(raw_action, list) else [raw_action]
@@ -401,11 +401,11 @@ class Launcher:
                     action_object = action.executable.__self__
                     if components_list.count(action_object) <= 0:
                         raise InvalidAction(
-                            f"Invalid action for condition '{event.name}'. Action component '{action_object}' is unknown or not added to Launcher"
+                            f"Invalid action for event '{event}'. Action component '{action_object}' is unknown or not added to Launcher"
                         )
                     if action._is_lifecycle_action:
                         # lifecycle action to parse from the launcher
-                        self.__update_dict_list(self._ros_actions, event.name, action)
+                        self.__update_dict_list(self._ros_actions, event.id, action)
                         if not self._internal_events:
                             self._internal_events = [event]
                         elif event not in self._internal_events:
@@ -427,7 +427,7 @@ class Launcher:
                     )
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
-                    self.__update_dict_list(self._ros_actions, event.name, action)
+                    self.__update_dict_list(self._ros_actions, event.id, action)
                     if not self._internal_events:
                         self._internal_events = [event]
                     elif event not in self._internal_events:
@@ -639,7 +639,7 @@ class Launcher:
         """Adds a node to monitor all the launched components and their events"""
         # Update internal events
         if self._internal_events:
-            self._internal_event_names = [ev.name for ev in self._internal_events]
+            self._internal_event_names = [ev.id for ev in self._internal_events]
             # Check that all internal events have unique names
             if len(set(self._internal_event_names)) != len(self._internal_event_names):
                 raise ValueError(

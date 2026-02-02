@@ -164,6 +164,18 @@ class Condition:
     def __repr__(self):
         return f"Condition(sub_conditions={self.sub_conditions}, logic_operator={self.logic_operator}, topic={self.topic_name}, path={self.attribute_path}, op={self.operator_func})"
 
+    def _readable(self) -> str:
+        if self.logic_operator != ConditionLogicOp.NONE:
+            text = ""
+            for c in self.sub_conditions:
+                new_text = c._readable()
+                text = text + f" {self.logic_operator} " + new_text
+            return text
+        if self.operator_func:
+            return f"{self.topic_name}{self.attribute_path} {ConditionOperators.get_name(self.operator_func)} {self.ref_value}"
+        else:
+            return f"{self.topic_name}"
+
     # --------------------------------------------------------------------------
     # Serialization / Deserialization
     # --------------------------------------------------------------------------

@@ -1064,7 +1064,7 @@ class BaseComponent(lifecycle.Node):
         if not self.__events or not self.__actions:
             return {}
         for event, action_set in zip(self.__events, self.__actions, strict=True):
-            events_actions_names[event.name] = action_set
+            events_actions_names[event.id] = action_set
         return events_actions_names
 
     @_events_actions.setter

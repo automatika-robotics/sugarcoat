@@ -1,5 +1,6 @@
 import threading
 from functools import partial
+import time
 from typing import List, Optional, Union
 
 import launch
@@ -88,7 +89,11 @@ class ComponentLaunchAction(NodeLaunchAction):
                 self.__context.emit_event_sync(event)
 
             # Emit the event to launch context
-            self.__context.asyncio_loop.call_soon_threadsafe(func)
+            # Safety check to make sure the asyncio loop is initialized
+            if self.__context.asyncio_loop:
+                self.__context.asyncio_loop.call_soon_threadsafe(func)
+            else:
+                func()
         except Exception as exc:
             self.__logger.error("Exception in emitting event': {}".format(exc))
 
@@ -112,10 +117,10 @@ class ComponentLaunchAction(NodeLaunchAction):
         if isinstance(self.__ros_node, Monitor):
             if self.__ros_node._internal_events:
                 for event in self.__ros_node._internal_events:
-                    self.__logger.info(f"Registering internal event '{event.name}'")
+                    self.__logger.info(f"Registering internal event '{event}'")
                     # Register a method to emit the event to the launch context on trigger
                     event.register_method(
-                        "emit_to_context", partial(self._on_internal_event, event.name)
+                        "emit_to_context", partial(self._on_internal_event, event.id)
                     )
             if hasattr(self.__ros_node, "_emit_exit_to_launcher"):
                 self.__ros_node._emit_exit_to_launcher = partial(

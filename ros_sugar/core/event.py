@@ -202,7 +202,6 @@ class Event:
 
     def __init__(
         self,
-        event_name: str,
         event_condition: Union[Topic, Condition],
         on_change: bool = False,
         handle_once: bool = False,
@@ -227,7 +226,8 @@ class Event:
 
         :raises TypeError: If the provided nested_attributes cannot be accessed in the Topic message type
         """
-        self.__name = event_name
+        # Unique event ID
+        self.__id = str(uuid.uuid4())
         self._handle_once: bool = handle_once
         self._keep_event_delay: float = keep_event_delay
         self._on_change: bool = on_change
@@ -295,22 +295,21 @@ class Event:
         """
         self.__under_processing = value
 
+    @property
+    def id(self) -> str:
+        """Getter of the event unique id
+
+        :return: Unique ID
+        :rtype: str
+        """
+        return self.__id
+
     def reset(self):
         """Reset event processing"""
         self._processed_once = False
         self.under_processing = False
         self.trigger = False
         self._previous_trigger = None
-
-    @property
-    def name(self) -> str:
-        """
-        Getter of event name
-
-        :return: Name
-        :rtype: str
-        """
-        return self.__name
 
     def clear(self) -> None:
         """
@@ -332,7 +331,7 @@ class Event:
         :rtype: Dict
         """
         event_dict = {
-            "name": self.name,
+            "name": self.__id,
             "condition": self._condition.to_json(),
             "handle_once": self._handle_once,
             "keep_event_delay": self._keep_event_delay,
@@ -350,13 +349,15 @@ class Event:
         """
         try:
             event_condition = Condition.from_dict(json.loads(dict_obj["condition"]))
-            return cls(
-                event_name=dict_obj["name"],
+            event = cls(
                 event_condition=event_condition,
                 on_change=dict_obj["on_change"],
                 handle_once=dict_obj["handle_once"],
                 keep_event_delay=dict_obj["keep_event_delay"],
             )
+            # Set the same ID to the event
+            event.__id = dict_obj["name"]
+            return event
         except Exception as e:
             logger.error(f"Cannot set Event from incompatible dictionary. {e}")
             raise
@@ -559,4 +560,4 @@ class Event:
         """
         str for Event object
         """
-        return f"'{self.name}' ({super().__str__()})"
+        return f"{self._condition._readable()} (ID {self.__id})"
