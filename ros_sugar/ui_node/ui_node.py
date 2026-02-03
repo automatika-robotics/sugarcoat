@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List
+from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List, Literal
 import threading
 import asyncio
 import os
@@ -59,8 +59,8 @@ class UINode(BaseComponent):
         ] = {}
 
         # Initialize websocket callbacks
-        self.default_websocket_callback: Callable = (
-            lambda *args, **kwargs: asyncio.sleep(0)
+        self.default_websocket_callback: Callable = lambda *args, **kwargs: (
+            asyncio.sleep(0)
         )
 
         try:
@@ -503,7 +503,8 @@ class UINode(BaseComponent):
                     )
             # Handle creating publishers for dynamically added or modified outputs in the UI
             self.publishers_dict[topic_name] = Publisher(
-                Topic(name=topic_name, msg_type=topic_type_str), node_name=self.node_name
+                Topic(name=topic_name, msg_type=topic_type_str),
+                node_name=self.node_name,
             )
             self.publishers_dict[topic_name].set_node_name(self.node_name)
             # Set ROS publisher for each output publisher
@@ -513,7 +514,9 @@ class UINode(BaseComponent):
             self.publishers_dict[topic_name].publish(**kwargs)
             return
         except Exception as e:
-            self.get_logger().error(f"Error publishing UI input data to topic {topic_name}: {e}")
+            self.get_logger().error(
+                f"Error publishing UI input data to topic {topic_name}: {e}"
+            )
 
     def _execution_step(self):
         """

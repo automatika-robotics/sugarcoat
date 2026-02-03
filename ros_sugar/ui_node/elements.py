@@ -250,7 +250,7 @@ def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
         _arrow_down,
         type="button",
         name="down",
-        cls=f"no-drag {AT.primary}",
+        cls="no-drag uk-icon-button",
         onclick=onclick,
         **kwargs,
     )
@@ -263,15 +263,10 @@ def _fullscreen_button(div_id: str):
     return Button(
         UkIcon("expand"),
         type="button",
-        cls="no-drag",  # Prevent dragging when clicking this
+        cls="no-drag uk-icon-button",  # Prevent dragging when clicking this
         onclick=f"toggleFullScreen(this, '{div_id}')",
         uk_tooltip="title: Full Screen; pos: left",
     )
-
-
-_map_controls_button_class = (
-    "w-[2vw] bg-white/80 dark:bg-gray-800/80 backdrop-blur shadow-md"
-)
 
 
 def _map_settings_modal(map_id: str):
@@ -325,7 +320,7 @@ def _map_control_buttons(map_id: str):
         # Zoom In
         Button(
             UkIcon("plus"),
-            cls=_map_controls_button_class,
+            cls="glass-icon-btn",
             onclick=f"zoomMap('{map_id}', 1.2)",
             type="button",
             uk_tooltip="title: Zoom In; pos: left",
@@ -333,7 +328,7 @@ def _map_control_buttons(map_id: str):
         # Zoom Out
         Button(
             UkIcon("minus"),
-            cls=_map_controls_button_class,
+            cls="glass-icon-btn",
             onclick=f"zoomMap('{map_id}', 0.8)",
             type="button",
             uk_tooltip="title: Zoom Out; pos: left",
@@ -341,7 +336,7 @@ def _map_control_buttons(map_id: str):
         # Publish Point Button
         Button(
             UkIcon("mapPin"),
-            cls=_map_controls_button_class,
+            cls="glass-icon-btn",
             onclick="togglePublishPoint(this)",  # Calls JS function
             id=f"{map_id}-publish-btn",
             type="button",
@@ -351,7 +346,7 @@ def _map_control_buttons(map_id: str):
         # TODO: Move settings button to the far end
         Button(
             UkIcon("settings"),
-            cls=_map_controls_button_class,
+            cls="glass-icon-btn",
             id=f"{map_id}-settings-btn",
             onclick=f"openMapSettings('{map_id}')",
             type="button",
@@ -462,8 +457,8 @@ def _in_audio_element(topic_name: str, **_):
                 UkIcon(icon="mic"),
                 id=topic_name,
                 onclick="startAudioRecording(this)",  # Method implemented in custom.js
-                title="Record",
-                cls=f"{AT.primary}",
+                cls=f"{AT.primary} uk-icon-button",
+                uk_tooltip="title: Record; pos: left",
             ),
         ),
         cls="no-drag ",
@@ -487,6 +482,7 @@ def __pop_up_form(topic_name: str, form_elements: tuple):
                             "Cancel",
                             cls="secondary-button",
                             onclick="this.closest('.custom-overlay').style.display='none'",
+                            type="button",
                         ),
                         cls="space-x-2 justify-center mt-4",
                     ),
@@ -530,7 +526,7 @@ def __location_element_input(
         inner_fields(
             Button(
                 UkIcon("mapPin"),
-                cls=_map_controls_button_class,
+                cls="glass-icon-btn",
                 onclick="togglePublishPoint(this)",  # Calls JS function
                 id=f"{topic_name}-publish-btn",
                 type="button",
@@ -972,6 +968,7 @@ def _in_action_client_element(
                 Button(
                     "Cancel",
                     cls="secondary-button",
+                    type="button",
                     onclick="this.closest('.custom-overlay').style.display='none'",
                 ),
                 cls="space-x-2 justify-center mt-4",

@@ -406,11 +406,25 @@ class FHApp:
                 )
         nav_bar = NavBar(
             *nav_bar_items,
-            brand=DivLAligned(
+            Button(
+                UkIcon("sun", cls="dark:hidden"),
+                UkIcon("moon", cls="hidden dark:block"),
+                onclick="toggleTheme()",        # from custom.js
+                type="button",
+                cls="glass-icon-btn",
+                uk_tooltip="title: Change Theme; pos: left",
+            ),
+            brand=Div(
+                # Dark Mode Logo (Visible by default)
                 Img(
                     src="https://automatikarobotics.com/Emos_dark.png",
-                    style="width:6vw",
-                )
+                    cls="brand-logo brand-dark",
+                ),
+                # Light Mode Logo (Hidden by default, shown when html.light exists)
+                Img(
+                    src="https://automatikarobotics.com/Emos_light.png",
+                    cls="brand-logo brand-light",
+                ),
             ),
         )
         return nav_bar
