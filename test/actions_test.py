@@ -123,13 +123,13 @@ def generate_test_description():
 
     # Internal test: Asserts correct parsing of different action types within the launcher
     assert 2 == sum(
-        len(actions_set) for actions_set in launcher._ros_actions.values()
+        len(actions_set) for actions_set in launcher._ros_events_actions.values()
     ), "Error parsing ROS actions"
     assert 2 == sum(
-        len(actions_set) for actions_set in launcher._components_actions.values()
+        len(actions_set) for actions_set in launcher._components_events_actions.values()
     ), "Error parsing component actions"
     assert 1 == sum(
-        len(actions_set) for actions_set in launcher._monitor_actions.values()
+        len(actions_set) for actions_set in launcher._monitor_events_actions.values()
     ), "Error parsing monitor actions"
 
     # Setup launch description without bringup for testing
