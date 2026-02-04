@@ -151,10 +151,10 @@ class Launcher:
         # Events/Actions dictionaries
         self._internal_events: Optional[List[Event]] = None
         self._internal_event_names: Optional[List[str]] = None
-        self._ros_actions: Dict[str, List[ROSLaunchAction]] = {}
+        self._ros_events_actions: Dict[str, List[ROSLaunchAction]] = {}
         # Dictionaries {serialized_event: actions}
-        self._monitor_actions: Dict[str, List[Action]] = {}
-        self._components_actions: Dict[str, List[Action]] = {}
+        self._monitor_events_actions: Dict[str, List[Action]] = {}
+        self._components_events_actions: Dict[str, List[Action]] = {}
         self.__events_names: List[str] = []
 
         # Thread pool for external processors
@@ -346,10 +346,10 @@ class Launcher:
         :param comp: Component
         :type comp: BaseComponent
         """
-        if not self._components_actions:
+        if not self._components_events_actions:
             return
         comp_dict = {}
-        for event_serialized, actions in self._components_actions.items():
+        for event_serialized, actions in self._components_events_actions.items():
             for action in actions:
                 if comp.node_name == action.parent_component:
                     self.__update_dict_list(comp_dict, event_serialized, action)
@@ -407,7 +407,7 @@ class Launcher:
                         )
                     if action._is_lifecycle_action:
                         # lifecycle action to parse from the launcher
-                        self.__update_dict_list(self._ros_actions, event.id, action)
+                        self.__update_dict_list(self._ros_events_actions, event.id, action)
                         if not self._internal_events:
                             self._internal_events = [event]
                         elif event not in self._internal_events:
@@ -417,7 +417,7 @@ class Launcher:
                             event.to_json() if isinstance(event, Event) else event
                         )
                         self.__update_dict_list(
-                            self._components_actions, serialized_condition, action
+                            self._components_events_actions, serialized_condition, action
                         )
                 elif isinstance(action, Action) and action._is_monitor_action:
                     # Action to execute through the monitor
@@ -425,11 +425,11 @@ class Launcher:
                         event.to_json() if isinstance(event, Event) else event
                     )
                     self.__update_dict_list(
-                        self._monitor_actions, serialized_condition, action
+                        self._monitor_events_actions, serialized_condition, action
                     )
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
-                    self.__update_dict_list(self._ros_actions, event.id, action)
+                    self.__update_dict_list(self._ros_events_actions, event.id, action)
                     if not self._internal_events:
                         self._internal_events = [event]
                     elif event not in self._internal_events:
@@ -604,9 +604,9 @@ class Launcher:
         # Add event handling actions
         entities_dict: Dict = {}
 
-        if not self._ros_actions:
+        if not self._ros_events_actions:
             return
-        for event_name, action_set in self._ros_actions.items():
+        for event_name, action_set in self._ros_events_actions.items():
             log_action = LogInfo(msg=f"GOT TRIGGER FOR EVENT {event_name}")
             entities_dict[event_name] = [log_action]
             for action in action_set:
@@ -680,7 +680,7 @@ class Launcher:
         self.monitor_node = Monitor(
             components_names=components_names,
             enable_health_status_monitoring=self.__enable_monitoring,
-            events_actions=self._monitor_actions,
+            events_actions=self._monitor_events_actions,
             events_to_emit=self._internal_events,
             services_components=services_components,
             action_servers_components=action_components,
