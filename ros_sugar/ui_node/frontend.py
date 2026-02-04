@@ -113,9 +113,9 @@ class FHApp:
             DivHStacked(
                 H4("Tasks", cls="cool-subtitle-mini"),
                 elements._toggle_button(div_to_toggle="all_actions"),
-                cls="space-x-0",
+                cls="space-x-0 drag-handle",
             ),
-            cls="main-card max-h-[80vh] overflow-y-auto",
+            cls="main-card max-h-[80vh] overflow-y-auto draggable",
             id="actions",
             # NOTE: It is important to add these two variables to link this DOM element to the websocket.
             # This way any 'send' function applied from this websocket callback will update the element with the same class 'id'
@@ -288,10 +288,7 @@ class FHApp:
             return self.settings
 
         # Otherwise return the main page
-        main_grid = Grid(
-            id="modal-container",
-            cols=2,
-        )
+        main_grid = Grid(id="modal-container", cols=2, name="draggables-grid")
         if self.outputs:
             main_grid(
                 Div(

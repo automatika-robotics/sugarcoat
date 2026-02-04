@@ -250,7 +250,7 @@ def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
         _arrow_down,
         type="button",
         name="down",
-        cls="no-drag uk-icon-button",
+        cls="no-drag uk-icon-button  btn-touch-target",
         onclick=onclick,
         **kwargs,
     )
@@ -1024,9 +1024,9 @@ def styled_main_service_clients_container(
         DivHStacked(
             H4(container_name, cls="cool-subtitle-mini"),
             _toggle_button(div_to_toggle=f"all_{_id}"),
-            cls="space-x-0",
+            cls="space-x-0 drag-handle",
         ),
-        cls=f"main-card {column_class} max-h-[80vh] overflow-y-auto",
+        cls=f"main-card {column_class} max-h-[80vh] overflow-y-auto draggable",
         id=_id,
     )
     all_services_cards = Div(id=f"all_{_id}")
@@ -1092,7 +1092,7 @@ def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:
         DivHStacked(
             H4("Inputs", cls="cool-subtitle-mini"),
             _toggle_button(div_to_toggle=inputs_grid_div_id),
-            cls="space-x-0",
+            cls="space-x-0 drag-handle",
         ),
         cls="draggable main-card max-h-[40vh] overflow-y-auto",
         body_cls="space-y-0",
@@ -1147,7 +1147,7 @@ def styled_main_outputs_container(outputs_grid_div_id: str) -> FT:
         DivHStacked(
             H4("Outputs", cls="cool-subtitle-mini"),
             _toggle_button(div_to_toggle=outputs_grid_div_id),
-            cls="space-x-0",
+            cls="space-x-0 drag-handle",
         ),
         cls="draggable main-card overflow-y-auto max-h-[60vh]",
         body_cls="space-y-0",

@@ -105,6 +105,7 @@
     /* Dark Mode Glass */
     --bg-glass-btn: rgba(31, 41, 55, 0.8);
     --shadow-glass-btn: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+
 }
 
 /* --- LIGHT MODE OVERRIDES --- */
@@ -427,8 +428,32 @@ body {
     box-shadow: none !important;
     /* Removes glow/shadow if present */
     background: transparent;
-    /* Optional: ensures no background box */
+    /* ensures no background box */
     padding: none;
+    transition: filter var(--transition-fast, 0.3s), color var(--transition-fast, 0.3s);
+}
+
+.uk-icon-button:hover {
+    /* Slight glow effect using the primary color */
+    filter: drop-shadow(0 0 0.5rem var(--secondary-color));
+}
+
+/* btn-touch-target used to increase the clickable area of an icon button on the drag-handle */
+.btn-touch-target {
+    position: relative;
+}
+
+.btn-touch-target::after {
+    content: '';
+    position: absolute;
+    top: -1.5rem;
+    bottom: -1.5rem;
+    left: -1.5rem;
+    right: -1.5rem;
+
+    /* Ensure it sits above the drag handle background */
+    z-index: 1;
+    cursor: pointer;
 }
 
 /* Custom Tooltip Styling for Map Buttons */
@@ -670,6 +695,44 @@ body {
     line-height: 1;
 }
 
+/* =========================================
+   Resize Handle
+   ========================================= */
+
+/* The clickable area for resizing */
+.resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    /* Diagonal cursor */
+    z-index: 10;
+    touch-action: none;
+    /* Prevents scrolling on touch */
+}
+
+/* Visual corner accent using theme variables */
+.resize-handle::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 0 0 10px 10px;
+    /* Use theme variable for the corner color */
+    border-color: transparent transparent var(--border-subtle) transparent;
+    /* Smooth transition using your theme timing */
+    transition: border-color var(--transition-fast, 0.3s);
+}
+
+/* Hover effect using secondary theme color */
+.resize-handle:hover::after {
+    border-color: transparent transparent var(--secondary-color) transparent;
+}
 
 
 /* =========================================
