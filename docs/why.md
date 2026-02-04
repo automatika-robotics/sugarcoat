@@ -16,7 +16,7 @@ No need to write verbose callbacks just to check a sensor value. Sugarcoat allow
 * **Sugarcoat:**
     ```python
     # Trigger an action when battery is low
-    Event("my_awesome_event", battery.msg.data <= 20.0)
+    Event(battery.msg.data <= 20.0)
     ```
 
 
@@ -92,13 +92,11 @@ Sugarcoat introduces [**Robot Plugins**](./advanced/robot_plugins.md) to seamles
 
 ```python
 # 1. Define Source & Action
-batt_topic = Topic("/battery", "Float32")
+batt_topic = Topic(name="/battery", msg_type="Float32")
 stop_action = Action(method=nav_component.stop)
 
 # 2. Define Logic
-emergency_event = Event(
-    event_name="low_battery",
-    event_condition=batt_topic.msg.data <= 15.0,
+emergency_event = Event(batt_topic.msg.data <= 15.0,
     on_change=True # Trigger once when threshold is crossed
 )
 

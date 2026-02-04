@@ -1,26 +1,35 @@
 # Actions
 
-Actions are methods or routines executed by a Component or by the System Monitor. They are the "Outputs" of the Event-Driven system.
+Actions represent the **executable behaviors** of your systems. They can represent:
 
-Actions can be triggered in two ways:
+- **Behaviors defined within your components** that you wish to execute at runtime such as stopping your robot, executing a specific motion pattern or saying a sentence.
+- or **system level behaviors** like reconfiguring a component, turning component on/off or replacing some input streams.
+- or **arbitrary user-defined behaviors** like sending a call to an external API.
 
-- **Event-Driven**: Executed when a specific Event is detected.
+In Sugarcoat, Actions are not just static function calls; they are <span class="text-red">dynamic, context-aware routines that can adapt their parameters in real-time based on live system data.</span>
 
-- **Fallback-Driven**: Executed by a Component when an internal Health Status failure is detected.
+**How are Actions Triggered?** Actions sit dormant until activated by one of two mechanisms:
+
+- Event-Driven (The Reflex): Triggered instantly when a specific Event condition is met (e.g., "Obstacle Detected" $\rightarrow$ stop_robot).
+
+- Fallback-Driven (The Safety Net):Triggered automatically by a Component when its internal Health Status degrades (e.g., "Camera Driver Failed" $\rightarrow$ restart_driver).
+
 
 ## The `Action` Class
-The `Action` class is a generic wrapper for any `callable`. It allows you to package a function and its arguments to be executed later.
+At its core, the `Action` class is a wrapper around any Python callable. It packages a function along with its arguments, preparing them for execution at runtime.
+
+But unlike standard Python functions, Sugarcoat Actions possess a superpower: [Dynamic Data Injection](#dynamic-data-injection). You can bind their arguments directly to live ROS2 Topics, allowing the Action to fetch the latest topic message or a specific message argument the moment it triggers.
 
 ```python
 class Action:
     def __init__(self, method: Callable, args: tuple = (), kwargs: Optional[Dict] = None):
 ```
 
-- method: The function to be executed.
+- method: The function or routine to execute.
 
-- args: Tuple of positional arguments.
+- args: Positional arguments (can be static values OR dynamic Topic values).
 
-- kwargs: Dictionary of keyword arguments.
+- kwargs: Keyword arguments (can be static values OR dynamic Topic values).
 
 
 ## Basic Usage
@@ -42,6 +51,44 @@ action2 = Action(method=my_component.update_parameter, kwargs={"param_name": "fa
 
 # 3. External Function
 action3 = Action(method=custom_routine)
+```
+
+## Dynamic Data Injection
+
+Sugarcoat Actions are not limited to static arguments. You can bind arguments directly to live Topic data.
+
+When the Action is triggered, the system automatically resolves these bindings—fetching the current value from the specified Topic attributes—and injects them into your function.
+
+This allows you to **create complex, context-aware behaviors without writing any "glue code" or custom parsers**.
+
+### Example: Cross-Topic Data Access
+
+**Scenario**: An event occurs on Topic 1. You want to log a message that includes the current status from Topic 2 and a sensor reading from Topic 3.
+
+```python
+from ros_sugar.core import Event, Action
+from ros_sugar.io import Topic
+
+# 1. Define Topics
+topic_1 = Topic(name="system_alarm", msg_type="Bool")
+topic_2 = Topic(name="robot_mode", msg_type="String")
+topic_3 = Topic(name="battery_voltage", msg_type="Float32")
+
+# 2. Define the Event
+# Trigger when Topic 1 becomes True
+event_on_first_topic = Event(topic_1.msg.data.is_true())
+
+# 3. Define the Target Function
+def log_context_message(mode, voltage):
+    print(f"System Alarm! Current Mode: {mode}, Voltage: {voltage}V")
+
+# 4. Define the Dynamic Action
+# We bind the function arguments directly to the data fields of Topic 2 and Topic 3
+my_action = Action(
+    method=log_context_message,
+    # At runtime, these are replaced by the actual values from the topics
+    args=(topic_2.msg.data, topic_3.msg.data)
+)
 ```
 
 ## Pre-defined Actions
@@ -82,8 +129,8 @@ These actions interact with the broader ROS2 system and are executed by the cent
 | **`send_action_goal`** | `server_name`<br>`server_type`<br>`request_msg` | Sends a specific goal to a ROS 2 Action Server. |
 | **`trigger_action_server`** | `server_name`<br>`server_type` | Triggers the a given ROS2 action server. |
 
-:::{tip} The pre-defined Actions are all keyword only and can be imported from `ros_sugar.actions' module
+:::{tip} The pre-defined Actions are all keyword only and can be imported from `ros_sugar.actions' module.
 :::
 
-:::{note} When the *trigger* actions for both ROS2 services and ROS2 action servers are paired with an Event, the action attempts to create the required service request from the incoming Event topic data. If automatic conversion (duck taping) is not possible or if the action is not paired with an Event, the *trigger* action will send a default (empty) request
+:::{note} When the *trigger_service*, *trigger_action_server*, etc. actions are paired with an Event, the action attempts to create the required service request from the incoming Event topic data automatically via duck typing. If automatic conversion is not possible or if the action is not paired with an Event, the action will send the default (empty) request message.
 :::

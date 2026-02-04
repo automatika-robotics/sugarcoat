@@ -60,22 +60,18 @@ Launcher forwards all the provided Events to its internal Monitor, when the Moni
 :caption: launcher test
 :linenos:
 
-from ros_sugar.core import BaseComponent
+from ros_sugar.core import BaseComponent, Event
 from ros_sugar.actions import LogInfo
-from ros_sugar.events import OnLess
 from ros_sugar import Launcher
 
 # Create your components
 my_component = BaseComponent(component_name='test_component')
 
+# Define the event topic
+battery_level_topic = Topic(name="/battery_level", msg_type="Float32")
 
 # Create your events
-low_battery = OnLess(
-    "low_battery",
-    Topic(name="/battery_level", msg_type="Int"),
-    15,
-    ("data")
-)
+low_battery = Event(battery_level_topic.msg.data < 15.0)
 
 # Events/Actions
 my_events_actions: Dict[event.Event, Action] = {
@@ -97,5 +93,5 @@ launcher.add_pkg(components=[my_component], ros_log_level="warn")
 launcher.on_component_fail(action_name="restart")
 
 # Bring up the system
-launcher.bringup(ros_log_level="info", introspect=False)
+launcher.bringup(ros_log_level="info")
 ```
