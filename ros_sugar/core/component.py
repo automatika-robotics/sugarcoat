@@ -1054,18 +1054,29 @@ class BaseComponent(lifecycle.Node):
         self.config.loop_rate = value
 
     @property
-    def _events_actions(self) -> Dict[str, List[Action]]:
+    def events_actions(self) -> Dict[Event, List[Action]]:
         """Getter of component Events/Actions
 
         :return: Dictionary of monitored Events and associated Actions
         :rtype: Dict[str, List[Action]]
         """
-        events_actions_names = {}
         if not self.__events or not self.__actions:
             return {}
-        for event, action_set in zip(self.__events, self.__actions, strict=True):
-            events_actions_names[event.id] = action_set
-        return events_actions_names
+        return dict(zip(self.__events, self.__actions, strict=True))
+
+    @property
+    def _events_actions(self) -> Dict[str, List[Action]]:
+        """Getter of component Events Names/Actions
+
+        :return: Dictionary of monitored Events and associated Actions
+        :rtype: Dict[str, List[Action]]
+        """
+        if not self.__events or not self.__actions:
+            return {}
+        return {
+            event.id: action
+            for event, action in zip(self.__events, self.__actions, strict=True)
+        }
 
     @_events_actions.setter
     def _events_actions(

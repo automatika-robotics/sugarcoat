@@ -233,18 +233,20 @@ class Launcher:
                 self.__components_to_activate_on_start_threaded.extend(components)
 
         # Parse provided Events/Actions
-
         # Check if any component already has internal events_actions defined
         if any(
-            events_actions_dits := [
-                comp._events_actions if comp._events_actions else None
+            all_components_events_actions := [
+                comp.events_actions if comp.events_actions else None
                 for comp in self._components
             ]
         ):
             # add to events actions dict
-            for events_actions_dit in events_actions_dits:
-                if events_actions_dit:
-                    events_actions.update(events_actions_dit)
+            for comp_events_actions in all_components_events_actions:
+                if comp_events_actions:
+                    if events_actions:
+                        events_actions.update(comp_events_actions)
+                    else:
+                        events_actions = comp_events_actions
 
         if events_actions and self.__enable_monitoring:
             # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
