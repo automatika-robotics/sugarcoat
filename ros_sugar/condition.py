@@ -518,7 +518,7 @@ class MsgConditionBuilder:
         self._topic = topic
         self._base = path or []
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> "MsgConditionBuilder":
         # Validate that the attribute exists in the message type
         try:
             augmented_base = self._base + [name]
@@ -539,7 +539,7 @@ class MsgConditionBuilder:
             return MsgConditionBuilder(self._topic, augmented_base)
         except Exception:
             # NOTE: This exception is added to avoid bugs when using an object of the class with system introspection (like pickle or inspect).
-            return None
+            raise AttributeError("See the parent error raised above")
 
     def __deepcopy__(self, memo):
         # Manually create the new object to avoid errors from deepcopy which creates empty object instances before populating their dictionary.
