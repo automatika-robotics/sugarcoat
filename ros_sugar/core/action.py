@@ -394,10 +394,34 @@ class Action:
             self.__event_topic_conversions[key] = get_msg_type(arg)
 
     def get_required_topics(self) -> List[Topic]:
+        """Get all the required input topic to execute this action
+
+        :return: Required topics
+        :rtype: List[Topic]
+        """
         return [
             msg_condition_builder.topic
             for msg_condition_builder in self.__input_topics.values()
         ]
+
+    def replace_input_topic(self, old_topic: Topic, new_topic: Topic):
+        """Replaces an input topic with a new topic if the old topic exists in the required input topics
+
+        :param old_topic: Old topic
+        :type old_topic: Topic
+        :param new_topic: New topic
+        :type new_topic: Topic
+        """
+        target_key = None
+        for key, msg_condition_builder in self.__input_topics.items():
+            if (
+                old_topic.name == msg_condition_builder.topic.name
+                and old_topic.msg_type == msg_condition_builder.topic.msg_type
+            ):
+                target_key = key
+                break
+        if target_key:
+            self.__input_topics[target_key].topic = new_topic
 
     @property
     def executable(self):

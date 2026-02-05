@@ -557,6 +557,12 @@ class MsgConditionBuilder:
     def topic(self):
         return self._topic
 
+    @topic.setter
+    def topic(self, value):
+        self._topic = value
+        self._name = value.name
+        self._type = value.ros_msg_type
+
     @property
     def type(self) -> Type[MsgT]:
         return self._type
