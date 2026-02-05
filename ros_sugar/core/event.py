@@ -147,6 +147,7 @@ class EventBlackboardEntry:
                Defaults to a new UUID if not provided.
     :type id: str
     """
+
     msg: Any
     timestamp: float
     # A unique identifier for this specific reception instance
@@ -259,11 +260,8 @@ class Event:
         # Init trigger as False
         self.trigger: bool = False
 
-        # Register for on trigger methods
-        self._registered_on_trigger_methods: Dict[str, Callable[..., Any]] = {}
-
         # Register for on trigger actions
-        self._registered_on_trigger_actions: List[Action] = []
+        self._registered_on_trigger_actions: List[Union[Callable, Action]] = []
 
         # Required topics registry
         self.__required_topics: List[Topic] = []
@@ -440,8 +438,9 @@ class Event:
         Handles the execution, delay, and flag resetting.
         """
         try:
-            # Execute user methods and Actions
-            self._call_on_trigger(topics=global_topic_cache)
+            # Execute all actions
+            for action in self._registered_on_trigger_actions:
+                action(topics=global_topic_cache)
 
             # Handle the blocking delay inside the thread (so main loop isn't blocked)
             if self._keep_event_delay > 0:
@@ -455,19 +454,9 @@ class Event:
             # Reset the flag only after work + delay are done
             self.under_processing = False
 
-    def register_method(self, method_name: str, method: Callable[..., Any]) -> None:
-        """
-        Adds a new method to the on trigger register
-
-        :param method_name: Key name of the method
-        :type method_name: str
-
-        :param method: Method to be executed
-        :type method: Callable[..., Any]
-        """
-        self._registered_on_trigger_methods[method_name] = method
-
-    def register_actions(self, actions: Union[Action, List[Action]]) -> None:
+    def register_actions(
+        self, actions: Union[Action, Callable, List[Union[Action, Callable]]]
+    ) -> None:
         """Register an Action or a set of Actions to execute on trigger
 
         :param actions: Action or a list of Actions
@@ -479,37 +468,14 @@ class Event:
         topics = self.get_involved_topics()
         if len(topics) == 1:
             for act in actions:
-                # Setup any required automatic conversion from the event message type to the action inputs
-                act._setup_conversions(topics[0].name, topics[0].ros_msg_type)
+                if isinstance(act, Action):
+                    # Setup any required automatic conversion from the event message type to the action inputs
+                    act._setup_conversions(topics[0].name, topics[0].ros_msg_type)
                 self._registered_on_trigger_actions.append(act)
 
     def clear_actions(self) -> None:
         """Clear all registered on trigger Actions"""
         self._registered_on_trigger_actions = []
-
-    def remove_method(self, method_name: str):
-        """
-        Adds a new method to the on trigger register
-
-        :param method_name: Key name of the method
-        :type method_name: str
-
-        :param method: Method to be executed
-        :type method: Callable[..., Any]
-        """
-        if method_name in self._registered_on_trigger_methods.keys():
-            del self._registered_on_trigger_methods[method_name]
-
-    def _call_on_trigger(self, *args, **kwargs):
-        """
-        Executes all the registered on trigger methods
-        """
-        for method in self._registered_on_trigger_methods.values():
-            method(*args, **kwargs)
-
-        # Execute all actions
-        for action in self._registered_on_trigger_actions:
-            action(*args, **kwargs)
 
     def check_condition(
         self, global_topic_cache: Dict[str, EventBlackboardEntry]
@@ -554,9 +520,7 @@ class Event:
             self.__last_processed_ids = {
                 key: value.id for key, value in global_topic_cache.items()
             }
-
             self._execute_actions(topics_dict)
-        # TODO: When to clear the values of the global_topic_cache???
         return
 
     def __str__(self) -> str:
