@@ -7,7 +7,6 @@ import sys
 import socket
 import json
 from typing import (
-    TypeVar,
     Awaitable,
     Callable,
     Dict,
@@ -17,7 +16,6 @@ from typing import (
     Union,
     Any,
     Tuple,
-    Mapping,
 )
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
@@ -71,9 +69,6 @@ m_pack.patch()
 
 
 UI_EXTENSIONS = {}
-
-# For type hinting events_actions dict: This represents "Any type that is a subclass of Event"
-EventT = TypeVar("EventT", bound=Event)
 
 
 class Launcher:
@@ -133,8 +128,8 @@ class Launcher:
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
-        self._events_actions: Mapping[
-            EventT,
+        self._events_actions: Dict[
+            Event,
             List[Union[Action, ROSLaunchAction]],
         ] = defaultdict(list)
         self._pkg_executable: List[Tuple[Optional[str], Optional[str]]] = []
@@ -171,8 +166,8 @@ class Launcher:
         package_name: Optional[str] = None,
         executable_entry_point: Optional[str] = "executable",
         events_actions: Optional[
-            Mapping[
-                EventT,
+            Dict[
+                Event,
                 Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
             ]
         ] = None,
@@ -239,8 +234,12 @@ class Launcher:
 
         # Merge events/actions with the global dictionary
         if events_actions:
-            for d in (events_actions, self._events_actions):
-                for key, value in d.items():
+            for key, value in events_actions.items():
+                if not self._events_actions.get(key):
+                    self._events_actions[key] = []
+                if isinstance(value, list):
+                    self._events_actions[key].extend(value)
+                else:
                     self._events_actions[key].append(value)
 
         # Configure components from config_file
@@ -370,8 +369,12 @@ class Launcher:
             component_events_actions = component.get_events_actions()
             # Add the component internal events/actions to the global events_actions dictionary
             if component_events_actions:
-                for d in (component_events_actions, self._events_actions):
-                    for key, value in d.items():
+                for key, value in component_events_actions.items():
+                    if not self._events_actions.get(key):
+                        self._events_actions[key] = []
+                    if isinstance(value, list):
+                        self._events_actions[key].extend(value)
+                    else:
                         self._events_actions[key].append(value)
                 # Clear from the component
                 # Event/Actions will get rewritten and redistributed across all components
@@ -383,11 +386,13 @@ class Launcher:
                 self._components, self._events_actions
             )
 
-    def _update_ros_events_actions(self, event: EventT, action: Action):
+    def _update_ros_events_actions(
+        self, event: Event, action: Union[Action, ROSLaunchAction]
+    ):
         """Update with new launch action (adds to ros actions and adds event to internal events)
 
         :param event: Event
-        :type event: EventT
+        :type event: Event
         :param action: Action
         :type action: Action
         """
@@ -400,8 +405,8 @@ class Launcher:
     def __rewrite_actions_for_components(
         self,
         components_list: List[BaseComponent],
-        events_actions_dict: Mapping[
-            EventT,
+        events_actions_dict: Dict[
+            Event,
             List[Union[Action, ROSLaunchAction]],
         ],
     ):
@@ -817,8 +822,10 @@ class Launcher:
                 s.bind(sock_file)
                 s.listen(0)
                 self._thread_pool.submit(
-                    self.__listen_for_external_processing, s, processor
-                )  # type: ignore
+                    self.__listen_for_external_processing,
+                    s,
+                    processor,  # type: ignore
+                )
 
     def _setup_component_in_process(
         self,
@@ -884,7 +891,7 @@ class Launcher:
             name=component.node_name,
             output="screen",
             log_level=logging.get_logging_severity_from_string(
-                component.config.log_level
+                component.config.log_level  # type: ignore
             ),
         )
         self._launch_group.append(component_action)
