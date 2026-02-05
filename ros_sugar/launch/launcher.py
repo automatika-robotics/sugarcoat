@@ -20,6 +20,7 @@ from typing import (
     Mapping,
 )
 from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
 
 import msgpack
 import msgpack_numpy as m_pack
@@ -132,6 +133,10 @@ class Launcher:
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
+        self._events_actions: Mapping[
+            EventT,
+            List[Union[Action, ROSLaunchAction]],
+        ] = defaultdict(list)
         self._pkg_executable: List[Tuple[Optional[str], Optional[str]]] = []
 
         # To track each package log level when the pkg is added
@@ -232,25 +237,11 @@ class Launcher:
             else:
                 self.__components_to_activate_on_start_threaded.extend(components)
 
-        # Parse provided Events/Actions
-        # Check if any component already has internal events_actions defined
-        if any(
-            all_components_events_actions := [
-                comp.events_actions if comp.events_actions else None
-                for comp in self._components
-            ]
-        ):
-            # add to events actions dict
-            for comp_events_actions in all_components_events_actions:
-                if comp_events_actions:
-                    if events_actions:
-                        events_actions.update(comp_events_actions)
-                    else:
-                        events_actions = comp_events_actions
-
-        if events_actions and self.__enable_monitoring:
-            # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
-            self.__rewrite_actions_for_components(self._components, events_actions)
+        # Merge events/actions with the global dictionary
+        if events_actions:
+            for d in (events_actions, self._events_actions):
+                for key, value in d.items():
+                    self._events_actions[key].append(value)
 
         # Configure components from config_file
         for component in components:
@@ -371,12 +362,47 @@ class Launcher:
         else:
             dictionary[name] = [value]
 
+    def _setup_events_actions(self):
+        """Setup all events/actions and distribute to components/monitor"""
+        # Check if any component already has internal events_actions defined
+        # If yes: Add to global dictionary and remove from component
+        for component in self._components:
+            component_events_actions = component.get_events_actions()
+            # Add the component internal events/actions to the global events_actions dictionary
+            if component_events_actions:
+                for d in (component_events_actions, self._events_actions):
+                    for key, value in d.items():
+                        self._events_actions[key].append(value)
+                # Clear from the component
+                # Event/Actions will get rewritten and redistributed across all components
+                component.clear_events_actions()
+
+        if self.__enable_monitoring:
+            # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
+            self.__rewrite_actions_for_components(
+                self._components, self._events_actions
+            )
+
+    def _update_ros_events_actions(self, event: EventT, action: Action):
+        """Update with new launch action (adds to ros actions and adds event to internal events)
+
+        :param event: Event
+        :type event: EventT
+        :param action: Action
+        :type action: Action
+        """
+        self.__update_dict_list(self._ros_events_actions, event.id, action)
+        if not self._internal_events:
+            self._internal_events = [event]
+        elif event not in self._internal_events:
+            self._internal_events.append(event)
+
     def __rewrite_actions_for_components(
         self,
         components_list: List[BaseComponent],
         events_actions_dict: Mapping[
-            Union[EventT, str],
-            Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
+            EventT,
+            List[Union[Action, ROSLaunchAction]],
         ],
     ):
         """
@@ -390,13 +416,10 @@ class Launcher:
         :raises ValueError: If given component action corresponds to unknown component
         """
         self.__events_names.extend(event.id for event in events_actions_dict)
-        for event, raw_action in events_actions_dict.items():
-            action_set: List[Union[Action, ROSLaunchAction]] = (
-                raw_action if isinstance(raw_action, list) else [raw_action]
-            )
+        for event, action_set in events_actions_dict.items():
             for action in action_set:
                 # Verify that the action inputs are available from the event topic(s)
-                if isinstance(event, Event) and isinstance(action, Action):
+                if isinstance(action, Action):
                     event.verify_required_action_topics(action)
                 # Check if it is a component action:
                 if isinstance(action, Action) and action.component_action:
@@ -407,17 +430,15 @@ class Launcher:
                         )
                     if action._is_lifecycle_action:
                         # lifecycle action to parse from the launcher
-                        self.__update_dict_list(self._ros_events_actions, event.id, action)
-                        if not self._internal_events:
-                            self._internal_events = [event]
-                        elif event not in self._internal_events:
-                            self._internal_events.append(event)
+                        self._update_ros_events_actions(event, action)
                     else:
                         serialized_condition: str = (
                             event.to_json() if isinstance(event, Event) else event
                         )
                         self.__update_dict_list(
-                            self._components_events_actions, serialized_condition, action
+                            self._components_events_actions,
+                            serialized_condition,
+                            action,
                         )
                 elif isinstance(action, Action) and action._is_monitor_action:
                     # Action to execute through the monitor
@@ -429,11 +450,7 @@ class Launcher:
                     )
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
-                    self.__update_dict_list(self._ros_events_actions, event.id, action)
-                    if not self._internal_events:
-                        self._internal_events = [event]
-                    elif event not in self._internal_events:
-                        self._internal_events.append(event)
+                    self._update_ros_events_actions(event, action)
 
     def _activate_components_action(self) -> SomeEntitiesType:
         """
@@ -989,6 +1006,8 @@ class Launcher:
             setproctitle.setproctitle(logger.name)
         except ImportError:
             pass
+
+        self._setup_events_actions()
 
         for component in self._components:
             self._setup_component_events_handlers(component)

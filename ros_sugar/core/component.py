@@ -1053,9 +1053,8 @@ class BaseComponent(lifecycle.Node):
     def loop_rate(self, value: float):
         self.config.loop_rate = value
 
-    @property
-    def events_actions(self) -> Dict[Event, List[Action]]:
-        """Getter of component Events/Actions
+    def get_events_actions(self) -> Dict[Event, List[Action]]:
+        """Get all Events/Actions registered to the component
 
         :return: Dictionary of monitored Events and associated Actions
         :rtype: Dict[str, List[Action]]
@@ -1063,6 +1062,15 @@ class BaseComponent(lifecycle.Node):
         if not self.__events or not self.__actions:
             return {}
         return dict(zip(self.__events, self.__actions, strict=True))
+
+    def clear_events_actions(self) -> None:
+        """Clear all Events/Actions registered to the component
+
+        :return: Dictionary of monitored Events and associated Actions
+        :rtype: Dict[str, List[Action]]
+        """
+        self.__events = []
+        self.__actions = []
 
     @property
     def _events_actions(self) -> Dict[str, List[Action]]:
