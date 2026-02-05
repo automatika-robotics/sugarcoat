@@ -153,6 +153,21 @@ class EventBlackboardEntry:
     # A unique identifier for this specific reception instance
     id: str = field(factory=lambda: str(uuid.uuid4()))
 
+    def validate(self, timeout: Optional[float] = None, stale_id: Optional[str] = None):
+        """Validate the data freshness
+
+        :param timeout: Maximum lifetime, defaults to None
+        :type timeout: Optional[float], optional
+        :param stale_id: ID of the latest stale message, defaults to None
+        :type stale_id: Optional[str], optional
+        """
+        age = time.time() - self.timestamp
+        if (stale_id and self.id == stale_id) or (age < timeout if timeout else False):
+            # Return none as this is already stale
+            self.msg = None
+            self.id = str(uuid.uuid4())
+            return
+
     @classmethod
     def get(
         cls,

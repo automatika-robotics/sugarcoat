@@ -148,6 +148,7 @@ class BaseComponent(lifecycle.Node):
 
         self.__fallbacks = fallbacks or ComponentFallbacks()
         self.__fallbacks_giveup: bool = False
+        self.__fallbacks_listeners: List[Subscription] = []
 
         if self.config._use_without_launcher:
             # Create default services for changing config/inputs/outputs during runtime
@@ -549,6 +550,8 @@ class BaseComponent(lifecycle.Node):
 
         self.create_all_action_clients()
 
+        self._turn_on_fallbacks_subscribers()
+
         # Setup node timers
         self.create_all_timers()
 
@@ -710,6 +713,8 @@ class BaseComponent(lifecycle.Node):
         """
         self.get_logger().info("DESTROYING ALL SUBSCRIBERS")
         for listener in self.__event_listeners:
+            self.destroy_subscription(listener)
+        for listener in self.__fallbacks_listeners:
             self.destroy_subscription(listener)
         # Destroy all input subscribers
         for callback in self.callbacks.values():
@@ -882,6 +887,33 @@ class BaseComponent(lifecycle.Node):
                 callback_group=MutuallyExclusiveCallbackGroup(),
             )
             self.__event_listeners.append(listener)
+
+    def _turn_on_fallbacks_subscribers(self):
+        # Blackboard to store latest messages for all topics required for all fallbacks
+        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
+        self._fallbacks_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
+        self._fallbacks_topics_timeout: Dict[str, float] = {}
+        # Create ONE subscription per Topic
+        self.__fallbacks_listeners = []
+        for topic_obj in self.__fallbacks.required_topics:
+            listener = self.create_subscription(
+                msg_type=topic_obj.ros_msg_type,
+                topic=topic_obj.name,
+                callback=partial(self.__fallback_topic_callback, topic_obj.name),
+                qos_profile=topic_obj.qos_profile.to_ros(),
+                callback_group=MutuallyExclusiveCallbackGroup(),
+            )
+            self.__fallbacks_listeners.append(listener)
+            self._fallbacks_topics_timeout[topic_obj.name] = topic_obj.data_timeout
+
+    def __fallback_topic_callback(self, topic_name: str, msg: Any):
+        """
+        Updates Cache of all required fallbacks topics
+        """
+        # Update Fallbacks Blackboard with stamped entry
+        self._fallbacks_topics_blackboard[topic_name] = EventBlackboardEntry(
+            msg=msg, timestamp=time.time()
+        )
 
     def __event_topic_callback(self, topic_name: str, msg: Any):
         """
@@ -1270,11 +1302,11 @@ class BaseComponent(lifecycle.Node):
                     raise AttributeError(
                         f"Component '{self.node_name}' does not contain requested Fallback Action method '{fallback_serialized_action['action_name']}'"
                     )
+                # reparse the method using the given action name
                 method = getattr(self, fallback_serialized_action["action_name"])
-                reconstructed_action = Action(
-                    method=method,
-                    args=fallback_serialized_action["args"],
-                    kwargs=fallback_serialized_action["kwargs"],
+                reconstructed_action = Action.deserialize_action(
+                    serialized_action_dict=fallback_serialized_action,
+                    deserialized_method=method,
                 )
                 reconstructed_fallback = Fallback(
                     reconstructed_action, value.get("max_retries", None)
@@ -2476,6 +2508,13 @@ class BaseComponent(lifecycle.Node):
             return
 
         try:
+            # Validate the fallback cache registry
+            for topic_name, value in self._fallbacks_topics_blackboard.items():
+                value.validate(
+                    timeout=self._fallbacks_topics_timeout.get(topic_name, None)
+                )
+            self.__fallbacks.update_topics_blackboard(self._fallbacks_topics_blackboard)
+
             if self.__fallbacks_giveup:
                 # All fallbacks are already exhausted
                 self.get_logger().error(
