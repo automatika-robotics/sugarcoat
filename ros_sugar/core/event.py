@@ -466,12 +466,11 @@ class Event:
         actions = actions if isinstance(actions, List) else [actions]
         # If it is a simple condition
         topics = self.get_involved_topics()
-        if len(topics) == 1:
-            for act in actions:
-                if isinstance(act, Action):
-                    # Setup any required automatic conversion from the event message type to the action inputs
-                    act._setup_conversions(topics[0].name, topics[0].ros_msg_type)
-                self._registered_on_trigger_actions.append(act)
+        for act in actions:
+            if len(topics) == 1 and isinstance(act, Action):
+                # Setup any required automatic conversion from the event message type to the action inputs
+                act._setup_conversions(topics[0].name, topics[0].ros_msg_type)
+            self._registered_on_trigger_actions.append(act)
 
     def clear_actions(self) -> None:
         """Clear all registered on trigger Actions"""
