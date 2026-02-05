@@ -80,12 +80,15 @@ class ComponentLaunchAction(NodeLaunchAction):
             # Create a launch event of type InternalEvent with the event name
             event = InternalEvent(
                 event_name=event_name,
-                topics_value=self.__ros_node._events_topics_blackboard,
+                topics_value=dict,
             )
 
             def func():
                 # Update values from node
-                event.topics_value = self.__ros_node._events_topics_blackboard
+                event.topics_value = {
+                    key: entry.msg
+                    for key, entry in self.__ros_node._events_topics_blackboard.items()
+                }
                 self.__context.emit_event_sync(event)
 
             # Emit the event to launch context
