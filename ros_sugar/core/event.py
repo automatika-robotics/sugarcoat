@@ -162,7 +162,7 @@ class EventBlackboardEntry:
         :type stale_id: Optional[str], optional
         """
         age = time.time() - self.timestamp
-        if (stale_id and self.id == stale_id) or (age < timeout if timeout else False):
+        if (stale_id and self.id == stale_id) or (age >= timeout if timeout else False):
             # Return none as this is already stale
             self.msg = None
             self.id = str(uuid.uuid4())
