@@ -520,8 +520,11 @@ class Event:
         """
         topics_dict = {key: value.msg for key, value in global_topic_cache.items()}
         self._previous_trigger = copy(self.trigger)
+
         if self._on_any:
-            self.trigger = True
+            # Check that all involved topics has values
+            topics_names = [topic.name for topic in self.get_involved_topics()]
+            self.trigger = all(topics_dict.get(key, None) for key in topics_names)
         else:
             # This assumes self.event_condition is now the root Condition object
             triggered = self._condition.evaluate(topics_dict)
