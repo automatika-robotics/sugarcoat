@@ -35,8 +35,8 @@
 
 - Learn more about the [**design concepts**](https://automatika-robotics.github.io/sugarcoat/design/index.html) in Sugarcoat 📚
 - Learn how to [**create your own ROS2 package**](https://automatika-robotics.github.io/sugarcoat/use.html) using Sugarcoat 🚀
-- [**Port your automation recipes across different hardware**](https://automatika-robotics.github.io/sugarcoat/advanced/robot_plugins.html) using **Robot Plugins**
-- Explore the [**Dynamic Web UI**](https://automatika-robotics.github.io/sugarcoat/advanced/web_ui.html) for real-time system visualization and control
+- [**Port your automation recipes across different hardware**](https://automatika-robotics.github.io/sugarcoat/features/robot_plugins.html) using **Robot Plugins**
+- Explore the [**Dynamic Web UI**](https://automatika-robotics.github.io/sugarcoat/features/web_ui.html) for real-time system visualization and control
 
 ## Dynamic Web UI for Sugarcoat Recipes
 
