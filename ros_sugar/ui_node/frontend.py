@@ -161,6 +161,21 @@ class FHApp:
             )
         ]
 
+    def get_all_map_points_outputs(self) -> List[Tuple]:
+        """Return all topics that should connect to the map websocket for displaying on the map
+        This includes: (Point, PointStamped, Pose, PoseStamped, Odometry)"""
+        # If a map element is present -> Get all point-like outputs to output as map markers
+        # TODO: Handle paths display on maps
+        if self.get_all_map_outputs():
+            return [
+                (o.name, o.msg_type.__name__)
+                for o in self.out_topics
+                if (
+                    o.msg_type.__name__
+                    in ["Point", "PointStamped", "Pose", "PoseStamped", "Odometry"]
+                )
+            ]
+
     def update_configs_from_data(self, data: Dict):
         """Update configs from a UI form data dict
 
@@ -203,8 +218,9 @@ class FHApp:
         displayed_outputs = [
             out
             for out in outputs
-            if elements._OUTPUT_ELEMENTS[out.msg_type.__name__].__name__.startswith(
-                "_out"
+            if (
+                (elm := elements._OUTPUT_ELEMENTS.get(out.msg_type.__name__, None))
+                and (elm.__name__.startswith("_out"))
             )
         ]  # Get output elements that have specific display cards
         if not displayed_outputs:
@@ -406,7 +422,7 @@ class FHApp:
             Button(
                 UkIcon("sun", cls="dark:hidden"),
                 UkIcon("moon", cls="hidden dark:block"),
-                onclick="toggleTheme()",        # from custom.js
+                onclick="toggleTheme()",  # from custom.js
                 type="button",
                 cls="glass-icon-btn",
                 uk_tooltip="title: Change Theme; pos: left",

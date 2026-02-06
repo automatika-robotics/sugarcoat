@@ -25,10 +25,8 @@ window.zoomMap = function (topicName, zoomFactor) {
     applyZoom(viewer, zoomFactor, null); // Null center means zoom to center of view
 };
 
-
 window.togglePublishPoint = function (btn) {
     const mapElements = document.getElementsByName('map-canvas');
-    // Check if no maps are found
     if (mapElements.length === 0) {
         if (typeof UIkit !== 'undefined') {
             UIkit.notification({
@@ -47,13 +45,41 @@ window.togglePublishPoint = function (btn) {
     const isActive = btn.classList.contains('active-brand-red');
     const isTurningOn = !isActive;
 
+    // --- Click Outside Handler ---
+    // We define this handler to detect clicks outside the map/button
+    const handleOutsideClick = (event) => {
+        // Check if click was inside ANY map container
+        const isClickOnMap = Array.from(mapElements).some(el => el.contains(event.target));
+        const isClickOnBtn = btn.contains(event.target);
+
+        // If click is outside map AND outside the toggle button, turn off
+        if (!isClickOnMap && !isClickOnBtn) {
+            window.togglePublishPoint(btn);
+        }
+    };
+    // ----------------------------------------
+
     // 2. Update Button UI
     if (isTurningOn) {
         btn.classList.remove('uk-button-default', 'bg-white/80', 'dark:bg-gray-800/80', 'backdrop-blur');
         btn.classList.add('active-brand-red');
+
+        // Add global listener for clicking outside (Timeout prevents immediate trigger from the current click)
+        setTimeout(() => {
+            document.addEventListener('click', handleOutsideClick);
+            // Store reference on button so we can remove it later
+            btn._outsideClickHandler = handleOutsideClick;
+        }, 10);
+
     } else {
         btn.classList.remove('active-brand-red');
         btn.classList.add('uk-button-default', 'bg-white/80', 'dark:bg-gray-800/80', 'backdrop-blur');
+
+        // Clean up global listener
+        if (btn._outsideClickHandler) {
+            document.removeEventListener('click', btn._outsideClickHandler);
+            btn._outsideClickHandler = null;
+        }
     }
 
     // 3. Apply to ALL Maps
@@ -66,18 +92,19 @@ window.togglePublishPoint = function (btn) {
         const state = mapInteractionState[topicName];
 
         state.isPublishing = isTurningOn;
-        // Save the current active button
         state.btn = btn;
 
-        // Update Cursor
+        // Force cursor on the Canvas specifically
+        // because setupInteractions modifies the canvas style directly.
+        if (container.mapViewer && container.mapViewer.scene.canvas) {
+            container.mapViewer.scene.canvas.style.cursor = isTurningOn ? 'crosshair' : 'default';
+        }
         container.style.cursor = isTurningOn ? 'crosshair' : 'default';
 
         // 4. Determine Settings if Turning On
         if (isTurningOn) {
-            // CASE 1: Click came from the map's own settings button
             if (btn.id === `${topicName}-publish-btn`) {
                 const settingsForm = document.getElementById(`${topicName}-settings-form`);
-
                 let targetTopic = 'clicked_point';
                 let msgType = 'PointStamped';
 
@@ -91,20 +118,12 @@ window.togglePublishPoint = function (btn) {
 
                     if (tInput && tInput.value) targetTopic = tInput.value;
                     if (mInput && mInput.value) msgType = mInput.value;
-
-                    // Cache these initial settings
                     state.settings = { topic: targetTopic, type: msgType };
                 }
-
-                // Save configuration for this button ID
                 state[btn.id] = { topic: targetTopic, type: msgType };
-
             } else {
-                // CASE 2: External/Generic Button
-                // Read from data attributes, default to standard if missing
                 const customTopic = btn.getAttribute('data-topic') || 'clicked_point';
                 const customType = btn.getAttribute('data-type') || 'PointStamped';
-
                 state[btn.id] = { topic: customTopic, type: customType };
             }
         }
@@ -189,25 +208,20 @@ function initSingleMap(container) {
     if (!topicName) return;
 
     // --- 1. Setup Viewer ---
-    // Start with a default size; it will resize when map arrives
     const viewer = new ROS2D.Viewer({
         divID: topicName,
-        width: 1, height: 1, // Will be resized immediately
+        width: 1, height: 1,
         background: '#7f7f7f'
     });
 
-    // IMPORTANT: Attach viewer to the container so we can resize it later
+    viewer.scene.enableMouseOver(10); // Check for hovers 10 times per second
+
     container.mapViewer = viewer;
 
-    // Ensure Canvas is block to remove bottom font-baseline gap
     const canvas = viewer.scene.canvas;
     canvas.style.display = 'block';
-
-    // Disable image smoothing for crisp grid lines (looks better for occupancy grids)
     const ctx = canvas.getContext("2d");
-    if (ctx) {
-        ctx.imageSmoothingEnabled = false;
-    }
+    if (ctx) ctx.imageSmoothingEnabled = false;
 
     // --- 2. Setup Mock ROS ---
     const mockRos = new EventEmitter2();
@@ -217,30 +231,41 @@ function initSingleMap(container) {
     mockRos.close = () => { };
     mockRos.isConnected = true;
 
-    // --- 3. Setup Grid Client ---
+    // --- 3. Setup Layers to allow adding markers on the map ---
+    const mapGroup = new createjs.Container(); // The main wrapper
+    container.mapGroup = mapGroup;
+    viewer.scene.addChild(mapGroup);
+
+    // Layer 1: The Map (Bottom)
+    const mapLayer = new createjs.Container();
+    mapGroup.addChild(mapLayer);
+
+    // Layer 2: The Overlays (Top)
+    // Anything added here will ALWAYS be drawn on top of the map
+    const overlayLayer = new createjs.Container();
+    container.overlayLayer = overlayLayer;
+    mapGroup.addChild(overlayLayer);
+
+
+    // --- 4. Setup Grid Client ---
     const gridClient = new ROS2D.OccupancyGridClient({
         ros: mockRos,
-        rootObject: viewer.scene,
+        rootObject: mapLayer, // RENDER MAP INTO THE BOTTOM LAYER
         topic: topicName,
         continuous: false
     });
-
-    // Attach gridClient to container so resizeMap can access bounds later
     container.mapGridClient = gridClient;
 
-    // --- 4. Handle Rendering ---
     gridClient.on('change', () => {
-        // Debounce resize to ensure we don't spam it during load
         requestAnimationFrame(() => resizeMap(container));
     });
 
-    // --- 5. Connect WebSocket ---
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws_${topicName}`;
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
-    container.mapWs = ws; // Store WS for sending data back
-    container.topicName = topicName; // Store the map topic name
+    container.mapWs = ws;
+    container.topicName = topicName;
 
     ws.onmessage = (event) => {
         try {
@@ -253,12 +278,8 @@ function initSingleMap(container) {
             }
             let mapMessage = msgData.msg ? msgData.msg : msgData;
 
-            // --- Save Map Metadata for Click Math ---
-            if (mapMessage.info) {
+            if (mapMessage.info && mapMessage.header) {
                 container.mapInfo = mapMessage.info;
-            }
-            // --- Save Map Header ---
-            if (mapMessage.header) {
                 container.mapHeader = mapMessage.header;
             }
 
@@ -270,19 +291,200 @@ function initSingleMap(container) {
                     bytes[i] = binaryString.charCodeAt(i);
                 }
                 mapMessage.data = bytes;
+                mockRos.emit(topicName, mapMessage);
             }
-            mockRos.emit(topicName, mapMessage);
+            else if (msgData.op === 'overlay') {
+                updateMapOverlay(container, msgData.id, {
+                    x: msgData.x,
+                    y: msgData.y,
+                    rotation: msgData.theta
+                }, 'red', 'arrow');
+
+                container.mapViewer.scene.update();
+            }
         } catch (e) { console.error(e); }
     };
 
-    // --- 6. Interactions ---
     setupInteractions(viewer, container);
-
-    // --- 7. Resize Observer ---
-    const resizeObserver = new ResizeObserver(() => {
-        resizeMap(container);
-    });
+    const resizeObserver = new ResizeObserver(() => resizeMap(container));
     resizeObserver.observe(container);
+}
+
+
+/**
+ * Generates a consistent color from a string ID.
+ * Uses a palette of 10 high-contrast colors suitable for dark/light maps.
+ */
+function getColorForId(id) {
+    const palette = [
+        '#E83F3F', // Brand Red
+        '#2ECC71', // Emerald Green
+        '#3498DB', // Bright Blue
+        '#F1C40F', // Vivid Yellow
+        '#9B59B6', // Amethyst Purple
+        '#E67E22', // Carrot Orange
+        '#1ABC9C', // Turquoise
+        '#FF00FF', // Magenta
+        '#BFFF00', // Lime
+        '#FF69B4'  // Hot Pink
+    ];
+
+    // Simple hash function to convert string -> integer
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+        hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    }
+
+    // Use absolute value of hash modulo palette length
+    const index = Math.abs(hash) % palette.length;
+    return palette[index];
+}
+
+
+/**
+ * Updates or Creates a dynamic marker on the map.
+ * @param {string} id - Unique ID for this object (e.g., 'robot_pose')
+ * @param {object} pose - {x, y, rotation} (Rotation in degrees, optional)
+ * @param {string} type - 'circle' or 'arrow'
+ */
+function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
+    // 1. Safety Checks
+    if (!container.mapGridClient || !container.mapGridClient.currentGrid || !container.overlayLayer) return;
+
+    // 2. Transform Coordinates
+    const pixelCoords = transformRosToGridPixels(container, pose.x, pose.y);
+    if (!pixelCoords) return;
+
+    // 3. Calculate Proportional Size
+    const info = container.mapInfo;
+    let sizePx = 25;
+
+    if (info) {
+        const resolution = info.resolution;
+        const mapWidthMeters = info.width * resolution;
+        const targetSizeMeters = Math.max(mapWidthMeters * 0.02, 0.6);
+        sizePx = targetSizeMeters / resolution;
+    }
+
+    // --- COLOR & HEADING ---
+    const assignedColor = getColorForId(id);
+    let showHeading = false;
+    let rotationDegrees = 0;
+
+    // Check heading (0 to 2PI):
+    // Other values of heading (minus) will be used for point objects i.e. no heading
+    if (type === 'arrow' && pose.rotation !== undefined && typeof pose.rotation === 'number') {
+        showHeading = true;
+        rotationDegrees = pose.rotation * (180 / Math.PI);
+    }
+
+    // 4. Get or Create Marker
+    if (!container.overlays) container.overlays = {};
+    let marker = container.overlays[id];
+
+    if (!marker) {
+        marker = new createjs.Shape();
+        container.overlayLayer.addChild(marker);
+        container.overlays[id] = marker;
+
+        // --- TOOLTIP LOGIC ---
+        marker.cursor = "pointer";
+        marker.addEventListener("mouseover", (evt) => {
+            const tip = document.createElement('div');
+            tip.id = `tooltip-${id}`;
+            tip.className = 'uk-tooltip uk-active';
+
+            // 1. Get latest pose stored on the marker (prevents stale data)
+            const currentPose = marker._rosPose || { x: 0, y: 0 };
+
+            // 2. Format HTML: ID on line 1, Coords on line 2 (small & semi-transparent)
+            tip.innerHTML = `
+                <div>${id}</div>
+                <div style="font-size: 0.85em; opacity: 0.8; font-family: monospace; margin-top: 2px;">
+                    (${currentPose.x.toFixed(3)}, ${currentPose.y.toFixed(3)})
+                </div>
+            `;
+
+            // 3. Styling
+            tip.style.position = 'fixed';
+            tip.style.zIndex = 10000;
+            tip.style.pointerEvents = 'none';
+            tip.style.transform = 'translate(-50%, -150%)';
+            tip.style.border = `1px solid ${assignedColor}`;
+            tip.style.color = assignedColor;
+            tip.style.textAlign = 'center'; // Center align the text
+
+            if (evt.nativeEvent) {
+                tip.style.left = `${evt.nativeEvent.clientX}px`;
+                tip.style.top = `${evt.nativeEvent.clientY}px`;
+            }
+            document.body.appendChild(tip);
+            marker._tooltipElement = tip;
+        });
+
+        marker.addEventListener("mousemove", (evt) => {
+            if (marker._tooltipElement && evt.nativeEvent) {
+                marker._tooltipElement.style.left = `${evt.nativeEvent.clientX}px`;
+                marker._tooltipElement.style.top = `${evt.nativeEvent.clientY}px`;
+            }
+        });
+
+        marker.addEventListener("mouseout", () => {
+            if (marker._tooltipElement) {
+                marker._tooltipElement.remove();
+                marker._tooltipElement = null;
+            }
+        });
+    }
+
+    // We save the pose to the marker object so the tooltip always sees the CURRENT location
+    marker._rosPose = pose;
+
+    // 5. Redraw Custom Graphics
+    marker.graphics.clear();
+
+    const dotRadius = sizePx * 0.2;
+
+    if (showHeading) {
+        // Full Arrow
+        const gap = sizePx * 0.15;
+        const arrowStart = dotRadius + gap;
+        const arrowLength = sizePx * 0.6;
+        const arrowWidth = sizePx * 0.5;
+
+        marker.graphics
+            .beginFill(assignedColor)
+            .drawCircle(0, 0, dotRadius)
+            .endStroke();
+
+        marker.graphics
+            .beginFill(assignedColor)
+            .moveTo(arrowStart, -arrowWidth / 2)
+            .lineTo(arrowStart + arrowLength, 0)
+            .lineTo(arrowStart, arrowWidth / 2)
+            .lineTo(arrowStart + (arrowLength * 0.25), 0)
+            .closePath();
+
+        marker.shadow = new createjs.Shadow("rgba(0,0,0,0.4)", 1, 1, 3);
+        // APPLY ROTATION
+        marker.rotation = -rotationDegrees;
+
+    } else {
+        // Point Only
+        marker.graphics
+            .beginFill(assignedColor)
+            .drawCircle(0, 0, dotRadius)
+            .endStroke();
+
+        marker.shadow = new createjs.Shadow("rgba(0,0,0,0.2)", 1, 1, 2);
+        marker.rotation = 0;
+    }
+
+    // 6. Update Position
+    marker.x = pixelCoords.x;
+    marker.y = pixelCoords.y;
+
+    marker.visible = true;
 }
 
 
@@ -303,7 +505,7 @@ function transformScreenToRos(container, screenX, screenY) {
     const physY = screenY * dpr;
 
     // 2. Use EaselJS to transform from Canvas space -> Local Grid Image space
-    // This automatically handles the Viewer Zoom, Scene Pan, Grid Rotation (-90),
+    // This automatically handles the Viewer Zoom, Scene Pan, Grid Rotation,
     // Grid Centering offsets (x/y), and Registration Points (regX/regY).
     const localPt = grid.globalToLocal(physX, physY);
 
@@ -330,6 +532,30 @@ function transformScreenToRos(container, screenX, screenY) {
     const rosY = ((mapHeight - imageY) * res) + originY;
 
     return { x: rosX, y: rosY, z: 0.0 };
+}
+
+/**
+ * Transforms Real-World ROS coordinates (Meters) -> Map Image Pixels
+ * Used to place overlays (robots, paths) on the map.
+ */
+function transformRosToGridPixels(container, rosX, rosY) {
+    const info = container.mapInfo;
+    if (!info) return null;
+
+    const res = info.resolution;
+    const originX = info.origin.position.x;
+    const originY = info.origin.position.y;
+    const mapHeight = info.height; // Height in pixels
+
+    // 1. Calculate X (Standard: Left to Right)
+    const x = (rosX - originX) / res;
+
+    // 2. Calculate Y (Inverted: Map Bottom is Image Bottom)
+    // ROS Origin (ymin) corresponds to Image Bottom (y = height)
+    // ROS Max (ymax) corresponds to Image Top (y = 0)
+    const y = mapHeight - ((rosY - originY) / res);
+
+    return { x: x, y: y };
 }
 
 /**
@@ -386,7 +612,7 @@ function publishPoint(container, targetTopic, rosPoint, msgType) {
     if (msgType === 'Point' || msgType === 'PointStamped') {
         messageData = rosPoint; // {x, y, z}
     } else if (msgType === 'Pose' || msgType === 'PoseStamped') {
-        messageData = { ...rosPoint, ...defaultOrientation};
+        messageData = { ...rosPoint, ...defaultOrientation };
     }
 
     const payload = {
@@ -408,32 +634,27 @@ function setupInteractions(viewer, container) {
     let isDragging = false;
     let lastX, lastY;
 
-    // --- MOUSE DOWN (Handle Clicked Point or Pan) ---
+    // --- MOUSE DOWN (No Changes needed here) ---
     canvas.addEventListener('mousedown', (event) => {
         let topicName = container.topicName;
         const state = mapInteractionState[topicName];
-        // --- PUBLISH POINT LOGIC ---
+
+        // ... PUBLISH POINT LOGIC ...
         if (state && state.isPublishing && event.button === 0) {
             const rect = canvas.getBoundingClientRect();
             const mouseX = event.clientX - rect.left;
             const mouseY = event.clientY - rect.top;
-
-            // 1. Get raw point
             const rosPoint = transformScreenToRos(container, mouseX, mouseY);
 
             if (rosPoint) {
-                // Determine which settings to use based on the active button
                 let targetTopic = 'clicked_point';
                 let msgType = 'PointStamped';
-
                 if (state.btn && state[state.btn.id]) {
                     targetTopic = state[state.btn.id].topic;
                     msgType = state[state.btn.id].type;
                 }
-
                 publishPoint(container, targetTopic, rosPoint, msgType);
             }
-            // Toggle OFF (Global function, passes the active button)
             window.togglePublishPoint(state.btn);
             return;
         }
@@ -448,6 +669,7 @@ function setupInteractions(viewer, container) {
         }
     });
 
+    // --- MOUSE MOVE (No Changes needed here) ---
     window.addEventListener('mousemove', (event) => {
         if (!isDragging) return;
         const dpr = window.devicePixelRatio || 1;
@@ -459,39 +681,38 @@ function setupInteractions(viewer, container) {
         lastY = event.clientY;
     });
 
+    // --- MOUSE UP (UPDATED) ---
     window.addEventListener('mouseup', () => {
         if (isDragging) {
             isDragging = false;
-            canvas.style.cursor = 'default';
+
+            // Check if we are in publishing mode before resetting cursor
+            let topicName = container.topicName;
+            const state = mapInteractionState[topicName];
+
+            if (state && state.isPublishing) {
+                canvas.style.cursor = 'crosshair';
+            } else {
+                canvas.style.cursor = 'default';
+            }
         }
     });
 
-    // --- ZOOM (Scroll Wheel) ---
+    // --- ZOOM (No Changes needed here) ---
     canvas.addEventListener('wheel', (event) => {
-        // Check if Fullscreen
         const isFullscreen = container.closest('.fullscreen-overlay') !== null;
-
-        if (!isFullscreen) {
-            // NOT Fullscreen: Do NOT capture scroll. Let page scroll.
-            return;
-        }
-
-        // IS Fullscreen: Capture scroll and Zoom.
+        if (!isFullscreen) return;
         event.preventDefault();
         event.stopPropagation();
-
         const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
-
-        // Calculate mouse position relative to canvas
         const rect = canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
-
         const mouseX = (event.clientX - rect.left) * dpr;
         const mouseY = (event.clientY - rect.top) * dpr;
-
         applyZoom(viewer, zoomFactor, { x: mouseX, y: mouseY });
-    }, { passive: false }); // Passive false required to use preventDefault
+    }, { passive: false });
 }
+
 
 /**
  * Helper to manually resize the ROS2D Viewer canvas
@@ -518,80 +739,73 @@ function resizeViewer(viewer, logicalWidth, logicalHeight) {
     if (ctx) ctx.imageSmoothingEnabled = false;
 }
 
-/**
- * Main Logic: Fits the Map to the Container
- */
 function resizeMap(container) {
     if (!container || !container.mapViewer) return;
 
     const viewer = container.mapViewer;
     const gridClient = container.mapGridClient;
+    const mapGroup = container.mapGroup;
+    const mapInfo = container.mapInfo; // USE SAVED METADATA
     const MAP_ROTATION = -90;
 
-    // Wait slightly for CSS transitions
     setTimeout(() => {
-        // 1. Get available CSS space
         const logicalWidth = container.clientWidth;
         const logicalHeight = container.clientHeight;
-
         if (logicalWidth === 0 || logicalHeight === 0) return;
 
-        // 2. Resize Canvas
         resizeViewer(viewer, logicalWidth, logicalHeight);
 
-        // 3. Fit Map Content
-        if (gridClient && gridClient.currentGrid) {
+        // We need BOTH the grid client and the map metadata to align correctly
+        if (gridClient && gridClient.currentGrid && mapInfo) {
             const grid = gridClient.currentGrid;
 
-            // Update Grid Registration & Rotation
-            grid.regX = grid.width / 2;
-            grid.regY = grid.height / 2;
-            grid.rotation = MAP_ROTATION;
-            grid.x = grid.width / 2;
-            grid.y = grid.height / 2;
+            // 1. FORCE GRID TO 0,0
+            // This ensures the Map Image top-left is exactly at mapLayer's 0,0
+            grid.x = 0;
+            grid.y = 0;
+            grid.rotation = 0;
+            grid.scaleX = 1;
+            grid.scaleY = 1;
 
-            const bounds = grid.getTransformedBounds();
+            // 2. Use METADATA dimensions for centering, not Image dimensions
+            // (Image dimensions can sometimes be unreliable depending on load state)
+            const mapWidth = mapInfo.width;
+            const mapHeight = mapInfo.height;
+
+            // 3. Align mapGroup Center
+            mapGroup.regX = mapWidth / 2;
+            mapGroup.regY = mapHeight / 2;
+            mapGroup.rotation = MAP_ROTATION;
+            mapGroup.x = mapWidth / 2;
+            mapGroup.y = mapHeight / 2;
+
+            // 4. Zoom Logic (Using group bounds)
+            const bounds = mapGroup.getTransformedBounds();
             if (!bounds) return;
 
             const isFullscreen = container.classList.contains('fullscreen-overlay');
-
-            // We use viewer.width/height which are now High DPI (Physical) pixels.
-            // This ensures the zoom level matches the physical pixel density.
             const canvasPhysWidth = viewer.width;
             const canvasPhysHeight = viewer.height;
 
+            let zoom;
             if (isFullscreen) {
-                // A. Fullscreen: Contain map within the fixed container
-                const zoom = Math.min(canvasPhysWidth / bounds.width, canvasPhysHeight / bounds.height);
-
-                viewer.scene.scaleX = zoom;
-                viewer.scene.scaleY = zoom;
-
-                viewer.scene.x = (canvasPhysWidth - (bounds.width * zoom)) / 2 - (bounds.x * zoom);
-                viewer.scene.y = (canvasPhysHeight - (bounds.height * zoom)) / 2 - (bounds.y * zoom);
-
+                zoom = Math.min(canvasPhysWidth / bounds.width, canvasPhysHeight / bounds.height);
             } else {
-                // B. Standard Card: Fit container height to map aspect ratio
+                // Calculate height to fit aspect ratio
                 const mapAspectRatio = bounds.width / bounds.height;
                 const newLogicalHeight = logicalWidth / mapAspectRatio;
-
-                // Apply height update to DOM
                 container.style.height = `${newLogicalHeight}px`;
-
-                // Re-run resizeViewer with new height
                 resizeViewer(viewer, logicalWidth, newLogicalHeight);
 
-                // Recalculate zoom with new physical dimensions
-                const newPhysWidth = viewer.width;
-                const zoom = newPhysWidth / bounds.width;
-
-                viewer.scene.scaleX = zoom;
-                viewer.scene.scaleY = zoom;
-
-                viewer.scene.x = (newPhysWidth - (bounds.width * zoom)) / 2 - (bounds.x * zoom);
-                // For non-fullscreen, we just centered height, so simple centering works
-                viewer.scene.y = (viewer.height - (bounds.height * zoom)) / 2 - (bounds.y * zoom);
+                // Recalculate physical width after resize
+                zoom = viewer.width / bounds.width;
             }
+
+            // Apply Zoom & Pan
+            viewer.scene.scaleX = zoom;
+            viewer.scene.scaleY = zoom;
+            viewer.scene.x = (viewer.width - (bounds.width * zoom)) / 2 - (bounds.x * zoom);
+            viewer.scene.y = (viewer.height - (bounds.height * zoom)) / 2 - (bounds.y * zoom);
         }
     }, 50);
 }

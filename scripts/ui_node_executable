@@ -19,6 +19,35 @@ import numpy as np
 from rosidl_runtime_py.convert import message_to_ordereddict
 
 
+def _point_marker_on_map(payload, **_):
+    """Helper callback to parse a map Maker data from point-like message"""
+    content = payload.get("payload", None)
+    if content is None:
+        return
+    msg_type = payload.get("type")
+    try:
+        if msg_type in ["Point", "PointStamped"]:
+            # Content will have an array of [x, y, z]
+            return {
+                "op": "overlay",
+                "id": payload.get("topic", ""),
+                "x": content[0],
+                "y": content[1],
+            }
+        if msg_type in ["Pose", "PoseStamped", "Odometry"]:
+            # Content will have an array of [x, y, z, heading] for Pose, PoseStamped
+            # and [x, y, z, heading] for Odometry
+            return {
+                "op": "overlay",
+                "id": payload.get("topic", ""),
+                "x": content[0],
+                "y": content[1],
+                "theta": content[3],
+            }
+    except Exception:
+        logger.error(f"Error parsing UI input from topic type {msg_type}")
+
+
 def main():
     """
     Executable to run a component as a ros node.
@@ -206,11 +235,20 @@ def main():
 
         ros_node.attach_websocket_callback(stream_callback, topic_type)
 
-    async def on_conn_map(ws, _, topic_type: str):
+    async def on_conn_map(ws, _, map_topic_type: str):
         """When a client connects, register its callback."""
 
         # Callback function for ROS node
-        async def map_callback(*_, msg):
+        async def map_callback(payload, msg):
+            # --- CASE 1: Incoming marker data ----
+            # If the incoming data is for a marker
+            if payload.get("type", None) != "OccupancyGrid":
+                response = _point_marker_on_map(payload)
+                if response:
+                    await ws.send_json(response)
+                return
+
+            # --- CASE 2: Incoming MAP data ----
             # Convert ROS message to a JSON-serializable dict
             # Convert header and info normally (they are small)
             msg_dict = {
@@ -241,8 +279,11 @@ def main():
             response = {"op": "publish", "msg": msg_dict}
             await ws.send_json(response)
 
-        logger.warning(f"attaching with topic type {topic_type}...")
-        ros_node.attach_websocket_callback(map_callback, topic_type)
+        ros_node.attach_websocket_callback(map_callback, map_topic_type)
+
+        # Add all point outputs to the map websocket callback
+        for _, topic_type in fh.get_all_map_points_outputs():
+            ros_node.attach_websocket_callback(map_callback, topic_type)
 
     async def on_conn_action(_, send, action_name: str):
         """When a client connects, register its callback."""
@@ -276,12 +317,12 @@ def main():
             pass
 
     # Create websockets for map output topics
-    for topic_name, topic_type in fh.get_all_map_outputs():
-        logger.warning(f"starting map ws for {topic_name}...")
+    for map_topic_name, map_topic_type in fh.get_all_map_outputs():
+        logger.debug(f"Starting ws for {map_topic_name}, {map_topic_type}...")
 
         @app.ws(
-            f"/ws_{topic_name}",
-            conn=partial(on_conn_map, topic_type=topic_type),
+            f"/ws_{map_topic_name}",
+            conn=partial(on_conn_map, map_topic_type=map_topic_type),
             disconn=on_disconn,
         )
         async def _(_, data):
@@ -292,8 +333,8 @@ def main():
                 ros_node.publish_data(data)
 
     for clients_configs_dict in ros_node.action_clients_inputs_dicts():
-        logger.warning(
-            f"starting action clients ws for {clients_configs_dict['name']}..."
+        logger.debug(
+            f"Starting action clients ws for {clients_configs_dict['name']}..."
         )
 
         @app.ws(
