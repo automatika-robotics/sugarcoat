@@ -288,37 +288,34 @@ function initSingleMap(container) {
 
 /**
  * Coordinate Transformation Logic
- * Screen (Pixels) -> Viewer (Pan/Zoom) -> Grid (Rotated) -> ROS (Meters)
+ * Uses EaselJS built-in matrix math to convert Screen -> Grid Pixels -> ROS
  */
 function transformScreenToRos(container, screenX, screenY) {
-    const viewer = container.mapViewer;
     const gridClient = container.mapGridClient;
     const grid = gridClient.currentGrid;
 
     if (!grid) return null;
 
-    // 1. Screen -> Stage (Account for Pan/Zoom)
+    // 1. Convert Screen (Logical) to Canvas (Physical) coordinates
+    // We must match the physical resolution used in resizeViewer
     const dpr = window.devicePixelRatio || 1;
-    const stageX = (screenX * dpr - viewer.scene.x) / viewer.scene.scaleX;
-    const stageY = (screenY * dpr - viewer.scene.y) / viewer.scene.scaleY;
+    const physX = screenX * dpr;
+    const physY = screenY * dpr;
 
-    // 2. Stage -> Grid (Account for Grid Position & Rotation)
-    const dx = stageX - grid.x;
-    const dy = stageY - grid.y;
+    // 2. Use EaselJS to transform from Canvas space -> Local Grid Image space
+    // This automatically handles the Viewer Zoom, Scene Pan, Grid Rotation (-90),
+    // Grid Centering offsets (x/y), and Registration Points (regX/regY).
+    const localPt = grid.globalToLocal(physX, physY);
 
-    const rad = -grid.rotation * (Math.PI / 180.0); // Inverting the rotation
-    const unrotatedX = dx * Math.cos(rad) - dy * Math.sin(rad);
-    const unrotatedY = dx * Math.sin(rad) + dy * Math.cos(rad);
+    // localPt.x and localPt.y are now the pixel coordinates on the original map image
+    const imageX = localPt.x;
+    const imageY = localPt.y;
 
-    const imageX = unrotatedX + grid.regX;
-    const imageY = unrotatedY + grid.regY;
-
-    // 3. Grid Pixels -> ROS Coordinates (Resolution & Origin)
-    // --- KEY FIX: Use the stored info from container ---
+    // 3. Convert Grid Pixels -> ROS Coordinates
     const info = container.mapInfo;
 
     if (!info) {
-        console.warn("[Map] Metadata missing. Map not loaded yet?");
+        console.warn("[Map] Metadata missing.");
         return null;
     }
 
@@ -327,7 +324,8 @@ function transformScreenToRos(container, screenX, screenY) {
     const originY = info.origin.position.y;
     const mapHeight = info.height;
 
-    // Calculate ROS coordinates (Assuming standard ROS bottom-left origin vs Canvas top-left)
+    // ROS Map Standard: (0,0) is bottom-left. Image: (0,0) is top-left.
+    // Invert Y axis to match ROS convention
     const rosX = (imageX * res) + originX;
     const rosY = ((mapHeight - imageY) * res) + originY;
 
