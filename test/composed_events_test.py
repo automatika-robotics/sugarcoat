@@ -128,18 +128,18 @@ class TestEvents(unittest.TestCase):
 
     def test_on_any_and_on_equal(cls):
         global on_any_and_on_equal_py_event
-        assert on_any_and_on_equal_py_event.wait(cls.wait_time), (
-            "Failed to raise on_any_and_on_equal event"
-        )
+        assert on_any_and_on_equal_py_event.wait(
+            cls.wait_time
+        ), "Failed to raise on_any_and_on_equal event"
 
     def test_on_true_or_on_contains(cls):
         global on_true_or_on_contains_py_event
-        assert on_true_or_on_contains_py_event.wait(cls.wait_time), (
-            "Failed to raise on_true_or_on_contains event"
-        )
+        assert on_true_or_on_contains_py_event.wait(
+            cls.wait_time
+        ), "Failed to raise on_true_or_on_contains event"
 
     def test_on_not_false(cls):
         global on_not_false_py_event
-        assert on_not_false_py_event.wait(cls.wait_time), (
-            "Failed to raise on_not_false event"
-        )
+        assert on_not_false_py_event.wait(
+            cls.wait_time
+        ), "Failed to raise on_not_false event"

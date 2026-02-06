@@ -83,13 +83,9 @@ def generate_test_description():
     test_topic = Topic(name="test_topic", msg_type="Float32")
 
     # On any
-    event_on_health_status = Event(
-       status_topic, handle_once=True
-    )
+    event_on_health_status = Event(status_topic, handle_once=True)
 
-    event_on_published_message = Event(
-        test_topic, handle_once=True
-    )
+    event_on_published_message = Event(test_topic, handle_once=True)
 
     def inline_method(**_):
         global inline_action_py_event
@@ -121,6 +117,9 @@ def generate_test_description():
         },
     )
 
+    # Setup launch description without bringup for testing
+    launcher.setup_launch_description()
+
     # Internal test: Asserts correct parsing of different action types within the launcher
     assert 2 == sum(
         len(actions_set) for actions_set in launcher._ros_events_actions.values()
@@ -131,9 +130,6 @@ def generate_test_description():
     assert 1 == sum(
         len(actions_set) for actions_set in launcher._monitor_events_actions.values()
     ), "Error parsing monitor actions"
-
-    # Setup launch description without bringup for testing
-    launcher.setup_launch_description()
 
     # Add ready for test action
     launcher._description.add_action(launch_testing.actions.ReadyToTest())

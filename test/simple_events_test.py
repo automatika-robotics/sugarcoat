@@ -196,22 +196,22 @@ class TestEvents(unittest.TestCase):
 
     def test_on_greater(cls):
         global on_greater_py_event
-        assert on_greater_py_event.wait(cls.wait_time), (
-            "Failed to raise OnGreater event"
-        )
+        assert on_greater_py_event.wait(
+            cls.wait_time
+        ), "Failed to raise OnGreater event"
 
     def test_contains_with_publisher_node(cls):
         global on_contains_any_py_event, on_contains_all_py_event
-        assert on_contains_any_py_event.wait(cls.wait_time), (
-            "Failed to raise OnContainsAny event"
-        )
-        assert on_contains_all_py_event.wait(cls.wait_time), (
-            "Failed to raise OnContainsAll event"
-        )
+        assert on_contains_any_py_event.wait(
+            cls.wait_time
+        ), "Failed to raise OnContainsAny event"
+        assert on_contains_all_py_event.wait(
+            cls.wait_time
+        ), "Failed to raise OnContainsAll event"
 
     def test_change_with_publisher_node(cls):
         global on_change_py_event, on_change_eq_py_event
         assert on_change_py_event.wait(cls.wait_time), "Failed to raise OnChange event"
-        assert on_change_eq_py_event.wait(cls.wait_time), (
-            "Failed to raise OnChangeEqual event"
-        )
+        assert on_change_eq_py_event.wait(
+            cls.wait_time
+        ), "Failed to raise OnChangeEqual event"

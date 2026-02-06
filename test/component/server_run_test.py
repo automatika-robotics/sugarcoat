@@ -69,9 +69,7 @@ def generate_test_description():
     status_topic = Topic(name="test_component/status", msg_type="ComponentStatus")
 
     # Dummy event to send an automatic service call to the component main service post launch
-    event_on_health_status = Event(
-        status_topic, handle_once=True
-    )
+    event_on_health_status = Event(status_topic, handle_once=True)
     srv_call = actions.send_srv_request(
         srv_name="test_component/set_map",
         srv_request_msg=SetMap.Request(),
