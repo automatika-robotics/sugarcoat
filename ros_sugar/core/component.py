@@ -149,6 +149,10 @@ class BaseComponent(lifecycle.Node):
         self.__fallbacks = fallbacks or ComponentFallbacks()
         self.__fallbacks_giveup: bool = False
         self.__fallbacks_listeners: List[Subscription] = []
+        # Blackboard to store latest messages for all topics required for all fallbacks
+        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
+        self._fallbacks_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
+        self._fallbacks_topics_timeout: Dict[str, float] = {}
 
         if self.config._use_without_launcher:
             # Create default services for changing config/inputs/outputs during runtime
@@ -889,10 +893,6 @@ class BaseComponent(lifecycle.Node):
             self.__event_listeners.append(listener)
 
     def _turn_on_fallbacks_subscribers(self):
-        # Blackboard to store latest messages for all topics required for all fallbacks
-        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
-        self._fallbacks_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
-        self._fallbacks_topics_timeout: Dict[str, float] = {}
         # Create ONE subscription per Topic
         self.__fallbacks_listeners = []
         for topic_obj in self.__fallbacks.required_topics:
