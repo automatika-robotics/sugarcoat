@@ -31,8 +31,8 @@
 
 - 了解 Sugarcoat 的[**设计概念**](https://automatika-robotics.github.io/sugarcoat/design/index.html) 📚
 - 学习如何使用 Sugarcoat [**创建你自己的 ROS2 包**](https://automatika-robotics.github.io/sugarcoat/use.html) 🚀
-- [**将您的自动化配方移植到不同的硬件上**](https://automatika-robotics.github.io/sugarcoat/advanced/robot_plugins.html) 使用 **机器人插件**
-- 探索 [**动态 Web UI**](https://automatika-robotics.github.io/sugarcoat/advanced/web_ui.html) 以实现实时系统可视化和控制
+- [**将您的自动化配方移植到不同的硬件上**](https://automatika-robotics.github.io/sugarcoat/features/robot_plugins.html) 使用 **机器人插件**
+- 探索 [**动态 Web UI**](https://automatika-robotics.github.io/sugarcoat/features/web_ui.html) 以实现实时系统可视化和控制
 
 ## **（全新！）** 介绍 Sugarcoat Recipes 的动态 Web UI
 

@@ -31,8 +31,8 @@
 
 - Sugarcoat の[**設計コンセプト**](https://automatika-robotics.github.io/sugarcoat/design/index.html) を学ぶ 📚
 - Sugarcoat を使用して [**独自の ROS2 パッケージを作成**](https://automatika-robotics.github.io/sugarcoat/use.html) する方法を学ぶ 🚀
-- [**異なるハードウェア間での自動化レシピの移植**](https://automatika-robotics.github.io/sugarcoat/advanced/robot_plugins.html) には **ロボットプラグイン** を使用
-- リアルタイムのシステム可視化と制御のために [**ダイナミック Web UI**](https://automatika-robotics.github.io/sugarcoat/advanced/web_ui.html) を探索
+- [**異なるハードウェア間での自動化レシピの移植**](https://automatika-robotics.github.io/sugarcoat/features/robot_plugins.html) には **ロボットプラグイン** を使用
+- リアルタイムのシステム可視化と制御のために [**ダイナミック Web UI**](https://automatika-robotics.github.io/sugarcoat/features/web_ui.html) を探索
 
 ## **（新機能！）** Sugarcoat Recipes のためのダイナミック Web UI を紹介
 

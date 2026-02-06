@@ -72,4 +72,3 @@ The `ExecuteMethod` service enables runtime invocation of any class method in th
 
 - **Service Name: /{component_name}/execute_method**
 - **Service Type: [automatika_ros_sugar/srv/ExecuteMethod](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ExecuteMethod.srv)**
-

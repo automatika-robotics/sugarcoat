@@ -1,4 +1,4 @@
-# Custom Robot Plugins
+# Universal Robot Plugins
 
 Sugarcoat introduces Robot Plugins to **seamlessly bridge your automation recipes with diverse robot hardware**.
 

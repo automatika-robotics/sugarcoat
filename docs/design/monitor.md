@@ -33,4 +33,3 @@ An Event Trigger
 - Creates Subscribers to all registered Components health status topics
 - Creates clients for all components main services and main action servers
 - Creates service clients to components reconfiguration services to handle actions sent from the Launcher
-

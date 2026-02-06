@@ -42,11 +42,11 @@ The **Dynamic Web UI** automatically generates a fully functional control interf
 - **Responsive Layouts:** Components are organized in adaptive, grid-based layouts for clear visibility.
 - **Extensible Design:** Add new message types or custom widgets through lightweight extensions.
 
-:::{seealso} Check how you can enable the dynamic UI for your recipe [here](./advanced/web_ui.md)
+:::{seealso} Check how you can enable the dynamic UI for your recipe [here](./features/web_ui.md)
 :::
 
 ### Hardware Agnosticism (Robot Plugins)
-Sugarcoat introduces [**Robot Plugins**](./advanced/robot_plugins.md) to seamlessly bridge your automation recipes with diverse robot hardware.
+Sugarcoat introduces [**Robot Plugins**](./features/robot_plugins.md) to seamlessly bridge your automation recipes with diverse robot hardware.
 
 * **No Vendor Lock-in:** Different manufacturers use custom ROS2 interfaces (messages/services). Sugarcoat Plugins act as a translation layer, handling type conversions behind the scenes.
 * **True Portability:** Write your automation logic once using standard types. Switch from a simulation to a physical robot simply by changing the `robot_plugin` configuration—**zero code changes required**.

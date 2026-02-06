@@ -126,11 +126,11 @@ LLMS_TXT_SELECTION = [
     "advanced/use.md",
     "advanced/config.md",
     "advanced/types.md",
-    "advanced/web_ui.md",
+    "features/web_ui.md",
     # 6. Extensibility
     "advanced/create_service.md",
     "advanced/srvs.md",
-    "advanced/robot_plugins.md",
+    "features/robot_plugins.md",
 ]
 
 

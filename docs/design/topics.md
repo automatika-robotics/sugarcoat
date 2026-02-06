@@ -40,4 +40,3 @@ topic_1 = Topic(name='/message', msg_type=String)
 # Method 2: pass the message type as a string corresponding to the class name
 topic_2 = Topic(name='/message', msg_type='String')
 ```
-

@@ -1,4 +1,4 @@
-# Using the Dynamic Web UI
+# Zero-Code Dynamic Web UI
 
 The **Dynamic Web UI** brings an entirely new level of **system visibility**, **control**, and **ease of use** to Sugarcoat Recipes.
 Built with [**FastHTML**](https://www.fastht.ml/) and [**MonsterUI**](https://monsterui.answer.ai/), it **automatically generates a responsive, extensible web interface** for any Sugarcoat recipe — eliminating the need for manual front-end work.
