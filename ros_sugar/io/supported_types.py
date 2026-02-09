@@ -478,7 +478,7 @@ class Path(SupportedType):
     """Path"""
 
     _ros_type = ROSPath
-    callback = callbacks.GenericCallback
+    callback = callbacks.PathCallback
 
     @classmethod
     def convert(cls, output, **_) -> Any:

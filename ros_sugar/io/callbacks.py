@@ -750,6 +750,63 @@ class PoseStampedCallback(PoseCallback):
         return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
 
 
+class PathCallback(GenericCallback):
+    """
+    Ros PoseStamped Callback Handler to get the robot state in 2D
+    """
+
+    def __init__(
+        self,
+        input_topic,
+        node_name: Optional[str] = None,
+    ) -> None:
+        super().__init__(input_topic, node_name)
+
+    def _get_ui_content(self, **_) -> str:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        if not self.msg.poses:
+            return
+
+        # 1. Downsampling (Simple Distance Filter)
+        # Only keep points that are at least 5cm apart from the previous point
+        filtered_points = []
+        last_x, last_y = -999, -999
+        min_sq_dist = 0.05 * 0.05  # 5cm squared
+
+        for pose_stamped in self.msg.poses:
+            x = pose_stamped.pose.position.x
+            y = pose_stamped.pose.position.y
+
+            # Always keep the first point
+            if not filtered_points:
+                filtered_points.extend([x, y])
+                last_x, last_y = x, y
+                continue
+
+            # Check distance
+            dx = x - last_x
+            dy = y - last_y
+            if (dx * dx + dy * dy) > min_sq_dist:
+                filtered_points.extend([x, y])
+                last_x, last_y = x, y
+
+        # Always add the very last point to ensure the path reaches the goal
+        last_pose = self.msg.poses[-1].pose.position
+        if len(filtered_points) >= 2:
+            # Check if the last point we added is different from the actual end
+            lx = filtered_points[-2]
+            ly = filtered_points[-1]
+            if (last_pose.x != lx or last_pose.y != ly):
+                filtered_points.extend([last_pose.x, last_pose.y])
+
+        return {"frame_id": self.frame_id, "data": filtered_points}
+
+
 class OccupancyGridCallback(GenericCallback):
     def __init__(
         self,
