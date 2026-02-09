@@ -353,7 +353,7 @@ class BaseComponentConfig(BaseConfig):
     _lifecycle_state_transition_timeout: float = field(
         default=10.0,
         validator=base_validators.in_range(min_value=1.0, max_value=1e9),
-        alias ="_lifecycle_state_transition_timeout"
+        alias="_lifecycle_state_transition_timeout",
     )  # Component wait time for node to come back online after restart (used to avoid infinite loops). Recommended to use a high value
 
     wait_for_restart_time: float = field(

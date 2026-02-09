@@ -337,7 +337,6 @@ class Action:
         Execute the action.
         Iterates through all parsers to prepare dynamic arguments based on the event (kwargs).
         """
-        # TODO: Use any topic as an input.
         # This now supports topic inputs to be the same as the event topic
         # Create mutable copies of args and kwargs for this specific execution
         call_args = list(self._args)

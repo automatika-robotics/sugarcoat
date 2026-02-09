@@ -2908,10 +2908,11 @@ class BaseComponent(lifecycle.Node):
         if not hasattr(self, "__fallbacks_check_timer"):
             self._fallbacks_check_callback()
 
-        # TODO: Make the sleep duration a parameter?
         # Wait before trying to retrigger failed transition
-        self.get_logger().warning("Retriggering failed transition in 1 sec...")
-        time.sleep(1)
+        self.get_logger().warning(
+            f"Retriggering failed transition in {self.config._lifecycle_state_transition_timeout} sec..."
+        )
+        time.sleep(self.config._lifecycle_state_transition_timeout)
 
         # Attempt retriggering the transition
         if self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_CONFIGURING:
