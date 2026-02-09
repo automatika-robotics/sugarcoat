@@ -218,6 +218,30 @@ body {
     background-color: var(--secondary-color);
 }
 
+.form-input input[type="color"] {
+
+    width: 30%;
+    padding: 0.4rem;
+    cursor: pointer;
+    background-color: transparent;
+}
+
+/* Chrome/Safari/Edge: Remove internal padding and style the swatch */
+.form-input input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.form-input input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 0.4rem;
+}
+
+/* Firefox: Style the swatch */
+.form-input input[type="color"]::-moz-color-swatch {
+    border: none;
+    border-radius: 0.4rem;
+}
+
 /* BACKGROUND GRID */
 .grid-section {
     position: relative;
