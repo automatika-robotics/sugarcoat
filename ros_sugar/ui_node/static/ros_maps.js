@@ -294,13 +294,20 @@ function initSingleMap(container) {
                 mockRos.emit(topicName, mapMessage);
             }
             else if (msgData.op === 'overlay') {
-                updateMapOverlay(container, msgData.id, {
-                    x: msgData.x,
-                    y: msgData.y,
-                    rotation: msgData.theta
-                }, 'red', 'arrow');
+                if (container.mapHeader && (msgData.frame_id != "") && (container.mapHeader.frame_id != msgData.frame_id)) {
+                    // If the map frame_id exists and the point frame_id exists and they are not the same
+                    // -> Skip point display
+                    return;
+                }
+                else {
+                    updateMapOverlay(container, msgData.id, {
+                        x: msgData.x,
+                        y: msgData.y,
+                        rotation: msgData.theta
+                    }, 'red', 'arrow');
 
-                container.mapViewer.scene.update();
+                    container.mapViewer.scene.update();
+                }
             }
         } catch (e) { console.error(e); }
     };

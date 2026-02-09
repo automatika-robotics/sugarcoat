@@ -22,6 +22,7 @@ from ..io import supported_types
 from automatika_ros_sugar.srv import ChangeParameters
 
 from rclpy.logging import get_logger
+from std_msgs.msg import Header
 
 
 @define
@@ -261,6 +262,8 @@ class UINode(BaseComponent):
                 or self.default_websocket_callback
             )
             callback.msg = msg
+            if hasattr(msg, "header") and isinstance(msg.header, Header):
+                callback._frame_id = msg.header.frame_id
             try:
                 ui_content = callback._get_ui_content()
                 payload["payload"] = ui_content

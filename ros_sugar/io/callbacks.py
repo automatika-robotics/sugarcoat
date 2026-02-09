@@ -172,7 +172,6 @@ class GenericCallback:
     def clear_last_msg(self):
         """Clears the last received message on the topic"""
         self.msg = None
-        self._frame_id = None
 
 
 class StdMsgCallback(GenericCallback):
@@ -486,6 +485,15 @@ class OdomCallback(GenericCallback):
         # send position data from ROS message
         return self._process(self.msg)
 
+    def _get_ui_content(self, **_) -> str:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
+
     def _process(self, msg: Odometry) -> np.ndarray:
         """Takes Odometry ROS object and converts it to a numpy array with [x, y, z, heading, speed]
 
@@ -553,6 +561,15 @@ class PointCallback(GenericCallback):
 
         return np.array([self.msg.x, self.msg.y, self.msg.z])
 
+    def _get_ui_content(self, **_) -> str:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"data": self.get_output(clear_last=True)}
+
 
 class PointStampedCallback(GenericCallback):
     """
@@ -577,6 +594,15 @@ class PointStampedCallback(GenericCallback):
             return None
 
         return np.array([self.msg.point.x, self.msg.point.y, self.msg.point.z])
+
+    def _get_ui_content(self, **_) -> str:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
 
 
 class PoseCallback(GenericCallback):
@@ -674,6 +700,15 @@ class PoseCallback(GenericCallback):
         # send position data from ROS message
         return self._process(self.msg)
 
+    def _get_ui_content(self, **_) -> str:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"data": self.get_output(clear_last=True)}
+
 
 class PoseStampedCallback(PoseCallback):
     """
@@ -704,6 +739,15 @@ class PoseStampedCallback(PoseCallback):
 
         # send position data from ROS message
         return self._process(self.msg.pose)
+
+    def _get_ui_content(self, **_) -> str:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
 
 
 class OccupancyGridCallback(GenericCallback):
