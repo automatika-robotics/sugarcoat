@@ -22,8 +22,6 @@ except ModuleNotFoundError as e:
 
 # NOTE: 'hx_post' calls (used in Buttons) are implemented in scripts/ui_node_executable
 
-# TODO: Make all draggable containers re-sizable as well
-
 
 # ---- TASK ELEMENT ----
 class Task:
@@ -269,50 +267,167 @@ def _fullscreen_button(div_id: str):
     )
 
 
-def _map_settings_modal(map_id: str):
+def _map_overlay_settings_panel(map_id: str, element_id: str, overlay_type: str):
+    """Helper method to get a setting panel for one map overlay marker (point or path)
+
+    :param map_id: Map ID
+    :type map_id: str
+    :param element_id: Marker element ID
+    :type element_id: str
+    :param overlay_type: Path or Overlay Point
+    :type overlay_type: str
+
+    :return: Settings panel
+    :rtype: FT
     """
-    Creates a popup dialog to configure Clicked Point settings.
+    # Unique wrapper ID for toggling visibility
+    wrapper_id = f"visuals-{map_id}-{element_id}"
+    # We hide all blocks by default; the script below will show the selected one
+    block_cls = f"visual-settings-block-{map_id} hidden"
+
+    if overlay_type == "path":
+        # === PATH SETTINGS ===
+        # Needs: Color, Line Width, Line Style
+        content = Div(
+            # Path Color
+            LabelInput(
+                label="Path Color",
+                type="color",
+                name=f"color_{element_id}",
+                value="#2ECC71",
+                id=f"picker-{map_id}-{element_id}",
+                cls="form-input space-y-1",
+            ),
+            # Width Slider
+            LabelInput(
+                label="Line Width",
+                name=f"width_{element_id}",
+                type="range",
+                value="3",
+                min="1",
+                max="10",
+                cls="form-input space-y-1",
+            ),
+            # Style Select
+            LabelSelect(
+                Option("Solid", value="solid"),
+                Option("Dashed", value="dashed"),
+                Option("Dots", value="dots"),
+                label="Line Style",
+                name=f"style_{element_id}",
+                cls="form-input space-y-1",
+            ),
+            id=wrapper_id,
+            cls=block_cls,
+        )
+    else:
+        # === OVERLAY/POINT SETTINGS (Matches your snippet) ===
+        # Needs: Shape, Color Picker
+        content = Div(
+            # Color Picker (Hidden by default)
+            LabelInput(
+                label="Select Color",
+                type="color",
+                name=f"color_{element_id}",
+                value="#E83F3F",
+                id=f"picker-{map_id}-{element_id}",
+                cls="form-input space-y-1",
+            ),
+            id=wrapper_id,
+            cls=block_cls,
+        )
+    return content
+
+
+def _map_settings_modal(map_id: str, overlays: Optional[Dict] = None):
     """
+    Creates a popup dialog to configure Clicked Point settings and Visuals.
+    overlays: dict e.g. {'robot_pose': 'overlay', 'global_plan': 'path'}
+    """
+    if overlays is None:
+        overlays = {}
+
+    # 1. Create Dropdown Options
+    id_options = [Option(k, value=k) for k in overlays.keys()]
+
+    # 2. Generate Hidden Settings Blocks for each ID
+    settings_blocks = []
+
+    for oid, otype in overlays.items():
+        settings_blocks.append(
+            _map_overlay_settings_panel(
+                map_id=map_id, element_id=oid, overlay_type=otype
+            )
+        )
+
     return Div(
         Div(
-            H5("Update clicked point topic", cls="cool-title"),
             Form(
-                LabelInput(
-                    label="Topic Name",
-                    name="clicked_point_topic",
-                    value="clicked_point",
-                    placeholder="e.g. /goal_pose",
-                    cls="form-input space-y-2",
+                # --- CLICKED POINT SETTINGS ---
+                Card(
+                    H5("Published Point Settings", cls="cool-title"),
+                    LabelInput(
+                        label="Topic Name",
+                        name="clicked_point_topic",
+                        value="clicked_point",
+                        placeholder="e.g. /goal_pose",
+                        cls="form-input space-y-1",
+                    ),
+                    LabelSelect(
+                        Option("PointStamped", value="PointStamped", selected=True),
+                        Option("Point", value="Point"),
+                        Option("PoseStamped", value="PoseStamped"),
+                        Option("Pose", value="Pose"),
+                        label="Message Type",
+                        name="clicked_point_type",
+                        cls="form-input space-y-1",
+                    ),
+                    cls="space-y-3 mb-4 main-card",
                 ),
-                LabelSelect(
-                    Option("PointStamped", value="PointStamped", selected=True),
-                    Option("Point", value="Point"),
-                    Option("PoseStamped", value="PoseStamped"),
-                    Option("Pose", value="Pose"),
-                    label="Message Type",
-                    name="clicked_point_type",
-                    cls="form-input space-y-2",
+                Card(
+                    H5("Output Visuals", cls="cool-title"),
+                    # 1. The ID Selector
+                    LabelSelect(
+                        *id_options,
+                        label="Topic Name",
+                        placeholder="Select output topic...",
+                        name="selected_visual_id",
+                        cls="form-input space-y-1",
+                        id=f"visual-selector-{map_id}",
+                    ),
+                    # 2. Settings Container
+                    Div(
+                        *settings_blocks,
+                        cls="p-3 min-h-[160px]",
+                    ),
+                    cls="space-y-3 main-card",
                 ),
-                Button(
-                    "Update",
-                    cls="primary-button",
-                    onclick=f"saveMapSettings('{map_id}')",
-                    type="button",
+                # --- SAVE BUTTON ---
+                Div(
+                    Button(
+                        "Save Settings",
+                        cls="primary-button w-full justify-center",
+                        onclick=f"saveMapSettings('{map_id}')",
+                        type="button",
+                    ),
+                    cls="pt-4",
                 ),
                 id=f"{map_id}-settings-form",
                 cls="flex flex-col space-y-2",
             ),
-            cls="modal-box p-4 space-y-2",
+            cls="modal-box p-5 space-y-4 max-w-sm",
             onclick="event.stopPropagation()",
         ),
         id=f"{map_id}-settings-modal",
-        cls="custom-overlay",
-        # Logic: Clicking the dark background (the overlay) closes itself
+        cls="custom-overlay backdrop-blur-sm",
+        # 1. Initialize Observer (Runs once)
+        # 2. Force Initial Update (Runs every time mouse enters to ensure UI is in sync)
+        onmouseenter=f"initVisualSettingsObserver('{map_id}'); updateVisualSettingsVisibility(document.getElementById('visual-selector-{map_id}'), '{map_id}')",
         onclick="this.style.display='none'",
     )
 
 
-def _map_control_buttons(map_id: str):
+def _map_control_buttons(map_id: str, map_output_markers: Optional[Dict] = None):
     """
     Overlay buttons for Zoom In/Out and Publish Point.
     """
@@ -343,7 +458,6 @@ def _map_control_buttons(map_id: str):
             uk_tooltip="title: Publish Clicked Point; pos: left",
         ),
         # Settings (Gear Icon)
-        # TODO: Move settings button to the far end
         Button(
             UkIcon("settings"),
             cls="glass-icon-btn",
@@ -353,7 +467,7 @@ def _map_control_buttons(map_id: str):
             uk_tooltip="title: Settings; pos: left",
         ),
         # THE SETTINGS MODAL (Hidden by default, popped up by openMapSettings)
-        _map_settings_modal(map_id),
+        _map_settings_modal(map_id, map_output_markers),
         cls="flex flex-row space-x-2 no-drag",
     )
 
@@ -711,12 +825,12 @@ def _out_image_element(topic_name: str, **_):
     )
 
 
-def _out_map_element(topic_name: str, **_):
+def _out_map_element(topic_name: str, map_output_markers: Optional[Dict] = None, **_):
     """FastHTML element for output OccupancyGrid typ"""
     return (
         Grid(
             DivHStacked(
-                _map_control_buttons(topic_name),
+                _map_control_buttons(topic_name, map_output_markers),
             ),
             Div(
                 id=topic_name,
@@ -1120,7 +1234,7 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
 
 
 # ---- OUTPUTS CARD ELEMENTS ----
-def output_topic_card(topic_name: str, topic_type: str, column_class: str = "") -> FT:
+def output_topic_card(topic_name: str, topic_type: str, column_class: str = "", map_output_markers: Optional[Dict] = None) -> FT:
     """Creates a UI element for an output topic
 
     :param topic_name: Topic name
@@ -1131,7 +1245,7 @@ def output_topic_card(topic_name: str, topic_type: str, column_class: str = "") 
     """
     return Card(
         DivHStacked(H4(topic_name), _fullscreen_button(f"card-{topic_name}")),
-        _OUTPUT_ELEMENTS[topic_type](topic_name),
+        _OUTPUT_ELEMENTS[topic_type](topic_name, map_output_markers=map_output_markers),
         cls=f"m-2 {column_class} inner-main-card",
         id=f"card-{topic_name}",
     )

@@ -19,15 +19,23 @@ import numpy as np
 from rosidl_runtime_py.convert import message_to_ordereddict
 
 
-def _point_marker_on_map(payload, **_):
+def _marker_on_map(payload, **_):
     """Helper callback to parse a map Maker data from point-like message"""
     content = payload.get("payload", None)
     if content is None:
         return
     msg_type = payload.get("type")
     try:
+        if msg_type == "Path":
+            # Content data will have the filtered path points
+            return {
+                "op": "path",
+                "id": payload.get("topic", ""),
+                "frame_id": content.get("frame_id", ""),
+                "points": content.get("data"),
+            }
         if msg_type in ["Point", "PointStamped"]:
-            # Content will have an array of [x, y, z]
+            # Content data will have an array of [x, y, z]
             return {
                 "op": "overlay",
                 "id": payload.get("topic", ""),
@@ -36,7 +44,7 @@ def _point_marker_on_map(payload, **_):
                 "y": content.get("data")[1],
             }
         if msg_type in ["Pose", "PoseStamped", "Odometry"]:
-            # Content will have an array of [x, y, z, heading] for Pose, PoseStamped
+            # Content data will have an array of [x, y, z, heading] for Pose, PoseStamped
             # and [x, y, z, heading] for Odometry
             return {
                 "op": "overlay",
@@ -245,7 +253,7 @@ def main():
             # --- CASE 1: Incoming marker data ----
             # If the incoming data is for a marker
             if payload.get("type", None) != "OccupancyGrid":
-                response = _point_marker_on_map(payload)
+                response = _marker_on_map(payload)
                 if response:
                     await ws.send_json(response)
                 return
@@ -284,7 +292,7 @@ def main():
         ros_node.attach_websocket_callback(map_callback, map_topic_type)
 
         # Add all point outputs to the map websocket callback
-        for _, topic_type in fh.get_all_map_points_outputs():
+        for _, topic_type in fh.get_all_map_overlay_outputs():
             ros_node.attach_websocket_callback(map_callback, topic_type)
 
     async def on_conn_action(_, send, action_name: str):

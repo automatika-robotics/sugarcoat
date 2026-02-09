@@ -161,18 +161,24 @@ class FHApp:
             )
         ]
 
-    def get_all_map_points_outputs(self) -> List[Tuple]:
+    def get_all_map_overlay_outputs(self) -> List[Tuple]:
         """Return all topics that should connect to the map websocket for displaying on the map
         This includes: (Point, PointStamped, Pose, PoseStamped, Odometry)"""
-        # If a map element is present -> Get all point-like outputs to output as map markers
-        # TODO: Handle paths display on maps
+        # If a map element is present -> Get all point-like and path outputs to output as map markers
         if self.get_all_map_outputs():
             return [
                 (o.name, o.msg_type.__name__)
                 for o in self.out_topics
                 if (
                     o.msg_type.__name__
-                    in ["Point", "PointStamped", "Pose", "PoseStamped", "Odometry"]
+                    in [
+                        "Point",
+                        "PointStamped",
+                        "Pose",
+                        "PoseStamped",
+                        "Odometry",
+                        "Path",
+                    ]
                 )
             ]
 
@@ -233,10 +239,18 @@ class FHApp:
             number_of_outputs=len(displayed_outputs)
         )
 
+        map_outputs = {
+            key: "path" if value == "Path" else "overlay"
+            for (key, value) in self.get_all_map_overlay_outputs()
+        }
+
         for idx, out in enumerate(displayed_outputs):
             output_divs.append(
                 elements.output_topic_card(
-                    out.name, out.msg_type.__name__, outputs_columns_cls[idx]
+                    out.name,
+                    out.msg_type.__name__,
+                    outputs_columns_cls[idx],
+                    map_output_markers=map_outputs,
                 )
             )
         return outputs_container(output_grid(*output_divs, id=grid_id))

@@ -170,37 +170,148 @@ window.saveMapSettings = function (topicName) {
     const modal = document.getElementById(`${topicName}-settings-modal`);
     const form = document.getElementById(`${topicName}-settings-form`);
 
-    // 1. Read & Save Values to Global State
     if (form) {
-        // A. Get Topic (Standard Input)
-        const tInput = form.querySelector('input[name="clicked_point_topic"]');
+        // 1. Initialize State
+        if (!mapInteractionState[topicName]) mapInteractionState[topicName] = {};
 
-        // B. Get Type (Custom Component)
-        // CRITICAL FIX: Explicitly select the 'input' tag to bypass the wrapper
-        const mInput = form.querySelector('input[name="clicked_point_type"]');
+        // 2. Save Publishing Settings
+        const pubTopic = form.querySelector('[name="clicked_point_topic"]').value;
 
-        // Fallback checks if the specific input wasn't found (e.g., if structure changes)
+        // Handle Custom Select for Message Type
         let typeValue = 'PointStamped';
+        const mInput = form.querySelector('input[name="clicked_point_type"]');
         if (mInput) {
             typeValue = mInput.value;
         } else {
-            // Try getting it from the select if the input is missing
             const sInput = form.querySelector('select[name="clicked_point_type"]');
             if (sInput) typeValue = sInput.value;
         }
 
-        if (!mapInteractionState[topicName]) mapInteractionState[topicName] = {};
+        mapInteractionState[topicName].settings = { topic: pubTopic, type: typeValue };
 
-        mapInteractionState[topicName].settings = {
-            topic: tInput ? tInput.value : 'clicked_point',
-            type: typeValue
-        };
+        // 3. Save Visual Settings
+        if (!mapInteractionState[topicName].visuals) mapInteractionState[topicName].visuals = {};
 
-        console.log(`[${topicName}] Settings Saved:`, mapInteractionState[topicName].settings);
+        // 1. Get the Wrapper
+        const wrapper = document.getElementById(`visual-selector-${topicName}`);
+
+        // 2. Get the Native Select inside the wrapper
+        const nativeSelect = wrapper ? wrapper.querySelector('select') : null;
+
+        if (nativeSelect && nativeSelect.options) {
+            const formData = new FormData(form);
+
+            Array.from(nativeSelect.options).forEach(opt => {
+                const oid = opt.value;
+                const visualConfig = {};
+
+                // We use 'width' to detect if it's a path because ranges always have a value.
+                // 'style' might be an empty string if unselected, which evaluates to false in if(style).
+                const width = formData.get(`width_${oid}`);
+                const style = formData.get(`style_${oid}`);
+                const color = formData.get(`color_${oid}`);
+
+                // Determine Type based on which fields exist in the form data
+                // formData.get returns null if the field doesn't exist for that ID
+                if (width !== null) {
+                    // It's a Path
+                    visualConfig.type = 'path';
+                    visualConfig.style = style || 'solid'; // Default to solid if empty
+                    visualConfig.width = width;
+                    visualConfig.color = color;
+                } else {
+                    // It's a Point/Overlay
+                    visualConfig.type = 'overlay';
+                    visualConfig.color = color;
+                }
+
+                if (visualConfig.type) {
+                    mapInteractionState[topicName].visuals[oid] = visualConfig;
+                }
+            });
+        }
+
+        // 4. Force Redraw
+        const container = document.getElementById(topicName);
+        if (container && container.overlays) {
+            Object.values(container.overlays).forEach(m => m.graphics.clear());
+        }
+        if (container && container.paths) {
+            Object.values(container.paths).forEach(p => p.graphics.clear());
+        }
     }
 
-    // 2. Hide Modal
     if (modal) modal.style.display = 'none';
+};
+
+
+/**
+ * Toggles the visibility of markers setting blocks in the map settings modal.
+ * * @param {string} mapId - The ID of the map (e.g. 'map_1')
+ */
+window.updateVisualSettingsVisibility = function (target, mapId) {
+    // 1. RETRIEVE VALUE
+    // Since 'target' is the custom <uk-select> wrapper (LabelSelect), we look inside it.
+    // We try the hidden input first (most reliable), then fallback to direct .value
+    let selectedId;
+
+    if (!target) return;
+
+    const hiddenInput = target.querySelector('input[name="selected_visual_id"]');
+    if (hiddenInput) {
+        selectedId = hiddenInput.value;
+    } else {
+        // Fallback: Try getting .value directly from the custom element
+        selectedId = target.value;
+    }
+
+
+    if (!selectedId) return;
+
+    // Scope the query to the specific modal if possible, or use the unique map ID classes
+    const blocks = document.querySelectorAll(`.visual-settings-block-${mapId}`);
+
+    blocks.forEach(el => {
+        const targetId = `visuals-${mapId}-${selectedId}`;
+
+        if (el.id === targetId) {
+            el.classList.remove('hidden');
+            el.style.display = 'block';
+        } else {
+            el.classList.add('hidden');
+            el.style.display = 'none';
+        }
+    });
+};
+
+
+/**
+ * Sets up a watcher on the selector to trigger updates automatically.
+ * Call this ONCE when the modal opens.
+ */
+window.initVisualSettingsObserver = function (mapId) {
+    const selector = document.getElementById(`visual-selector-${mapId}`);
+    if (!selector || selector._hasObserver) return; // Prevent double binding
+
+    // 1. Find the source of truth (the hidden input)
+    const hiddenInput = selector.querySelector('input[name="selected_visual_id"]');
+    if (!hiddenInput) return;
+
+    // 2. Create an observer instance
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'value') {
+                // Value changed! Trigger the update.
+                updateVisualSettingsVisibility(selector, mapId);
+            }
+        });
+    });
+
+    // 3. Start observing the hidden input for 'value' attribute changes
+    observer.observe(hiddenInput, { attributes: true, attributeFilter: ['value'] });
+
+    // Mark as observed so we don't attach multiple times
+    selector._hasObserver = true;
 };
 
 function initSingleMap(container) {
@@ -293,6 +404,7 @@ function initSingleMap(container) {
                 mapMessage.data = bytes;
                 mockRos.emit(topicName, mapMessage);
             }
+            // --- Handle Points ---
             else if (msgData.op === 'overlay') {
                 if (container.mapHeader && (msgData.frame_id != "") && (container.mapHeader.frame_id != msgData.frame_id)) {
                     // If the map frame_id exists and the point frame_id exists and they are not the same
@@ -309,6 +421,18 @@ function initSingleMap(container) {
                     container.mapViewer.scene.update();
                 }
             }
+            // --- Handle Path ---
+            else if (msgData.op === 'path') {
+                if (container.mapHeader && (msgData.frame_id != "") && (container.mapHeader.frame_id != msgData.frame_id)) {
+                    // If the map frame_id exists and the point frame_id exists and they are not the same
+                    // -> Skip point display
+                    return;
+                }
+                else {
+                    updateMapPath(container, msgData.id, msgData.points);
+                    container.mapViewer.scene.update();
+                }
+            }
         } catch (e) { console.error(e); }
     };
 
@@ -319,33 +443,62 @@ function initSingleMap(container) {
 
 
 /**
- * Generates a consistent color from a string ID.
- * Uses a palette of 10 high-contrast colors suitable for dark/light maps.
+ * Helper: Safely retrieves the visual settings object for a specific ID on a specific Map.
  */
-function getColorForId(id) {
-    const palette = [
-        '#E83F3F', // Brand Red
-        '#2ECC71', // Emerald Green
-        '#3498DB', // Bright Blue
-        '#F1C40F', // Vivid Yellow
-        '#9B59B6', // Amethyst Purple
-        '#E67E22', // Carrot Orange
-        '#1ABC9C', // Turquoise
-        '#FF00FF', // Magenta
-        '#BFFF00', // Lime
-        '#FF69B4'  // Hot Pink
-    ];
+function getVisualSettings(mapId, objectId) {
+    if (mapId && mapInteractionState[mapId] && mapInteractionState[mapId].visuals) {
+        return mapInteractionState[mapId].visuals[objectId];
+    }
+    return null;
+}
 
-    // Simple hash function to convert string -> integer
-    let hash = 0;
-    for (let i = 0; i < id.length; i++) {
-        hash = id.charCodeAt(i) + ((hash << 5) - hash);
+/**
+ * Helper: Gets the color for a map marker object from the saved map settings
+ * If the objectId is not found in the settings -> Gets a random color
+ */
+function getColorForId(mapId, objectId) {
+    const settings = getVisualSettings(mapId, objectId);
+    // If settings exist, check if we should use the fixed color
+    if (settings && settings.color) {
+        return settings.color;
     }
 
-    // Use absolute value of hash modulo palette length
+    // Fallback: Generate consistent Auto Color from ID
+    const palette = [
+        '#E83F3F', '#2ECC71', '#3498DB', '#F1C40F', '#9B59B6',
+        '#E67E22', '#1ABC9C', '#FF00FF', '#BFFF00', '#FF69B4'
+    ];
+
+    let hash = 0;
+    for (let i = 0; i < objectId.length; i++) {
+        hash = objectId.charCodeAt(i) + ((hash << 5) - hash);
+    }
     const index = Math.abs(hash) % palette.length;
     return palette[index];
 }
+
+
+/**
+ * Helper: Gets the line style for a path marker on the map
+ * Returns: { width: number, dash: Array|null }
+ */
+function getPathStyleForId(mapId, objectId) {
+    const settings = getVisualSettings(mapId, objectId);
+
+    // Default Values
+    let width = 3;
+    let dash = null; // Solid line
+
+    if (settings) {
+        if (settings.width) width = parseInt(settings.width, 10);
+
+        if (settings.style === 'dashed') dash = [10, 5]; // 10px line, 5px gap
+        else if (settings.style === 'dots') dash = [2, 4]; // 2px dot, 4px gap
+    }
+
+    return { width, dash };
+}
+
 
 
 /**
@@ -374,7 +527,9 @@ function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
     }
 
     // --- COLOR & HEADING ---
-    const assignedColor = getColorForId(id);
+    // We use container.id (the map topic) to look up the settings
+    const assignedColor = getColorForId(container.id, id);
+
     let showHeading = false;
     let rotationDegrees = 0;
 
@@ -492,6 +647,87 @@ function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
     marker.y = pixelCoords.y;
 
     marker.visible = true;
+}
+
+
+/**
+ * Helper: Renders a path (trajectory) on the map efficiently.
+ * Expects 'points' to be a flat array [x1, y1, x2, y2, ...]
+ */
+function updateMapPath(container, id, points) {
+    // 1. Safety Checks
+    if (!container.mapGridClient || !container.mapGridClient.currentGrid || !container.overlayLayer) return;
+    if (!points || points.length < 4) return; // Need at least 2 points (4 coords) to draw a line
+
+    // --- FETCH STYLES ---
+    const assignedColor = getColorForId(container.id, id);
+    const styleSettings = getPathStyleForId(container.id, id)
+
+    // 2. Get or Create Path Shape
+    if (!container.paths) container.paths = {};
+    let pathShape = container.paths[id];
+
+    if (!pathShape) {
+        pathShape = new createjs.Shape();
+
+        // Add to overlay layer (Draw paths below markers?)
+        // If you want paths BELOW the robot marker, use 'addChildAt(pathShape, 0)'
+        container.overlayLayer.addChildAt(pathShape, 0);
+        container.paths[id] = pathShape;
+    }
+
+    // 3. Clear old graphics
+    pathShape.graphics.clear();
+
+    // Calculate Stroke Width (Meters -> Pixels)
+    const info = container.mapInfo;
+    let strokeWidthPx = 2;
+    if (info) {
+        // Map user setting (1-10) to physical size (e.g. 5cm to 50cm)
+        // Default (3) becomes ~15cm wide
+        const baseMeters = styleSettings.width * 0.05;
+        strokeWidthPx = Math.max(baseMeters / info.resolution, 1);
+    }
+
+    // Apply Styles
+    pathShape.graphics.setStrokeStyle(strokeWidthPx, "round", "round");
+
+    // Apply Dash Pattern
+    if (styleSettings.dash) {
+        // Scale dashes by stroke width for consistent look
+        const scaledDash = styleSettings.dash.map(x => x * strokeWidthPx);
+        pathShape.graphics.setStrokeDash(scaledDash);
+    } else {
+        pathShape.graphics.setStrokeDash(null);
+    }
+
+    // 5. Start Drawing
+    pathShape.graphics.beginStroke(assignedColor);
+
+
+    // 6. Loop through points and convert to Grid Pixels
+
+    // Transform First Point
+    let p0 = transformRosToGridPixels(container, points[0], points[1]);
+    if (!p0) return; // Map info likely missing
+
+    pathShape.graphics.moveTo(p0.x, p0.y);
+
+    for (let i = 2; i < points.length; i += 2) {
+        const rosX = points[i];
+        const rosY = points[i + 1];
+
+        // calling the helper is cleaner and usually fast enough for <1000 points.
+        const px = transformRosToGridPixels(container, rosX, rosY);
+
+        if (px) {
+            pathShape.graphics.lineTo(px.x, px.y);
+        }
+    }
+
+    pathShape.graphics.endStroke();
+
+    pathShape.visible = true;
 }
 
 
