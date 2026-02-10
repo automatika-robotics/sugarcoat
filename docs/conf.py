@@ -24,6 +24,7 @@ extensions = [
     "myst_parser",  # install with `pip install myst-parser`
     "sphinx_sitemap",  # install with `pip install sphinx-sitemap`
     "sphinxcontrib.youtube",
+    "sphinx_design",
 ]
 
 autodoc2_packages = [
@@ -68,7 +69,10 @@ myst_heading_anchors = 7  # to remove cross reference errors with md
 
 html_baseurl = "https://automatika-robotics.github.io/sugarcoat/"
 language = "en"
-html_theme = "sphinx_book_theme"  # install with `pip install sphinx-book-theme`
+
+
+html_theme = "shibuya"  # install with `pip install shibuya`
+
 html_static_path = ["_static"]
 html_css_files = [
     "custom.css",
@@ -76,34 +80,18 @@ html_css_files = [
 html_favicon = "_static/favicon.png"
 
 html_theme_options = {
-    "logo": {
-        "image_light": "_static/SUGARCOAT_LIGHT.png",
-        "image_dark": "_static/SUGARCOAT_DARK.png",
-    },
-    "icon_links": [
-        {
-            "name": "Automatika",
-            "url": "https://automatikarobotics.com/",
-            "icon": "_static/automatika-logo.png",
-            "type": "local",
-        },
-        {
-            "name": "GitHub",
-            "url": "https://github.com/automatika-robotics/sugarcoat",
-            "icon": "fa-brands fa-github",
-        },
-        {
-            "name": "Discord",
-            "url": "https://discord.gg/B9ZU6qjzND",
-            "icon": "fa-brands fa-discord",
-        },
+    "light_logo": "_static/SUGARCOAT_LIGHT.png",
+    "dark_logo": "_static/SUGARCOAT_DARK.png",
+    "accent_color": "indigo",
+    "twitter_url": "https://x.com/__automatika__",
+    "github_url": "https://github.com/automatika-robotics/sugarcoat",
+    "discord_url": "https://discord.gg/B9ZU6qjzND",
+    "globaltoc_expand_depth": 1,
+    "open_in_perplexity": True,
+    # Navigation Links (Top bar)
+    "nav_links": [
+        {"title": "Automatika Robotics", "url": "https://automatikarobotics.com/"},
     ],
-    "path_to_docs": "docs",
-    "repository_url": "https://github.com/automatika-robotics/sugarcoat",
-    "repository_branch": "main",
-    "use_source_button": True,
-    "use_issues_button": True,
-    "use_edit_page_button": True,
 }
 
 LLMS_TXT_SELECTION = [

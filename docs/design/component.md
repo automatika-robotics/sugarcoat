@@ -14,16 +14,15 @@ While a standard ROS2 node requires you to manually handle parameter callbacks, 
 
 - **Type-Safe Config**: Configurations are validated using `attrs` models, not loose dictionaries.
 
-
 ```{figure} /_static/images/diagrams/component_dark.png
-:class: only-dark
+:class: dark-only
 :alt: component
 :align: center
 
-Component Structure
 ```
+
 ```{figure} /_static/images/diagrams/component_light.png
-:class: only-light
+:class: light-only
 :alt: component
 :align: center
 
@@ -102,7 +101,6 @@ comp = BaseComponent(component_name='test', inputs=[map_topic, image_topic], out
 :::{seealso} Check a list of the available callbacks/publishers for Sugarcoat supported message types [here](../advanced/types.md)
 :::
 
-
 ## Health Status
 
 A Sugarcoat component does more than just run; it actively reports its operational state. Instead of simply crashing or hanging when an error occurs, the Health Status allows the component to explicitly declare what went wrong (e.g., "Algorithm Convergence Failed," "Camera Driver Disconnected," or "Missing Input Topic").
@@ -118,6 +116,7 @@ This status is both:
 ## Fallbacks (Self-Healing)
 
 Fallbacks are the "immune system" of your component. They define a set of recovery actions that are automatically triggered when the Health Status reports a failure. Instead of writing complex try/catch/restart logic inside your main loops, you can declaratively configure strategies such as:
+
 - Retry: Re-attempt the operation $N$ times.
 - Reconfigure: specific parameters to loosen constraints.
 - Restart: Reboot the specific lifecycle node (without killing the whole process).
@@ -125,6 +124,7 @@ Fallbacks are the "immune system" of your component. They define a set of recove
 > Learn more on how to configure recovery behaviors [here](fallbacks.md).
 
 ## Best Practices
+
 - **Keep __init__ Light**: Do not load heavy resources or start threads in __init__. Use custom_on_configure or custom_on_activate. This ensures your node starts up instantly and can be introspected before it starts doing heavy work.
 
 - **Always Report Status**: Make it a habit to call `self.health_status.set_healthy()` at the end of a successful _execution_step.

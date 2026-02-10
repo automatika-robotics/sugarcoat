@@ -5,9 +5,9 @@ Built with modern software engineering principles, it transforms how developers 
 
 Whether you're building scalable robotic systems, deploying distributed edge applications, or iterating fast on prototypes, Sugarcoat gives you the tools to move faster, write cleaner code, and ship more reliable robots with automatic, real-time visualization and control.
 
-## 🚀 Advantages of Using Sugarcoat
+## {material-regular}`rocket_launch;1.5em;sd-text-primary` Advantages of Using Sugarcoat
 
-### Intuitive Python API with Event-Driven Architecture
+### 1. Intuitive Python API with Event-Driven Architecture
 
 No need to write verbose callbacks just to check a sensor value. Sugarcoat allows you to define complex system behaviors using natural Python expressions to execute data-driven actions
 
@@ -20,7 +20,7 @@ No need to write verbose callbacks just to check a sensor value. Sugarcoat allow
     ```
 
 
-### ROS2 Nodes Reimagined as Components
+### 2. ROS2 Nodes Reimagined as Components
 
 Sugarcoat wraps standard ROS2 nodes into powerful **Components** that come pre-equipped with:
 
@@ -32,7 +32,7 @@ Sugarcoat wraps standard ROS2 nodes into powerful **Components** that come pre-e
 
 With Sugarcoat Components you can forget about boilerplate code and focus on logic implementation, not plumbing.
 
-### Zero-Code Dynamic Web UI
+### 3. Zero-Code Dynamic Web UI
 
 The **Dynamic Web UI** automatically generates a fully functional control interface for your entire system — **no front-end coding required.**. This feature instantly transforms your complex, multinode ROS2 system into a **monitorable and configurable web application**.
 
@@ -45,7 +45,7 @@ The **Dynamic Web UI** automatically generates a fully functional control interf
 :::{seealso} Check how you can enable the dynamic UI for your recipe [here](./features/web_ui.md)
 :::
 
-### Hardware Agnosticism (Robot Plugins)
+### 4. Hardware Agnosticism (Robot Plugins)
 Sugarcoat introduces [**Robot Plugins**](./features/robot_plugins.md) to seamlessly bridge your automation recipes with diverse robot hardware.
 
 * **No Vendor Lock-in:** Different manufacturers use custom ROS2 interfaces (messages/services). Sugarcoat Plugins act as a translation layer, handling type conversions behind the scenes.
@@ -53,7 +53,7 @@ Sugarcoat introduces [**Robot Plugins**](./features/robot_plugins.md) to seamles
 
 ## Standard ROS2 vs. Sugarcoat
 
-### 🔧 Code, Architecture and Developer Experience
+### {material-regular}`build;1.5em;sd-text-primary` Code, Architecture and Developer Experience
 
 | **Standard ROS2 Pattern** | **With Sugarcoat** |
 | :--- | :--- |
@@ -62,7 +62,7 @@ Sugarcoat introduces [**Robot Plugins**](./features/robot_plugins.md) to seamles
 | **Steep learning curve**<br>Limited examples in the docs                                                   | <span class="text-red">**Intuitive Pythonic interface**</span><br>Full developer docs, tutorials, and API references.                                       |
 
 
-### ⚙️ Runtime and Reliability
+### {material-regular}`settings;1.5em;sd-text-primary` Runtime and Reliability
 
 | **Standard ROS2 Pattern** | **With Sugarcoat** |
 | :--- | :--- |

@@ -12,6 +12,7 @@ title: Sugarcoat Documentation
 :caption: Overview
 
 overview
+install
 why
 ```
 

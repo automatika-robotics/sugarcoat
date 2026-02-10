@@ -1,105 +1,94 @@
-<div>
-  <img src="_static/SUGARCOAT_LIGHT.png" class="only-light" />
-  <img src="_static/SUGARCOAT_DARK.png" class="only-dark" />
-</div>
-<br>
-
-# Sugarcoat 🍬
+---
+html_theme.sidebar_secondary.remove: true
+---
 
 
-Sugarcoat 🍬 provides a whole lot of syntactic sugar for creating multi-node ROS2 event-driven systems and management using an intuitive Python API.
+# Sugarcoat
 
-- Discover the [**advantages of using Sugarcoat**](why.md) for creating ROS2 packages
-- Learn more about the [**design concepts**](design/concepts_overview.md) in Sugarcoat
-- Learn how to [**create your own ROS2 package**](advanced/use.md) using Sugarcoat
-- [**Port your automation recipes across different hardware**](features/robot_plugins.md) using **Robot Plugins**
-- Explore the [**Dynamic Web UI**](./features/web_ui.md) for real-time system visualization and control
+Event-driven *ROS2* systems using an intuitive Python API
+
+  <p style="font-size: 1.1em; opacity: 0.8;">
+    Sugarcoat is built for ROS2 developers who want to create robust, event-driven systems with multiple nodes that are easy to use and can be configured and started with an intuitive python API. It provides primitives for writing ROS2 nodes and events/actions which can start/stop/modify the nodes, in the spirit of event driven software standard. Sugarcoat is also a replacement for the ROS Launch API.
+  </p>
+
+  [Get Started](advanced/use.md) • [View on GitHub](https://github.com/automatika-robotics/sugarcoat)
 
 
-## Overview
+<br/>
 
-_Sugarcoat_ is built for ROS2 developers who want to create robust, event-driven systems with multiple nodes that are easy to use and can be configured and started with an intuitive python API. It provides primitives for writing ROS nodes and events/actions which can start/stop/modify the nodes, in the spirit of _event driven software standard_. Sugarcoat is also a replacement for the ROS Launch API.
+::::{grid} 1 2 2 3
+:gutter: 2
 
-A [Component](./design/component.md) is the main execution unit in Sugarcoat, each component is configured with [Inputs/Outputs](./design/topics.md) and [Fallback](./design/fallbacks.md) behaviors. Additionally, each component updates its own [Health Status](./design/status.md), to keep track of the well/mal functioning of the component. Components can be handled and reconfigured dynamically at runtime using [Events](./design/events.md) and [Actions](./design/actions.md). Events, Actions and Components are passed to the [Launcher](./design/launcher.md) which runs the set of components as using multi-threaded or multi-process execution. The Launcher also uses an internal [Monitor](./design/monitor.md) to keep track of the components and monitor events.
+:::{grid-item-card} {material-regular}`download;1.5em;sd-text-primary` Installation
+:link: install
+:link-type: doc
 
-```{figure} /_static/images/diagrams/component_dark.png
-:class: only-dark
-:alt: component
-:align: center
+Get Sugarcoat running on your system.
+:::
 
-Component Structure
-```
+:::{grid-item-card} {material-regular}`bolt;1.5em;sd-text-primary` Why Sugarcoat?
+:link: why
+:link-type: doc
 
-```{figure} /_static/images/diagrams/component_light.png
-:class: only-light
-:alt: component
-:align: center
+Discover the advantages of using Sugarcoat over standard ROS2 boilerplate.
+:::
 
-Component Structure
-```
+:::{grid-item-card} {material-regular}`extension;1.5em;sd-text-primary` Design Concepts
+:link: design/concepts_overview
+:link-type: doc
 
-```{figure} /_static/images/diagrams/multi_threaded_dark.png
-:class: only-dark
-:alt: multi-threaded
-:align: center
+Learn about Components, Launchers, and the architecture behind the scenes.
+:::
 
-Multi-threaded execution
-```
+:::{grid-item-card} {material-regular}`rocket_launch;1.5em;sd-text-primary` Create a Package
+:link: advanced/use
+:link-type: doc
 
-```{figure} /_static/images/diagrams/multi_threaded_light.png
-:class: only-light
-:alt: multi-threaded
-:align: center
+Step-by-step guide to creating your own ROS2 package using Sugarcoat.
+:::
 
-Multi-threaded execution
-```
+:::{grid-item-card} {material-regular}`power;1.5em;sd-text-primary` Robot Plugins
+:link: features/robot_plugins
+:link-type: doc
 
-```{figure} /_static/images/diagrams/multi_process_dark.png
-:class: only-dark
-:alt: multi-process
-:align: center
+Port your automation recipes across different hardware seamlessly.
+:::
 
-Multi-process execution
-```
+:::{grid-item-card} {material-regular}`desktop_windows;1.5em;sd-text-primary` Web UI
+:link: features/web_ui
+:link-type: doc
 
-```{figure} /_static/images/diagrams/multi_process_light.png
-:class: only-light
-:alt: multi-process
-:align: center
+Explore the Dynamic Web UI for real-time visualization and control.
+:::
 
-Multi-process execution
-```
 
-## Packages created using Sugarcoat
+::::
 
-- [**Kompass**](https://automatikarobotics.com/kompass/): a framework for building robust and comprehensive event-driven navigation stacks using an easy-to-use and intuitive Python API
-- [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/): a fully-loaded framework for creating interactive embodied agents that can understand, remember, and act upon contextual information from their environment.
+## Ecosystem
 
-## Installation
+Frameworks built using the Sugarcoat standard:
 
-For ROS versions >= _humble_, you can install Sugarcoat with your package manager. For example on Ubuntu:
+::::{grid} 1 1 2 2
+:gutter: 3
 
-`sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
+:::{grid-item-card} <span class="text-red-strong">Kompass</span>
+:link: https://automatikarobotics.com/kompass/
+:class-card: sugar-card
 
-Alternatively, grab your favorite deb package from the [release page](https://github.com/automatika-robotics/sugarcoat/releases) and install it as follows:
+A framework for building robust and comprehensive event-driven navigation stacks.
+:::
 
-`sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
+:::{grid-item-card}  <span class="text-red-strong">EmbodiedAgents</span>
+:link: https://automatika-robotics.github.io/embodied-agents/
+:class-card: sugar-card
 
-If the attrs version from your package manager is < 23.2, install it using pip as follows:
+A fully-loaded framework for creating interactive embodied agents that can think, understand and act.
+:::
+::::
 
-`pip install 'attrs>=23.2.0'`
 
-## Building from source
-
-```shell
-mkdir -p ros-sugar-ws/src
-cd ros-sugar-ws/src
-git clone https://github.com/automatika-robotics/sugarcoat && cd ..
-pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy setproctitle pyyaml toml
-colcon build
-source install/setup.bash
-```
 
 ## Contributions
 
 Sugarcoat has been developed in collaboration between [Automatika Robotics](https://automatikarobotics.com/) and [Inria](https://inria.fr/). Contributions from the community are most welcome.
+

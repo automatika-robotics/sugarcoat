@@ -11,23 +11,42 @@ Monitor is a ROS2 Node (not Lifecycle) responsible of monitoring the status of t
 - Creates Subscribers to registered Events. The Monitor is configured to declare an InternalEvent back to the Launcher so the corresponding Action can be executed (see source implementation in launch_actions.py)
 
 
-<!-- ![Monitoring events](../_static/images/diagrams/events_actions_config_light.png)
-![An Event Trigger](../_static/images/diagrams/events_actions_exec_light.png) -->
+```{figure} /_static/images/diagrams/events_actions_config_dark.png
+:class: dark-only
+:alt: Monitoring events diagram
+:align: center
+:scale: 70
 
-:::{figure-md} fig-monitor_event_config
+```
 
-<img src="../_static/images/diagrams/events_actions_config_light.png" alt="Monitoring events" width="400px">
+```{figure} /_static/images/diagrams/events_actions_config_light.png
+:class: light-only
+:alt: Monitoring events diagram
+:align: center
+:scale: 70
 
 Monitoring events
-:::
+```
 
 
-:::{figure-md} fig-monitor_event_exec
 
-<img src="../_static/images/diagrams/events_actions_exec_light.png" alt="An Event Trigger" width="400px">
+```{figure} /_static/images/diagrams/events_actions_exec_dark.png
+:class: dark-only
+:alt: An Event Trigger diagram
+:align: center
+:scale: 70
+
+```
+
+```{figure} /_static/images/diagrams/events_actions_exec_light.png
+:class: light-only
+:alt: An Event Trigger diagram
+:align: center
+:scale: 70
 
 An Event Trigger
-:::
+```
+
 
 
 - Creates Subscribers to all registered Components health status topics
