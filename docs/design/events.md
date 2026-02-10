@@ -10,10 +10,10 @@ Using events in your system you can:
 * **Fuse Data:** Monitor multiple topics simultaneously via a synchronized **Blackboard**.
 * **Stay Fast:** All evaluation happens asynchronously in a dedicated worker pool—your main component loop never blocks.
 
-:::{tip}
+```{tip}
 **Think in Behaviors, Not Boilerplate Code.**
 Events are designed to be read like a sentence: *"If the battery is low AND we are far from home, THEN navigate to the charging dock."*
-:::
+```
 
 :::{tip} Events can be paired with Sugarcoat [`Action`](actions.md)(s) or with any standard [ROS2 Launch Action](https://docs.ros.org/en/kilted/Tutorials/Intermediate/Launch/Using-Event-Handlers.html)
 :::
@@ -81,20 +81,20 @@ You can use standard Python operators or specific helper methods on any topic at
 
 Refine <i>when</i> and <i>how</i> the event triggers using these arguments:
 
-### 1. On Change (on_change=True)
+### 1. On Change (`on_change=True`)
 Triggers the event **only when the result of the condition changes from `False` to `True`** (Edge Trigger).
 
 This is useful for state transitions (e.g., triggering "Goal Reached" only the moment it happens, not continuously while the robot is there).
 
 
-### 2. On Any (event_condition=Topic)
+### 2. On Any (`event_condition=Topic`)
 If you pass the Topic object itself as the event condition, the event triggers on every received message, regardless of content.
 
 
-### 3. Handle Once (handle_once=True)
+### 3. Handle Once (`handle_once=True`)
 If an event should only fire a single time during the lifetime of the system (e.g., initialization triggers).
 
-### 4. Event Delay (keep_event_delay=2.0)
+### 4. Event Delay (`keep_event_delay=2.0`)
 To prevent an event from firing too rapidly (debouncing), use `keep_event_delay` to ignore subsequent triggers for a set duration (in seconds).
 
 ## Usage Examples

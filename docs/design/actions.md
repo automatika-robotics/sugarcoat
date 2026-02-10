@@ -10,12 +10,12 @@ In Sugarcoat, Actions are not just static function calls; they are <span class="
 
 **How are Actions Triggered?** Actions sit dormant until activated by one of two mechanisms:
 
-- Event-Driven (The Reflex): Triggered instantly when a specific Event condition is met (e.g., "Obstacle Detected" $\rightarrow$ stop_robot).
+- Event-Driven (Reflexive): Triggered instantly when a specific Event condition is met (e.g., "Obstacle Detected" $\rightarrow$ stop_robot).
 
-- Fallback-Driven (The Safety Net):Triggered automatically by a Component when its internal Health Status degrades (e.g., "Camera Driver Failed" $\rightarrow$ restart_driver).
-
+- Fallback-Driven (Restorative): Triggered automatically by a Component when its internal Health Status degrades (e.g., "Camera Driver Failed" $\rightarrow$ restart_driver).
 
 ## The `Action` Class
+
 At its core, the `Action` class is a wrapper around any Python callable. It packages a function along with its arguments, preparing them for execution at runtime.
 
 But unlike standard Python functions, Sugarcoat Actions possess a superpower: [Dynamic Data Injection](#dynamic-data-injection). You can bind their arguments directly to live ROS2 Topics, allowing the Action to fetch the latest topic message or a specific message argument the moment it triggers.
@@ -31,8 +31,8 @@ class Action:
 
 - kwargs: Keyword arguments (can be static values OR dynamic Topic values).
 
-
 ## Basic Usage
+
 ```python
 from ros_sugar.component import BaseComponent
 from ros_sugar.core import Action
@@ -103,34 +103,34 @@ Sugarcoat comes with a set of pre-defined component level actions and system lev
 
 These actions directly manipulate the state or configuration of a specific `BaseComponent` derived object.
 
-| Action Method | Arguments | Description |
-| :--- | :--- | :--- |
-| **`start`** | `component` | Triggers the component's Lifecycle transition to **Active**. |
-| **`stop`** | `component` | Triggers the component's Lifecycle transition to **Inactive**. |
-| **`restart`** | `component`<br>`wait_time` (opt) | Stops the component, waits `wait_time` seconds (default 0), and Starts it again. |
-| **`reconfigure`** | `component`<br>`new_config`<br>`keep_alive` | Reloads the component with a new configuration object or file path. <br>`keep_alive=True` (default) keeps the node running during update. |
-| **`update_parameter`** | `component`<br>`param_name`<br>`new_value`<br>`keep_alive` | Updates a **single** configuration parameter. |
-| **`update_parameters`** | `component`<br>`params_names`<br>`new_values`<br>`keep_alive` | Updates **multiple** configuration parameters simultaneously. |
-| **`send_component_service_request`** | `component`<br>`srv_request_msg` | Sends a request to the component's main service with a specific message. |
-| **`trigger_component_service`** | `component` | Triggers the component's main service. <br>Creates the request message dynamically during runtime from the incoming Event topic data. |
-| **`send_component_action_server_goal`** | `component`<br>`request_msg` | Sends a goal to the component's main action server with a specific message. |
-| **`trigger_component_action_server`** | `component` | Triggers the component's main action server. <br>Creates the request message dynamically during runtime from the incoming Event topic data. |
+| Action Method                           | Arguments                                                     | Description                                                                                                                                 |
+| :-------------------------------------- | :------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`start`**                             | `component`                                                   | Triggers the component's Lifecycle transition to **Active**.                                                                                |
+| **`stop`**                              | `component`                                                   | Triggers the component's Lifecycle transition to **Inactive**.                                                                              |
+| **`restart`**                           | `component`<br>`wait_time` (opt)                              | Stops the component, waits `wait_time` seconds (default 0), and Starts it again.                                                            |
+| **`reconfigure`**                       | `component`<br>`new_config`<br>`keep_alive`                   | Reloads the component with a new configuration object or file path. <br>`keep_alive=True` (default) keeps the node running during update.   |
+| **`update_parameter`**                  | `component`<br>`param_name`<br>`new_value`<br>`keep_alive`    | Updates a **single** configuration parameter.                                                                                               |
+| **`update_parameters`**                 | `component`<br>`params_names`<br>`new_values`<br>`keep_alive` | Updates **multiple** configuration parameters simultaneously.                                                                               |
+| **`send_component_service_request`**    | `component`<br>`srv_request_msg`                              | Sends a request to the component's main service with a specific message.                                                                    |
+| **`trigger_component_service`**         | `component`                                                   | Triggers the component's main service. <br>Creates the request message dynamically during runtime from the incoming Event topic data.       |
+| **`send_component_action_server_goal`** | `component`<br>`request_msg`                                  | Sends a goal to the component's main action server with a specific message.                                                                 |
+| **`trigger_component_action_server`**   | `component`                                                   | Triggers the component's main action server. <br>Creates the request message dynamically during runtime from the incoming Event topic data. |
 
 ### System-Level Actions
 
 These actions interact with the broader ROS2 system and are executed by the central `Monitor`.
 
-| Action Method | Arguments | Description |
-| :--- | :--- | :--- |
-| **`log`** | `msg`<br>`logger_name` (opt) | Logs a message to the ROS console. |
-| **`publish_message`** | `topic`<br>`msg`<br>`publish_rate`/`period` | Publishes a specific message to a topic. Can be single-shot or periodic. |
-| **`send_srv_request`** | `srv_name`<br>`srv_type`<br>`srv_request_msg` | Sends a request to a ROS 2 Service with a specific message. |
-| **`trigger_service`** | `srv_name`<br>`srv_type` | Triggers the a given ROS2 service. |
-| **`send_action_goal`** | `server_name`<br>`server_type`<br>`request_msg` | Sends a specific goal to a ROS 2 Action Server. |
-| **`trigger_action_server`** | `server_name`<br>`server_type` | Triggers the a given ROS2 action server. |
+| Action Method               | Arguments                                       | Description                                                              |
+| :-------------------------- | :---------------------------------------------- | :----------------------------------------------------------------------- |
+| **`log`**                   | `msg`<br>`logger_name` (opt)                    | Logs a message to the ROS console.                                       |
+| **`publish_message`**       | `topic`<br>`msg`<br>`publish_rate`/`period`     | Publishes a specific message to a topic. Can be single-shot or periodic. |
+| **`send_srv_request`**      | `srv_name`<br>`srv_type`<br>`srv_request_msg`   | Sends a request to a ROS 2 Service with a specific message.              |
+| **`trigger_service`**       | `srv_name`<br>`srv_type`                        | Triggers the a given ROS2 service.                                       |
+| **`send_action_goal`**      | `server_name`<br>`server_type`<br>`request_msg` | Sends a specific goal to a ROS 2 Action Server.                          |
+| **`trigger_action_server`** | `server_name`<br>`server_type`                  | Triggers a given ROS2 action server.                                 |
 
 :::{tip} The pre-defined Actions are all keyword only and can be imported from `ros_sugar.actions' module.
 :::
 
-:::{note} When the *trigger_service*, *trigger_action_server*, etc. actions are paired with an Event, the action attempts to create the required service request from the incoming Event topic data automatically via duck typing. If automatic conversion is not possible or if the action is not paired with an Event, the action will send the default (empty) request message.
+:::{note} When the _trigger_service_, _trigger_action_server_, etc. actions are paired with an Event, the action attempts to create the required service request from the incoming Event topic data automatically via duck typing. If automatic conversion is not possible or if the action is not paired with an Event, the action will send the default (empty) request message.
 :::

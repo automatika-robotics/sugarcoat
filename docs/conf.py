@@ -3,7 +3,6 @@ import os
 import sys
 from datetime import date
 import xml.etree.ElementTree as ET
-import shutil
 from pathlib import Path
 
 
@@ -87,7 +86,8 @@ html_theme_options = {
     "github_url": "https://github.com/automatika-robotics/sugarcoat",
     "discord_url": "https://discord.gg/B9ZU6qjzND",
     "globaltoc_expand_depth": 1,
-    "open_in_perplexity": True,
+    "open_in_chatgpt": True,
+    "open_in_claude": True,
     # Navigation Links (Top bar)
     "nav_links": [
         {"title": "Automatika Robotics", "url": "https://automatikarobotics.com/"},
@@ -170,27 +170,6 @@ def generate_llms_txt(app, exception):
         print(f"[llms.txt] Error writing file: {e}")
 
 
-def copy_markdown_files(app, exception):
-    """Copy source markdown files"""
-    if exception is None:  # Only run if build succeeded
-        # Source dir is where your .md files are
-        src_dir = app.srcdir  # This points to your `source/` folder
-        dst_dir = app.outdir  # This is typically `build/html`
-
-        for root, _, files in os.walk(src_dir):
-            for file in files:
-                if file.endswith(".md"):
-                    src_path = os.path.join(root, file)
-                    # Compute path relative to the source dir
-                    rel_path = os.path.relpath(src_path, src_dir)
-                    # Destination path inside the build output
-                    dst_path = os.path.join(dst_dir, rel_path)
-
-                    # Make sure the target directory exists
-                    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-                    shutil.copy2(src_path, dst_path)
-
-
 def create_robots_txt(app, exception):
     """Create robots.txt file to take advantage of sitemap crawl"""
     if exception is None:
@@ -206,6 +185,5 @@ Sitemap: {html_baseurl}/sitemap.xml
 
 def setup(app):
     """Plugin to post build and copy markdowns as well"""
-    app.connect("build-finished", copy_markdown_files)
     app.connect("build-finished", create_robots_txt)
     app.connect("build-finished", generate_llms_txt)
