@@ -1,5 +1,5 @@
 import importlib
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from functools import partial
 from ..utils import logger
 from ..io.supported_types import SupportedType, get_ros_msg_fields_dict

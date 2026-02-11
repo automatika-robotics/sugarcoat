@@ -239,10 +239,13 @@ class FHApp:
             number_of_outputs=len(displayed_outputs)
         )
 
-        map_outputs = {
-            key: "path" if value == "Path" else "overlay"
-            for (key, value) in self.get_all_map_overlay_outputs()
-        }
+        if map_overlays := self.get_all_map_overlay_outputs():
+            map_outputs = {
+                key: "path" if value == "Path" else "overlay"
+                for (key, value) in map_overlays
+            }
+        else:
+            map_outputs = None
 
         for idx, out in enumerate(displayed_outputs):
             output_divs.append(
