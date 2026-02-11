@@ -1,11 +1,6 @@
----
-html_theme.sidebar_secondary.remove: true
----
-
-
 # Sugarcoat
 
-Event-driven *ROS2* systems using an intuitive Python API
+Build event-driven *ROS2* systems using an intuitive Python API
 
   <p style="font-size: 1.1em; opacity: 0.8;">
     Sugarcoat is built for ROS2 developers who want to create robust, event-driven systems with multiple nodes that are easy to use and can be configured and started with an intuitive python API. It provides primitives for writing ROS2 nodes and events/actions which can start/stop/modify the nodes, in the spirit of event driven software standard. Sugarcoat is also a replacement for the ROS Launch API.

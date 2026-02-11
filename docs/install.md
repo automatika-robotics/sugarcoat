@@ -1,6 +1,6 @@
 # Getting Started
 
-Sugarcoat is designed for **ROS 2 Humble** and newer. Choose the installation method that best suits your needs.
+Sugarcoat is designed for **ROS2 Humble** and newer versions. Choose the installation method that best suits your needs.
 
 :::{admonition} Prerequisites
 :class: note
