@@ -1,7 +1,7 @@
 # Zero-Code Dynamic Web UI
 
 The **Dynamic Web UI** brings an entirely new level of **system visibility**, **control**, and **ease of use** to Sugarcoat Recipes.
-Built with [**FastHTML**](https://www.fastht.ml/) and [**MonsterUI**](https://monsterui.answer.ai/), it **automatically generates a responsive, extensible web interface** for any Sugarcoat recipe — eliminating the need for manual front-end work.
+Built with [**FastHTML**](https://www.fastht.ml/) and [**MonsterUI**](https://monsterui.answer.ai/), it **automatically generates a responsive, extensible web interface** for any Sugarcoat recipe, eliminating the need for manual front-end work.
 
 With zero configuration, your ROS2 system instantly becomes a **fully monitorable and configurable web application**, complete with real-time data streaming and visual feedback.
 
@@ -12,23 +12,23 @@ The Dynamic Web UI acts as a **universal dashboard** for your Sugarcoat recipes.
 You can view, control, and debug every part of your ROS2 application directly from the browser — no manual HTML, JavaScript, or dashboard setup required.
 
 
-- **Automatic Settings UI**
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Automatic Settings UI</span> -
   Dynamically generates interfaces for configuring the parameters and settings of all `Components` used in your recipe.
 
-- **Auto I/O Visualization**
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Auto I/O Visualization</span> -
   Automatically builds front-end controls and data visualizations for all defined UI `Inputs` and `Outputs`.
 
-- **WebSocket-Based Streaming**
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">WebSocket-Based Streaming</span> -
   Provides bidirectional, low-latency communication for **text**, **image**, and **audio** data streams.
 
-- **Responsive Layouts**
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Responsive Layouts</span> -
   Uses grid-based, adaptive layouts for clear visualization of system elements, optimized for both desktop and mobile.
 
-- **Extensible Design**
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Extensible Design</span> -
   Developers can extend the UI to support **custom message types**, **interactive widgets**, or **bespoke visualizations**.
 
 
-## 🚀 Automatic UI Generation in Action
+## {material-regular}`rocket_launch;1.5em;sd-text-primary` Automatic UI Generation in Action
 
 
 Lets see the **Dynamic Web UI** in action by automatically generating a fully functional, real-time interface for interacting with your Sugarcoat recipe.

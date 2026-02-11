@@ -9,7 +9,7 @@ Ensure you have a working [ROS 2 environment](https://docs.ros.org/en/humble/Ins
 
 ::::{tab-set}
 
-:::{tab-item} 📦 Binary (Recommended)
+:::{tab-item} {material-regular}`widgets;1.5em;sd-text-primary` Binary
 :sync: binary
 
 **Best for users who want to get started quickly.**
@@ -35,7 +35,7 @@ sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.
 
 :::
 
-:::{tab-item} 🛠️ Source (Advanced)
+:::{tab-item} {material-regular}`build;1.5em;sd-text-primary` Source
 :sync: source
 
 **Best for contributors or users needing the absolute latest features.**
