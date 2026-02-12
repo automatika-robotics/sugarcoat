@@ -15,14 +15,33 @@ You can view, control, and debug every part of your ROS2 application directly fr
 - <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Automatic Settings UI</span> -
   Dynamically generates interfaces for configuring the parameters and settings of all `Components` used in your recipe.
 
+  <p align="center">
+  <picture align="center">
+    <img alt="Updating component settings through UI Example GIF" src="https://automatikarobotics.com/docs/ui_updating_settings.gif" width="90%">
+  </picture>
+  </p>
+
 - <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Auto I/O Visualization</span> -
   Automatically builds front-end controls and data visualizations for all defined UI `Inputs` and `Outputs`.
 
+  <p align="center">
+  <picture align="center">
+    <img alt="Updating component settings through UI Example GIF" src="https://automatikarobotics.com/docs/ui_navigation.gif" width="90%">
+  </picture>
+  </p>
+
 - <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">WebSocket-Based Streaming</span> -
-  Provides bidirectional, low-latency communication for **text**, **image**, and **audio** data streams.
+  Provides bidirectional, low-latency communication for **text**, **image**, **map** and **audio** data streams.
+
 
 - <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Responsive Layouts</span> -
   Uses grid-based, adaptive layouts for clear visualization of system elements, optimized for both desktop and mobile.
+
+  <p align="center">
+  <picture align="center">
+    <img alt="Updating component settings through UI Example GIF" src="https://automatikarobotics.com/docs/ui_responsive_layout.gif" width="90%">
+  </picture>
+  </p>
 
 - <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Extensible Design</span> -
   Developers can extend the UI to support **custom message types**, **interactive widgets**, or **bespoke visualizations**.
@@ -50,8 +69,8 @@ from ros_sugar.io import Topic
 image_topic = Topic(name="image_raw", msg_type="Image")     # the robot camera topic
 detections_topic = Topic(name="detections", msg_type="Detections")      # a detections component topic (see EmbodiedAgents)
 
-text_query = Topic(name="text0", msg_type="String")
-text_answer = Topic(name="text1", msg_type="String")
+text_query = Topic(name="question", msg_type="String")
+text_answer = Topic(name="answer", msg_type="String")
 ```
 
 ### Step 2 — Define your Components and Initialize the Launcher
@@ -95,7 +114,7 @@ When the recipe runs, a dynamic web interface like the one below is automaticall
 
 <p align="center">
 <picture align="center">
-  <img alt="EmbodiedAgents UI Example GIF" src="../_static/images/agents_ui.gif" width="90%">
+  <img alt="EmbodiedAgents UI Example GIF" src="https://automatikarobotics.com/docs/ui_agents_vlm.gif" width="90%">
 </picture>
 </p>
 

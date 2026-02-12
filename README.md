@@ -53,7 +53,7 @@ See how the Web UI effortlessly generates interfaces for different types of Suga
 
 <p align="center">
 <picture align="center">
-  <img alt="EmbodiedAgents UI Example GIF" src="docs/_static/images/agents_ui.gif" width="60%">
+  <img alt="EmbodiedAgents UI Example GIF" src="https://automatikarobotics.com/docs/ui_agents_vlm.gif" width="60%">
 </picture>
 </p>
 
@@ -62,7 +62,7 @@ See how the Web UI effortlessly generates interfaces for different types of Suga
 
 <p align="center">
 <picture align="center">
-  <img alt="KOMPASS UI Example GIF" src="docs/_static/images/nav_ui.gif" width="60%">
+  <img alt="Navigation System UI Example GIF" src="https://automatikarobotics.com/docs/ui_navigation.gif" width="60%">
 </picture>
 </p>
 

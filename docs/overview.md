@@ -55,9 +55,8 @@ Port your automation recipes across different hardware seamlessly.
 
 Explore the Dynamic Web UI for real-time visualization and control.
 :::
-
-
 ::::
+
 
 ## Ecosystem
 

@@ -50,17 +50,17 @@
 
 <p align="center">
 <picture align="center">
-  <img alt="EmbodiedAgents UI 示例 GIF" src="_static/images/agents_ui.gif" width="60%">
+  <img alt="EmbodiedAgents UI 示例 GIF" src="https://automatikarobotics.com/docs/ui_agents_vlm.gif" width="60%">
 </picture>
 </p>
 
-- **示例 2：视觉跟随 Recipe**
-  一个使用 [**Kompass**](https://automatikarobotics.com/kompass/) 与 [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/) 组件的复杂系统，用于控制机器人运动并跟踪视觉目标。
-  UI 会自动渲染图像数据、检测结果和动作指令，展示其在多媒体与复杂组件交互场景中的强大能力。
+- **示例 2：点位导航方案**
+  这是一个为点位导航系统自动生成的 UI 示例，来自 [**Kompass**](https://automatikarobotics.com/kompass/)
+  。该 UI 会自动渲染地图数据，并向机器人发送导航目标。
 
 <p align="center">
 <picture align="center">
-  <img alt="KOMPASS UI 示例 GIF" src="_static/images/follow_ui.gif" width="60%">
+  <img alt="KOMPASS UI 示例 GIF" src="https://automatikarobotics.com/docs/ui_navigation.gif" width="60%">
 </picture>
 </p>
 
