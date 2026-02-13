@@ -726,7 +726,6 @@ class BaseComponent(lifecycle.Node):
         self.get_logger().info("DESTROYING ALL PUBLISHERS")
         # Destroy health status publisher
         self.destroy_publisher(self.health_status_publisher)
-        self.health_status_publisher = None
 
         for publisher in self.publishers_dict.values():
             if publisher._publisher:
@@ -1273,7 +1272,7 @@ class BaseComponent(lifecycle.Node):
             self.__actions.append(reconstructed_action_list)
 
     @property
-    def _fallbacks_json(self) -> Union[str, bytes]:
+    def _fallbacks_json(self) -> Union[str, bytes, bytearray]:
         """Getter of serialized component Fallbacks
 
         :return: Serialized Fallbacks: {fallback_type: serialized_fallback}
@@ -1288,20 +1287,24 @@ class BaseComponent(lifecycle.Node):
         for key, value in deserialized_fallbacks.items():
             # If a fallback was defined
             if (value is not None) and (
-                fallback_serialized_action := value.get("action", None)
+                fallback_serialized_actions_list := value.get("action_list", None)
             ):
-                if not hasattr(self, fallback_serialized_action["action_name"]):
-                    raise AttributeError(
-                        f"Component '{self.node_name}' does not contain requested Fallback Action method '{fallback_serialized_action['action_name']}'"
+                reconstructed_actions_list = []
+                for fallback_serialized_action in fallback_serialized_actions_list:
+                    if not hasattr(self, fallback_serialized_action["action_name"]):
+                        raise AttributeError(
+                            f"Component '{self.node_name}' does not contain requested Fallback Action method '{fallback_serialized_action['action_name']}'"
+                        )
+                    # reparse the method using the given action name
+                    method = getattr(self, fallback_serialized_action["action_name"])
+                    reconstructed_actions_list.append(
+                        Action.deserialize_action(
+                            serialized_action_dict=fallback_serialized_action,
+                            deserialized_method=method,
+                        )
                     )
-                # reparse the method using the given action name
-                method = getattr(self, fallback_serialized_action["action_name"])
-                reconstructed_action = Action.deserialize_action(
-                    serialized_action_dict=fallback_serialized_action,
-                    deserialized_method=method,
-                )
                 reconstructed_fallback = Fallback(
-                    reconstructed_action, value.get("max_retries", None)
+                    reconstructed_actions_list, value.get("max_retries", None)
                 )
                 fallbacks_kwargs[key] = reconstructed_fallback
         self.__fallbacks = ComponentFallbacks(**fallbacks_kwargs)
@@ -1498,51 +1501,7 @@ class BaseComponent(lifecycle.Node):
         """
         self.config.from_json(value)
 
-    # DUNDER METHODS
-    def __matmul__(self, stream) -> Optional[Topic]:
-        """
-        @
-
-        :param stream: _description_
-        :type stream: _type_
-        :raises TypeError: _description_
-        :return: _description_
-        :rtype: _type_
-        """
-        got_topic: bool = False
-        if isinstance(stream, str):
-            # search in inputs
-            if self.in_topics:
-                got_topic = next(
-                    (topic for topic in self.in_topics if topic.name == stream), None
-                )
-
-            # search in outputs
-            elif not got_topic and self.out_topics:
-                got_topic = next(
-                    (topic for topic in self.out_topics if topic.name == stream), None
-                )
-
-            return got_topic
-
-        elif isinstance(stream, Topic):
-            if self.in_topics:
-                got_topic = next(
-                    (topic for topic in self.in_topics if topic == stream), None
-                )
-
-            elif not got_topic and self.out_topics:
-                got_topic = next(
-                    (topic for topic in self.out_topics if topic == stream), None
-                )
-
-            return got_topic
-        else:
-            raise TypeError(
-                "Component method '@' can only be used with a topic defined by a string key name or a Topic instance"
-            )
-
-    # TODO: Implement more dunder methods for a more intuitive API with components
+    # TODO: Implement dunder methods for a more intuitive API with components
 
     # MAIN ACTION SERVER HELPER METHODS AND CALLBACKS
     @abstractmethod
@@ -1582,7 +1541,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().info("Goal accepted")
             self._main_goal_handle.execute()
 
-    def _main_action_cancel_callback(self, _) -> GoalResponse:
+    def _main_action_cancel_callback(self, _) -> Optional[CancelResponse]:
         """Main component action server callback when handle is canceled
 
         :param goal_handle: _description_
@@ -1719,8 +1678,8 @@ class BaseComponent(lifecycle.Node):
         """
         error_msg: Optional[str] = None
 
+        param_type = self.config.get_attribute_type(param_name)
         try:
-            param_type = self.config.get_attribute_type(param_name)
             parsed_param = param_type(param_str_value) if param_type else None
             self.config.update_value(param_name, parsed_param)
             self.get_logger().debug(
@@ -2700,7 +2659,7 @@ class BaseComponent(lifecycle.Node):
 
     # LIFECYCLE ON TRANSITIONS CUSTOM METHODS
     @property
-    def lifecycle_state(self) -> Optional[int]:
+    def lifecycle_state(self) -> int:
         """
         lifecycle state machine current state getter
 
@@ -2709,6 +2668,7 @@ class BaseComponent(lifecycle.Node):
         """
         if hasattr(self, "_state_machine"):
             return self._state_machine.current_state[0]
+        return 0
 
     def on_configure(
         self, state: lifecycle.State

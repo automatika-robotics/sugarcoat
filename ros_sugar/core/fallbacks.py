@@ -42,8 +42,12 @@ class Fallback:
         :return: Fallback dict
         :rtype: Dict
         """
+        action_list = (
+            [self.action] if not isinstance(self.action, list) else self.action
+        )
+
         return {
-            "action": self.action.dictionary,
+            "action_list": [action.dictionary for action in action_list],
             "max_retries": self.max_retries,
         }
 
