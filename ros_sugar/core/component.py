@@ -71,7 +71,6 @@ class BaseComponent(lifecycle.Node):
         config: Optional[BaseComponentConfig] = None,
         config_file: Optional[str] = None,
         callback_group: Optional[ros_callback_groups.CallbackGroup] = None,
-        enable_health_broadcast: bool = True,
         fallbacks: Optional[ComponentFallbacks] = None,
         main_action_type: Optional[type] = None,
         main_srv_type: Optional[type] = None,
@@ -91,8 +90,6 @@ class BaseComponent(lifecycle.Node):
         :type config_file: Optional[str], optional
         :param callback_group: Main callback group, defaults to None
         :type callback_group: rclpy.callback_groups.CallbackGroup, optional
-        :param enable_health_broadcast: Enable publishing the component health status, defaults to True
-        :type enable_health_broadcast: bool, optional
         :param fallbacks: Component fallbacks, defaults to None
         :type fallbacks: Optional[ComponentFallbacks], optional
         :param main_action_type: Component main ROS2 action server type (Used when the component is running as an ActionServer), defaults to None
@@ -102,7 +99,6 @@ class BaseComponent(lifecycle.Node):
         """
         # Component health status - Inits with healthy status
         self.health_status = Status()
-        self.__enable_health_publishing = enable_health_broadcast
 
         # Setup Config
         self.config: BaseComponentConfig = config or BaseComponentConfig()
@@ -112,7 +108,6 @@ class BaseComponent(lifecycle.Node):
             callback_group = (
                 getattr(ros_callback_groups, self.config._callback_group)()
                 if self.config._callback_group
-                and isinstance(self.config._callback_group, str)
                 else ReentrantCallbackGroup()
             )
 
@@ -175,10 +170,8 @@ class BaseComponent(lifecycle.Node):
         ] = {}  # Dictionary of user defined algorithms configuration
 
         # Health status topic
-        self.__health_status_topic = (
-            Topic(name=f"{self.node_name}/status", msg_type="ComponentStatus")
-            if self.__enable_health_publishing
-            else None
+        self.__health_status_topic = Topic(
+            name=f"{self.node_name}/status", msg_type="ComponentStatus"
         )
 
         # Main goal handle (to execute one goal at a time)
@@ -611,13 +604,12 @@ class BaseComponent(lifecycle.Node):
         Creates all node publishers from component outputs
         """
         self.get_logger().info("STARTING ALL PUBLISHERS")
-        if self.__enable_health_publishing:
-            # Create status publisher
-            self.health_status_publisher: ROSPublisher = self.create_publisher(
-                msg_type=self.__health_status_topic.ros_msg_type,
-                topic=self.__health_status_topic.name,
-                qos_profile=1,
-            )
+        # Create status publisher
+        self.health_status_publisher: ROSPublisher = self.create_publisher(
+            msg_type=self.__health_status_topic.ros_msg_type,
+            topic=self.__health_status_topic.name,
+            qos_profile=1,
+        )
         # Create publisher and attach it to output publisher object
         for publisher in self.publishers_dict.values():
             if isinstance(publisher, Publisher):
@@ -732,10 +724,9 @@ class BaseComponent(lifecycle.Node):
         Destroys all node publishers
         """
         self.get_logger().info("DESTROYING ALL PUBLISHERS")
-        if self.__enable_health_publishing:
-            # Destroy health status publisher
-            self.destroy_publisher(self.health_status_publisher)
-            self.health_status_publisher = None
+        # Destroy health status publisher
+        self.destroy_publisher(self.health_status_publisher)
+        self.health_status_publisher = None
 
         for publisher in self.publishers_dict.values():
             if publisher._publisher:
@@ -2160,7 +2151,7 @@ class BaseComponent(lifecycle.Node):
         """
         Component execution step every loop_step
         """
-        if self.__enable_health_publishing and self.health_status_publisher:
+        if self.health_status_publisher:
             self.health_status_publisher.publish(self.health_status())
 
         # If it is not a timed component -> only publish status
@@ -2559,14 +2550,9 @@ class BaseComponent(lifecycle.Node):
 
         except ValueError:
             # ValueError is thrown when no fallbacks are defined for detected failure
-            if self.__enable_health_publishing:
-                self.get_logger().warn(
-                    "No fallback policy is defined for detected failure -> Failure is broadcasted"
-                )
-            else:
-                self.get_logger().error(
-                    "No fallback policy is defined for detected failure and health publishing is disabled. Component will keep running but will possibly not be running correctly"
-                )
+            self.get_logger().warn(
+                "No fallback policy is defined for detected failure -> Failure is broadcasted"
+            )
 
     @property
     def fallbacks(self) -> List[str]:

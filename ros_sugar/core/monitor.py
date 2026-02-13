@@ -41,7 +41,6 @@ class Monitor(Node):
     def __init__(
         self,
         components_names: List[str],
-        enable_health_status_monitoring: bool = True,
         events_actions: Optional[Dict[str, List[Action]]] = None,
         events_to_emit: Optional[List[Event]] = None,
         config: Optional[BaseConfig] = None,
@@ -101,8 +100,6 @@ class Monitor(Node):
 
         self._components_to_activate_on_start: List[str] = activate_on_start
 
-        self._enable_health_monitoring: bool = enable_health_status_monitoring
-
         self.__components_activation_event: Optional[Callable] = None
 
         # Handle timeout when waiting for looking for the components to activate
@@ -141,7 +138,7 @@ class Monitor(Node):
             )
 
         # Create health status subscribers
-        if self._components_to_monitor and self._enable_health_monitoring:
+        if self._components_to_monitor:
             self._create_status_subscribers()
             for component_name in self._components_to_monitor:
                 self._turn_on_component_management(component_name)

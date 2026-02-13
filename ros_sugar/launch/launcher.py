@@ -94,7 +94,6 @@ class Launcher:
         self,
         namespace: str = "",
         config_file: Optional[str] = None,
-        enable_monitoring: bool = True,
         activation_timeout: Optional[float] = None,
         robot_plugin: Optional[str] = None,
     ) -> None:
@@ -122,7 +121,6 @@ class Launcher:
         # Create the launch configuration variables
         self._namespace = namespace
         self._config_file: Optional[str] = config_file
-        self.__enable_monitoring: bool = enable_monitoring
         self._launch_group = []
         self._enable_ui = False
         self._robot_plugin = robot_plugin
@@ -381,11 +379,10 @@ class Launcher:
                 # Event/Actions will get rewritten and redistributed across all components
                 component.clear_events_actions()
 
-        if self.__enable_monitoring:
-            # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
-            self.__rewrite_actions_for_components(
-                self._components, self._events_actions
-            )
+        # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
+        self.__rewrite_actions_for_components(
+            self._components, self._events_actions
+        )
 
     def _update_ros_events_actions(
         self, event: Event, action: Union[Action, ROSLaunchAction]
@@ -702,7 +699,6 @@ class Launcher:
 
         self.monitor_node = Monitor(
             components_names=components_names,
-            enable_health_status_monitoring=self.__enable_monitoring,
             events_actions=self._monitor_events_actions,
             events_to_emit=self._internal_events,
             services_components=services_components,
