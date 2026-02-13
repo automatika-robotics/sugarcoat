@@ -86,9 +86,9 @@ To create reactive autonomy, Sugarcoat layers an **Event-Driven system** on top 
 
 Finally, the system is brought to life and supervised by the Launcher and Monitor.
 
-- [**Launcher**](launcher.md): A Pythonic interface to define and deploy your system. It supports running components in Multi-threaded or Multi-process modes, managing their lifecycles automatically.
+- [**Launcher**](launcher.md): A Pythonic interface to define and deploy your system in a beautiful imperative API. It completely replaces the need for creating ROS launch files in your framework. It supports running components in Multi-threaded or Multi-process modes, managing their lifecycles automatically.
 
-- [**Monitor**](monitor.md) An internal node that runs alongside your components. It acts as the system supervisor, listening to global Events and Component Health Statuses to coordinate system-wide responses.
+- [**Monitor**]: An internal node that runs alongside your components. It acts as the system supervisor, listening to global Events and Component Health Statuses to coordinate system-wide responses.
 
 
 ## Execution Models
