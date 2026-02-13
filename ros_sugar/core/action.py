@@ -33,7 +33,7 @@ from ..io.supported_types import SupportedType
 from ..utils import InvalidAction
 
 
-def _create_auto_topic_parser(input_msg_type: Type, target_type: Type) -> Callable:
+def _create_auto_topic_parser(input_msg_type: Type, target_type: Type) -> Optional[Callable]:
     """
     Factory function to create an automatic parser from a ROS message type
     to a target type (either another ROS message or a Python primitive/structure).
@@ -85,7 +85,7 @@ def _create_auto_ros_msg_parser(
 
     # If we found matches for ALL target fields, this is a strong match subset
     # Or if we found matches for ALL input fields
-    # Be strict: If target has fields, we need to fill them.
+    # If target has fields, we need to fill them strictly.
     # If target is fully covered by input:
     if (len(common_fields) == len(target_fields) and len(target_fields) > 0) or (
         len(common_fields) == len(input_fields)

@@ -205,7 +205,6 @@ class ExternalProcessorType(Enum):
     External processor type:
     - MSG_PRE_PROCESSOR: Executes before publishing a ros msg
     - MSG_POST_PROCESSOR: Executes after receiving a ros msg in a callback
-    - ActionProcessor: Executed by an action, usually for event parsing
     """
 
     MSG_PRE_PROCESSOR = "MsgPreProcessor"
@@ -322,12 +321,12 @@ class BaseComponentConfig(BaseConfig):
         default=100.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
     )
 
-    log_level: Union[str, LoggingSeverity] = field(
-        default=LoggingSeverity.INFO, converter=_convert_logging_severity_to_str
+    log_level: str = field(
+        default='info', converter=_convert_logging_severity_to_str
     )
 
-    rclpy_log_level: Union[str, LoggingSeverity] = field(
-        default=LoggingSeverity.WARN, converter=_convert_logging_severity_to_str
+    rclpy_log_level: str = field(
+        default='warn', converter=_convert_logging_severity_to_str
     )
 
     # Compatibility Plugin Package Name

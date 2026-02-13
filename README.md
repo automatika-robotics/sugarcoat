@@ -103,7 +103,7 @@ The core of Sugarcoat revolves around a few concepts:
 </p>
 
 
-## 🛠️ Installation
+## Installation
 
 Sugarcoat is available for ROS versions $\ge$ **Humble**.
 
@@ -144,9 +144,9 @@ Sugarcoat is made available under the MIT license. Details can be found in the [
 
 Sugarcoat has been developed in collaboration between [Automatika Robotics](https://automatikarobotics.com/) and [Inria](https://inria.fr/). Contributions from the community are most welcome.
 
-## 🎩 Hat Tip
+## Hat Tip
 
-The **Dynamic Web UI** is powered by two cool open-source projects. A big thank you to Answers.ai for their work on:
+The **Dynamic Web UI** is powered by two awesome open-source projects. A big thank you to Answers.ai for their work on:
 
 - [**FastHTML**](https://www.fastht.ml/): The HTMX based framework that enables automatic generation of our dynamic web interfaces.
 - [**MonsterUI**](https://monsterui.answer.ai/): The styled UI components that make the interface intuitive.

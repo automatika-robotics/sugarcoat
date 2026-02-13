@@ -112,6 +112,7 @@ class BaseComponent(lifecycle.Node):
             callback_group = (
                 getattr(ros_callback_groups, self.config._callback_group)()
                 if self.config._callback_group
+                and isinstance(self.config._callback_group, str)
                 else ReentrantCallbackGroup()
             )
 
