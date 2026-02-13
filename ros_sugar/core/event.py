@@ -96,14 +96,14 @@ class OnInternalEvent(ROSLaunchEventHandler):
         """
         Overriding handle to inject event data into the entities.
         """
-        # 1. Capture the entities defined in __init__ (via super())
+        # Capture the entities defined in __init__ (via super())
         entities = super().handle(event, context)
         new_entities = []
-        # 2. Safety check: Ensure we are dealing with internal event type
+        # Safety check: Ensure we are dealing with internal event type
         if entities is not None and isinstance(event, InternalEvent):
             data = event.topics_value
 
-            # 3. Iterate through entities and inject the data
+            # Iterate through entities and inject the data
             for entity in entities:
                 if isinstance(entity, OpaqueFunction):
                     # We use partial to inject 'topics_value' into the inner function
@@ -353,7 +353,7 @@ class Event:
         return event_dict
 
     @classmethod
-    def from_dict(cls, dict_obj: Dict) -> None:
+    def from_dict(cls, dict_obj: Dict):
         """
         Setter of the event using a dictionary
 
@@ -509,7 +509,7 @@ class Event:
             # This assumes self.event_condition is now the root Condition object
             triggered = self._condition.evaluate(topics_dict)
 
-            # If the event is to be check only 'on_change' in the value
+            # If the event is to be checked only 'on_change' in the value
             # then check if:
             # 1. the event previous value is different from the event current value (there is a change)
             # and 2. if the new_trigger is on

@@ -140,7 +140,7 @@ class Topic(BaseAttrs, Generic[MsgT]):
       - Topic message type, can be provided as a 'type' or the type name as a string
 
     * - **qos_profile**
-      - `QoSConfig | Dict`, `QoSConfig()`
+      - `QoSConfig`, `QoSConfig()`
       - QoS (Quality of Service) configuration
 
     * - **data_timeout**
@@ -153,7 +153,7 @@ class Topic(BaseAttrs, Generic[MsgT]):
     msg_type: Union[Type[supported_types.SupportedType], str] = field(
         converter=get_msg_type
     )
-    qos_profile: Union[Dict, QoSConfig] = field(
+    qos_profile: QoSConfig = field(
         default=Factory(QoSConfig), converter=_make_qos_config
     )
     data_timeout: float = field(default=1.0, validator=base_validators.gt(0.0))
