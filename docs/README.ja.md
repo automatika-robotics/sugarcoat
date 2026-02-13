@@ -1,12 +1,12 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/SUGARCOAT_DARK.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/_static/SUGARCOAT_LIGHT.png">
-  <img alt="Sugarcoat Logo" src="docs/_static/SUGARCOAT_DARK.png"  width="50%">
+  <source media="(prefers-color-scheme: dark)" srcset="_static/SUGARCOAT_DARK.png">
+  <source media="(prefers-color-scheme: light)" srcset="_static/SUGARCOAT_LIGHT.png">
+  <img alt="Sugarcoat Logo" src="_static/SUGARCOAT_DARK.png"  width="50%">
 </picture>
 
 <br/>
 
-🇨🇳 [简体中文](docs/README.zh.md) | 🇯🇵 [日本語](docs/README.ja.md)
+🇨🇳 [简体中文](README.zh.md) | 🇯🇵 [日本語](README.ja.md)
 
 ## イベント駆動型 ROS2 システムのためのオーケストレーション層
 
@@ -56,9 +56,9 @@ Sugarcoat のコアは、集中型オーケストレーションと反応的な�
 
 <p align="center">
 <picture align="center">
-  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/images/diagrams/component_dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/_static/images/diagrams/component_light.png">
-  <img alt="Base Component Diagram" src="docs/_static/images/diagrams/component_light.png" width="75%">
+  <source media="(prefers-color-scheme: dark)" srcset="_static/images/diagrams/component_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="_static/images/diagrams/component_light.png">
+  <img alt="Base Component Diagram" src="_static/images/diagrams/component_light.png" width="75%">
 </picture>
 </p>
 
@@ -85,9 +85,9 @@ launcher.add_pkg(
 
 <p align="center">
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="docs/_static/images/diagrams/multi_process_dark.png">
-<source media="(prefers-color-scheme: light)" srcset="docs/_static/images/diagrams/multi_process_light.png">
-<img alt="Multi-process execution Diagram" src="docs/_static/images/diagrams/multi_process_light.png" width="80%">
+<source media="(prefers-color-scheme: dark)" srcset="_static/images/diagrams/multi_process_dark.png">
+<source media="(prefers-color-scheme: light)" srcset="_static/images/diagrams/multi_process_light.png">
+<img alt="Multi-process execution Diagram" src="_static/images/diagrams/multi_process_light.png" width="80%">
 </picture>
 </p>
 
@@ -106,7 +106,7 @@ launcher.add_pkg(
 
 <p align="center">
 <picture align="center">
-<img alt="EmbodiedAgents UI Example GIF" src="./docs/_static/videos/ui_agents.gif" width="60%">
+<img alt="EmbodiedAgents UI Example GIF" src="_static/videos/ui_agents.gif" width="60%">
 </picture>
 </p>
 
@@ -115,7 +115,7 @@ launcher.add_pkg(
 
 <p align="center">
 <picture align="center">
-<img alt="Navigation System UI Example GIF" src="./docs/_static/videos/ui_navigation.gif" width="60%">
+<img alt="Navigation System UI Example GIF" src="_static/videos/ui_navigation.gif" width="60%">
 </picture>
 </p>
 
