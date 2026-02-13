@@ -2,7 +2,7 @@
 
 **The connective tissue of your system.**
 
-In Sugarcoat, a `Topic` is more than just a string name. It is a smart configuration object that defines the **Data Contract** (Type), the **Behavior** (QoS), and the **Freshness Constraints** (Timeout) for a specific stream of information.
+Topics can be defined in Sugarcoat using pythonic configuration object that defines the **Data Contract** (Type/Name of the ROS2 topic), the **Behavior** (QoS), and the **Freshness Constraints** (Timeout) for a specific stream of information.
 
 Topics act as the bridge for both:
 
