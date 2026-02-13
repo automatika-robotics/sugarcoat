@@ -98,7 +98,7 @@ class Monitor(Node):
         self._main_srv_clients: Dict[str, base_clients.ServiceClientHandler] = {}
         self._main_action_clients: Dict[str, base_clients.ActionClientHandler] = {}
 
-        self._components_to_activate_on_start: List[str] = activate_on_start
+        self._components_to_activate_on_start: List[str] = activate_on_start or []
 
         self.__components_activation_event: Optional[Callable] = None
 
@@ -415,6 +415,7 @@ class Monitor(Node):
             self.get_logger().error(
                 f"Cannot send service request to unknown ROS2 service with name: {srv_name} and type {srv_type}"
             )
+            return
         if not srv_request_msg:
             # If request is not provided create an empty one
             srv_request_msg = srv_type.Request()
@@ -441,11 +442,16 @@ class Monitor(Node):
             self.get_logger().error(
                 f"Cannot send service request to unknown ROS2 service with name: {action_name} and type {action_type}"
             )
+            return
         if not action_request_msg:
             # If request is not provided create an empty one
             action_request_msg = action_type.Goal()
         action_client = self.__get_action_client(action_name, action_type)
         action_client.send_request(action_request_msg)
+
+    def get_secs_time(self) -> float:
+        ros_time = self.get_clock().now().to_msg()
+        return float(ros_time.sec + (1e-9 * ros_time.nanosec))
 
     def publish_message(
         self,
@@ -475,13 +481,13 @@ class Monitor(Node):
         if not publish_rate and not publish_period:
             publisher.publish(msg)
             self.destroy_publisher(publisher)
-        elif not publish_period:
+        elif publish_rate and not publish_period:
             # Publish forever
             self.create_timer(
                 timer_period_sec=1 / publish_rate,
                 callback=partial(publisher.publish, msg),
             )
-        else:
+        elif publish_rate and publish_period:
             # Publish with rate for given period
             max_time: float = self.get_secs_time() + publish_period
             timer_name: str = f"timer_{topic.name}_"
