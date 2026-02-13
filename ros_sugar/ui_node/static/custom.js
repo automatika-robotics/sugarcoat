@@ -252,7 +252,7 @@ function makeDraggable(className = "draggable") {
         }
     }
 
-    function onDragEnd(eventObj) {
+    function onDragEnd(_eventObj) {
         if (!draggedItem || !placeholder) return;
 
         document.body.style.userSelect = '';

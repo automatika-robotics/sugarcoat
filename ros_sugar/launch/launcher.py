@@ -888,7 +888,7 @@ class Launcher:
             name=component.node_name,
             output="screen",
             log_level=logging.get_logging_severity_from_string(
-                component.config.log_level  # type: ignore
+                component.config.log_level
             ),
         )
         self._launch_group.append(component_action)

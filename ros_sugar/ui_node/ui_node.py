@@ -359,7 +359,7 @@ class UINode(BaseComponent):
         if self._ros_action_clients.get(action_name, None):
             self._ros_action_clients_feedback_callbacks[action_name] = ws_callback
 
-    def send_srv_call(self, srv_call_data: Dict) -> Tuple[str, Any]:
+    def send_srv_call(self, srv_call_data: Dict) -> Tuple[bool, Any]:
         """
         Send a service call using the service request form data
         """
@@ -392,7 +392,7 @@ class UINode(BaseComponent):
             f'Server Error - Service "{srv_name}" request send but no service response received',
         )
 
-    def send_action_goal(self, action_goal_data: Dict) -> Tuple[str, Any]:
+    def send_action_goal(self, action_goal_data: Dict) -> Tuple[bool, Any]:
         """
         Send a service call using the service request form data
         """

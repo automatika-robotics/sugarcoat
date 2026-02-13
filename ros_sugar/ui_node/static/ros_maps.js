@@ -41,7 +41,7 @@ window.togglePublishPoint = function (btn) {
         return;
     }
 
-    // 1. Determine if we are turning ON or OFF based on button state
+    // Determine if we are turning ON or OFF based on button state
     const isActive = btn.classList.contains('active-brand-red');
     const isTurningOn = !isActive;
 
@@ -59,7 +59,7 @@ window.togglePublishPoint = function (btn) {
     };
     // ----------------------------------------
 
-    // 2. Update Button UI
+    // Update Button UI
     if (isTurningOn) {
         btn.classList.remove('uk-button-default', 'bg-white/80', 'dark:bg-gray-800/80', 'backdrop-blur');
         btn.classList.add('active-brand-red');
@@ -82,7 +82,7 @@ window.togglePublishPoint = function (btn) {
         }
     }
 
-    // 3. Apply to ALL Maps
+    // Apply to ALL Maps
     mapElements.forEach(container => {
         const topicName = container.id;
 
@@ -101,7 +101,7 @@ window.togglePublishPoint = function (btn) {
         }
         container.style.cursor = isTurningOn ? 'crosshair' : 'default';
 
-        // 4. Determine Settings if Turning On
+        // Determine Settings if Turning On
         if (isTurningOn) {
             if (btn.id === `${topicName}-publish-btn`) {
                 const settingsForm = document.getElementById(`${topicName}-settings-form`);
@@ -134,10 +134,10 @@ window.openMapSettings = function (topicName) {
     const modal = document.getElementById(`${topicName}-settings-modal`);
     if (!modal) return;
 
-    // 1. Show Modal
+    // Show Modal
     modal.style.display = 'grid';
 
-    // 2. Restore Saved Values (if they exist)
+    // Restore Saved Values (if they exist)
     const state = mapInteractionState[topicName];
     if (state && state.settings) {
         const form = document.getElementById(`${topicName}-settings-form`);
@@ -171,10 +171,10 @@ window.saveMapSettings = function (topicName) {
     const form = document.getElementById(`${topicName}-settings-form`);
 
     if (form) {
-        // 1. Initialize State
+        // Initialize State
         if (!mapInteractionState[topicName]) mapInteractionState[topicName] = {};
 
-        // 2. Save Publishing Settings
+        // Save Publishing Settings
         const pubTopic = form.querySelector('[name="clicked_point_topic"]').value;
 
         // Handle Custom Select for Message Type
@@ -189,13 +189,13 @@ window.saveMapSettings = function (topicName) {
 
         mapInteractionState[topicName].settings = { topic: pubTopic, type: typeValue };
 
-        // 3. Save Visual Settings
+        // Save Visual Settings
         if (!mapInteractionState[topicName].visuals) mapInteractionState[topicName].visuals = {};
 
-        // 1. Get the Wrapper
+        // Get the Wrapper
         const wrapper = document.getElementById(`visual-selector-${topicName}`);
 
-        // 2. Get the Native Select inside the wrapper
+        // Get the Native Select inside the wrapper
         const nativeSelect = wrapper ? wrapper.querySelector('select') : null;
 
         if (nativeSelect && nativeSelect.options) {
@@ -231,7 +231,7 @@ window.saveMapSettings = function (topicName) {
             });
         }
 
-        // 4. Force Redraw
+        // Force Redraw
         const container = document.getElementById(topicName);
         if (container && container.overlays) {
             Object.values(container.overlays).forEach(m => m.graphics.clear());
@@ -250,7 +250,7 @@ window.saveMapSettings = function (topicName) {
  * * @param {string} mapId - The ID of the map (e.g. 'map_1')
  */
 window.updateVisualSettingsVisibility = function (target, mapId) {
-    // 1. RETRIEVE VALUE
+    // RETRIEVE VALUE
     // Since 'target' is the custom <uk-select> wrapper (LabelSelect), we look inside it.
     // We try the hidden input first (most reliable), then fallback to direct .value
     let selectedId;
@@ -293,11 +293,11 @@ window.initVisualSettingsObserver = function (mapId) {
     const selector = document.getElementById(`visual-selector-${mapId}`);
     if (!selector || selector._hasObserver) return; // Prevent double binding
 
-    // 1. Find the source of truth (the hidden input)
+    // Find the source of truth (the hidden input)
     const hiddenInput = selector.querySelector('input[name="selected_visual_id"]');
     if (!hiddenInput) return;
 
-    // 2. Create an observer instance
+    // Create an observer instance
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
             if (mutation.type === 'attributes' && mutation.attributeName === 'value') {
@@ -307,7 +307,7 @@ window.initVisualSettingsObserver = function (mapId) {
         });
     });
 
-    // 3. Start observing the hidden input for 'value' attribute changes
+    // Start observing the hidden input for 'value' attribute changes
     observer.observe(hiddenInput, { attributes: true, attributeFilter: ['value'] });
 
     // Mark as observed so we don't attach multiple times
@@ -318,7 +318,7 @@ function initSingleMap(container) {
     const topicName = container.id;
     if (!topicName) return;
 
-    // --- 1. Setup Viewer ---
+    // --- Setup Viewer ---
     const viewer = new ROS2D.Viewer({
         divID: topicName,
         width: 1, height: 1,
@@ -334,7 +334,7 @@ function initSingleMap(container) {
     const ctx = canvas.getContext("2d");
     if (ctx) ctx.imageSmoothingEnabled = false;
 
-    // --- 2. Setup Mock ROS ---
+    // --- Setup Mock ROS ---
     const mockRos = new EventEmitter2();
     mockRos.callOnConnection = () => { };
     mockRos.send = () => { };
@@ -342,7 +342,7 @@ function initSingleMap(container) {
     mockRos.close = () => { };
     mockRos.isConnected = true;
 
-    // --- 3. Setup Layers to allow adding markers on the map ---
+    // --- Setup Layers to allow adding markers on the map ---
     const mapGroup = new createjs.Container(); // The main wrapper
     container.mapGroup = mapGroup;
     viewer.scene.addChild(mapGroup);
@@ -358,7 +358,7 @@ function initSingleMap(container) {
     mapGroup.addChild(overlayLayer);
 
 
-    // --- 4. Setup Grid Client ---
+    // --- Setup Grid Client ---
     const gridClient = new ROS2D.OccupancyGridClient({
         ros: mockRos,
         rootObject: mapLayer, // RENDER MAP INTO THE BOTTOM LAYER
@@ -508,14 +508,14 @@ function getPathStyleForId(mapId, objectId) {
  * @param {string} type - 'circle' or 'arrow'
  */
 function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
-    // 1. Safety Checks
+    // Safety Checks
     if (!container.mapGridClient || !container.mapGridClient.currentGrid || !container.overlayLayer) return;
 
-    // 2. Transform Coordinates
+    // Transform Coordinates
     const pixelCoords = transformRosToGridPixels(container, pose.x, pose.y);
     if (!pixelCoords) return;
 
-    // 3. Calculate Proportional Size
+    // Calculate Proportional Size
     const info = container.mapInfo;
     let sizePx = 25;
 
@@ -540,7 +540,7 @@ function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
         rotationDegrees = pose.rotation * (180 / Math.PI);
     }
 
-    // 4. Get or Create Marker
+    // Get or Create Marker
     if (!container.overlays) container.overlays = {};
     let marker = container.overlays[id];
 
@@ -556,10 +556,10 @@ function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
             tip.id = `tooltip-${id}`;
             tip.className = 'uk-tooltip uk-active';
 
-            // 1. Get latest pose stored on the marker (prevents stale data)
+            // Get latest pose stored on the marker (prevents stale data)
             const currentPose = marker._rosPose || { x: 0, y: 0 };
 
-            // 2. Format HTML: ID on line 1, Coords on line 2 (small & semi-transparent)
+            // Format HTML: ID on line 1, Coords on line 2 (small & semi-transparent)
             tip.innerHTML = `
                 <div>${id}</div>
                 <div style="font-size: 0.85em; opacity: 0.8; font-family: monospace; margin-top: 2px;">
@@ -567,7 +567,7 @@ function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
                 </div>
             `;
 
-            // 3. Styling
+            // Styling
             tip.style.position = 'fixed';
             tip.style.zIndex = 10000;
             tip.style.pointerEvents = 'none';
@@ -602,7 +602,7 @@ function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
     // We save the pose to the marker object so the tooltip always sees the CURRENT location
     marker._rosPose = pose;
 
-    // 5. Redraw Custom Graphics
+    // Redraw Custom Graphics
     marker.graphics.clear();
 
     const dotRadius = sizePx * 0.2;
@@ -642,7 +642,7 @@ function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
         marker.rotation = 0;
     }
 
-    // 6. Update Position
+    // Update Position
     marker.x = pixelCoords.x;
     marker.y = pixelCoords.y;
 
@@ -655,7 +655,7 @@ function updateMapOverlay(container, id, pose, _ignoredColor, type = 'arrow') {
  * Expects 'points' to be a flat array [x1, y1, x2, y2, ...]
  */
 function updateMapPath(container, id, points) {
-    // 1. Safety Checks
+    // Safety Checks
     if (!container.mapGridClient || !container.mapGridClient.currentGrid || !container.overlayLayer) return;
     if (!points || points.length < 4) return; // Need at least 2 points (4 coords) to draw a line
 
@@ -663,7 +663,7 @@ function updateMapPath(container, id, points) {
     const assignedColor = getColorForId(container.id, id);
     const styleSettings = getPathStyleForId(container.id, id)
 
-    // 2. Get or Create Path Shape
+    // Get or Create Path Shape
     if (!container.paths) container.paths = {};
     let pathShape = container.paths[id];
 
@@ -676,7 +676,7 @@ function updateMapPath(container, id, points) {
         container.paths[id] = pathShape;
     }
 
-    // 3. Clear old graphics
+    // Clear old graphics
     pathShape.graphics.clear();
 
     // Calculate Stroke Width (Meters -> Pixels)
@@ -701,11 +701,11 @@ function updateMapPath(container, id, points) {
         pathShape.graphics.setStrokeDash(null);
     }
 
-    // 5. Start Drawing
+    // Start Drawing
     pathShape.graphics.beginStroke(assignedColor);
 
 
-    // 6. Loop through points and convert to Grid Pixels
+    // Loop through points and convert to Grid Pixels
 
     // Transform First Point
     let p0 = transformRosToGridPixels(container, points[0], points[1]);
@@ -741,13 +741,13 @@ function transformScreenToRos(container, screenX, screenY) {
 
     if (!grid) return null;
 
-    // 1. Convert Screen (Logical) to Canvas (Physical) coordinates
+    // Convert Screen (Logical) to Canvas (Physical) coordinates
     // We must match the physical resolution used in resizeViewer
     const dpr = window.devicePixelRatio || 1;
     const physX = screenX * dpr;
     const physY = screenY * dpr;
 
-    // 2. Use EaselJS to transform from Canvas space -> Local Grid Image space
+    // Use EaselJS to transform from Canvas space -> Local Grid Image space
     // This automatically handles the Viewer Zoom, Scene Pan, Grid Rotation,
     // Grid Centering offsets (x/y), and Registration Points (regX/regY).
     const localPt = grid.globalToLocal(physX, physY);
@@ -756,7 +756,7 @@ function transformScreenToRos(container, screenX, screenY) {
     const imageX = localPt.x;
     const imageY = localPt.y;
 
-    // 3. Convert Grid Pixels -> ROS Coordinates
+    // Convert Grid Pixels -> ROS Coordinates
     const info = container.mapInfo;
 
     if (!info) {
@@ -790,10 +790,10 @@ function transformRosToGridPixels(container, rosX, rosY) {
     const originY = info.origin.position.y;
     const mapHeight = info.height; // Height in pixels
 
-    // 1. Calculate X (Standard: Left to Right)
+    // Calculate X (Standard: Left to Right)
     const x = (rosX - originX) / res;
 
-    // 2. Calculate Y (Inverted: Map Bottom is Image Bottom)
+    // Calculate Y (Inverted: Map Bottom is Image Bottom)
     // ROS Origin (ymin) corresponds to Image Bottom (y = height)
     // ROS Max (ymax) corresponds to Image Top (y = 0)
     const y = mapHeight - ((rosY - originY) / res);
@@ -964,7 +964,7 @@ function resizeViewer(viewer, logicalWidth, logicalHeight) {
     const canvas = viewer.scene.canvas;
     const dpr = window.devicePixelRatio || 1;
 
-    // 1. Set the "Physical" size (buffer size)
+    // Set the "Physical" size (buffer size)
     const physicalWidth = Math.floor(logicalWidth * dpr);
     const physicalHeight = Math.floor(logicalHeight * dpr);
 
@@ -973,11 +973,11 @@ function resizeViewer(viewer, logicalWidth, logicalHeight) {
     viewer.width = physicalWidth;
     viewer.height = physicalHeight;
 
-    // 2. Force the "Logical" size via CSS (how big it looks on screen)
+    // Force the "Logical" size via CSS (how big it looks on screen)
     canvas.style.width = `${logicalWidth}px`;
     canvas.style.height = `${logicalHeight}px`;
 
-    // 3. Ensure smoothing is disabled for 2D maps after resize
+    // Ensure smoothing is disabled for 2D maps after resize
     const ctx = canvas.getContext("2d");
     if (ctx) ctx.imageSmoothingEnabled = false;
 }
@@ -1002,7 +1002,7 @@ function resizeMap(container) {
         if (gridClient && gridClient.currentGrid && mapInfo) {
             const grid = gridClient.currentGrid;
 
-            // 1. FORCE GRID TO 0,0
+            // FORCE GRID TO 0,0
             // This ensures the Map Image top-left is exactly at mapLayer's 0,0
             grid.x = 0;
             grid.y = 0;
@@ -1010,19 +1010,19 @@ function resizeMap(container) {
             grid.scaleX = 1;
             grid.scaleY = 1;
 
-            // 2. Use METADATA dimensions for centering, not Image dimensions
+            // Use METADATA dimensions for centering, not Image dimensions
             // (Image dimensions can sometimes be unreliable depending on load state)
             const mapWidth = mapInfo.width;
             const mapHeight = mapInfo.height;
 
-            // 3. Align mapGroup Center
+            // Align mapGroup Center
             mapGroup.regX = mapWidth / 2;
             mapGroup.regY = mapHeight / 2;
             mapGroup.rotation = MAP_ROTATION;
             mapGroup.x = mapWidth / 2;
             mapGroup.y = mapHeight / 2;
 
-            // 4. Zoom Logic (Using group bounds)
+            // Zoom Logic (Using group bounds)
             const bounds = mapGroup.getTransformedBounds();
             if (!bounds) return;
 

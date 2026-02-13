@@ -420,8 +420,8 @@ def _map_settings_modal(map_id: str, overlays: Optional[Dict] = None):
         ),
         id=f"{map_id}-settings-modal",
         cls="custom-overlay backdrop-blur-sm",
-        # 1. Initialize Observer (Runs once)
-        # 2. Force Initial Update (Runs every time mouse enters to ensure UI is in sync)
+        # Initialize Observer (Runs once)
+        # Force Initial Update (Runs every time mouse enters to ensure UI is in sync)
         onmouseenter=f"initVisualSettingsObserver('{map_id}'); updateVisualSettingsVisibility(document.getElementById('visual-selector-{map_id}'), '{map_id}')",
         onclick="this.style.display='none'",
     )
