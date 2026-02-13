@@ -121,7 +121,7 @@ You can define **reflexes** that trigger automatically when health degrades.
 * *Is the planner stuck?*  **Reconfigure** the tolerance parameters.
 * *Is the sensor noisy?*  **Switch** to a different algorithm.
 
-> **Learn More:** [Health Status Guide](https://www.google.com/search?q=status.md) and [Fallbacks Tutorial](https://www.google.com/search?q=fallbacks.md).
+> **Learn More:** [Health Status Guide](./status.md) and [Fallbacks Tutorial](./fallbacks.md).
 
 
 ## Pro Tips for Component Devs
