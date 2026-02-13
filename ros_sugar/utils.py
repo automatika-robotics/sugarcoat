@@ -129,16 +129,6 @@ def component_action(function: Callable, active: bool = False):
                 f"Action methods must return boolean or None. Method '{function.__name__}' cannot have '@component_action' decorator"
             )
 
-        # Check if **kwargs is present
-        has_variadic_kwargs = any(
-            p.kind == inspect.Parameter.VAR_KEYWORD
-            for p in inspect.signature(function).parameters.values()
-        )
-        if not has_variadic_kwargs:
-            raise InvalidAction(
-                f"Invalid action method: Provided method '{function.__name__}' does not support variadic kwargs.\nA valid action method should support variadic kwargs as the method will get additional runtime keyword argument values (such as the triggering event message)."
-            )
-
         # Check Component is active
         if rclpy_is_ok() and hasattr(self, "_state_machine"):
             # check for active flag and if the flag is True, check lifecycle_state is 3 i.e. active
