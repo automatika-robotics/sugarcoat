@@ -16,6 +16,7 @@ from typing import (
     Union,
     Any,
     Tuple,
+    Mapping
 )
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
@@ -166,7 +167,7 @@ class Launcher:
         package_name: Optional[str] = None,
         executable_entry_point: Optional[str] = "executable",
         events_actions: Optional[
-            Dict[
+            Mapping[
                 Event,
                 Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
             ]
