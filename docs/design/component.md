@@ -1,6 +1,6 @@
 # Components
 
-**Stop writing boilerplate. Start writing intelligence.**
+**Stop writing boilerplate. Start writing core logic.**
 
 In Sugarcoat, a `Component` is the fundamental unit of execution. It replaces the standard ROS2 Node with a robust, **Lifecycle-Managed**, and **Self-Healing** entity designed for production-grade autonomy.
 
