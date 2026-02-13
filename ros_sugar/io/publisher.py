@@ -15,7 +15,7 @@ from . import utils
 class Publisher:
     """Publisher."""
 
-    def __init__(self, output_topic, node_name: Optional[str] = None) -> None:
+    def __init__(self, output_topic, node_name: str = '') -> None:
         """__init__.
 
         :param input_topic:
@@ -27,7 +27,7 @@ class Publisher:
 
         # Node name can be changed to a node that the callback is executed in
         # at the time of setting subscriber using set_node_name
-        self.node_name: Optional[str] = node_name
+        self.node_name: str = node_name
 
         self._publisher: Optional[ROSPublisher] = None
         self._pre_processors: Optional[List[Union[Callable, socket]]] = None
