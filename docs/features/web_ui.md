@@ -33,6 +33,11 @@ You can view, control, and debug every part of your ROS2 application directly fr
 - <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">WebSocket-Based Streaming</span> -
   Provides bidirectional, low-latency communication for **text**, **image**, **map** and **audio** data streams.
 
+<p align="center">
+<picture align="center">
+  <img alt="EmbodiedAgents UI Example GIF" src="https://automatikarobotics.com/docs/ui_agents_vlm.gif" width="80%">
+</picture>
+</p>
 
 - <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Responsive Layouts</span> -
   Uses grid-based, adaptive layouts for clear visualization of system elements, optimized for both desktop and mobile.
@@ -114,7 +119,7 @@ When the recipe runs, a dynamic web interface like the one below is automaticall
 
 <p align="center">
 <picture align="center">
-  <img alt="EmbodiedAgents UI Example GIF" src="https://automatikarobotics.com/docs/ui_agents_vlm.gif" width="90%">
+  <img alt="EmbodiedAgents UI Example GIF" src="https://automatikarobotics.com/docs/ui_agents_router.gif" width="80%">
 </picture>
 </p>
 

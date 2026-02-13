@@ -2,7 +2,7 @@
 
 Sugarcoat introduces Robot Plugins to **seamlessly bridge your automation recipes with diverse robot hardware**.
 
-By abstracting manufacturer-specific ROS2 interfaces, <span class="text-red">plugins allow you to write generic, portable automation logic that runs on any robot without code changes 🎉</span>
+By abstracting manufacturer-specific ROS2 interfaces, <span class="text-red-strong">plugins allow you to write generic, portable automation logic that runs on any robot without code changes</span>
 
 ## What are Robot Plugins?
 

@@ -31,7 +31,6 @@ design/events
 design/actions
 design/fallbacks
 design/launcher
-design/monitor
 ```
 
 ```{toctree}
