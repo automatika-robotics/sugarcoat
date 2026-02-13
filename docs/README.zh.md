@@ -1,152 +1,176 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="_static/SUGARCOAT_DARK.png">
-  <source media="(prefers-color-scheme: light)" srcset="_static/SUGARCOAT_LIGHT.png">
-  <img alt="Sugarcoat Logo" src="_static/SUGARCOAT_DARK.png"  width="50%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/SUGARCOAT_DARK.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/_static/SUGARCOAT_LIGHT.png">
+  <img alt="Sugarcoat Logo" src="docs/_static/SUGARCOAT_DARK.png"  width="50%">
 </picture>
-<br/><br/>
 
-> 🌐 [English Version](../README.md) | 🇯🇵 [日本語版](README.ja.md)
+<br/>
 
-## 构建 ROS2 系统的最甜方式
+🇨🇳 [简体中文](docs/README.zh.md) | 🇯🇵 [日本語](docs/README.ja.md)
 
-**Sugarcoat** 是一个为 **ROS2** 提供强大**语法糖**的元框架，通过直观的 **Python API**，让你能够轻松构建复杂的、事件驱动的多节点系统。
+## ROS2 事件驱动系统的编排层
 
-## 主要特性
+**Sugarcoat** 是一个元框架，它用统一的工作流取代了碎片化的 _ROS2_ 开发，提供了一个高级 API 来构建健壮的组件，并将它们编排成具有凝聚力、能够自我修复的系统。
 
-| 特性 | 描述 |
-| :--- | :--- |
-| **事件驱动核心** | 内置的 **事件（Events）** 和 **动作（Actions）** 原语，使你能够在运行时动态配置和控制系统的 **组件（Components）**。 |
-| **内置韧性** | **回退机制（Fallbacks）** 和 **容错设计（Fault Tolerance）** 是核心概念，确保系统的健壮性与可靠性。 |
-| **直观的 Python API** | 使用简洁、可读的 Python 代码设计整个系统——包括节点、事件和动作。 |
-| **动态 Web UI** | 自动生成可动态扩展的 Web 界面，用于监控和配置系统。 |
-| **通用应用 [使用机器人插件](https://www.youtube.com/watch?v=oZN6pcJKgfY) （!新）** | 允许您编写可在任何机器人上运行而无需更改代码的通用、可移植的自动化逻辑 |
-| **Launch 替代方案** | 一个比 ROS2 Launch API 更加 Pythonic 的替代方案，为真实应用提供更灵活的运行时控制能力。 |
+通过用声明式的 **事件驱动 API (Event-Driven API)** 取代冗长的样板代码和静态启动文件，Sugarcoat 让您能够以现代 Python 的优雅来编排复杂的机器人行为。
 
-## 基于 Sugarcoat 构建的框架
+## 为什么选择 Sugarcoat？弥合编排鸿沟
 
-- [**Kompass**](https://automatikarobotics.com/kompass/): 一个基于事件驱动的导航栈框架，使用简单直观的 Python API 构建强健且全面的导航系统。
-- [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/): 一个用于创建交互式物理智能体的完整框架，使其能够理解、记忆并基于环境上下文采取行动。
+在标准的 ROS2 生态系统中，开发者拥有强大的工具来创建单个的“砖块”（节点），但几乎没有工具来建造“大楼”（系统）。随着机器人系统规模的扩大，它们不可避免地会面临“编排鸿沟 (Orchestration Gap)”：即底层驱动与高级任务规划之间的空白。
 
-## 快速上手
+- **标准 ROS2**：会导致“管理器节点”问题。为了协调各个节点，开发者需要编写一个管理器节点，这很快就会变成由回调、定时器和硬编码逻辑组成的“意大利面条式”代码，难以测试且容易出错。
+- **行为树 (例如 Nav2)**：依赖于顺序轮询机制（"ticks"）来按顺序处理逻辑。它们容易产生延迟，可能在复杂动作期间阻塞系统的反应能力，并且使得全局范围的安全触发器（如通用紧急停止开关）极难实现。
 
-- 了解 Sugarcoat 的[**设计概念**](https://automatika-robotics.github.io/sugarcoat/design/index.html) 📚
-- 学习如何使用 Sugarcoat [**创建你自己的 ROS2 包**](https://automatika-robotics.github.io/sugarcoat/use.html) 🚀
-- [**将您的自动化配方移植到不同的硬件上**](https://automatika-robotics.github.io/sugarcoat/features/robot_plugins.html) 使用 **机器人插件**
-- 探索 [**动态 Web UI**](https://automatika-robotics.github.io/sugarcoat/features/web_ui.html) 以实现实时系统可视化和控制
+**Sugarcoat 的解决方案**：Sugarcoat 提供了一个命令式的、事件驱动的中间层。它运行在一个**并行事件引擎**上，该引擎不通过列表进行“tick”轮询；它同时监听整个系统，提供真正的分布式自动化和微秒级的即时反应时间。
 
-## **（全新！）** 介绍 Sugarcoat Recipes 的动态 Web UI
+## 核心特性与支柱
 
-全新的 **动态 Web UI** 功能将系统的可视化与控制提升到新的高度。
-它基于 [**FastHTML**](https://www.fastht.ml/) 和 [**MonsterUI**](https://monsterui.answer.ai/) 构建，能够为任何 Sugarcoat recipe 自动生成动态、可扩展的 Web 界面，完全消除手动前端开发的需求。
+| 特性                                     | 描述                                                                                                                                                                              |
+| :--------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **智能组件 (Smart Components)**          | 开箱即用，每个组件都是一个受管的生命周期节点（配置、激活、停用）。它通过 `attrs` 提供类型安全的配置，并为输入/输出提供声明式的自动连线。                                          |
+| **主动恢复 (Active Resilience)**         | <br> 为 ROS2 节点内置的“免疫系统”。组件会主动报告其**健康状态 (Health Status)**（算法、组件或系统故障），并自动触发分布式**后备方案 (Fallbacks)** 以进行自我修复而不会崩溃。      |
+| **事件驱动行为 (Event-Driven Behavior)** | 使用纯粹且易读的 Python 表达式定义全局**事件 (Events)**（例如 `Event(battery < 10.0)`）和**动作 (Actions)**。它们作为触发器原生监控 ROS2 话题，无论当前系统状态如何都能立即执行。 |
+| **集中编排 (Centralized Orchestration)** | 强大的**启动器 (Launcher)** 作为 `ros2 launch` 的 Pythonic 替代方案。它支持多线程或多进程执行，在运行时主动监督组件的生命周期。                                                   |
+| **通用应用 (Universal Applications)**    | **机器人插件 (Robot Plugins)** 充当翻译层。这使得您可以编写通用的、可移植的自动化逻辑（配方 / recipes），且无需修改代码即可在任何机器人上运行。                                   |
+| **动态 Web UI**                          | 实时自动为每个话题、参数和事件生成全功能的 Web 前端界面。                                                                                                                         |
 
-这一特性可即时将复杂的多节点 ROS2 系统转化为可监控、可配置的 Web 应用。
+## 基于 Sugarcoat 构建的软件包
 
-### 自动 UI 生成演示
+- [**Kompass**](https://automatikarobotics.com/kompass/)：一个用于构建健壮且全面的事件驱动导航栈的框架，使用易于使用且直观的 Python API。
+- [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/)：一个全功能的框架，用于创建能够思考、理解和行动的交互式具身智能体 (Embodied Agents)。
 
-看看 Web UI 如何为不同类型的 Sugarcoat recipe 自动生成界面：
+## 快速入门
 
-- **示例 1：通用问答型 MLLM Recipe**
-  为来自 [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/) 的 MLLM 智能体 recipe 自动生成完整的交互界面，提供设置控制以及与机器人实时文本交互的功能。
+- 了解更多关于 Sugarcoat 的[**设计理念**](https://automatika-robotics.github.io/sugarcoat/design/index.html)
+- 学习如何使用 Sugarcoat [**创建您自己的 ROS2 软件包**](https://automatika-robotics.github.io/sugarcoat/use.html)
+- 使用 **机器人插件** [**跨不同硬件移植您的自动化配方**](https://automatika-robotics.github.io/sugarcoat/features/robot_plugins.html)
+- 探索 [**动态 Web UI**](https://automatika-robotics.github.io/sugarcoat/features/web_ui.html) 以进行实时系统可视化和控制
 
-<p align="center">
-<picture align="center">
-  <img alt="EmbodiedAgents UI 示例 GIF" src="./docs/_static/videos/ui_agents.gif" width="60%">
-</picture>
-</p>
+## Sugarcoat 如何工作
 
-- **示例 2：点位导航方案**
-  这是一个为点位导航系统自动生成的 UI 示例，来自 [**Kompass**](https://automatikarobotics.com/kompass/)
-  。该 UI 会自动渲染地图数据，并向机器人发送导航目标。
+Sugarcoat 的核心围绕着为您的机器人引入集中式编排和反应式自主性。
 
-<p align="center">
-<picture align="center">
-  <img alt="KOMPASS UI 示例 GIF" src="./docs/_static/videos/ui_navigation.gif" width="60%">
-</picture>
-</p>
+### 1. 组件 (智能执行)
 
-### 功能概览
-
-- **自动设置界面**：为所有 **组件（Components）** 的配置选项即时生成界面。
-- **自动 I/O 可视化**：前端控件与数据可视化会根据 **输入（Inputs）** 与 **输出（Outputs）** 自动创建。
-- **基于 WebSocket 的流式通信**：支持双向低延迟的 **文本、图像与音频** 数据流。
-- **响应式布局**：输入与输出元素以清晰、可适配的网格布局呈现。
-- **可扩展设计**：通过扩展机制轻松添加新消息类型与自定义可视化模块。
-
-## Sugarcoat 的工作原理
-
-Sugarcoat 的核心围绕以下几个概念：
-
-- **组件（Component）**：主要执行单元（ROS2 生命周期节点的抽象），通过 **输入/输出** 与 **回退行为（Fallback）** 配置。每个组件都会报告其 **健康状态（Health Status）**。
-  [了解更多关于组件的内容](https://automatika-robotics.github.io/sugarcoat/design/component.html)
+`Component` (组件) 是您的主要执行单元，取代了标准的 ROS2 节点。它会验证自身的配置，声明式地自动连接话题，并原生管理自身的生命周期。
 
 <p align="center">
 <picture align="center">
   <source media="(prefers-color-scheme: dark)" srcset="docs/_static/images/diagrams/component_dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/_static/images/diagrams/component_light.png">
-  <img alt="基础组件结构图" src="_static/images/diagrams/component_light.png" width="75%">
+  <img alt="Base Component Diagram" src="docs/_static/images/diagrams/component_light.png" width="75%">
 </picture>
 </p>
 
-- **事件与动作（Events & Actions）**：在运行时动态处理与重配置组件的机制。
-  [了解更多关于事件](https://automatika-robotics.github.io/sugarcoat/design/events.html) ｜ [了解更多关于动作](https://automatika-robotics.github.io/sugarcoat/design/actions.html)
+### 2. 事件与动作 (反应式中间层)
 
-- **启动器（Launcher）**：执行你定义的组件、事件与动作，可通过多线程或多进程运行。
-  内部的 **监控器（Monitor）** 负责管理组件生命周期并跟踪事件。
-  [了解更多关于启动器的内容](https://automatika-robotics.github.io/sugarcoat/design/launcher.html)
+使用纯 Python 表达式定义动态行为。事件在并行中持续监控话题，完全独立于组件的执行状态。
+
+```python
+from ros_sugar.core import Event, Action
+
+# 在并行中监控全局事件，以零轮询延迟即时执行
+collision_risk = Event(sensor.msg.min_dist < 0.5)
+
+# 即时触发系统级动作
+launcher.add_pkg(
+    components=[...],
+    events_actions={collision_risk: Action(stop_motors)}
+)
+```
+
+### 3. 启动器 (编排)
+
+获取您定义的组件、事件和动作，并执行系统。启动器主动跟踪健康状态，并清晰地编排多线程或多进程执行。
 
 <p align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/images/diagrams/multi_process_dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/_static/images/diagrams/multi_process_light.png">
-  <img alt="多进程执行结构图" src="_static/images/diagrams/multi_process_light.png" width="80%">
+<source media="(prefers-color-scheme: dark)" srcset="docs/_static/images/diagrams/multi_process_dark.png">
+<source media="(prefers-color-scheme: light)" srcset="docs/_static/images/diagrams/multi_process_light.png">
+<img alt="Multi-process execution Diagram" src="docs/_static/images/diagrams/multi_process_light.png" width="80%">
 </picture>
 </p>
 
-## 🛠️ 安装
+## Sugarcoat 配方的动态 Web UI
 
-Sugarcoat 适用于 ROS 版本 $\ge$ **Humble**。
+**动态 Web UI** 功能将系统可见性和控制力提升到了一个新水平。该功能基于 **[FastHTML](https://www.fastht.ml/)** 和 **[MonsterUI](https://monsterui.answer.ai/)** 构建，旨在为任何 Sugarcoat 配方自动生成完全动态、可扩展的 Web 界面，从而彻底消除了手动进行前端开发的需要。
 
-### 使用包管理器（推荐）
+此功能可瞬间将复杂的、多节点的 ROS2 系统转变为可监控和可配置的 Web 应用程序。
 
-以 Ubuntu 为例：
+### 自动生成 UI 演示
+
+查看 Web UI 如何毫不费力地为不同类型的 Sugarcoat 配方生成界面：
+
+- **示例 1：通用问答 MLLM 配方**
+  为 **[EmbodiedAgents](https://automatika-robotics.github.io/embodied-agents/)** 中的 MLLM 智能体配方自动生成的全功能界面，自动提供设置控制以及与机器人的实时文本 I/O。
+
+<p align="center">
+<picture align="center">
+<img alt="EmbodiedAgents UI Example GIF" src="./docs/_static/videos/ui_agents.gif" width="60%">
+</picture>
+</p>
+
+- **示例 2：定点导航配方**
+  为 **[Kompass](https://automatikarobotics.com/kompass/)** 中的点到点导航系统自动生成的 UI 示例。该 UI 自动渲染地图数据，并向机器人发送导航目标。
+
+<p align="center">
+<picture align="center">
+<img alt="Navigation System UI Example GIF" src="./docs/_static/videos/ui_navigation.gif" width="60%">
+</picture>
+</p>
+
+### 包含哪些功能？
+
+- **自动设置 UI**：实时生成界面，用于配置配方中使用的所有**组件**的设置。
+- **自动 I/O 可视化**：自动创建用于 UI **输入**和**输出**的前端控件和数据可视化。
+- **基于 WebSocket 的流传输**：具有双向、低延迟通信功能，可流式传输**文本、图像和音频**消息。
+- **响应式布局**：输入和输出元素以清晰、适应性强的网格布局呈现。
+- **可扩展设计**：通过扩展轻松添加对新消息类型和自定义可视化的支持。
+
+## 安装
+
+Sugarcoat 支持 **Humble** 的 ROS 版本。
+
+### 使用包管理器 (推荐)
+
+例如，在 Ubuntu 上：
 
 `sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
 
-或者，从[发布页面](https://github.com/automatika-robotics/sugarcoat/releases)安装指定版本的 deb 包：
+或者，您可以从 [Releases 页面](https://github.com/automatika-robotics/sugarcoat/releases) 安装特定的 deb 包：
 
 `sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
 
-> **注意：** 如果你的包管理器中的 `attrs` 版本低于 23.2，请使用 pip 更新：
+> **注意：** 如果您的包管理器中的 `attrs` 版本低于 23.2，您可能需要通过 pip 更新它：
 > `pip install 'attrs>=23.2.0'`
 
-## 从源代码构建
+### 源码编译
 
 ```shell
 mkdir -p ros-sugar-ws/src
 cd ros-sugar-ws/src
-git clone https://github.com/automatika-robotics/sugarcoat && cd ..
+git clone [https://github.com/automatika-robotics/sugarcoat](https://github.com/automatika-robotics/sugarcoat) && cd ..
 
-# Install dependencies (ensure attrs>=23.2.0 is included)
+# 安装依赖项 (确保包含 attrs>=23.2.0)
 pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 msgpack msgpack-numpy setproctitle pyyaml toml
 
 colcon build
 source install/setup.bash
 ```
 
-## 版权
+## 版权声明
 
-除非另有明确说明，本发行版中的代码版权所有 (c) 2024 Automatika Robotics。
+除非另有说明，本发行版中的代码版权归 Automatika Robotics (c) 2024 所有。
 
-Sugarcoat 根据 MIT 许可证提供。详细信息可在 [LICENSE](LICENSE) 文件中找到。
+Sugarcoat 基于 MIT 许可证提供。详情请参阅 [LICENSE](https://www.google.com/search?q=LICENSE) 文件。
 
 ## 贡献
 
-Sugarcoat 是由 [Automatika Robotics](https://automatikarobotics.com/) 和 [Inria](https://inria.fr/) 合作开发的。欢迎社区贡献。
+Sugarcoat 由 [Automatika Robotics](https://automatikarobotics.com/) 和 [Inria](https://inria.fr/) 合作开发。非常欢迎社区的贡献。
 
-## 🎩 致敬
+## 致谢
 
-**动态 Web UI** 由两个非常出色的开源项目驱动。
-特别感谢 Answers.ai 团队的卓越工作：
+**动态 Web UI** 由两个出色的开源项目提供支持。非常感谢 Answers.ai 在以下项目中的工作：
 
-- [**FastHTML**](https://www.fastht.ml/): 基于 HTMX 的框架，使我们的动态 Web 界面能够自动生成。
-- [**MonsterUI**](https://monsterui.answer.ai/): 提供优雅且直观的 UI 组件，让界面更具可用性与美感。
+- **[FastHTML](https://www.fastht.ml/)**：基于 HTMX 的框架，使我们能够自动生成动态 Web 界面。
+- **[MonsterUI](https://monsterui.answer.ai/)**：样式化的 UI 组件，使界面直观易用。
