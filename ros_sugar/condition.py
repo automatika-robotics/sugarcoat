@@ -1,15 +1,14 @@
-from typing import Any, List, Callable, Union, Type, Dict, Optional
+from typing import Any, List, Callable, Union, Type, Dict, Optional, Sequence, Tuple
 import operator
 import array
 import copy
 import numpy as np
 import json
 
-from .utils import MsgT
 from enum import Enum
 
 
-def _access_attribute(obj: Any, nested_attributes: List[Union[str, int]]) -> Any:
+def _access_attribute(obj: Any, nested_attributes: Sequence[Union[str, int]]) -> Any:
     """Access nested attribute (specified by attrs) in a given object, int are allowed to access specific indices in array attributes
 
     :param obj: _description_
@@ -55,7 +54,7 @@ def _get_value_from_msg(msg: Any, attributes: List[str]) -> Any:
     return val
 
 
-def _get_attribute_type(cls: Any, attrs: tuple):
+def _get_attribute_type(cls: Any, attrs: Union[Tuple, List]):
     """
     Gets the type of a nested attribute (specified by attrs) in given object
 
@@ -78,7 +77,7 @@ def _get_attribute_type(cls: Any, attrs: tuple):
         ) from e
 
 
-def _check_attribute(cls, expected_type, attrs: tuple):
+def _check_attribute(cls, expected_type, attrs: Union[Tuple, List]):
     """
     Checks if the given class has the nested attribute specified by attrs
     """
@@ -245,7 +244,7 @@ class Condition:
         return ConditionOperators.get_name(self.operator_func)
 
     @classmethod
-    def _deserialized_operator(cls, serialized_operator) -> Callable:
+    def _deserialized_operator(cls, serialized_operator) -> Optional[Callable]:
         if serialized_operator == "none":
             return None
         return ConditionOperators.get_operator(serialized_operator)
@@ -449,7 +448,7 @@ class ConditionOperators:
         return op_obj.value if hasattr(op_obj, "value") else op_obj
 
     @staticmethod
-    def _unwrap_list(op_obj) -> list:
+    def _unwrap_list(op_obj) -> Union[List, Tuple]:
         val = ConditionOperators._unwrap(op_obj)
         return val if isinstance(val, (list, tuple)) else [val]
 
@@ -539,14 +538,14 @@ class MsgConditionBuilder:
             return MsgConditionBuilder(self._topic, augmented_base)
         except Exception:
             # NOTE: This exception is added to avoid bugs when using an object of the class with system introspection (like pickle or inspect).
-            raise AttributeError("See the parent error raised above")
+            raise AttributeError("See the parent error raised above") from None
 
     def __deepcopy__(self, memo):
         # Manually create the new object to avoid errors from deepcopy which creates empty object instances before populating their dictionary.
         new_obj = MsgConditionBuilder(self._topic, copy.deepcopy(self._base, memo))
         return new_obj
 
-    def as_tuple(self) -> tuple:
+    def as_tuple(self) -> Tuple:
         return tuple(self._base)
 
     @property
@@ -564,13 +563,14 @@ class MsgConditionBuilder:
         self._type = value.ros_msg_type
 
     @property
-    def type(self) -> Type[MsgT]:
+    def type(self) -> Type:
         return self._type
 
-    @property
-    def processed_output(self) -> "MsgConditionBuilder":
-        augmented_base = self._base + "get_output"
-        return MsgConditionBuilder(self._topic, augmented_base)
+    # TODO: Enable accessing the processed output in conditions and action attributes
+    # @property
+    # def processed_output(self) -> "MsgConditionBuilder":
+    #     augmented_base = self._base + ["get_output"]
+    #     return MsgConditionBuilder(self._topic, augmented_base)
 
     def get_value(self, object_value=None) -> Any:
         val = object_value or self._type()
@@ -626,11 +626,11 @@ class MsgConditionBuilder:
         )
 
     # --- Dunder Methods for Conditional Parsing ---
-    def __eq__(self, other) -> Condition:
+    def __eq__(self, other) -> Condition:  # type: ignore
         self._check_similar_type(other)
         return self._make_condition(ConditionOperators.equals, other)
 
-    def __ne__(self, other) -> Condition:
+    def __ne__(self, other) -> Condition:  # type: ignore
         self._check_similar_type(other)
         return self._make_condition(ConditionOperators.not_equals, other)
 
@@ -659,7 +659,7 @@ class MsgConditionBuilder:
         # You can map this to == False, or a specific NOT operator if you have one
         return self._make_condition(ConditionOperators.equals, False)
 
-    def is_in(self, other: Union[List, tuple, str]) -> Condition:
+    def is_in(self, other: Union[List, Tuple, str]) -> Condition:
         """
         Check if the topic value is inside the provided list/tuple.
         Usage: topic.msg.status.is_in([1, 2, 3])
@@ -672,7 +672,7 @@ class MsgConditionBuilder:
             return self._make_condition(ConditionOperators.is_in, other)
         return self._make_condition(ConditionOperators.is_in, other)
 
-    def not_in(self, other: Union[List, tuple, str]) -> Condition:
+    def not_in(self, other: Union[List, Tuple, str]) -> Condition:
         """
         Check if the topic value is NOT inside the provided list/tuple.
         Usage: topic.msg.status.not_in([0, -1])
@@ -685,26 +685,26 @@ class MsgConditionBuilder:
 
     # --- Helper to safely get list from Operand ---
     @staticmethod
-    def _get_value_as_list(op_obj) -> list:
+    def _get_value_as_list(op_obj) -> Union[List, Tuple]:
         # Helper to ensure we are comparing against a list, even if the topic is scalar
         val = op_obj.value
         return val if isinstance(val, (list, tuple)) else [val]
 
-    def contains_any(self, other: Union[List, tuple]) -> Condition:
+    def contains_any(self, other: Union[List, Tuple]) -> Condition:
         """
         True if the topic value contains AT LEAST ONE of the values in 'other'.
         Equivalent to: set(topic) & set(other) is not empty
         """
         return self._make_condition(ConditionOperators.contains_any, other)
 
-    def contains_all(self, other: Union[List, tuple]) -> Condition:
+    def contains_all(self, other: Union[List, Tuple]) -> Condition:
         """
         True if the topic value contains ALL of the values in 'other'.
         Equivalent to: set(other).issubset(set(topic))
         """
         return self._make_condition(ConditionOperators.contains_all, other)
 
-    def contains(self, other: Union[List, tuple, str]) -> Condition:
+    def contains(self, other: Union[List, Tuple, str]) -> Condition:
         """
         If value contains another string
         If other is a list: works same as contains_all
@@ -716,21 +716,21 @@ class MsgConditionBuilder:
             return self._make_condition(ConditionOperators.contains, other)
         return self.contains_all(other)
 
-    def not_contains_any(self, other: Union[List, tuple]) -> Condition:
+    def not_contains_any(self, other: Union[List, Tuple]) -> Condition:
         """
         True if the topic value contains NONE of the values in 'other'.
         Equivalent to: set(topic).isdisjoint(set(other))
         """
         return self._make_condition(ConditionOperators.not_contains_any, other)
 
-    def not_contains_all(self, other: Union[List, tuple]) -> Condition:
+    def not_contains_all(self, other: Union[List, Tuple]) -> Condition:
         """
         True if the topic value is MISSING at least one value from 'other'.
         Inverse of contains_all.
         """
         return self._make_condition(ConditionOperators.not_contains_all, other)
 
-    def not_contains(self, other: Union[List, tuple, str]) -> Condition:
+    def not_contains(self, other: Union[List, Tuple, str]) -> Condition:
         """
         If value does not contain another string
         If other is a list: works same as not_contains_all

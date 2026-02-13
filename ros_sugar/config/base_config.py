@@ -339,7 +339,7 @@ class BaseComponentConfig(BaseConfig):
         default=False, alias="_enable_plugin_actions_handling"
     )
 
-    _run_type: Union[ComponentRunType, str] = field(
+    _run_type: ComponentRunType = field(
         default=ComponentRunType.TIMED,
         converter=_convert_runtype_to_enum,
         alias="_run_type",

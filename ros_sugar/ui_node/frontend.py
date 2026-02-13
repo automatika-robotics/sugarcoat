@@ -162,7 +162,7 @@ class FHApp:
             )
         ]
 
-    def get_all_map_overlay_outputs(self) -> Optional[List[Tuple]]:
+    def get_all_map_overlay_outputs(self) -> List[Tuple]:
         """Return all topics that should connect to the map websocket for displaying on the map
         This includes: (Point, PointStamped, Pose, PoseStamped, Odometry)"""
         # If a map element is present -> Get all point-like and path outputs to output as map markers
@@ -182,6 +182,7 @@ class FHApp:
                     ]
                 )
             ]
+        return []
 
     def update_configs_from_data(self, data: Dict):
         """Update configs from a UI form data dict
