@@ -1,18 +1,28 @@
 # Actions
 
-Actions represent the **executable behaviors** of your systems. They can represent:
+**Executable context-aware behaviors for your robotic system.**
 
-- **Behaviors defined within your components** that you wish to execute at runtime such as stopping your robot, executing a specific motion pattern or saying a sentence.
-- or **system level behaviors** like reconfiguring a component, turning component on/off or replacing some input streams.
-- or **arbitrary user-defined behaviors** like sending a call to an external API.
+Actions are not just static function calls; they are **dynamic, context-aware routines** that can adapt their parameters in real-time based on live system data.
 
-In Sugarcoat, Actions are not just static function calls; they are <span class="text-red">dynamic, context-aware routines that can adapt their parameters in real-time based on live system data.</span>
+They can represent:
 
-**How are Actions Triggered?** Actions sit dormant until activated by one of two mechanisms:
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Component Behaviors - </span> Routines defined within your components. *e.g., Stopping the robot, executing a motion pattern, or saying a sentence.*
 
-- Event-Driven (Reflexive): Triggered instantly when a specific Event condition is met (e.g., "Obstacle Detected" $\rightarrow$ stop_robot).
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">System Behaviors - </span> Lifecycle management, configuration and plumbing. *e.g., Reconfiguring a node, restarting a driver, or re-routing input streams.*
 
-- Fallback-Driven (Restorative): Triggered automatically by a Component when its internal Health Status degrades (e.g., "Camera Driver Failed" $\rightarrow$ restart_driver).
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">User Custom Behaviors - </span> Arbitrary Python functions. *e.g., Calling an external REST API, logging to a file, or sending a slack notification.*
+
+
+## Trigger Mechanisms
+
+Actions sit dormant until activated by one of two mechanisms:
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`flash_on;1.2em;sd-text-primary` Event-Driven (Reflexive) - </span> Triggered instantly when a specific **Event** condition is met.
+    **Example:** "Obstacle Detected" $\rightarrow$ `stop_robot()`
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`healing;1.2em;sd-text-primary` Fallback-Driven (Restorative) - </span> Triggered automatically by a Component when its internal **Health Status** degrades.
+    **Example:** "Camera Driver Failed" $\rightarrow$ `restart_driver()`
+
 
 ## The `Action` Class
 
@@ -55,11 +65,11 @@ action3 = Action(method=custom_routine)
 
 ## Dynamic Data Injection
 
-Sugarcoat Actions are not limited to static arguments. You can bind arguments directly to live Topic data.
+**This is Sugarcoat's superpower.**
 
-When the Action is triggered, the system automatically resolves these bindings—fetching the current value from the specified Topic attributes—and injects them into your function.
+You can create complex, context-aware behaviors without writing any "glue code" or custom parsers.
 
-This allows you to **create complex, context-aware behaviors without writing any "glue code" or custom parsers**.
+When you bind an Action argument to a `Topic`, the system automatically resolves the binding at runtime, fetching the current value from the topic attributes and injecting it into your function.
 
 ### Example: Cross-Topic Data Access
 
@@ -93,11 +103,13 @@ my_action = Action(
 
 ## Pre-defined Actions
 
-While you can wrap any `function` in an Action, Sugarcoat provides the [`Actions`](../apidocs/ros_sugar/ros_sugar.actions.md) module with a suite of pre-defined, thread-safe actions for managing components and system resources.
+Sugarcoat provides a suite of pre-defined, thread-safe actions for managing components and system resources via the `ros_sugar.actions` module.
 
-These actions are divided into Component-Level (affecting a specific component's lifecycle or config) and System-Level (general ROS2 utilities).
-
-Sugarcoat comes with a set of pre-defined component level actions and system level actions
+:::{admonition} Import Note
+:class: tip
+All pre-defined actions are **keyword-only** arguments. They can be imported directly:
+`from ros_sugar.actions import start, stop, reconfigure`
+:::
 
 ### Component-Level Actions
 
@@ -129,8 +141,10 @@ These actions interact with the broader ROS2 system and are executed by the cent
 | **`send_action_goal`**      | `server_name`<br>`server_type`<br>`request_msg` | Sends a specific goal to a ROS 2 Action Server.                          |
 | **`trigger_action_server`** | `server_name`<br>`server_type`                  | Triggers a given ROS2 action server.                                 |
 
-:::{tip} The pre-defined Actions are all keyword only and can be imported from `ros_sugar.actions' module.
-:::
 
-:::{note} When the _trigger_service_, _trigger_action_server_, etc. actions are paired with an Event, the action attempts to create the required service request from the incoming Event topic data automatically via duck typing. If automatic conversion is not possible or if the action is not paired with an Event, the action will send the default (empty) request message.
+:::{admonition} Automatic Data Conversion
+:class: note
+When using **`trigger_*`** actions paired with an Event, Sugarcoat attempts to create the required service/action request from the incoming Event topic data automatically via **duck typing**.
+
+If automatic conversion is not possible, or if the action is not paired with an Event, it sends a default (empty) request.
 :::
