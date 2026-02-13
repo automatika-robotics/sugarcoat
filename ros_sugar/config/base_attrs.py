@@ -150,18 +150,18 @@ class BaseAttrs:
             # Turn list into numpy array
             value = np.array(value)
 
-        else:
-            # If not a Union type -> check using isinstance
-            # Handles only the origin of GenericAlias (dict, list)
-            _attribute_type = (
-                get_origin(attribute_type)
-                if isinstance(attribute_type, _GenericAlias)
-                else attribute_type
-            )
-            if not isinstance(value, _attribute_type):
-                raise TypeError(
-                    f"Trying to set with incompatible type. Attribute {key} expecting '{type(attribute_to_set)}' got '{type(value)}'"
-                )
+        # else:
+        #     # If not a Union type -> check using isinstance
+        #     # Handles only the origin of GenericAlias (dict, list)
+        #     _attribute_type = (
+        #         get_origin(attribute_type)
+        #         if isinstance(attribute_type, _GenericAlias)
+        #         else attribute_type
+        #     )
+        #     if not isinstance(value, _attribute_type):
+        #         raise TypeError(
+        #             f"Trying to set with incompatible type. Attribute {key} expecting '{type(attribute_to_set)}' got '{type(value)}'"
+        #         )
         return value
 
     def __parse_from_serialized_list(self, list_attr: List, value: List) -> List:

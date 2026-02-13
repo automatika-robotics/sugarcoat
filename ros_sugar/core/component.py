@@ -103,16 +103,8 @@ class BaseComponent(lifecycle.Node):
         # Setup Config
         self.config: BaseComponentConfig = config or BaseComponentConfig()
 
-        # Set callback group in config
-        if not callback_group:
-            callback_group = (
-                getattr(ros_callback_groups, self.config._callback_group)()
-                if self.config._callback_group
-                else ReentrantCallbackGroup()
-            )
-
-        self.config._callback_group = callback_group
-        self.callback_group = callback_group
+        # Set callback group
+        self.callback_group = callback_group or ReentrantCallbackGroup()
 
         # SET NAME AND CALLBACK GROUP
         self.node_name = component_name

@@ -277,21 +277,6 @@ def _convert_logging_severity_to_str(
         raise ValueError(f"Unsupported Logging Severity Value '{value}'")
 
 
-def _get_str_from_callbackgroup(
-    callback_group: Union[str, ros_callback_groups.CallbackGroup],
-) -> Optional[str]:
-    """
-    Get callback group from string
-    """
-    if not callback_group:
-        return
-
-    if isinstance(callback_group, ros_callback_groups.CallbackGroup):
-        return callback_group.__class__.__name__
-
-    return callback_group
-
-
 @define(kw_only=True)
 class BaseComponentConfig(BaseConfig):
     """
@@ -343,10 +328,6 @@ class BaseComponentConfig(BaseConfig):
         default=ComponentRunType.TIMED,
         converter=_convert_runtype_to_enum,
         alias="_run_type",
-    )
-
-    _callback_group: Optional[Union[ros_callback_groups.CallbackGroup, str]] = field(
-        default=None, converter=_get_str_from_callbackgroup, alias="_callback_group"
     )
 
     _lifecycle_state_transition_timeout: float = field(
