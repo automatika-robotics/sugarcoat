@@ -2,10 +2,12 @@
 
 import inspect
 from types import ModuleType
-from typing import Any, List, Optional, Union, Dict, Type
+from typing import List, Optional, Union, Dict, Type, Generic
 from attrs import Factory, define, field
 from ..config import BaseAttrs, QoSConfig, base_validators
 from . import supported_types
+from ..utils import MsgT
+from ..condition import MsgConditionBuilder
 
 
 def get_all_msg_types(
@@ -117,7 +119,7 @@ def _make_qos_config(qos_profile: Union[Dict, QoSConfig]) -> QoSConfig:
 
 
 @define(kw_only=True)
-class Topic(BaseAttrs):
+class Topic(BaseAttrs, Generic[MsgT]):
     """
     Class for ROS topic configuration (name, type and QoS)
 
@@ -138,8 +140,12 @@ class Topic(BaseAttrs):
       - Topic message type, can be provided as a 'type' or the type name as a string
 
     * - **qos_profile**
-      - `QoSConfig | Dict`, `QoSConfig()`
+      - `QoSConfig`, `QoSConfig()`
       - QoS (Quality of Service) configuration
+
+    * - **data_timeout**
+      - `float`, `1.0`
+      - Used in event management. Time to hold the topic data for processing before considered "stale" (seconds)
     ```
     """
 
@@ -147,13 +153,15 @@ class Topic(BaseAttrs):
     msg_type: Union[Type[supported_types.SupportedType], str] = field(
         converter=get_msg_type
     )
-    qos_profile: Union[Dict, QoSConfig] = field(
+    qos_profile: QoSConfig = field(
         default=Factory(QoSConfig), converter=_make_qos_config
     )
-    ros_msg_type: Any = field(default=None, init=False)
+    data_timeout: float = field(default=1.0, validator=base_validators.gt(0.0))
+    ros_msg_type: Type[MsgT] = field(init=False)
     additional_types: List[Type[supported_types.SupportedType]] = field(
         default=Factory(list)
     )
+    __msg: MsgConditionBuilder = field(init=False)
 
     @msg_type.validator
     def _msg_type_validator(self, _, val):
@@ -164,6 +172,17 @@ class Topic(BaseAttrs):
             )
         # Set ros type
         self.ros_msg_type = val.get_ros_type()
+        self.__msg = MsgConditionBuilder(self)
+
+    @property
+    def msg(self) -> MsgConditionBuilder:
+        """Get the ROS message object path builder associated with this Topic
+           Used for parsing topic message attributes for Actions and Event parsers
+
+        :return: ROS message type
+        :rtype: MsgT
+        """
+        return self.__msg
 
 
 @define(kw_only=True)

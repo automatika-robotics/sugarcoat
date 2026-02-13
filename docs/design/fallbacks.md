@@ -1,158 +1,159 @@
 # Fallbacks
 
-[Fallbacks](../apidocs/ros_sugar/ros_sugar.core.fallbacks.md/#classes) are the self-healing mechanism of a Sugarcoat component. They define the set of Actions to be executed when a failure is detected in the component's [Health Status](status.md).
+**All robots can fail, but smart robots recover.**
 
-Instead of crashing or stopping when an error occurs, a Component can be configured to attempt recovery strategies, such as restarting a specific algorithm, re-initializing a driver, or, in the worst case, shutting down or broadcasting a failure to the rest of the system.
+Fallbacks are the **Self-Healing Mechanism** of a Sugarcoat component. They define the specific set of [Actions](actions.md) to execute automatically when a failure is detected in the component's [Health Status](status.md).
 
-:::{figure-md} fig-fallbacks
+Instead of crashing or freezing when an error occurs, a Component can be configured to attempt intelligent recovery strategies:
+* *Algorithm stuck?* $\rightarrow$ **Switch** to a simpler backup.
+* *Driver disconnected?* $\rightarrow$ **Re-initialize** the hardware.
+* *Sensor timeout?* $\rightarrow$ **Restart** the node.
 
-<img src="../_static/images/diagrams/fallbacks_light.png" alt="Fallbacks and Health Status" width="900px">
+```{figure} /_static/images/diagrams/fallbacks_dark.png
+:class: dark-only
+:alt: fig-fallbacks
+:align: center
+```
 
-Component Fallbacks
-:::
+```{figure} /_static/images/diagrams/fallbacks_light.png
+:class: light-only
+:alt: fig-fallbacks
+:align: center
 
-## Failure Hierarchy
+The Self-Healing Loop
+```
 
-The Component checks its internal health status at the defined component `loop_rate`. If a failure is detected, it selects the appropriate fallback strategy based on the specific type of failure. The priority is handled in the following order:
 
-- **System Failure** (on_system_fail): Failure external to the component (e.g, "Failed to collect all required inputs"), or a critical system-level failure (e.g., "Out of memory").
+## The Recovery Hierarchy
 
-- **Component Failure** (on_component_fail): Failures of the component shell or node (e.g., "Driver disconnected").
+When a component reports a failure, Sugarcoat doesn't just panic. It checks for a registered fallback strategy in a specific order of priority.
 
-- **Algorithm Failure** (on_algorithm_fail): Failures specific to the internal logic/algorithm (e.g., "Path planner failed to find a path", or "ML model client failed to connect to the server").
+This allows you to define granular responses for different types of errors.
 
-- **Generic/Any Failure** (on_any_fail): A catch-all strategy for any failure not handled by a specific policy above.
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`link_off;1.5em;sd-text-primary` 1. System Failure</span> `on_system_fail`
+  **The Context is Broken.**
+  External failures like missing input topics or disk full.
+  *Example Strategy:* Wait for data, or restart the data pipeline.
 
-**If a specific fallback is not defined (is None), the system checks the next applicable level (usually falling through to on_any_fail).**
+- <span class="sd-text-danger" style="font-weight: bold; font-size: 1.1em;">{material-regular}`error;1.5em;sd-text-danger` 2. Component Failure</span> `on_component_fail`
+  **The Node is Broken.**
+  Internal crashes or hardware disconnects.
+  *Example Strategy:* Restart the component lifecycle or re-initialize drivers.
 
-:::{note} Components do not have any default fallback behavior. Fallbacks can be defined per component or for the whole component graph.
-:::
+- <span class="sd-text-warning" style="font-weight: bold; font-size: 1.1em;">{material-regular}`warning;1.5em;sd-text-warning` 3. Algorithm Failure</span> `on_algorithm_fail`
+  **The Logic is Broken.**
+  The code ran but couldn't solve the problem (e.g., path not found).
+  *Example Strategy:* Reconfigure parameters (looser tolerance) or switch algorithms.
 
-## Fallback Strategies
-A Fallback consists of an **Action** (or a list of Actions) and a **Retry Policy**.
+- <span class="sd-text-secondary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`help_center;1.5em;sd-text-secondary` 4. Catch-All</span> `on_fail`
+  **Generic Safety Net.**
+  If no specific handler is found above, this fallback is executed.
+  *Example Strategy:* Log an error or stop the robot.
 
-### Single Action Strategy
 
-When a single action is defined, it is executed every time the associated failure is caught until:
 
-- The action returns `True` (indicating successful execution and the component is considered healthy again).
+## Recovery Strategies
 
-- The `max_retries` count is reached. If `max_retries` is `None` then the action will be re-tried indefinitely.
+A Fallback isn't just a single function call. It is a robust policy defined by **Actions** and **Retries**.
 
-**If max_retries is reached, the component enters the Give Up state.**
-
-### Multi-Step Strategy (List of Actions)
-You can define a sequence of actions to try in order. This is useful for tiered recovery (e.g., "First try to reset the connection. If that fails, try restarting the whole node").
-
-- Execution Flow: The system attempts the first action in the list.
-
-- Retries: Each action in the list is attempted `max_retries` times.
-
-- Progression: If an action fails (doesn't return `True`) after its retries are exhausted, the system moves to the next action in the list.
-
-- Give Up: If the last action in the list fails after its retries, the component enters the Give Up state.
-
-### The Give Up State
-When all strategies have failed (all retries of all actions exhausted), the component executes the `on_giveup` fallback. This is typically used for final cleanup or to permanently mark the node as dead.
-
-## Declaring Failures
-**Important**: Fallbacks are only triggered if the component reports a failure. When writing custom components, it is your responsibility to detect errors in your main loop or callbacks and update the `self.health_status` object.
-
-You should use the following methods to report status:
-
-- `self.health_status.set_fail_algorithm(optional_failed_algorithm_name_or_names)`
-
-- `self.health_status.set_fail_component(optional_failed_component_name_or_names)`
-
-- `self.health_status.set_fail_system(optional_failed_topics_name_or_names)`
-
-Once the status is set to a failure state, the component internal check will automatically begin executing the configured fallback actions.
-
-## Defining Custom Fallbacks in your Component
-
-You can create custom recovery methods in your component. These methods should return `bool` (`True` if recovery succeeded, `False` otherwise). You can also use the `@component_fallback` decorator to ensure that fallback methods can only be called after the component is configured and running.
-
-**Example**: Custom Driver with Health Checks
-In this example, the _execution_step checks the hardware connection. If it fails, it sets the component status to failed. This triggers the try_reconnect fallback.
+### 1. The Persistent Retry (Single Action)
+*Try, try again.*
+The system executes the action repeatedly until it returns `True` (success) or `max_retries` is reached.
 
 ```python
-from ros_sugar.component import BaseComponent, component_fallback
-from ros_sugar.action import Action
+# Try to restart the driver up to 3 times
+driver.on_component_fail(fallback=restart(component=driver), max_retries=3)
+
+```
+
+### 2. The Escalation Ladder (List of Actions)
+
+*If at first you don't succeed, try something stronger.*
+You can define a sequence of actions. If the first one fails (after its retries), the system moves to the next one.
+
+1. **Clear Costmaps** (Low cost, fast)
+2. **Reconfigure Planner** (Medium cost)
+3. **Restart Planner Node** (High cost, slow)
+
+```python
+# Tiered Recovery for a Navigation Planner
+planner.on_algorithm_fail(
+    fallback=[
+        Action(method=planner.clear_costmaps),      # Step 1
+        Action(method=planner.switch_to_fallback),  # Step 2
+        restart(component=planner)                  # Step 3
+    ],
+    max_retries=1 # Try each step once before escalating
+)
+
+```
+
+### 3. The "Give Up" State
+
+If all strategies fail (all retries of all actions exhausted), the component enters the **Give Up** state and executes the `on_giveup` action. This is the "End of Line", usually used to park the robot safely or alert a human.
+
+
+
+## How to Implement Fallbacks
+
+### Method A: In Your Recipe (Recommended)
+
+You can configure fallbacks externally without touching the component code. This makes your system modular and reusable.
+
+```python
+from ros_sugar.actions import restart, log
+
+# 1. Define component
+lidar = BaseComponent(component_name='lidar_driver')
+
+# 2. Attach Fallbacks
+# If it crashes, restart it (Unlimited retries)
+lidar.on_component_fail(fallback=restart(component=lidar))
+
+# If data is missing (System), just log it and wait
+lidar.on_system_fail(fallback=log(msg="Waiting for Lidar data..."))
+
+# If all else fails, scream
+lidar.on_giveup(fallback=log(msg="LIDAR IS DEAD. STOPPING ROBOT."))
+
+```
+
+### Method B: In Component Class (Advanced)
+
+For tightly coupled recovery logic (like re-handshaking a specific serial protocol), you can define custom fallback methods inside your class.
+
+:::{tip}
+Use the `@component_fallback` decorator. It ensures the method is only called when the component is in a valid state to handle it.
+:::
+
+```python
+from ros_sugar.core import BaseComponent, component_fallback
+from ros_sugar.core import Action
 
 class MyDriver(BaseComponent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Configure the fallback behavior
-        # If the component fails, try to reconnect
-        self.on_system_fail(fallback=Action(self.try_reconnect), max_retries=3)
-
-        # If reconnection fails 3 times, give up and shutdown
-        self.on_giveup(fallback=Action(self.safe_shutdown))
+        # Register the custom fallback internally
+        self.on_system_fail(
+            fallback=Action(self.try_reconnect),
+            max_retries=3
+        )
 
     def _execution_step(self):
-        """Main loop of the driver"""
         try:
-            # Normal operation
-            data = self.hardware_interface.read()
-            self.publish_data(data)
-
-            # Explicitly mark as healthy if successful
+            self.hw.read()
             self.health_status.set_healthy()
-
-        except ConnectionError as e:
-            self.get_logger().error(f"Hardware error: {e}")
-
-            # [IMPORTANT] Declare the failure to trigger the fallback!
-            self.health_status.set_fail_system(self.hardware_interface.name)
+        except ConnectionError:
+            # This trigger starts the fallback loop!
+            self.health_status.set_fail_system()
 
     @component_fallback
     def try_reconnect(self) -> bool:
-        """Attempt to reconnect to the hardware"""
-        self.get_logger().info("Fallback: Attempting to reconnect...")
-        success = self.hardware_interface.connect()
+        """Custom recovery logic"""
+        self.get_logger().info("Attempting handshake...")
+        if self.hw.connect():
+            return True # Recovery Succeeded!
+        return False    # Recovery Failed, will retry...
 
-        if success:
-            self.get_logger().info("Reconnection successful!")
-            return True # Signals that recovery worked
-
-        return False # Signals that recovery failed, will retry or move to next step
-
-    @component_fallback
-    def safe_shutdown(self) -> bool:
-        """Park the robot and stop"""
-        self.get_logger().error("Giving up: Shutting down driver.")
-        self.robot.stop()
-        return True
-```
-
-## Programming Fallbacks in your Recipe
-
-You can configure a component's fallbacks directly in your recipe by calling:
-
-- `on_fail(action, max_retries=None)`: Sets the fallback for Any failure (the catch-all). `max_retries=None` implies infinite retries for a single action.
-
-- `on_component_fail(action, max_retries=None)`: Sets the fallback specifically for component-level failures.
-
-- `on_algorithm_fail(action, max_retries=None)`: Sets the fallback specifically for algorithm-level failures.
-
-- `on_system_fail(action, max_retries=None)`: Sets the fallback for system-level failures.
-
-- `on_giveup(action)`: Sets the final action to execute when all other fallbacks have failed.
-
-
-```python
-    from ros_sugar.core import BaseComponent
-    from ros_sugar.actions import ComponentActions
-
-    my_component = BaseComponent(component_name='test_component')
-
-    # Set fallback for component failure to restart the component
-    my_component.on_component_fail(fallback=ComponentActions.restart(component=my_component))
-
-    # Change fallback for any failure
-    my_component.on_fail(fallback=Action(my_component.restart))
-
-    # First broadcast status, if another failure happens -> restart
-    my_component.on_fail(fallback=[Action(my_component.broadcast_status), Action(my_component.restart)])
 ```

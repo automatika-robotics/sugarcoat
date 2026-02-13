@@ -4,7 +4,6 @@ from typing import Dict
 from pathlib import Path
 from functools import partial
 import argparse
-import logging
 import threading
 import uvicorn
 from ros_sugar.launch.executable import setup_component, run_component
@@ -12,6 +11,51 @@ from ros_sugar.launch.executable import setup_component, run_component
 from ros_sugar.ui_node import UINode, UINodeConfig
 from ros_sugar.ui_node.frontend import FHApp
 import ros_sugar.ui_node.elements as elements
+from ros_sugar.utils import logger
+
+import base64
+import array
+import numpy as np
+from rosidl_runtime_py.convert import message_to_ordereddict
+
+
+def _marker_on_map(payload, **_):
+    """Helper callback to parse a map Maker data from point-like message"""
+    content = payload.get("payload", None)
+    if content is None:
+        return
+    msg_type = payload.get("type")
+    try:
+        if msg_type == "Path":
+            # Content data will have the filtered path points
+            return {
+                "op": "path",
+                "id": payload.get("topic", ""),
+                "frame_id": content.get("frame_id", ""),
+                "points": content.get("data"),
+            }
+        if msg_type in ["Point", "PointStamped"]:
+            # Content data will have an array of [x, y, z]
+            return {
+                "op": "overlay",
+                "id": payload.get("topic", ""),
+                "frame_id": content.get("frame_id", ""),
+                "x": content.get("data")[0],
+                "y": content.get("data")[1],
+            }
+        if msg_type in ["Pose", "PoseStamped", "Odometry"]:
+            # Content data will have an array of [x, y, z, heading] for Pose, PoseStamped
+            # and [x, y, z, heading] for Odometry
+            return {
+                "op": "overlay",
+                "id": payload.get("topic", ""),
+                "frame_id": content.get("frame_id", ""),
+                "x": content.get("data")[0],
+                "y": content.get("data")[1],
+                "theta": content.get("data")[3],
+            }
+    except Exception:
+        logger.error(f"Error parsing UI input from topic type {msg_type}")
 
 
 def main():
@@ -19,7 +63,7 @@ def main():
     Executable to run a component as a ros node.
     Used to start a node using Launcher
     """
-    logging.info("Starting UI Node executable")
+    logger.info("Starting UI Node executable")
 
     # Start UI helper ROS node in a separate thread
     ros_node: UINode = setup_component(
@@ -129,26 +173,28 @@ def main():
         """Send a ROS2 action goal from the client"""
         form_data = await request.form()
         data_dict = dict(form_data.items())
-        # Add request to logging card
-        elements.update_logging_card(
-            fh.outputs_log,
-            f"Sending action server goal: '{data_dict}'",
-            data_type="String",
-            data_src="user",
-        )
+        action_name = data_dict.get("action_name", "")
+        if (
+            action_name in fh.action_clients_ft
+            and fh.action_clients_ft[action_name].is_active()
+        ):
+            fh.toasting(
+                "Cannot send a new goal while the current goal is still active. Cancel ongoing goal first.",
+                session,
+                "error",
+                duration=100000,
+            )
+            return fh.get_main_page()
         result_code, result = ros_node.send_action_goal(data_dict)
         if not result_code:
             fh.toasting(result, session, "error", duration=100000)
         else:
             fh.toasting(f"Action goal sent: {result}", session, "info", duration=100000)
-        # Add response to logging card
-        elements.update_logging_card(
-            fh.outputs_log,
-            f"{result}",
-            data_type="String",
-            data_src="robot",
-        )
-        # TODO: Add sending feedback to the log
+            fh.action_clients_ft[action_name].update(
+                status="accepted",
+                duration=0,
+            )
+            fh.action_clients_ft[action_name].total_calls += 1
         return fh.get_main_page()
 
     @app.post("/action/cancel")
@@ -157,25 +203,11 @@ def main():
         form_data = await request.form()
         data_dict = dict(form_data.items())
         action_name = data_dict.get("action_name")
-        # Add request to logging card
-        elements.update_logging_card(
-            fh.outputs_log,
-            f"Sending action goal cancellation for action: '{action_name}'",
-            data_type="String",
-            data_src="user",
-        )
         result_code, result = ros_node.cancel_action(action_name)
         if not result_code:
             fh.toasting(result, session, "error", duration=100000)
         else:
             fh.toasting(f"{result}", session, "info", duration=100000)
-        # Add response to logging card
-        elements.update_logging_card(
-            fh.outputs_log,
-            f"{result}",
-            data_type="String",
-            data_src="robot",
-        )
         return fh.get_main_page()
 
     # -- WS handling --
@@ -203,7 +235,7 @@ def main():
         """When a client connects, register its callback."""
 
         # Callback function for ROS node
-        async def stream_callback(data: Dict):
+        async def stream_callback(data: Dict, **_):
             if data["type"] == "error":
                 await log_data(
                     send, data["payload"], data_type=data["type"], data_src=data["type"]
@@ -213,11 +245,61 @@ def main():
 
         ros_node.attach_websocket_callback(stream_callback, topic_type)
 
+    async def on_conn_map(ws, _, map_topic_type: str):
+        """When a client connects, register its callback."""
+
+        # Callback function for ROS node
+        async def map_callback(payload, msg):
+            # --- CASE 1: Incoming marker data ----
+            # If the incoming data is for a marker
+            if payload.get("type", None) != "OccupancyGrid":
+                response = _marker_on_map(payload)
+                if response:
+                    await ws.send_json(response)
+                return
+
+            # --- CASE 2: Incoming MAP data ----
+            # Convert ROS message to a JSON-serializable dict
+            # Convert header and info normally (they are small)
+            msg_dict = {
+                "header": message_to_ordereddict(msg.header),
+                "info": message_to_ordereddict(msg.info),
+            }
+
+            # FAST CONVERSION of data field
+            # 'data' is typically a list of int8. We want a Base64 string.
+            data_field = msg.data
+            raw_bytes = b""
+
+            if isinstance(data_field, list):
+                # 'b' is signed char (int8), matches ROS int8[]
+                raw_bytes = array.array("b", data_field).tobytes()
+            elif isinstance(data_field, array.array):
+                raw_bytes = data_field.tobytes()
+            elif isinstance(data_field, bytes):
+                raw_bytes = data_field
+            elif isinstance(data_field, np.ndarray):
+                raw_bytes = data_field.tobytes()
+            else:
+                # Fallback (slowest)
+                raw_bytes = bytes(data_field)
+
+            msg_dict["data"] = base64.b64encode(raw_bytes).decode("utf-8")
+
+            response = {"op": "publish", "msg": msg_dict}
+            await ws.send_json(response)
+
+        ros_node.attach_websocket_callback(map_callback, map_topic_type)
+
+        # Add all point outputs to the map websocket callback
+        for _, topic_type in fh.get_all_map_overlay_outputs():
+            ros_node.attach_websocket_callback(map_callback, topic_type)
+
     async def on_conn_action(_, send, action_name: str):
         """When a client connects, register its callback."""
 
         # Callback function for ROS node
-        async def feedback_callback(data: Dict):
+        async def feedback_callback(data: Dict, **_):
             """Updates an action client with new feedback from the server
 
             :param data: UI data dict (status, feedback, etc.)
@@ -229,7 +311,7 @@ def main():
                     feedback=data["feedback"],
                     duration=data["duration_secs"],
                 )
-                await send(fh.action_clients_ft[action_name].card)
+                await send(fh.action_clients)
 
         ros_node.attach_client_feedback_callback(feedback_callback, action_name)
 
@@ -244,9 +326,25 @@ def main():
         async def _():
             pass
 
+    # Create websockets for map output topics
+    for map_topic_name, map_topic_type in fh.get_all_map_outputs():
+        logger.debug(f"Starting ws for {map_topic_name}, {map_topic_type}...")
+
+        @app.ws(
+            f"/ws_{map_topic_name}",
+            conn=partial(on_conn_map, map_topic_type=map_topic_type),
+            disconn=on_disconn,
+        )
+        async def _(_, data):
+            # Map websockets send back clicked points (Point, Pose, etc.)
+            # The actual point data is in data.data, but it is expected in the ui node directly in data.x, etc.
+            if message := data.pop("data", None):
+                data.update(message)
+                ros_node.publish_data(data)
+
     for clients_configs_dict in ros_node.action_clients_inputs_dicts():
-        logging.warning(
-            f"starting action clients ws for {clients_configs_dict['name']}..."
+        logger.debug(
+            f"Starting action clients ws for {clients_configs_dict['name']}..."
         )
 
         @app.ws(
@@ -273,7 +371,7 @@ def main():
                     "data": data["payload"],
                 })
             except RuntimeError:
-                logging.warning("Runtime error when sending audio")
+                logger.warning("Runtime error when sending audio")
 
             # Send the robot loading dots
             return elements.update_logging_card_with_loading(fh.outputs_log)
@@ -293,7 +391,7 @@ def main():
                     "data": data["payload"],
                 })
             except RuntimeError:
-                logging.warning("Runtime error when sending audio")
+                logger.warning("Runtime error when sending audio")
 
             # Send the robot loading dots
             return elements.update_logging_card_with_loading(fh.outputs_log)
@@ -302,7 +400,7 @@ def main():
         """When a client connects, register its callback."""
 
         # Callback function for ROS node
-        async def websocket_callback(data: Dict):
+        async def websocket_callback(data: Dict, **_):
             # Recieve json style data from node and pass to UI with send
             if len(data["payload"]) > 0:
                 await log_data(
@@ -356,22 +454,22 @@ def main():
         Path(ros_node_config.ssl_keyfile).exists()
         and Path(ros_node_config.ssl_certificate).exists()
     ):
-        logging.info("\n" + "=" * 80)
-        logging.info("WARNING: SSL certificates (key.pem, cert.pem) not found.")
-        logging.info(
+        logger.info("\n" + "=" * 80)
+        logger.info("WARNING: SSL certificates (key.pem, cert.pem) not found.")
+        logger.info(
             "Microphone access will not work when accessing from another machine."
         )
-        logging.info(
+        logger.info(
             "To enable microphone over the network, generate certificates by running"
         )
-        logging.info("the following command:")
-        logging.info(
+        logger.info("the following command:")
+        logger.info(
             '\nopenssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes -subj "/CN=localhost"\n'
         )
-        logging.info(
+        logger.info(
             "And give the path to the certificates to the launcher.enable_ui method"
         )
-        logging.info("=" * 80 + "\n")
+        logger.info("=" * 80 + "\n")
         key_file = None
         certificate_file = None
         protocol = "http"
@@ -380,7 +478,7 @@ def main():
         certificate_file = ros_node_config.ssl_certificate
         protocol = "https"
 
-    logging.info(
+    logger.info(
         f"Access the recipe UI at: {protocol}://<IP_ADDRESS_OF_THE_ROBOT>:{ros_node_config.port}"
     )
     uvicorn.run(

@@ -22,7 +22,7 @@ from . import utils
 class GenericCallback:
     """GenericCallback."""
 
-    def __init__(self, input_topic, node_name: Optional[str] = None) -> None:
+    def __init__(self, input_topic, node_name: str = "") -> None:
         """__init__
 
         :param input_topic:
@@ -35,7 +35,7 @@ class GenericCallback:
 
         # Node name can be changed to a node that the callback is executed in
         # at the time of setting subscriber using set_node_name
-        self.node_name: Optional[str] = node_name
+        self.node_name: str = node_name
         self.msg = None
         self.__got_msg = False
 
@@ -153,7 +153,7 @@ class GenericCallback:
         return self.msg
 
     @abstractmethod
-    def _get_ui_content(self, **_) -> str:
+    def _get_ui_content(self, **_) -> Union[str, Dict]:
         """
         Utility method to get UI compatible content.
         To be used with external callbacks in UI Node
@@ -172,13 +172,12 @@ class GenericCallback:
     def clear_last_msg(self):
         """Clears the last received message on the topic"""
         self.msg = None
-        self._frame_id = None
 
 
 class StdMsgCallback(GenericCallback):
     """std_msgs callback"""
 
-    def __init__(self, input_topic, node_name: Optional[str] = None) -> None:
+    def __init__(self, input_topic, node_name: str = "") -> None:
         super().__init__(input_topic, node_name)
 
     def _get_output(self, **_):
@@ -193,7 +192,7 @@ class StdMsgCallback(GenericCallback):
 class StdMsgArrayCallback(GenericCallback):
     """std_msgs callback"""
 
-    def __init__(self, input_topic, node_name: Optional[str] = None) -> None:
+    def __init__(self, input_topic, node_name: str = "") -> None:
         super().__init__(input_topic, node_name)
 
     def _get_output(self, **_) -> Optional[np.ndarray]:
@@ -234,7 +233,7 @@ class ImageCallback(GenericCallback):
     Image Callback class. Its get method saves an image as bytes
     """
 
-    def __init__(self, input_topic, node_name: Optional[str] = None) -> None:
+    def __init__(self, input_topic, node_name: str = "") -> None:
         """
         Constructs a new instance.
         :param      input_topic:  Subscription topic
@@ -311,7 +310,7 @@ class TextCallback(GenericCallback):
     Text Callback class. Its get method returns the text
     """
 
-    def __init__(self, input_topic, node_name: Optional[str] = None) -> None:
+    def __init__(self, input_topic, node_name: str = "") -> None:
         """
         Constructs a new instance.
 
@@ -346,7 +345,7 @@ class AudioCallback(GenericCallback):
     Audio Callback class. Its get method returns the audio
     """
 
-    def __init__(self, input_topic, node_name: Optional[str] = None) -> None:
+    def __init__(self, input_topic, node_name: str = "") -> None:
         """
         Constructs a new instance.
 
@@ -406,7 +405,7 @@ class MapMetaDataCallback(GenericCallback):
     OccupancyGrid MetaData Callback class. Its get method returns dict of meta data from the occupancy grid topic
     """
 
-    def __init__(self, input_topic, node_name: Optional[str] = None) -> None:
+    def __init__(self, input_topic, node_name: str = "") -> None:
         """
         Constructs a new instance.
 
@@ -443,7 +442,7 @@ class OdomCallback(GenericCallback):
     def __init__(
         self,
         input_topic,
-        node_name: Optional[str] = None,
+        node_name: str = "",
     ) -> None:
         super().__init__(input_topic, node_name)
         self.__tf: Optional[TransformStamped] = None
@@ -485,6 +484,15 @@ class OdomCallback(GenericCallback):
 
         # send position data from ROS message
         return self._process(self.msg)
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
 
     def _process(self, msg: Odometry) -> np.ndarray:
         """Takes Odometry ROS object and converts it to a numpy array with [x, y, z, heading, speed]
@@ -537,7 +545,7 @@ class PointCallback(GenericCallback):
     def __init__(
         self,
         input_topic,
-        node_name: Optional[str] = None,
+        node_name: str = '',
     ) -> None:
         super().__init__(input_topic, node_name)
 
@@ -553,6 +561,15 @@ class PointCallback(GenericCallback):
 
         return np.array([self.msg.x, self.msg.y, self.msg.z])
 
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"data": self.get_output(clear_last=True)}
+
 
 class PointStampedCallback(GenericCallback):
     """
@@ -562,7 +579,7 @@ class PointStampedCallback(GenericCallback):
     def __init__(
         self,
         input_topic,
-        node_name: Optional[str] = None,
+        node_name: str = '',
     ) -> None:
         super().__init__(input_topic, node_name)
 
@@ -578,6 +595,15 @@ class PointStampedCallback(GenericCallback):
 
         return np.array([self.msg.point.x, self.msg.point.y, self.msg.point.z])
 
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
+
 
 class PoseCallback(GenericCallback):
     """
@@ -587,7 +613,7 @@ class PoseCallback(GenericCallback):
     def __init__(
         self,
         input_topic,
-        node_name: Optional[str] = None,
+        node_name: str = '',
     ) -> None:
         super().__init__(input_topic, node_name)
         self.__tf: Optional[TransformStamped] = None
@@ -674,6 +700,15 @@ class PoseCallback(GenericCallback):
         # send position data from ROS message
         return self._process(self.msg)
 
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"data": self.get_output(clear_last=True)}
+
 
 class PoseStampedCallback(PoseCallback):
     """
@@ -683,7 +718,7 @@ class PoseStampedCallback(PoseCallback):
     def __init__(
         self,
         input_topic,
-        node_name: Optional[str] = None,
+        node_name: str = '',
     ) -> None:
         super().__init__(input_topic, node_name)
 
@@ -705,14 +740,80 @@ class PoseStampedCallback(PoseCallback):
         # send position data from ROS message
         return self._process(self.msg.pose)
 
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
+
+
+class PathCallback(GenericCallback):
+    """
+    Ros PoseStamped Callback Handler to get the robot state in 2D
+    """
+
+    def __init__(
+        self,
+        input_topic,
+        node_name: str = '',
+    ) -> None:
+        super().__init__(input_topic, node_name)
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        if not self.msg.poses:
+            return {}
+
+        # Downsampling (Simple Distance Filter)
+        # Only keep points that are at least 5cm apart from the previous point
+        filtered_points = []
+        last_x, last_y = -999, -999
+        min_sq_dist = 0.05 * 0.05  # 5cm squared
+
+        for pose_stamped in self.msg.poses:
+            x = pose_stamped.pose.position.x
+            y = pose_stamped.pose.position.y
+
+            # Always keep the first point
+            if not filtered_points:
+                filtered_points.extend([x, y])
+                last_x, last_y = x, y
+                continue
+
+            # Check distance
+            dx = x - last_x
+            dy = y - last_y
+            if (dx * dx + dy * dy) > min_sq_dist:
+                filtered_points.extend([x, y])
+                last_x, last_y = x, y
+
+        # Always add the very last point to ensure the path reaches the goal
+        last_pose = self.msg.poses[-1].pose.position
+        if len(filtered_points) >= 2:
+            # Check if the last point we added is different from the actual end
+            lx = filtered_points[-2]
+            ly = filtered_points[-1]
+            if last_pose.x != lx or last_pose.y != ly:
+                filtered_points.extend([last_pose.x, last_pose.y])
+
+        return {"frame_id": self.frame_id, "data": filtered_points}
+
 
 class OccupancyGridCallback(GenericCallback):
     def __init__(
         self,
         input_topic,
-        node_name: Optional[str] = None,
-        to_numpy: Optional[bool] = True,
-        twoD_to_threeD_conversion_height: Optional[float] = 0.01,
+        node_name: str = '',
+        to_numpy: bool = True,
+        twoD_to_threeD_conversion_height: float = 0.01,
     ) -> None:
         super().__init__(input_topic, node_name)
         self.__to_numpy = to_numpy

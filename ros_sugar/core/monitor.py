@@ -2,6 +2,7 @@
 
 import os
 from functools import partial
+import time
 from typing import Any, Callable, Dict, List, Optional, Union
 from rclpy.node import Node
 from rclpy.publisher import Publisher
@@ -18,8 +19,7 @@ from .. import base_clients
 from .component import BaseComponent
 from ..config import BaseConfig
 from ..io.topic import Topic
-from .event import Event
-from ..events import event_from_json
+from .event import Event, EventBlackboardEntry
 from .action import Action
 from ..launch import logger
 
@@ -41,7 +41,6 @@ class Monitor(Node):
     def __init__(
         self,
         components_names: List[str],
-        enable_health_status_monitoring: bool = True,
         events_actions: Optional[Dict[str, List[Action]]] = None,
         events_to_emit: Optional[List[Event]] = None,
         config: Optional[BaseConfig] = None,
@@ -99,9 +98,7 @@ class Monitor(Node):
         self._main_srv_clients: Dict[str, base_clients.ServiceClientHandler] = {}
         self._main_action_clients: Dict[str, base_clients.ActionClientHandler] = {}
 
-        self._components_to_activate_on_start: List[str] = activate_on_start
-
-        self._enable_health_monitoring: bool = enable_health_status_monitoring
+        self._components_to_activate_on_start: List[str] = activate_on_start or []
 
         self.__components_activation_event: Optional[Callable] = None
 
@@ -141,7 +138,7 @@ class Monitor(Node):
             )
 
         # Create health status subscribers
-        if self._components_to_monitor and self._enable_health_monitoring:
+        if self._components_to_monitor:
             self._create_status_subscribers()
             for component_name in self._components_to_monitor:
                 self._turn_on_component_management(component_name)
@@ -399,7 +396,11 @@ class Monitor(Node):
         )
 
     def send_srv_request(
-        self, srv_name: str, srv_type: type, srv_request_msg: Any, **_
+        self,
+        srv_request_msg: Any = None,
+        srv_name: Optional[str] = None,
+        srv_type: Optional[type] = None,
+        **_,
     ) -> None:
         """Action to send a ROS2 service request during runtime
 
@@ -410,11 +411,23 @@ class Monitor(Node):
         :param srv_request_msg: Service request message
         :type srv_request_msg: Any
         """
+        if not srv_name or not srv_type:
+            self.get_logger().error(
+                f"Cannot send service request to unknown ROS2 service with name: {srv_name} and type {srv_type}"
+            )
+            return
+        if not srv_request_msg:
+            # If request is not provided create an empty one
+            srv_request_msg = srv_type.Request()
         srv_client = self.__get_srv_client(srv_name, srv_type)
         srv_client.send_request(srv_request_msg, executor=self.executor)
 
     def send_action_goal(
-        self, action_name: str, action_type: type, action_request_msg: Any, **_
+        self,
+        action_request_msg: Any = None,
+        action_name: Optional[str] = None,
+        action_type: Optional[type] = None,
+        **_,
     ) -> None:
         """Action to send a ROS2 action goal during runtime
 
@@ -425,8 +438,20 @@ class Monitor(Node):
         :param action_request_msg: ROS2 action goal message
         :type action_request_msg: Any
         """
+        if not action_name or not action_type:
+            self.get_logger().error(
+                f"Cannot send service request to unknown ROS2 service with name: {action_name} and type {action_type}"
+            )
+            return
+        if not action_request_msg:
+            # If request is not provided create an empty one
+            action_request_msg = action_type.Goal()
         action_client = self.__get_action_client(action_name, action_type)
         action_client.send_request(action_request_msg)
+
+    def get_secs_time(self) -> float:
+        ros_time = self.get_clock().now().to_msg()
+        return float(ros_time.sec + (1e-9 * ros_time.nanosec))
 
     def publish_message(
         self,
@@ -453,16 +478,16 @@ class Monitor(Node):
             qos_profile=topic.qos_profile.to_ros(),
         )
         # Publish once
-        if not publish_rate:
+        if not publish_rate and not publish_period:
             publisher.publish(msg)
             self.destroy_publisher(publisher)
-        elif not publish_period:
+        elif publish_rate and not publish_period:
             # Publish forever
             self.create_timer(
                 timer_period_sec=1 / publish_rate,
                 callback=partial(publisher.publish, msg),
             )
-        else:
+        elif publish_rate and publish_period:
             # Publish with rate for given period
             max_time: float = self.get_secs_time() + publish_period
             timer_name: str = f"timer_{topic.name}_"
@@ -498,36 +523,88 @@ class Monitor(Node):
             return
         publisher.publish(msg)
 
+    def __event_topic_callback(self, topic_name: str, msg: Any):
+        """
+        Central Handler:
+        1. Updates Cache of all required events topics
+        2. Re-evaluates all events that depend on this topic
+        """
+        # Update Blackboard
+        self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
+            msg=msg, timestamp=time.time()
+        )
+
+        # READ & CLEAN: Identify events dependent on this topic
+        relevant_events = self.__events_per_topic.get(topic_name, [])
+
+        for event in relevant_events:
+            # Instead of passing the raw blackboard
+            # we perform a lazy cleanup right here for the topics THIS event needs.
+
+            clean_cache_subset = {}
+            for topic in event.get_involved_topics():
+                # This call performs the check and DELETES expired data if necessary
+                valid_entry = EventBlackboardEntry.get(
+                    self._events_topics_blackboard,
+                    topic.name,
+                    topic.data_timeout,
+                    event.get_last_processed_id(topic.name),
+                )
+                if valid_entry:
+                    clean_cache_subset[topic.name] = valid_entry
+            # Pass the clean subset to the event
+            event.check_condition(clean_cache_subset)
+
     def _activate_event_monitoring(self) -> None:
         """
         Turn on all events
         """
+        self.__events = []
         if self._events_actions:
             for serialized_event, actions in self._events_actions.items():
-                event = event_from_json(serialized_event)
+                event = Event.from_json(serialized_event)
                 for action in actions:
                     method = getattr(self, action.action_name)
                     # register action to the event
-                    action.executable = partial(method, *action.args, **action.kwargs)
+                    action.executable = partial(method, *action._args, **action._kwargs)
                     event.register_actions(action)
-                # Create listener to the event trigger topic
-                self.create_subscription(
-                    msg_type=event.event_topic.ros_msg_type,
-                    topic=event.event_topic.name,
-                    callback=event.callback,
-                    qos_profile=event.event_topic.qos_profile.to_ros(),
-                    callback_group=MutuallyExclusiveCallbackGroup(),
-                )
+                self.__events.append(event)
+
         if self._internal_events:
-            # Turn on monitoring for internal events (to emit back to launcher)
-            for event in self._internal_events:
-                self.create_subscription(
-                    msg_type=event.event_topic.ros_msg_type,
-                    topic=event.event_topic.name,
-                    callback=event.callback,
-                    qos_profile=event.event_topic.qos_profile.to_ros(),
-                    callback_group=MutuallyExclusiveCallbackGroup(),
-                )
+            # Add internal events (to emit back to launcher)
+            self.__events.extend(self._internal_events)
+
+        # TURN ON EVENTS MANAGEMENT
+        # Blackboard to store latest messages for all topics required for all event:
+        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
+        self._events_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
+
+        # Identify all unique topics required across ALL events
+        unique_topics: Dict[str, Topic] = {}
+        self.__events_per_topic: Dict[str, List[Event]] = {}
+        for event in self.__events:
+            required_topics = event.get_involved_topics()
+            # Ensure topic is not already there, then add to unique topics
+            for topic in required_topics:
+                if topic.name not in unique_topics:
+                    unique_topics[topic.name] = topic
+                # update to keep a record of the events to check for each topic
+                if topic.name not in self.__events_per_topic:
+                    self.__events_per_topic[topic.name] = [event]
+                else:
+                    self.__events_per_topic[topic.name].append(event)
+
+        # Create ONE subscription per Topic
+        self.__event_listeners = []
+        for name, topic_obj in unique_topics.items():
+            listener = self.create_subscription(
+                msg_type=topic_obj.ros_msg_type,
+                topic=topic_obj.name,
+                callback=partial(self.__event_topic_callback, name),
+                qos_profile=topic_obj.qos_profile.to_ros(),
+                callback_group=MutuallyExclusiveCallbackGroup(),
+            )
+            self.__event_listeners.append(listener)
 
     def _create_status_subscribers(self) -> None:
         """
@@ -539,7 +616,7 @@ class Monitor(Node):
             logger.debug(f"Creating health status subscriber for: {component_name}")
             self.create_subscription(
                 ComponentStatus,
-                topic=f"{component_name}_status",
+                topic=f"{component_name}/status",
                 callback=partial(
                     self._status_check_callback, component_name=component_name
                 ),

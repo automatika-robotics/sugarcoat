@@ -15,7 +15,7 @@ from . import utils
 class Publisher:
     """Publisher."""
 
-    def __init__(self, output_topic, node_name: Optional[str] = None) -> None:
+    def __init__(self, output_topic, node_name: str = '') -> None:
         """__init__.
 
         :param input_topic:
@@ -27,7 +27,7 @@ class Publisher:
 
         # Node name can be changed to a node that the callback is executed in
         # at the time of setting subscriber using set_node_name
-        self.node_name: Optional[str] = node_name
+        self.node_name: str = node_name
 
         self._publisher: Optional[ROSPublisher] = None
         self._pre_processors: Optional[List[Union[Callable, socket]]] = None
@@ -101,14 +101,20 @@ class Publisher:
         """
         # Apply any output pre_processors sequentially before publishing, if defined
         if self._publisher is None:
+            get_logger(self.node_name).error(
+                f"No valid ROS2 publisher is available for topic {self.output_topic.name}.. Skipping message publishing"
+            )
             return
         output = self._prepare_for_publish(*output)
         if output is None:
+            get_logger(self.node_name).error(
+                f"No valid output found for topic {self.output_topic.name}.. Skipping message publishing"
+            )
             return
         msg = self.output_topic.msg_type.convert(*output, **kwargs)
         if msg:
             if frame_id and not hasattr(msg, "header"):
-                get_logger(self.node_name).warn(
+                get_logger(self.node_name).debug(
                     f"Cannot add a header to non-stamped message of type '{type(msg)}'"
                 )
             elif hasattr(msg, "header"):

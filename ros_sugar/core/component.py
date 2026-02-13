@@ -7,9 +7,10 @@ import yaml
 import toml
 import socket
 from abc import abstractmethod
+from copy import deepcopy
 import threading
 from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple, Type
-from functools import wraps
+from functools import wraps, partial
 import importlib
 
 from rclpy import logging as rclpy_logging
@@ -26,7 +27,6 @@ from tf2_ros.transform_listener import TransformListener
 from builtin_interfaces.msg import Time
 from lifecycle_msgs.msg import State as LifecycleStateMsg
 
-from automatika_ros_sugar.msg import ComponentStatus
 from automatika_ros_sugar.srv import (
     ChangeParameter,
     ChangeParameters,
@@ -36,12 +36,12 @@ from automatika_ros_sugar.srv import (
 )
 
 from .action import Action
-from .event import Event
-from ..events import json_to_events_list, event_from_json
+from .event import Event, EventBlackboardEntry
 from ..io.callbacks import GenericCallback
 from ..config.base_config import (
     BaseComponentConfig,
     ComponentRunType,
+    ExternalProcessorType,
     BaseAttrs,
     QoSConfig,
 )
@@ -71,7 +71,6 @@ class BaseComponent(lifecycle.Node):
         config: Optional[BaseComponentConfig] = None,
         config_file: Optional[str] = None,
         callback_group: Optional[ros_callback_groups.CallbackGroup] = None,
-        enable_health_broadcast: bool = True,
         fallbacks: Optional[ComponentFallbacks] = None,
         main_action_type: Optional[type] = None,
         main_srv_type: Optional[type] = None,
@@ -91,8 +90,6 @@ class BaseComponent(lifecycle.Node):
         :type config_file: Optional[str], optional
         :param callback_group: Main callback group, defaults to None
         :type callback_group: rclpy.callback_groups.CallbackGroup, optional
-        :param enable_health_broadcast: Enable publishing the component health status, defaults to True
-        :type enable_health_broadcast: bool, optional
         :param fallbacks: Component fallbacks, defaults to None
         :type fallbacks: Optional[ComponentFallbacks], optional
         :param main_action_type: Component main ROS2 action server type (Used when the component is running as an ActionServer), defaults to None
@@ -102,21 +99,12 @@ class BaseComponent(lifecycle.Node):
         """
         # Component health status - Inits with healthy status
         self.health_status = Status()
-        self.__enable_health_publishing = enable_health_broadcast
 
         # Setup Config
         self.config: BaseComponentConfig = config or BaseComponentConfig()
 
-        # Set callback group in config
-        if not callback_group:
-            callback_group = (
-                getattr(ros_callback_groups, self.config._callback_group)()
-                if self.config._callback_group
-                else ReentrantCallbackGroup()
-            )
-
-        self.config._callback_group = callback_group
-        self.callback_group = callback_group
+        # Set callback group
+        self.callback_group = callback_group or ReentrantCallbackGroup()
 
         # SET NAME AND CALLBACK GROUP
         self.node_name = component_name
@@ -148,6 +136,11 @@ class BaseComponent(lifecycle.Node):
 
         self.__fallbacks = fallbacks or ComponentFallbacks()
         self.__fallbacks_giveup: bool = False
+        self.__fallbacks_listeners: List[Subscription] = []
+        # Blackboard to store latest messages for all topics required for all fallbacks
+        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
+        self._fallbacks_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
+        self._fallbacks_topics_timeout: Dict[str, float] = {}
 
         if self.config._use_without_launcher:
             # Create default services for changing config/inputs/outputs during runtime
@@ -156,7 +149,7 @@ class BaseComponent(lifecycle.Node):
         self.action_type = main_action_type
         self.service_type = main_srv_type
         self._external_processors: Dict[
-            str, Tuple[List[Union[Callable, socket.socket]], str]
+            str, Tuple[List[Union[Callable, socket.socket]], ExternalProcessorType]
         ] = {}
 
         self.__events: Optional[List[Event]] = None
@@ -167,6 +160,11 @@ class BaseComponent(lifecycle.Node):
         self._algorithms_config: Dict[
             str, Dict
         ] = {}  # Dictionary of user defined algorithms configuration
+
+        # Health status topic
+        self.__health_status_topic = Topic(
+            name=f"{self.node_name}/status", msg_type="ComponentStatus"
+        )
 
         # Main goal handle (to execute one goal at a time)
         # TODO: add config parameter (one goal vs goal queue)
@@ -397,6 +395,15 @@ class BaseComponent(lifecycle.Node):
             )
         return None
 
+    @property
+    def status_topic(self) -> Topic:
+        """Get the component health status topic
+
+        :return: Health status topic
+        :rtype: Topic
+        """
+        return self.__health_status_topic
+
     # Managing Inputs/Outputs
     def _add_ros_subscriber(self, callback: GenericCallback):
         """Creates a subscriber to be attached to an input message.
@@ -475,7 +482,7 @@ class BaseComponent(lifecycle.Node):
             else:
                 self._external_processors[input_topic.name] = (
                     [self._pre_post_processor_closure(func)],
-                    "postprocessor",
+                    ExternalProcessorType.MSG_POST_PROCESSOR,
                 )
 
     def add_publisher_preprocessor(self, output_topic: Topic, func: Callable) -> None:
@@ -500,7 +507,7 @@ class BaseComponent(lifecycle.Node):
             else:
                 self._external_processors[output_topic.name] = (
                     [self._pre_post_processor_closure(func)],
-                    "preprocessor",
+                    ExternalProcessorType.MSG_PRE_PROCESSOR,
                 )
         else:
             raise TypeError(
@@ -532,6 +539,8 @@ class BaseComponent(lifecycle.Node):
         self.create_all_action_servers()
 
         self.create_all_action_clients()
+
+        self._turn_on_fallbacks_subscribers()
 
         # Setup node timers
         self.create_all_timers()
@@ -587,13 +596,12 @@ class BaseComponent(lifecycle.Node):
         Creates all node publishers from component outputs
         """
         self.get_logger().info("STARTING ALL PUBLISHERS")
-        if self.__enable_health_publishing:
-            # Create status publisher
-            self.health_status_publisher: ROSPublisher = self.create_publisher(
-                msg_type=ComponentStatus,
-                topic=f"{self.get_name()}_status",
-                qos_profile=1,
-            )
+        # Create status publisher
+        self.health_status_publisher: ROSPublisher = self.create_publisher(
+            msg_type=self.__health_status_topic.ros_msg_type,
+            topic=self.__health_status_topic.name,
+            qos_profile=1,
+        )
         # Create publisher and attach it to output publisher object
         for publisher in self.publishers_dict.values():
             if isinstance(publisher, Publisher):
@@ -695,6 +703,8 @@ class BaseComponent(lifecycle.Node):
         self.get_logger().info("DESTROYING ALL SUBSCRIBERS")
         for listener in self.__event_listeners:
             self.destroy_subscription(listener)
+        for listener in self.__fallbacks_listeners:
+            self.destroy_subscription(listener)
         # Destroy all input subscribers
         for callback in self.callbacks.values():
             if callback._subscriber:
@@ -706,10 +716,8 @@ class BaseComponent(lifecycle.Node):
         Destroys all node publishers
         """
         self.get_logger().info("DESTROYING ALL PUBLISHERS")
-        if self.__enable_health_publishing:
-            # Destroy health status publisher
-            self.destroy_publisher(self.health_status_publisher)
-            self.health_status_publisher = None
+        # Destroy health status publisher
+        self.destroy_publisher(self.health_status_publisher)
 
         for publisher in self.publishers_dict.values():
             if publisher._publisher:
@@ -830,19 +838,97 @@ class BaseComponent(lifecycle.Node):
         """
         if not self.__events or not self.__actions:
             return
-        self.__event_listeners = []
+
+        # Blackboard to store latest messages for all topics required for all event:
+        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
+        self._events_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
+
+        # Identify all unique topics required across ALL events
+        unique_topics = {}
+        self.__events_per_topic: Dict[str, List[Event]] = {}
+        for event in self.__events:
+            required_topics = event.get_involved_topics()
+            # Ensure topic is not already there, then add to unique topics
+            for topic in required_topics:
+                if topic.name not in unique_topics:
+                    unique_topics[topic.name] = topic
+                # update to keep a record of the events to check for each topic
+                if topic.name not in self.__events_per_topic:
+                    self.__events_per_topic[topic.name] = [event]
+                else:
+                    self.__events_per_topic[topic.name].append(event)
+
+        # Register the actions
         for event, actions in zip(self.__events, self.__actions, strict=True):
-            # Register action to event callback to get executed on trigger
+            # Register action to event to get executed on trigger when calling event.check_condition
             event.register_actions(actions)
-            # Create listener to the event trigger topic
+
+        # Create ONE subscription per Topic
+        self.__event_listeners = []
+        for name, topic_obj in unique_topics.items():
             listener = self.create_subscription(
-                msg_type=event.event_topic.ros_msg_type,
-                topic=event.event_topic.name,
-                callback=event.callback,
-                qos_profile=event.event_topic.qos_profile.to_ros(),
+                msg_type=topic_obj.ros_msg_type,
+                topic=topic_obj.name,
+                callback=partial(self.__event_topic_callback, name),
+                qos_profile=topic_obj.qos_profile.to_ros(),
                 callback_group=MutuallyExclusiveCallbackGroup(),
             )
             self.__event_listeners.append(listener)
+
+    def _turn_on_fallbacks_subscribers(self):
+        # Create ONE subscription per Topic
+        self.__fallbacks_listeners = []
+        for topic_obj in self.__fallbacks.required_topics:
+            listener = self.create_subscription(
+                msg_type=topic_obj.ros_msg_type,
+                topic=topic_obj.name,
+                callback=partial(self.__fallback_topic_callback, topic_obj.name),
+                qos_profile=topic_obj.qos_profile.to_ros(),
+                callback_group=MutuallyExclusiveCallbackGroup(),
+            )
+            self.__fallbacks_listeners.append(listener)
+            self._fallbacks_topics_timeout[topic_obj.name] = topic_obj.data_timeout
+
+    def __fallback_topic_callback(self, topic_name: str, msg: Any):
+        """
+        Updates Cache of all required fallbacks topics
+        """
+        # Update Fallbacks Blackboard with stamped entry
+        self._fallbacks_topics_blackboard[topic_name] = EventBlackboardEntry(
+            msg=msg, timestamp=time.time()
+        )
+
+    def __event_topic_callback(self, topic_name: str, msg: Any):
+        """
+        Central Handler:
+        1. Updates Cache of all required events topics
+        2. Re-evaluates all events that depend on this topic
+        """
+        # Update Blackboard with stamped entry
+        self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
+            msg=msg, timestamp=time.time()
+        )
+
+        # READ & CLEAN: Identify events dependent on this topic
+        relevant_events = self.__events_per_topic.get(topic_name, [])
+
+        for event in relevant_events:
+            # Instead of passing the raw blackboard
+            # we perform a lazy cleanup right here for the topics THIS event needs.
+
+            clean_cache_subset = {}
+            for topic in event.get_involved_topics():
+                # This call performs the check and DELETES expired data if necessary
+                valid_entry = EventBlackboardEntry.get(
+                    self._events_topics_blackboard,
+                    topic.name,
+                    topic.data_timeout,
+                    event.get_last_processed_id(topic.name),
+                )
+                if valid_entry:
+                    clean_cache_subset[topic.name] = valid_entry
+            # Pass the clean subset to the event
+            event.check_condition(clean_cache_subset)
 
     def _add_event_action_pair(self, event: Event, action: Union[Action, List[Action]]):
         """Add an event/action pair.
@@ -982,22 +1068,41 @@ class BaseComponent(lifecycle.Node):
     def loop_rate(self, value: float):
         self.config.loop_rate = value
 
-    @property
-    def events_actions(self) -> Dict[str, List[Action]]:
-        """Getter of component Events/Actions
+    def get_events_actions(self) -> Dict[Event, List[Action]]:
+        """Get all Events/Actions registered to the component
 
         :return: Dictionary of monitored Events and associated Actions
         :rtype: Dict[str, List[Action]]
         """
-        events_actions_names = {}
         if not self.__events or not self.__actions:
             return {}
-        for event, action_set in zip(self.__events, self.__actions, strict=True):
-            events_actions_names[event.name] = action_set
-        return events_actions_names
+        return dict(zip(self.__events, self.__actions, strict=True))
 
-    @events_actions.setter
-    def events_actions(
+    def clear_events_actions(self) -> None:
+        """Clear all Events/Actions registered to the component
+
+        :return: Dictionary of monitored Events and associated Actions
+        :rtype: Dict[str, List[Action]]
+        """
+        self.__events = []
+        self.__actions = []
+
+    @property
+    def _events_actions(self) -> Dict[str, List[Action]]:
+        """Getter of component Events Names/Actions
+
+        :return: Dictionary of monitored Events and associated Actions
+        :rtype: Dict[str, List[Action]]
+        """
+        if not self.__events or not self.__actions:
+            return {}
+        return {
+            event.id: action
+            for event, action in zip(self.__events, self.__actions, strict=True)
+        }
+
+    @_events_actions.setter
+    def _events_actions(
         self, events_actions_dict: Dict[str, Union[Action, List[Action]]]
     ):
         """Setter of component Events/Actions
@@ -1017,7 +1122,7 @@ class BaseComponent(lifecycle.Node):
                     raise ValueError(
                         f"Component '{self.node_name}' does not support action '{action.action_name}'"
                     )
-            self.__events.append(event_from_json(event_serialized))
+            self.__events.append(Event.from_json(event_serialized))
             self.__actions.append(action_set)
 
     # SERIALIZATION AND DESERIALIZATION
@@ -1100,7 +1205,7 @@ class BaseComponent(lifecycle.Node):
         """
         if not self.__events:
             return "[]"
-        return json.dumps([event.json for event in self.__events])
+        return json.dumps([event.to_json() for event in self.__events])
 
     @_events_json.setter
     def _events_json(self, events_serialized: Union[str, bytes]):
@@ -1109,7 +1214,14 @@ class BaseComponent(lifecycle.Node):
         :param events_serialized: Serialized Events List
         :type events_serialized: Union[str, bytes]
         """
-        self.__events = json_to_events_list(events_serialized)
+        list_obj = json.loads(events_serialized)
+
+        self.__events = []
+        for event_serialized in list_obj:
+            new_event = Event.from_json(event_serialized)
+            self.__events.append(
+                deepcopy(new_event)
+            )  # deepcopy is needed to avoid copying the previous event
 
     @property
     def _actions_json(self) -> Union[str, bytes]:
@@ -1119,7 +1231,7 @@ class BaseComponent(lifecycle.Node):
         :rtype: Union[str, bytes]
         """
         actions_dict = {}
-        for event_name, action_set in self.events_actions.items():
+        for event_name, action_set in self._events_actions.items():
             actions_serialized = []
             for action in action_set:
                 actions_serialized.append(action.dictionary)
@@ -1142,17 +1254,17 @@ class BaseComponent(lifecycle.Node):
                     raise AttributeError(
                         f"Component '{self.node_name}' does not contain requested Action method '{action_dict['action_name']}'"
                     )
+                # reparse the method using the given action name
                 method = getattr(self, action_dict["action_name"])
-                reconstructed_action = Action(
-                    method=method,
-                    args=action_dict["args"],
-                    kwargs=action_dict["kwargs"],
+                reconstructed_action = Action.deserialize_action(
+                    serialized_action_dict=action_dict,
+                    deserialized_method=method,
                 )
                 reconstructed_action_list.append(reconstructed_action)
             self.__actions.append(reconstructed_action_list)
 
     @property
-    def _fallbacks_json(self) -> Union[str, bytes]:
+    def _fallbacks_json(self) -> Union[str, bytes, bytearray]:
         """Getter of serialized component Fallbacks
 
         :return: Serialized Fallbacks: {fallback_type: serialized_fallback}
@@ -1167,49 +1279,27 @@ class BaseComponent(lifecycle.Node):
         for key, value in deserialized_fallbacks.items():
             # If a fallback was defined
             if (value is not None) and (
-                fallback_serialized_action := value.get("action", None)
+                fallback_serialized_actions_list := value.get("action_list", None)
             ):
-                if not hasattr(self, fallback_serialized_action["action_name"]):
-                    raise AttributeError(
-                        f"Component '{self.node_name}' does not contain requested Fallback Action method '{fallback_serialized_action['action_name']}'"
+                reconstructed_actions_list = []
+                for fallback_serialized_action in fallback_serialized_actions_list:
+                    if not hasattr(self, fallback_serialized_action["action_name"]):
+                        raise AttributeError(
+                            f"Component '{self.node_name}' does not contain requested Fallback Action method '{fallback_serialized_action['action_name']}'"
+                        )
+                    # reparse the method using the given action name
+                    method = getattr(self, fallback_serialized_action["action_name"])
+                    reconstructed_actions_list.append(
+                        Action.deserialize_action(
+                            serialized_action_dict=fallback_serialized_action,
+                            deserialized_method=method,
+                        )
                     )
-                method = getattr(self, fallback_serialized_action["action_name"])
-                reconstructed_action = Action(
-                    method=method,
-                    args=fallback_serialized_action["args"],
-                    kwargs=fallback_serialized_action["kwargs"],
-                )
                 reconstructed_fallback = Fallback(
-                    reconstructed_action, value.get("max_retries", None)
+                    reconstructed_actions_list, value.get("max_retries", None)
                 )
                 fallbacks_kwargs[key] = reconstructed_fallback
         self.__fallbacks = ComponentFallbacks(**fallbacks_kwargs)
-
-    @_actions_json.setter
-    def _actions_json(self, actions_serialized: Union[str, bytes]):
-        """Setter of component events from JSON serialized actions
-
-        :param actions_serialized: Serialized Actions List
-        :type actions_serialized: Union[str, bytes]
-        """
-        self.__actions = []
-        actions_dict: Dict = json.loads(actions_serialized)
-        for action_list in actions_dict.values():
-            reconstructed_action_list = []
-            for action_dict in action_list:
-                if not hasattr(self, action_dict["action_name"]):
-                    raise AttributeError(
-                        f"Component '{self.node_name}' does not contain requested Action method '{action_dict['action_name']}'"
-                    )
-                # reparse the method using the given action name
-                method = getattr(self, action_dict["action_name"])
-                reconstructed_action = Action(
-                    method=method,
-                    args=action_dict["args"],
-                    kwargs=action_dict["kwargs"],
-                )
-                reconstructed_action_list.append(reconstructed_action)
-            self.__actions.append(reconstructed_action_list)
 
     def set_additional_types(self, value: str):
         """
@@ -1313,7 +1403,7 @@ class BaseComponent(lifecycle.Node):
         :rtype: Union[str, bytes]
         """
         return json.dumps({
-            topic_name: ([p.__name__ for p in processors], processor_type)  # type: ignore
+            topic_name: ([p.__name__ for p in processors], str(processor_type))  # type: ignore
             for topic_name, (
                 processors,
                 processor_type,
@@ -1327,10 +1417,26 @@ class BaseComponent(lifecycle.Node):
         :param processors_serialized: Serialized Processors Dict
         :type processors_serialized: Union[str, bytes]
         """
-        self._external_processors = json.loads(processors_serialized)
-        # Create sockets out of function names and connect them
-        for key, processor_data in self._external_processors.items():
-            for idx, func_name in enumerate(processor_data[0]):
+        loaded_processors = json.loads(processors_serialized)
+
+        # reconstruct the dictionary, validating the processor type string
+        self._external_processors = {}
+
+        for key, processor_data in loaded_processors.items():
+            # get processor data and type
+            func_names = processor_data[0]
+            proc_type_str = processor_data[1]
+
+            # Validate string back to Enum-compatible string
+            valid_proc_type = ExternalProcessorType(proc_type_str)
+
+            # Initialize the list with function names
+            self._external_processors[key] = (func_names, valid_proc_type)
+
+            # Create sockets out of function names and connect them
+            current_processors_list = self._external_processors[key][0]
+
+            for idx, func_name in enumerate(current_processors_list):
                 sock_file = f"/tmp/{self.node_name}_{key}_{func_name}.socket"
                 if not os.path.exists(sock_file):
                     raise RuntimeError(
@@ -1387,51 +1493,7 @@ class BaseComponent(lifecycle.Node):
         """
         self.config.from_json(value)
 
-    # DUNDER METHODS
-    def __matmul__(self, stream) -> Optional[Topic]:
-        """
-        @
-
-        :param stream: _description_
-        :type stream: _type_
-        :raises TypeError: _description_
-        :return: _description_
-        :rtype: _type_
-        """
-        got_topic: bool = False
-        if isinstance(stream, str):
-            # search in inputs
-            if self.in_topics:
-                got_topic = next(
-                    (topic for topic in self.in_topics if topic.name == stream), None
-                )
-
-            # search in outputs
-            elif not got_topic and self.out_topics:
-                got_topic = next(
-                    (topic for topic in self.out_topics if topic.name == stream), None
-                )
-
-            return got_topic
-
-        elif isinstance(stream, Topic):
-            if self.in_topics:
-                got_topic = next(
-                    (topic for topic in self.in_topics if topic == stream), None
-                )
-
-            elif not got_topic and self.out_topics:
-                got_topic = next(
-                    (topic for topic in self.out_topics if topic == stream), None
-                )
-
-            return got_topic
-        else:
-            raise TypeError(
-                "Component method '@' can only be used with a topic defined by a string key name or a Topic instance"
-            )
-
-    # TODO: Implement more dunder methods for a more intuitive API with components
+    # TODO: Implement dunder methods for a more intuitive API with components
 
     # MAIN ACTION SERVER HELPER METHODS AND CALLBACKS
     @abstractmethod
@@ -1471,7 +1533,7 @@ class BaseComponent(lifecycle.Node):
             self.get_logger().info("Goal accepted")
             self._main_goal_handle.execute()
 
-    def _main_action_cancel_callback(self, _) -> GoalResponse:
+    def _main_action_cancel_callback(self, _) -> Optional[CancelResponse]:
         """Main component action server callback when handle is canceled
 
         :param goal_handle: _description_
@@ -1608,8 +1670,8 @@ class BaseComponent(lifecycle.Node):
         """
         error_msg: Optional[str] = None
 
+        param_type = self.config.get_attribute_type(param_name)
         try:
-            param_type = self.config.get_attribute_type(param_name)
             parsed_param = param_type(param_str_value) if param_type else None
             self.config.update_value(param_name, parsed_param)
             self.get_logger().debug(
@@ -2020,9 +2082,9 @@ class BaseComponent(lifecycle.Node):
             processors,
             processor_type,
         ) in self._external_processors.items():
-            if processor_type == "preprocessor":
+            if processor_type == ExternalProcessorType.MSG_PRE_PROCESSOR:
                 self.publishers_dict[topic_name].add_pre_processors(processors)
-            elif processor_type == "postprocessor":
+            elif processor_type == ExternalProcessorType.MSG_POST_PROCESSOR:
                 self.callbacks[topic_name].add_post_processors(processors)
 
     def _destroy_external_processors(self):
@@ -2040,7 +2102,7 @@ class BaseComponent(lifecycle.Node):
         """
         Component execution step every loop_step
         """
-        if self.__enable_health_publishing and self.health_status_publisher:
+        if self.health_status_publisher:
             self.health_status_publisher.publish(self.health_status())
 
         # If it is not a timed component -> only publish status
@@ -2175,7 +2237,7 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def start(self) -> bool:
+    def start(self, **_) -> bool:
         """
         Start the component - trigger_activate
 
@@ -2204,7 +2266,7 @@ class BaseComponent(lifecycle.Node):
         return self.__wait_for_node_start()
 
     @component_action
-    def stop(self) -> bool:
+    def stop(self, **_) -> bool:
         """
         Stop the component - trigger_deactivate
 
@@ -2229,7 +2291,7 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def reconfigure(self, new_config: Any, keep_alive: bool = False) -> bool:
+    def reconfigure(self, new_config: Any, keep_alive: bool = False, **_) -> bool:
         """
         Reconfigure the component - cleanup->stop->trigger_configure->start
 
@@ -2285,7 +2347,7 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def restart(self, wait_time: Optional[float] = None) -> bool:
+    def restart(self, wait_time: Optional[float] = None, **_) -> bool:
         """
         Restart the component - stop->start
 
@@ -2317,7 +2379,7 @@ class BaseComponent(lifecycle.Node):
 
     @component_action
     def set_param(
-        self, param_name: str, new_value: Any, keep_alive: bool = True
+        self, param_name: str, new_value: Any, keep_alive: bool = True, **_
     ) -> bool:
         """
         Change the value of one component parameter
@@ -2347,7 +2409,7 @@ class BaseComponent(lifecycle.Node):
 
     @component_action
     def set_params(
-        self, params_names: List[str], new_values: List, keep_alive: bool = True
+        self, params_names: List[str], new_values: List, keep_alive: bool = True, **_
     ) -> bool:
         """
         Change the value of multiple component parameters
@@ -2389,6 +2451,13 @@ class BaseComponent(lifecycle.Node):
             return
 
         try:
+            # Validate the fallback cache registry
+            for topic_name, value in self._fallbacks_topics_blackboard.items():
+                value.validate(
+                    timeout=self._fallbacks_topics_timeout.get(topic_name, None)
+                )
+            self.__fallbacks.update_topics_blackboard(self._fallbacks_topics_blackboard)
+
             if self.__fallbacks_giveup:
                 # All fallbacks are already exhausted
                 self.get_logger().error(
@@ -2432,14 +2501,9 @@ class BaseComponent(lifecycle.Node):
 
         except ValueError:
             # ValueError is thrown when no fallbacks are defined for detected failure
-            if self.__enable_health_publishing:
-                self.get_logger().warn(
-                    "No fallback policy is defined for detected failure -> Failure is broadcasted"
-                )
-            else:
-                self.get_logger().error(
-                    "No fallback policy is defined for detected failure and health publishing is disabled. Component will keep running but will possibly not be running correctly"
-                )
+            self.get_logger().warn(
+                "No fallback policy is defined for detected failure -> Failure is broadcasted"
+            )
 
     @property
     def fallbacks(self) -> List[str]:
@@ -2573,7 +2637,7 @@ class BaseComponent(lifecycle.Node):
             )
 
     @component_fallback
-    def broadcast_status(self) -> None:
+    def broadcast_status(self, **_) -> None:
         """
         Component fallback defined to only broadcast the current state so it is handled by an external manager.
         Used as the default fallback strategy for any system (external) failure
@@ -2587,7 +2651,7 @@ class BaseComponent(lifecycle.Node):
 
     # LIFECYCLE ON TRANSITIONS CUSTOM METHODS
     @property
-    def lifecycle_state(self) -> Optional[int]:
+    def lifecycle_state(self) -> int:
         """
         lifecycle state machine current state getter
 
@@ -2596,6 +2660,7 @@ class BaseComponent(lifecycle.Node):
         """
         if hasattr(self, "_state_machine"):
             return self._state_machine.current_state[0]
+        return 0
 
     def on_configure(
         self, state: lifecycle.State
@@ -2782,10 +2847,11 @@ class BaseComponent(lifecycle.Node):
         if not hasattr(self, "__fallbacks_check_timer"):
             self._fallbacks_check_callback()
 
-        # TODO: Make the sleep duration a parameter?
         # Wait before trying to retrigger failed transition
-        self.get_logger().warning("Retriggering failed transition in 1 sec...")
-        time.sleep(1)
+        self.get_logger().warning(
+            f"Retriggering failed transition in {self.config._lifecycle_state_transition_timeout} sec..."
+        )
+        time.sleep(self.config._lifecycle_state_transition_timeout)
 
         # Attempt retriggering the transition
         if self.lifecycle_state == LifecycleStateMsg.TRANSITION_STATE_CONFIGURING:

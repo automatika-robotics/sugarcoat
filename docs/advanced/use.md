@@ -152,17 +152,13 @@ image_topic = Topic(name="camera/rgb", msg_type="Image")
 my_component = AwesomeComponent(component_name='awesome_component', inputs=[map_topic, image_topic], outputs=[audio_topic])
 
 # Create your events
-low_battery = OnLess(
-    "low_battery",
-    Topic(name="/battery_level", msg_type="Int"),
-    15,
-    ("data")
-)
+low_battery = Event(battery_level_topic.msg.data < 15.0)
 
 # Events/Actions
 my_events_actions: Dict[event.Event, Action] = {
     low_battery: LogInfo(msg="Battery is Low!)
 }
+
 
 # Create your launcher
 launcher = Launcher()
@@ -181,5 +177,5 @@ launcher.add_pkg(
 launcher.on_component_fail(action_name="restart")
 
 # Bring up the system
-launcher.bringup(introspect=False)
+launcher.bringup()
 ```

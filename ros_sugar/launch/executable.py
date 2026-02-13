@@ -49,6 +49,11 @@ def _parse_args() -> Tuple[argparse.Namespace, List[str]]:
         help="User defined configuration for component algorithms",
     )
     parser.add_argument(
+        "--external_processors",
+        type=str,
+        help="External processors associated with the component input and output topics",
+    )
+    parser.add_argument(
         "--additional_types",
         type=str,
         help="Additional type modules from derived packages",
@@ -212,6 +217,10 @@ def setup_component(
     # Set fallbacks
     if fallbacks_json := args.fallbacks:
         component._fallbacks_json = fallbacks_json
+
+    # Set external processors
+    if args.external_processors:
+        component._external_processors_json = args.external_processors
 
     return component
 

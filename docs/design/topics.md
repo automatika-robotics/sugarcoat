@@ -1,20 +1,29 @@
 # Topics
 
-In the Sugarcoat ecosystem, Topics act as the connective pipes that link your Components together and bridge them with the Event-Driven system.
+**The connective tissue of your system.**
 
-Sugarcoat Topics are exposed in the Python API as configuration objects that defines the name (ROS2 topic name) and the Data Contract (Message Type) for communication, along with the possibility to set the QoS configuration of the topic.
+Topics are defined in Sugarcoat with a `Topic` class that specifies the **Data Contract** (Type/Name of the ROS2 topic), the **Behavior** (QoS), and the **Freshness Constraints** (Timeout) for a specific stream of information.
 
-This abstraction ensures that topic can:
+Topics act as the bridge for both:
 
-- **Connect Components**: Topics serve as the interface between different parts of your system. Instead of hardcoding strings inside your nodes, you define your Topics as shared resources.
+1.  **Component I/O:** They define what data a Component produces or consumes.
+2.  **Event Triggers:** They act as the "Sensors" for the Event-Driven system, feeding data into the Blackboard.
 
-- **Connect Events (The Input Pipe)**: When defining an [Event](events.md), the Topic acts as the input pipe. The Event attaches to this pipe, listening for data flowing through it to trigger specific conditions.
+## Why use Sugarcoat Topics?
 
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`link;1.5em;sd-text-primary` Declarative Wiring</span> - No more hardcoded strings buried in your components. Define your Topics as shared resources and pass them into Components during configuration.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`timer;1.5em;sd-text-primary` Freshness Monitoring</span> - Sugarcoat Topic can enforce a `data_timeout`. If the data is too old, the Event system knows to ignore it, preventing "Stale Data" bugs.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`auto_awesome;1.5em;sd-text-primary` Lazy Type Resolution</span> - You don't need to import message classes at the top of every file. Sugarcoat resolves types like `'OccupancyGrid'` or `'Odometry'` at runtime, keeping your code clean and decoupling dependencies.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`tune;1.5em;sd-text-primary` QoS Abstraction</span> - Quality of Service profiles are configured via simple Python objects directly in your recipe.
 
 ## Usage Example
 
 ```python
-from ros_sugar.config import Topic, QoSConfig
+from ros_sugar.config import QoSConfig
+from ros_sugar.io import Topic
 
 qos_conf = QoSConfig(
     history=qos.HistoryPolicy.KEEP_LAST,
@@ -26,18 +35,43 @@ qos_conf = QoSConfig(
 topic = Topic(name='/local_map', msg_type='OccupancyGrid', qos_profile=qos_conf)
 ```
 
-## Advanced: Type Resolution
+## Advanced: Smart Type Resolution
 
-Because Topic objects are "smart," they handle the complexity of ROS2 message types for you. With the **dynamic resolution** of topics, you don't need to manually import message classes at the top of every file. You can define topics using string representations of the type, and Sugarcoat resolves them at runtime. See a list of supported messages [here](../advanced/types.md).
+One of Sugarcoat's most convenient features is **String-Based Type Resolution**. In standard ROS2, you must import the specific message class (`from geometry_msgs.msg import Twist`) to create a publisher or subscriber. Sugarcoat handles this import for you dynamically.
 
 ```python
-from ros_sugar.config import Topic
+from ros_sugar.io import Topic
 from std_msgs.msg import String
 
-# Method 1: import ROS2 message and pass it as the message type
-topic_1 = Topic(name='/message', msg_type=String)
+# Method 1: The Standard Way (Explicit Class)
+# Requires 'from std_msgs.msg import String'
+topic_1 = Topic(name='/chatter', msg_type=String)
 
-# Method 2: pass the message type as a string corresponding to the class name
-topic_2 = Topic(name='/message', msg_type='String')
+# Method 2: The Sugarcoat Way (String Literal)
+# No import required. Sugarcoat finds 'std_msgs/msg/String' automatically.
+topic_2 = Topic(name='/chatter', msg_type='String')
+
 ```
 
+:::{seealso}
+See the full list of automatically supported message types [here](../advanced/types.md).
+:::
+
+## Component Integration
+
+Once defined, Topics are passed to [Components](./component.md) to automatically generate the ROS2 infrastructure.
+
+```python
+from ros_sugar.core import BaseComponent
+from ros_sugar.io import Topic
+
+# When this component starts, it automatically creates:
+# - A Subscriber to '/scan' (LaserScan)
+# - A Publisher to '/cmd_vel' (Twist)
+my_node = BaseComponent(
+    component_name="safety_controller",
+    inputs=[Topic(name="/scan", msg_type="LaserScan")],
+    outputs=[Topic(name="/cmd_vel", msg_type="Twist")]
+)
+
+```

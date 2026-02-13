@@ -26,7 +26,7 @@ class ComponentLaunchAction(NodeLaunchAction):
         self,
         *,
         node: Union[BaseComponent, Monitor],
-        name: Union[str, List[launch.Substitution], None] = "node_name",
+        name: str = "node_name",
         namespace: Union[str, List[launch.Substitution], None] = None,
         log_level: LoggingSeverity = LoggingSeverity.INFO,
         **kwargs,
@@ -77,12 +77,25 @@ class ComponentLaunchAction(NodeLaunchAction):
         """
         try:
             # Create a launch event of type InternalEvent with the event name
-            event = InternalEvent(event_name=event_name)
+            event = InternalEvent(
+                event_name=event_name,
+                topics_value={},
+            )
+
+            def func():
+                # Update values from node
+                event.topics_value = {
+                    key: entry.msg
+                    for key, entry in self.__ros_node._events_topics_blackboard.items()
+                }
+                self.__context.emit_event_sync(event)
 
             # Emit the event to launch context
-            self.__context.asyncio_loop.call_soon_threadsafe(
-                lambda: self.__context.emit_event_sync(event)
-            )
+            # Safety check to make sure the asyncio loop is initialized
+            if self.__context.asyncio_loop:
+                self.__context.asyncio_loop.call_soon_threadsafe(func)
+            else:
+                func()
         except Exception as exc:
             self.__logger.error("Exception in emitting event': {}".format(exc))
 
@@ -106,18 +119,16 @@ class ComponentLaunchAction(NodeLaunchAction):
         if isinstance(self.__ros_node, Monitor):
             if self.__ros_node._internal_events:
                 for event in self.__ros_node._internal_events:
-                    self.__logger.info(f"Registering internal event '{event.name}'")
+                    self.__logger.debug(f"Registering internal event '{event}'")
                     # Register a method to emit the event to the launch context on trigger
-                    event.register_method(
-                        "emit_to_context", partial(self._on_internal_event, event.name)
-                    )
+                    event.register_actions(partial(self._on_internal_event, event.id))
             if hasattr(self.__ros_node, "_emit_exit_to_launcher"):
                 self.__ros_node._emit_exit_to_launcher = partial(
                     self._on_internal_event, "exit_all"
                 )
 
             # Adds an emit event for components activation
-            self.__logger.info("Registering Conditional Activation Handle")
+            self.__logger.debug("Registering Conditional Activation Handle")
             self.__ros_node.add_components_activation_event(
                 partial(self._on_internal_event, "activate_all")
             )

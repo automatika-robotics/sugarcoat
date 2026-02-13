@@ -1,3 +1,4 @@
+from typing import Dict, Sequence, Optional, List, Tuple
 import logging
 from datetime import datetime
 
@@ -31,11 +32,21 @@ class FHApp:
 
         hdrs = (
             Theme.red.headers(),  # Get theme from MonsterUI
+            # --- 1. Add ROS Dependencies (CDN) ---
+            Script(src="https://code.createjs.com/1.0.0/easeljs.min.js"),
+            Script(
+                src="https://cdn.jsdelivr.net/npm/eventemitter2@6.4.9/lib/eventemitter2.min.js"
+            ),
+            Script(src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"),
+            Script(src="https://cdn.jsdelivr.net/npm/ros2d@0/build/ros2d.min.js"),
             Script(
                 src="custom.js",
             ),
             Script(
                 src="audio_manager.js",
+            ),
+            Script(
+                src="ros_maps.js",
             ),
             Script(
                 src="video_manager.js",
@@ -65,8 +76,8 @@ class FHApp:
         # Inputs and Outputs
         self.in_topics = in_topics
         self.out_topics = out_topics
-        self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
         self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
+        self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
 
         # Setup service clients
         self.srv_clients = (
@@ -101,11 +112,11 @@ class FHApp:
             all_clients_cards(value.card)
         actions_main_card = Card(
             DivHStacked(
-                H4("Actions", cls="cool-subtitle-mini"),
+                H4("Tasks", cls="cool-subtitle-mini"),
                 elements._toggle_button(div_to_toggle="all_actions"),
-                cls="space-x-0",
+                cls="space-x-0 drag-handle",
             ),
-            cls="main-card max-h-[80vh] overflow-y-auto",
+            cls="main-card max-h-[80vh] overflow-y-auto draggable",
             id="actions",
             # NOTE: It is important to add these two variables to link this DOM element to the websocket.
             # This way any 'send' function applied from this websocket callback will update the element with the same class 'id'
@@ -140,6 +151,39 @@ class FHApp:
             )
         ]
 
+    def get_all_map_outputs(self) -> List[Tuple]:
+        """Return all topics that connect to their own websocket for streaming"""
+        return [
+            (o.name, o.msg_type.__name__)
+            for o in self.out_topics
+            if (
+                elements._OUTPUT_ELEMENTS.get(o.msg_type.__name__, None)
+                == elements._out_map_element
+            )
+        ]
+
+    def get_all_map_overlay_outputs(self) -> List[Tuple]:
+        """Return all topics that should connect to the map websocket for displaying on the map
+        This includes: (Point, PointStamped, Pose, PoseStamped, Odometry)"""
+        # If a map element is present -> Get all point-like and path outputs to output as map markers
+        if self.get_all_map_outputs():
+            return [
+                (o.name, o.msg_type.__name__)
+                for o in self.out_topics
+                if (
+                    o.msg_type.__name__
+                    in [
+                        "Point",
+                        "PointStamped",
+                        "Pose",
+                        "PoseStamped",
+                        "Odometry",
+                        "Path",
+                    ]
+                )
+            ]
+        return []
+
     def update_configs_from_data(self, data: Dict):
         """Update configs from a UI form data dict
 
@@ -163,6 +207,8 @@ class FHApp:
             number_of_inputs=len(inputs)
         )
 
+        has_map = True if self.get_all_map_outputs() else False
+
         for idx, inp in enumerate(inputs):
             input_divs.append(
                 elements.input_topic_card(
@@ -170,6 +216,7 @@ class FHApp:
                     topic_type=inp.msg_type.__name__,
                     ros_msg_type=inp.ros_msg_type,
                     column_class=inputs_columns_cls[idx],
+                    ft_has_map_element=has_map,
                 ),
             )
         return inputs_container(input_grid(*input_divs, id=grid_id))
@@ -179,8 +226,9 @@ class FHApp:
         displayed_outputs = [
             out
             for out in outputs
-            if elements._OUTPUT_ELEMENTS[out.msg_type.__name__].__name__.startswith(
-                "_out"
+            if (
+                (elm := elements._OUTPUT_ELEMENTS.get(out.msg_type.__name__, None))
+                and (elm.__name__.startswith("_out"))
             )
         ]  # Get output elements that have specific display cards
         if not displayed_outputs:
@@ -193,10 +241,21 @@ class FHApp:
             number_of_outputs=len(displayed_outputs)
         )
 
+        if map_overlays := self.get_all_map_overlay_outputs():
+            map_outputs = {
+                key: "path" if value == "Path" else "overlay"
+                for (key, value) in map_overlays
+            }
+        else:
+            map_outputs = None
+
         for idx, out in enumerate(displayed_outputs):
             output_divs.append(
                 elements.output_topic_card(
-                    out.name, out.msg_type.__name__, outputs_columns_cls[idx]
+                    out.name,
+                    out.msg_type.__name__,
+                    outputs_columns_cls[idx],
+                    map_output_markers=map_outputs,
                 )
             )
         return outputs_container(output_grid(*output_divs, id=grid_id))
@@ -264,10 +323,7 @@ class FHApp:
             return self.settings
 
         # Otherwise return the main page
-        main_grid = Grid(
-            id="modal-container",
-            cols=2,
-        )
+        main_grid = Grid(id="modal-container", cols=2, name="draggables-grid")
         if self.outputs:
             main_grid(
                 Div(
@@ -365,7 +421,7 @@ class FHApp:
             if self.action_clients:
                 nav_bar_items.append(
                     elements.filter_tag_button(
-                        name="actions", div_to_hide="actions-frontend"
+                        name="tasks", div_to_hide="actions-frontend"
                     ),
                 )
             # If user is allowed to access the settings panel -> add the toggle button
@@ -382,11 +438,25 @@ class FHApp:
                 )
         nav_bar = NavBar(
             *nav_bar_items,
-            brand=DivLAligned(
+            Button(
+                UkIcon("sun", cls="dark:hidden"),
+                UkIcon("moon", cls="hidden dark:block"),
+                onclick="toggleTheme()",  # from custom.js
+                type="button",
+                cls="glass-icon-btn",
+                uk_tooltip="title: Change Theme; pos: left",
+            ),
+            brand=Div(
+                # Dark Mode Logo (Visible by default)
                 Img(
                     src="https://automatikarobotics.com/Emos_dark.png",
-                    style="width:6vw",
-                )
+                    cls="brand-logo brand-dark",
+                ),
+                # Light Mode Logo (Hidden by default, shown when html.light exists)
+                Img(
+                    src="https://automatikarobotics.com/Emos_light.png",
+                    cls="brand-logo brand-light",
+                ),
             ),
         )
         return nav_bar

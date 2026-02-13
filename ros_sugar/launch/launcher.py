@@ -7,7 +7,6 @@ import sys
 import socket
 import json
 from typing import (
-    TypeVar,
     Awaitable,
     Callable,
     Dict,
@@ -17,9 +16,10 @@ from typing import (
     Union,
     Any,
     Tuple,
-    Mapping,
+    Mapping
 )
 from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
 
 import msgpack
 import msgpack_numpy as m_pack
@@ -71,9 +71,6 @@ m_pack.patch()
 
 UI_EXTENSIONS = {}
 
-# For type hinting events_actions dict: This represents "Any type that is a subclass of Event"
-EventT = TypeVar("EventT", bound=Event)
-
 
 class Launcher:
     """
@@ -97,7 +94,6 @@ class Launcher:
         self,
         namespace: str = "",
         config_file: Optional[str] = None,
-        enable_monitoring: bool = True,
         activation_timeout: Optional[float] = None,
         robot_plugin: Optional[str] = None,
     ) -> None:
@@ -125,13 +121,16 @@ class Launcher:
         # Create the launch configuration variables
         self._namespace = namespace
         self._config_file: Optional[str] = config_file
-        self.__enable_monitoring: bool = enable_monitoring
         self._launch_group = []
         self._enable_ui = False
         self._robot_plugin = robot_plugin
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
+        self._events_actions: Dict[
+            Event,
+            List[Union[Action, ROSLaunchAction]],
+        ] = defaultdict(list)
         self._pkg_executable: List[Tuple[Optional[str], Optional[str]]] = []
 
         # To track each package log level when the pkg is added
@@ -151,10 +150,10 @@ class Launcher:
         # Events/Actions dictionaries
         self._internal_events: Optional[List[Event]] = None
         self._internal_event_names: Optional[List[str]] = None
-        self._ros_actions: Dict[str, List[ROSLaunchAction]] = {}
+        self._ros_events_actions: Dict[str, List[ROSLaunchAction]] = {}
         # Dictionaries {serialized_event: actions}
-        self._monitor_actions: Dict[str, List[Action]] = {}
-        self._components_actions: Dict[str, List[Action]] = {}
+        self._monitor_events_actions: Dict[str, List[Action]] = {}
+        self._components_events_actions: Dict[str, List[Action]] = {}
         self.__events_names: List[str] = []
 
         # Thread pool for external processors
@@ -167,7 +166,7 @@ class Launcher:
         executable_entry_point: Optional[str] = "executable",
         events_actions: Optional[
             Mapping[
-                EventT,
+                Event,
                 Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
             ]
         ] = None,
@@ -232,10 +231,15 @@ class Launcher:
             else:
                 self.__components_to_activate_on_start_threaded.extend(components)
 
-        # Parse provided Events/Actions
-        if events_actions and self.__enable_monitoring:
-            # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
-            self.__rewrite_actions_for_components(self._components, events_actions)
+        # Merge events/actions with the global dictionary
+        if events_actions:
+            for key, value in events_actions.items():
+                if not self._events_actions.get(key):
+                    self._events_actions[key] = []
+                if isinstance(value, list):
+                    self._events_actions[key].extend(value)
+                else:
+                    self._events_actions[key].append(value)
 
         # Configure components from config_file
         for component in components:
@@ -331,15 +335,15 @@ class Launcher:
         :param comp: Component
         :type comp: BaseComponent
         """
-        if not self._components_actions:
+        if not self._components_events_actions:
             return
         comp_dict = {}
-        for event_serialized, actions in self._components_actions.items():
+        for event_serialized, actions in self._components_events_actions.items():
             for action in actions:
                 if comp.node_name == action.parent_component:
                     self.__update_dict_list(comp_dict, event_serialized, action)
         if comp_dict:
-            comp.events_actions = comp_dict
+            comp._events_actions = comp_dict
 
     def __update_dict_list(self, dictionary: Dict[str, List], name: str, value: Any):
         """Helper method to add or update an item in a dictionary
@@ -356,11 +360,52 @@ class Launcher:
         else:
             dictionary[name] = [value]
 
+    def _setup_events_actions(self):
+        """Setup all events/actions and distribute to components/monitor"""
+        # Check if any component already has internal events_actions defined
+        # If yes: Add to global dictionary and remove from component
+        for component in self._components:
+            component_events_actions = component.get_events_actions()
+            # Add the component internal events/actions to the global events_actions dictionary
+            if component_events_actions:
+                for key, value in component_events_actions.items():
+                    if not self._events_actions.get(key):
+                        self._events_actions[key] = []
+                    if isinstance(value, list):
+                        self._events_actions[key].extend(value)
+                    else:
+                        self._events_actions[key].append(value)
+                # Clear from the component
+                # Event/Actions will get rewritten and redistributed across all components
+                component.clear_events_actions()
+
+        # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
+        self.__rewrite_actions_for_components(
+            self._components, self._events_actions
+        )
+
+    def _update_ros_events_actions(
+        self, event: Event, action: Union[Action, ROSLaunchAction]
+    ):
+        """Update with new launch action (adds to ros actions and adds event to internal events)
+
+        :param event: Event
+        :type event: Event
+        :param action: Action
+        :type action: Action
+        """
+        self.__update_dict_list(self._ros_events_actions, event.id, action)
+        if not self._internal_events:
+            self._internal_events = [event]
+        elif event not in self._internal_events:
+            self._internal_events.append(event)
+
     def __rewrite_actions_for_components(
         self,
         components_list: List[BaseComponent],
-        actions_dict: Mapping[
-            EventT, Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
+        events_actions_dict: Dict[
+            Event,
+            List[Union[Action, ROSLaunchAction]],
         ],
     ):
         """
@@ -373,45 +418,42 @@ class Launcher:
 
         :raises ValueError: If given component action corresponds to unknown component
         """
-        self.__events_names.extend(event.name for event in actions_dict)
-        for condition, raw_action in actions_dict.items():
-            serialized_condition: str = condition.json
-            action_set: List[Union[Action, ROSLaunchAction]] = (
-                raw_action if isinstance(raw_action, list) else [raw_action]
-            )
+        self.__events_names.extend(event.id for event in events_actions_dict)
+        for event, action_set in events_actions_dict.items():
             for action in action_set:
+                # Verify that the action inputs are available from the event topic(s)
+                if isinstance(action, Action):
+                    event.verify_required_action_topics(action)
                 # Check if it is a component action:
                 if isinstance(action, Action) and action.component_action:
                     action_object = action.executable.__self__
                     if components_list.count(action_object) <= 0:
                         raise InvalidAction(
-                            f"Invalid action for condition '{condition.name}'. Action component '{action_object}' is unknown or not added to Launcher"
+                            f"Invalid action for event '{event}'. Action component '{action_object}' is unknown or not added to Launcher"
                         )
-                    if action.lifecycle_action:
+                    if action._is_lifecycle_action:
                         # lifecycle action to parse from the launcher
-                        self.__update_dict_list(
-                            self._ros_actions, condition.name, action
-                        )
-                        if not self._internal_events:
-                            self._internal_events = [condition]
-                        elif condition not in self._internal_events:
-                            self._internal_events.append(condition)
+                        self._update_ros_events_actions(event, action)
                     else:
-                        self.__update_dict_list(
-                            self._components_actions, serialized_condition, action
+                        serialized_condition: str = (
+                            event.to_json() if isinstance(event, Event) else event
                         )
-                elif isinstance(action, Action) and action.monitor_action:
+                        self.__update_dict_list(
+                            self._components_events_actions,
+                            serialized_condition,
+                            action,
+                        )
+                elif isinstance(action, Action) and action._is_monitor_action:
                     # Action to execute through the monitor
+                    serialized_condition: str = (
+                        event.to_json() if isinstance(event, Event) else event
+                    )
                     self.__update_dict_list(
-                        self._monitor_actions, serialized_condition, action
+                        self._monitor_events_actions, serialized_condition, action
                     )
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
-                    self.__update_dict_list(self._ros_actions, condition.name, action)
-                    if not self._internal_events:
-                        self._internal_events = [condition]
-                    elif condition not in self._internal_events:
-                        self._internal_events.append(condition)
+                    self._update_ros_events_actions(event, action)
 
     def _activate_components_action(self) -> SomeEntitiesType:
         """
@@ -566,8 +608,8 @@ class Launcher:
                 f"Requested action component {action.parent_component} is unknown"
             )
         return action_method(
-            *action.args,
-            **action.kwargs,
+            *action._args,
+            **action._kwargs,
             node_name=action.parent_component,
             component=comp,
         )
@@ -582,9 +624,9 @@ class Launcher:
         # Add event handling actions
         entities_dict: Dict = {}
 
-        if not self._ros_actions:
+        if not self._ros_events_actions:
             return
-        for event_name, action_set in self._ros_actions.items():
+        for event_name, action_set in self._ros_events_actions.items():
             log_action = LogInfo(msg=f"GOT TRIGGER FOR EVENT {event_name}")
             entities_dict[event_name] = [log_action]
             for action in action_set:
@@ -592,7 +634,7 @@ class Launcher:
                     entities_dict[event_name].append(action)
 
                 # Check action type
-                elif action.lifecycle_action:
+                elif action._is_lifecycle_action:
                     # Re-parse action for component related actions
                     entities = self._get_action_launch_entity(action)
                     if isinstance(entities, list):
@@ -619,7 +661,7 @@ class Launcher:
         """Adds a node to monitor all the launched components and their events"""
         # Update internal events
         if self._internal_events:
-            self._internal_event_names = [ev.name for ev in self._internal_events]
+            self._internal_event_names = [ev.id for ev in self._internal_events]
             # Check that all internal events have unique names
             if len(set(self._internal_event_names)) != len(self._internal_event_names):
                 raise ValueError(
@@ -657,8 +699,7 @@ class Launcher:
 
         self.monitor_node = Monitor(
             components_names=components_names,
-            enable_health_status_monitoring=self.__enable_monitoring,
-            events_actions=self._monitor_actions,
+            events_actions=self._monitor_events_actions,
             events_to_emit=self._internal_events,
             services_components=services_components,
             action_servers_components=action_components,
@@ -703,7 +744,7 @@ class Launcher:
         :param nodes_in_processes: If nodes are being launched in separate processes, defaults to True
         :type nodes_in_processes: bool, optional
         """
-        logger.info(f"UI enabled. Setting up ui node: {self._ui_input_topics}")
+        logger.info("UI enabled. Setting up the UI node...")
 
         # Setup the client node
         component_configs = {comp.node_name: comp.config for comp in self._components}
@@ -778,8 +819,10 @@ class Launcher:
                 s.bind(sock_file)
                 s.listen(0)
                 self._thread_pool.submit(
-                    self.__listen_for_external_processing, s, processor
-                )  # type: ignore
+                    self.__listen_for_external_processing,
+                    s,
+                    processor,  # type: ignore
+                )
 
     def _setup_component_in_process(
         self,
@@ -968,6 +1011,8 @@ class Launcher:
         except ImportError:
             pass
 
+        self._setup_events_actions()
+
         for component in self._components:
             self._setup_component_events_handlers(component)
 
@@ -1019,5 +1064,5 @@ class Launcher:
             self._thread_pool.shutdown()
 
         logger.info("------------------------------------")
-        logger.info("ALL COMPONENTS ENDED")
+        logger.info("ALL COMPONENTS EXITED SUCCESSFULLY")
         logger.info("------------------------------------")

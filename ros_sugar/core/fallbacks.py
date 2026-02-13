@@ -1,12 +1,14 @@
 """Fallbacks"""
 
-from typing import List, Optional, Union, Dict
+from typing import List, Optional, Union, Dict, Any
 import json
 from attrs import define, field
 
 from automatika_ros_sugar.msg import ComponentStatus
 
 from .action import Action
+from .event import EventBlackboardEntry
+from ..io import Topic
 
 
 @define
@@ -40,10 +42,21 @@ class Fallback:
         :return: Fallback dict
         :rtype: Dict
         """
+        action_list = (
+            [self.action] if not isinstance(self.action, list) else self.action
+        )
+
         return {
-            "action": self.action.dictionary,
+            "action_list": [action.dictionary for action in action_list],
             "max_retries": self.max_retries,
         }
+
+    def _get_required_topics(self) -> List[Topic]:
+        actions = self.action if isinstance(self.action, list) else [self.action]
+        topics = []
+        for action in actions:
+            topics.extend(action.get_required_topics())
+        return topics
 
 
 class ComponentFallbacks:
@@ -110,6 +123,9 @@ class ComponentFallbacks:
         self.__giveup: bool = False
         self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
 
+        # Registry of the latest topics message values
+        self.__topics_blackboard: Dict[str, Any] = {}
+
     @property
     def giveup(self) -> bool:
         """
@@ -151,6 +167,35 @@ class ComponentFallbacks:
         }
         return json.dumps(fallbacks_dict)
 
+    @property
+    def required_topics(self) -> List[Topic]:
+        on_any = self.on_any_fail._get_required_topics() if self.on_any_fail else []
+        on_component = (
+            self.on_component_fail._get_required_topics()
+            if self.on_component_fail
+            else []
+        )
+        on_algorithm = (
+            self.on_algorithm_fail._get_required_topics()
+            if self.on_algorithm_fail
+            else []
+        )
+        on_system = (
+            self.on_system_fail._get_required_topics() if self.on_system_fail else []
+        )
+        on_giveup = self.on_giveup._get_required_topics() if self.on_giveup else []
+        all_topics = on_any + on_algorithm + on_component + on_system + on_giveup
+        # Get unique topics
+        unique_topics_dict = {}
+        for topic in all_topics:
+            unique_topics_dict[topic.name] = topic
+        return list(unique_topics_dict.values())
+
+    def update_topics_blackboard(self, topics_board: Dict[str, EventBlackboardEntry]):
+        self.__topics_blackboard = {
+            key: value.msg for key, value in topics_board.items()
+        }
+
     def reset(self) -> None:
         """Reset all fallback execution tracking indices to 0 and the retries tracking indices to 0"""
         self.reset_execution_indices()
@@ -191,9 +236,12 @@ class ComponentFallbacks:
             # Only one fallback action is available
 
             # None max_retries == Never give up, or max_retries not reached yet
-            if fallback.max_retries is None or fallback.retry_idx < fallback.max_retries:
+            if (
+                fallback.max_retries is None
+                or fallback.retry_idx < fallback.max_retries
+            ):
                 try:
-                    success = fallback.action()
+                    success = fallback.action(topics=self.__topics_blackboard)
                 except Exception:
                     success = False
                 if success:
@@ -219,7 +267,9 @@ class ComponentFallbacks:
 
         if fallback.action_idx < len(fallback.action):
             try:
-                success = fallback.action[fallback.action_idx]()
+                success = fallback.action[fallback.action_idx](
+                    topics=self.__topics_blackboard
+                )
             except Exception:
                 success = False
             if success:

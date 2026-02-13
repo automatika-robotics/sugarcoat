@@ -1,9 +1,12 @@
 import importlib
-from typing import List, Dict, Any
-import logging
+from typing import List, Dict, Any, Optional
+from functools import partial
+from ..utils import logger
 from ..io.supported_types import SupportedType, get_ros_msg_fields_dict
 
 from .utils import parse_type
+
+import subprocess
 
 try:
     from fasthtml.common import *
@@ -18,8 +21,6 @@ except ModuleNotFoundError as e:
 # Some class names are linked with a custom behavior implemented in custom.js (such as 'draggable' class)
 
 # NOTE: 'hx_post' calls (used in Buttons) are implemented in scripts/ui_node_executable
-
-# TODO: Make all draggable containers re-sizable as well
 
 
 # ---- TASK ELEMENT ----
@@ -42,6 +43,21 @@ class Task:
         self._name = name
         self._type = client_type
         self._fields = fields
+        self._feedback_card = Card(
+            header=H6(">> Feedback Log", cls="tomorrow-night-green"),
+            cls="terminal-container ml-2 mr-2 mt-0 overflow-y-auto ",
+            id="feedback-log",
+        )
+        self._serving_component: Optional[str] = self.__get_server_node()
+        self.total_calls = 0
+
+    def is_active(self) -> bool:
+        """Check if the task is active (running/active/accepted)
+
+        :return: True if the task is active
+        :rtype: bool
+        """
+        return self._status in ["running", "active", "accepted"]
 
     def update(
         self,
@@ -70,17 +86,29 @@ class Task:
         :rtype: FT
         """
         client_card = Card(
-            DivHStacked(H4(self._name), self._badge),
+            header=DivHStacked(
+                H4(self._name),
+                self._badge,
+                Button(
+                    "?",
+                    cls="info-btn",
+                    id=f"{self._name}-info-btn",
+                    onclick=f"openAtButton('{self._name}-info-btn', '{self._name}-modal')",  # Method openAtButton implemented in custom.js
+                ),
+                self._info,
+            ),
+            header_cls="mb-0",
             cls="m-2 max-h-[40vh] overflow-y-auto inner-main-card",
             id=self._name,
             ws_send=True,
         )
         # TODO: Format the feedback message and add a display card
-        # if self.feedback:
-        #     client_card(self.feedback)
-        return client_card(
-            _in_action_client_element(self._name, self._type, self._fields)
-        )
+        inside = Grid(cls="gap-2 ml-1 mr-1", cols=1)
+        if self.feedback:
+            self._feedback_card(self.feedback)
+            inside(self._feedback_card)
+        inside(_in_action_client_element(self._name, self._type, self._fields))
+        return client_card(inside)
 
     @property
     def feedback(self):
@@ -89,6 +117,71 @@ class Task:
             return None
         else:
             return P(self._feedback)
+
+    @property
+    def _info(self):
+        """Gets the action server info"""
+        # Get the server node name
+        if self._serving_component is None:
+            # Try to search again
+            self._serving_component = self.__get_server_node()
+        return (
+            Dialog(
+                Card(
+                    Grid(
+                        P(
+                            Strong("Active Serving Component: "),
+                            self._serving_component or "Not found",
+                        ),
+                        P(Strong("Total Sent Calls: "), self.total_calls),
+                        P(Strong("Type: "), self._type),
+                        cols=1,
+                        cls="gap-1",
+                    ),
+                    header=DivHStacked(
+                        Button(
+                            "✕",
+                            cls="info-btn",
+                            onclick="this.closest('dialog').close()",
+                        ),
+                        H5("Task Info", cls="cool-subtitle-mini-blue"),
+                    ),
+                ),
+                id=f"{self._name}-modal",
+            ),
+        )
+
+    def __get_server_node(self) -> Optional[str]:
+        """
+        Executes 'ros2 action info <action_name>' and returns the active server node name if found.
+        """
+        try:
+            # Execute the command
+            result = subprocess.run(
+                ["ros2", "action", "info", self._name],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            output = result.stdout
+
+        except Exception:
+            return None
+
+        # The output format is standard:
+        # Action: /turtle1/rotate_absolute
+        # Action clients: 1
+        #     /teleop_turtle
+        # Action servers: 1
+        #     /turtlesim
+        for key, line in enumerate(output.splitlines()):
+            line = line.strip()
+            if line.startswith("Action servers:"):
+                if line.removeprefix("Action servers:").strip() == "0":
+                    return None
+                else:
+                    return output.splitlines()[key + 1].strip()
 
     @property
     def _badge(self):
@@ -155,9 +248,227 @@ def _toggle_button(div_to_toggle: Optional[str] = None, **kwargs):
         _arrow_down,
         type="button",
         name="down",
-        cls=f"no-drag {AT.primary}",
+        cls="no-drag uk-icon-button  btn-touch-target",
         onclick=onclick,
         **kwargs,
+    )
+
+
+def _fullscreen_button(div_id: str):
+    """
+    Button to toggle fullscreen mode for a specific div_id.
+    """
+    return Button(
+        UkIcon("expand"),
+        type="button",
+        cls="no-drag uk-icon-button",  # Prevent dragging when clicking this
+        onclick=f"toggleFullScreen(this, '{div_id}')",
+        uk_tooltip="title: Full Screen; pos: left",
+    )
+
+
+def _map_overlay_settings_panel(map_id: str, element_id: str, overlay_type: str):
+    """Helper method to get a setting panel for one map overlay marker (point or path)
+
+    :param map_id: Map ID
+    :type map_id: str
+    :param element_id: Marker element ID
+    :type element_id: str
+    :param overlay_type: Path or Overlay Point
+    :type overlay_type: str
+
+    :return: Settings panel
+    :rtype: FT
+    """
+    # Unique wrapper ID for toggling visibility
+    wrapper_id = f"visuals-{map_id}-{element_id}"
+    # We hide all blocks by default; the script below will show the selected one
+    block_cls = f"visual-settings-block-{map_id} hidden"
+
+    if overlay_type == "path":
+        # === PATH SETTINGS ===
+        # Needs: Color, Line Width, Line Style
+        content = Div(
+            # Path Color
+            LabelInput(
+                label="Path Color",
+                type="color",
+                name=f"color_{element_id}",
+                value="#2ECC71",
+                id=f"picker-{map_id}-{element_id}",
+                cls="form-input space-y-1",
+            ),
+            # Width Slider
+            LabelInput(
+                label="Line Width",
+                name=f"width_{element_id}",
+                type="range",
+                value="3",
+                min="1",
+                max="10",
+                cls="form-input space-y-1",
+            ),
+            # Style Select
+            LabelSelect(
+                Option("Solid", value="solid"),
+                Option("Dashed", value="dashed"),
+                Option("Dots", value="dots"),
+                label="Line Style",
+                name=f"style_{element_id}",
+                cls="form-input space-y-1",
+            ),
+            id=wrapper_id,
+            cls=block_cls,
+        )
+    else:
+        # === OVERLAY/POINT SETTINGS (Matches your snippet) ===
+        # Needs: Shape, Color Picker
+        content = Div(
+            # Color Picker (Hidden by default)
+            LabelInput(
+                label="Select Color",
+                type="color",
+                name=f"color_{element_id}",
+                value="#E83F3F",
+                id=f"picker-{map_id}-{element_id}",
+                cls="form-input space-y-1",
+            ),
+            id=wrapper_id,
+            cls=block_cls,
+        )
+    return content
+
+
+def _map_settings_modal(map_id: str, overlays: Optional[Dict] = None):
+    """
+    Creates a popup dialog to configure Clicked Point settings and Visuals.
+    overlays: dict e.g. {'robot_pose': 'overlay', 'global_plan': 'path'}
+    """
+    if overlays is None:
+        overlays = {}
+
+    # 1. Create Dropdown Options
+    id_options = [Option(k, value=k) for k in overlays.keys()]
+
+    # 2. Generate Hidden Settings Blocks for each ID
+    settings_blocks = []
+
+    for oid, otype in overlays.items():
+        settings_blocks.append(
+            _map_overlay_settings_panel(
+                map_id=map_id, element_id=oid, overlay_type=otype
+            )
+        )
+
+    return Div(
+        Div(
+            Form(
+                # --- CLICKED POINT SETTINGS ---
+                Card(
+                    H5("Published Point Settings", cls="cool-title"),
+                    LabelInput(
+                        label="Topic Name",
+                        name="clicked_point_topic",
+                        value="clicked_point",
+                        placeholder="e.g. /goal_pose",
+                        cls="form-input space-y-1",
+                    ),
+                    LabelSelect(
+                        Option("PointStamped", value="PointStamped", selected=True),
+                        Option("Point", value="Point"),
+                        Option("PoseStamped", value="PoseStamped"),
+                        Option("Pose", value="Pose"),
+                        label="Message Type",
+                        name="clicked_point_type",
+                        cls="form-input space-y-1",
+                    ),
+                    cls="space-y-3 mb-4 main-card",
+                ),
+                Card(
+                    H5("Output Visuals", cls="cool-title"),
+                    # 1. The ID Selector
+                    LabelSelect(
+                        *id_options,
+                        label="Topic Name",
+                        placeholder="Select output topic...",
+                        name="selected_visual_id",
+                        cls="form-input space-y-1",
+                        id=f"visual-selector-{map_id}",
+                    ),
+                    # 2. Settings Container
+                    Div(
+                        *settings_blocks,
+                        cls="p-3 min-h-[160px]",
+                    ),
+                    cls="space-y-3 main-card",
+                ),
+                # --- SAVE BUTTON ---
+                Div(
+                    Button(
+                        "Save Settings",
+                        cls="primary-button w-full justify-center",
+                        onclick=f"saveMapSettings('{map_id}')",
+                        type="button",
+                    ),
+                    cls="pt-4",
+                ),
+                id=f"{map_id}-settings-form",
+                cls="flex flex-col space-y-2",
+            ),
+            cls="modal-box p-5 space-y-4 max-w-sm",
+            onclick="event.stopPropagation()",
+        ),
+        id=f"{map_id}-settings-modal",
+        cls="custom-overlay backdrop-blur-sm",
+        # Initialize Observer (Runs once)
+        # Force Initial Update (Runs every time mouse enters to ensure UI is in sync)
+        onmouseenter=f"initVisualSettingsObserver('{map_id}'); updateVisualSettingsVisibility(document.getElementById('visual-selector-{map_id}'), '{map_id}')",
+        onclick="this.style.display='none'",
+    )
+
+
+def _map_control_buttons(map_id: str, map_output_markers: Optional[Dict] = None):
+    """
+    Overlay buttons for Zoom In/Out and Publish Point.
+    """
+    return DivHStacked(
+        # Zoom In
+        Button(
+            UkIcon("plus"),
+            cls="glass-icon-btn",
+            onclick=f"zoomMap('{map_id}', 1.2)",
+            type="button",
+            uk_tooltip="title: Zoom In; pos: left",
+        ),
+        # Zoom Out
+        Button(
+            UkIcon("minus"),
+            cls="glass-icon-btn",
+            onclick=f"zoomMap('{map_id}', 0.8)",
+            type="button",
+            uk_tooltip="title: Zoom Out; pos: left",
+        ),
+        # Publish Point Button
+        Button(
+            UkIcon("mapPin"),
+            cls="glass-icon-btn",
+            onclick="togglePublishPoint(this)",  # Calls JS function
+            id=f"{map_id}-publish-btn",
+            type="button",
+            uk_tooltip="title: Publish Clicked Point; pos: left",
+        ),
+        # Settings (Gear Icon)
+        Button(
+            UkIcon("settings"),
+            cls="glass-icon-btn",
+            id=f"{map_id}-settings-btn",
+            onclick=f"openMapSettings('{map_id}')",
+            type="button",
+            uk_tooltip="title: Settings; pos: left",
+        ),
+        # THE SETTINGS MODAL (Hidden by default, popped up by openMapSettings)
+        _map_settings_modal(map_id, map_output_markers),
+        cls="flex flex-row space-x-2 no-drag",
     )
 
 
@@ -208,7 +519,7 @@ def filter_tag_button(name: str, div_to_hide: str, **kwargs):
 # ---- CUSTOM INPUT MESSAGES ELEMENTS ----
 
 
-def _in_text_element(topic_name: str, topic_type: str):
+def _in_text_element(topic_name: str, topic_type: str, **_):
     """FastHTML element for input String type"""
     field_type = "number" if topic_type in ["Float32", "Float64"] else "text"
     return (
@@ -229,7 +540,7 @@ def _in_text_element(topic_name: str, topic_type: str):
     )
 
 
-def _in_bool_element(topic_name: str, topic_type: str):
+def _in_bool_element(topic_name: str, topic_type: str, **_):
     """FastHTML element for input String type"""
     return (
         Form(cls="mb-1 p-1")(
@@ -260,47 +571,105 @@ def _in_audio_element(topic_name: str, **_):
                 UkIcon(icon="mic"),
                 id=topic_name,
                 onclick="startAudioRecording(this)",  # Method implemented in custom.js
-                title="Record",
-                cls=f"{AT.primary}",
+                cls=f"{AT.primary} uk-icon-button",
+                uk_tooltip="title: Record; pos: left",
             ),
         ),
         cls="no-drag ",
     )
 
 
-def _in_point_element(topic_name: str, topic_type: str):
-    """FastHTML element for 3D point type"""
-    return (
-        Form(cls="space-x-2 space-y-2 mr-2 mb-2")(
-            DivVStacked(
-                DivFullySpaced(
-                    Input(name="topic_name", type="hidden", value=topic_name),
-                    Input(name="topic_type", type="hidden", value=topic_type),
-                    Input(
-                        placeholder="X",
-                        name="x",
-                        type="number",
-                        required=True,
-                        autocomplete="off",
-                    ),
-                    Input(
-                        placeholder="Y",
-                        name="y",
-                        type="number",
-                        required=True,
-                        autocomplete="off",
-                    ),
-                    Input(
-                        placeholder="Z",
-                        name="z",
-                        type="number",
-                        required=True,
-                        autocomplete="off",
-                    ),
-                    cls="space-x-2",
-                ),
-                Button("Submit", cls="primary-button"),
+def __pop_up_form(topic_name: str, form_elements: tuple):
+    """Helper method to construct a cool pop-up form"""
+    return Div(
+        Div(
+            H4(
+                f"Message Value for sending '{topic_name}'",
+                cls="cool-subtitle-mini-blue mb-2",
             ),
+            Form(
+                DivVStacked(
+                    *form_elements,
+                    DivHStacked(
+                        Button("Submit", cls="primary-button", type="submit"),
+                        Button(
+                            "Cancel",
+                            cls="secondary-button",
+                            onclick="this.closest('.custom-overlay').style.display='none'",
+                            type="button",
+                        ),
+                        cls="space-x-2 justify-center mt-4",
+                    ),
+                ),
+                cls="space-x-2 space-y-2 mr-2 mb-2",
+                ws_send=True,
+                hx_on__ws_after_send="this.reset(); this.closest('.custom-overlay').style.display='none'; return false;",
+            ),
+            cls="modal-box",
+            onclick="event.stopPropagation()",
+        ),
+        cls="custom-overlay",
+        id=f"{topic_name}-manual-form",
+        # Logic: Clicking the dark background (the overlay) closes itself
+        onclick="this.style.display='none'",
+    )
+
+
+def __location_element_input(
+    topic_name: str, topic_type: str, elements: tuple, has_map: bool = True
+):
+    """Helper method to construct element for generic location types
+
+    :param topic_name: Topic name
+    :type topic_name: str
+    :param topic_type: Message type
+    :type topic_type: str
+    :param elements: Manual input form elements
+    :type elements: tuple
+    :param has_map: If the UI has a map element, defaults to True
+    :type has_map: bool, optional
+    :return: Location element
+    :rtype: FT
+    """
+    inner_fields = DivFullySpaced(
+        Input(name="topic_name", type="hidden", value=topic_name),
+        Input(name="topic_type", type="hidden", value=topic_type),
+        cls="space-x-2",
+    )
+    if has_map:
+        inner_fields(
+            Button(
+                UkIcon("mapPin"),
+                cls="glass-icon-btn",
+                onclick="togglePublishPoint(this)",  # Calls JS function
+                id=f"{topic_name}-publish-btn",
+                type="button",
+                uk_tooltip="title: Publish Point On Map; pos: left",
+                data_topic=topic_name,
+                data_type=topic_type,
+            ),
+            Button(
+                "Enter Data Manually",
+                cls="primary-button",
+                type="button",
+                onclick=f"document.getElementById('{topic_name}-manual-form').style.display='grid'",
+            ),
+            __pop_up_form(
+                topic_name,
+                elements,
+            ),
+        )
+    else:
+        inner_fields(
+            *elements,
+            Button("Submit", cls="primary-button", type="submit"),
+        )
+    return (
+        Form(
+            DivVStacked(
+                *inner_fields,
+            ),
+            cls="space-x-2 space-y-2 mr-2 mb-2",
             id=f"{topic_name}-form",
             ws_send=True,
             hx_on__ws_after_send="this.reset(); return false;",
@@ -308,86 +677,141 @@ def _in_point_element(topic_name: str, topic_type: str):
     )
 
 
-def _in_pose_element(topic_name: str, topic_type: str):
+def _in_point_element(
+    topic_name: str, topic_type: str, stamped: bool, has_map: bool = False, **_
+):
     """FastHTML element for 3D point type"""
-    return (
-        Form(cls="space-x-2 space-y-2 mr-2 mb-2")(
-            DivVStacked(
-                P("Position:"),
-                DivFullySpaced(
-                    Input(name="topic_name", type="hidden", value=topic_name),
-                    Input(name="topic_type", type="hidden", value=topic_type),
-                    Input(
-                        placeholder="X",
-                        name="x",
-                        type="number",
-                        required=True,
-                        autocomplete="off",
-                    ),
-                    Input(
-                        placeholder="Y",
-                        name="y",
-                        type="number",
-                        required=True,
-                        autocomplete="off",
-                    ),
-                    Input(
-                        placeholder="Z",
-                        name="z",
-                        type="number",
-                        required=True,
-                        autocomplete="off",
-                    ),
-                    cls="space-x-2",
-                ),
-                DivHStacked(
-                    P("Orientation (Optional):"),
-                    # Toggle button for only the orientation fields (skips the first 6 position fields of the form)
-                    _toggle_button(
-                        onclick="""
+    elements = DivHStacked(
+        Input(
+            placeholder="X",
+            name="x",
+            type="number",
+            required=True,
+            autocomplete="off",
+        ),
+        Input(
+            placeholder="Y",
+            name="y",
+            type="number",
+            required=True,
+            autocomplete="off",
+        ),
+        Input(
+            placeholder="Z",
+            name="z",
+            type="number",
+            required=True,
+            autocomplete="off",
+        ),
+    )
+    if stamped:
+        elements(
+            Input(
+                placeholder="FrameId",
+                name="frame_id",
+                type="text",
+                required=True,
+                autocomplete="off",
+            ),
+        )
+    return __location_element_input(
+        topic_name=topic_name,
+        topic_type=topic_type,
+        has_map=has_map,
+        elements=(elements,),
+    )
+
+
+def _in_pose_element(
+    topic_name: str, topic_type: str, stamped: bool, has_map: bool = False, **_
+):
+    """FastHTML element for 3D point type"""
+    _pose_form_fields = (
+        P("Position:"),
+        DivFullySpaced(
+            Input(name="topic_name", type="hidden", value=topic_name),
+            Input(name="topic_type", type="hidden", value=topic_type),
+            Input(
+                placeholder="X",
+                name="x",
+                type="number",
+                required=True,
+                autocomplete="off",
+            ),
+            Input(
+                placeholder="Y",
+                name="y",
+                type="number",
+                required=True,
+                autocomplete="off",
+            ),
+            Input(
+                placeholder="Z",
+                name="z",
+                type="number",
+                required=True,
+                autocomplete="off",
+            ),
+            cls="space-x-2",
+        ),
+        DivHStacked(
+            P("Orientation (Optional):"),
+            # Toggle button for only the orientation fields (skips the first 6 position fields of the form)
+            _toggle_button(
+                onclick="""
                                 for (let i = 6; i < this.form.length -1 ; i++)
                                 {{this.form[i].hidden = !this.form[i].hidden;}}
                                 """
-                    ),
-                    cls="space-x-0",
-                ),
-                DivFullySpaced(
-                    Input(
-                        placeholder="W",
-                        name="ori_w",
-                        type="number",
-                        autocomplete="off",
-                        hidden=True,
-                    ),
-                    Input(
-                        placeholder="X",
-                        name="ori_x",
-                        type="number",
-                        autocomplete="off",
-                        hidden=True,
-                    ),
-                    Input(
-                        placeholder="Y",
-                        name="ori_y",
-                        type="number",
-                        autocomplete="off",
-                        hidden=True,
-                    ),
-                    Input(
-                        placeholder="Z",
-                        name="ori_z",
-                        type="number",
-                        autocomplete="off",
-                        hidden=True,
-                    ),
-                    cls="space-x-2",
-                ),
-                Button("Submit", cls="primary-button"),
             ),
-            id=f"{topic_name}-form",
-            ws_send=True,
-            hx_on__ws_after_send="this.reset(); return false;",
+            cls="space-x-0",
         ),
+        DivFullySpaced(
+            Input(
+                placeholder="W",
+                name="ori_w",
+                type="number",
+                autocomplete="off",
+                hidden=True,
+            ),
+            Input(
+                placeholder="X",
+                name="ori_x",
+                type="number",
+                autocomplete="off",
+                hidden=True,
+            ),
+            Input(
+                placeholder="Y",
+                name="ori_y",
+                type="number",
+                autocomplete="off",
+                hidden=True,
+            ),
+            Input(
+                placeholder="Z",
+                name="ori_z",
+                type="number",
+                autocomplete="off",
+                hidden=True,
+            ),
+            cls="space-x-2",
+        ),
+    )
+    if stamped:
+        _pose_form_fields(
+            Input(
+                placeholder="FrameId",
+                name="frame_id",
+                type="text",
+                required=True,
+                autocomplete="off",
+            ),
+        )
+    return __location_element_input(
+        topic_name=topic_name,
+        topic_type=topic_type,
+        has_map=has_map,
+        elements=_pose_form_fields,
     )
 
 
@@ -398,6 +822,24 @@ def _out_image_element(topic_name: str, **_):
     """FastHTML element for output Image/CompressedImage type"""
     return DivCentered(
         Img(id=topic_name, name="video-frame", src="", cls="h-[40vh] w-auto")
+    )
+
+
+def _out_map_element(topic_name: str, map_output_markers: Optional[Dict] = None, **_):
+    """FastHTML element for output OccupancyGrid typ"""
+    return (
+        Grid(
+            DivHStacked(
+                _map_control_buttons(topic_name, map_output_markers),
+            ),
+            Div(
+                id=topic_name,
+                name="map-canvas",
+                style="width: 100%; height: auto; background-color: #333;",
+            ),
+            cols=1,
+            cls="space-y-2 inner-main-card p-2 m-0",
+        ),
     )
 
 
@@ -422,10 +864,10 @@ _INPUT_ELEMENTS: Dict = {
     "Float64": _in_text_element,
     "Bool": _in_bool_element,
     "Audio": _in_audio_element,
-    "Point": _in_point_element,
-    "PointStamped": _in_point_element,
-    "Pose": _in_pose_element,
-    "PoseStamped": _in_pose_element,
+    "Point": partial(_in_point_element, stamped=False),
+    "PointStamped": partial(_in_point_element, stamped=True),
+    "Pose": partial(_in_pose_element, stamped=False),
+    "PoseStamped": partial(_in_pose_element, stamped=True),
 }
 
 _OUTPUT_ELEMENTS: Dict = {
@@ -436,7 +878,7 @@ _OUTPUT_ELEMENTS: Dict = {
     "Audio": _log_audio_element,
     "Image": _out_image_element,
     "CompressedImage": _out_image_element,
-    "OccupancyGrid": _out_image_element,
+    "OccupancyGrid": _out_map_element,
 }
 
 
@@ -448,22 +890,22 @@ def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
     # Get key type
     module_name_key, _, type_name = k_t.rpartition(".")
     if not module_name_key:
-        logging.error(f"Could not find module name for {k_t}")
+        logger.error(f"Could not find module name for {k_t}")
         return
     # Get item func
     module_name_item, _, func_name = i_t.rpartition(".")
     if not module_name_item:
-        logging.error(f"Could not find module name for {i_t}")
+        logger.error(f"Could not find module name for {i_t}")
         return
     module_key = importlib.import_module(module_name_key)
     module_item = importlib.import_module(module_name_item)
     key = getattr(module_key, type_name)
     if not issubclass(key, SupportedType):
-        logging.error(f"Could not find {type_name} name in {module_key} module")
+        logger.error(f"Could not find {type_name} name in {module_key} module")
         return
     item = getattr(module_item, func_name)
     if not callable(item):
-        logging.error(f"Could not find {func_name} name in {module_item} module")
+        logger.error(f"Could not find {func_name} name in {module_item} module")
         return
     return key, item
 
@@ -617,17 +1059,18 @@ def _in_action_client_element(
     else:
         ui_fields = _generic_message_form(request_fields)
     _loading_content_send = DivHStacked(
-        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending Action Goal")
+        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Sending Start Call")
     )
     _loading_content_cancel = DivHStacked(
-        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Cancelling Action Goal")
+        Loading(cls=(LoadingT.spinner, LoadingT.md)), P(" Cancelling Ongoing Task")
     )
-    return action_form(
-        ui_fields,
-        DivCentered(
+    _pop_up_content = Div(
+        Div(
+            H4("Task request Values", cls="cool-subtitle-mini-blue"),
+            ui_fields,
             DivHStacked(
                 Button(
-                    "Send Action Goal",
+                    "Send",
                     cls="primary-button",
                     hx_post="/action/goal",
                     hx_target="#main",
@@ -637,7 +1080,33 @@ def _in_action_client_element(
                         """,
                 ),
                 Button(
-                    "Cancel Action Goal",
+                    "Cancel",
+                    cls="secondary-button",
+                    type="button",
+                    onclick="this.closest('.custom-overlay').style.display='none'",
+                ),
+                cls="space-x-2 justify-center mt-4",
+            ),
+            cls="modal-box",
+            onclick="event.stopPropagation()",
+        ),
+        cls="custom-overlay",
+        id=f"{action_name}-request-from",
+        # Logic: Clicking the dark background (the overlay) closes itself
+        onclick="this.style.display='none'",
+    )
+    return action_form(
+        _pop_up_content,
+        DivCentered(
+            DivHStacked(
+                Button(
+                    "Start",
+                    cls="primary-button",
+                    id=f"{action_name}-form-btn",
+                    onclick=f"document.getElementById('{action_name}-request-from').style.display='grid'",
+                ),
+                Button(
+                    "Cancel",
                     cls="primary-button",
                     hx_post="/action/cancel",
                     hx_target="#main",
@@ -669,9 +1138,9 @@ def styled_main_service_clients_container(
         DivHStacked(
             H4(container_name, cls="cool-subtitle-mini"),
             _toggle_button(div_to_toggle=f"all_{_id}"),
-            cls="space-x-0",
+            cls="space-x-0 drag-handle",
         ),
-        cls=f"main-card {column_class} max-h-[80vh] overflow-y-auto",
+        cls=f"main-card {column_class} max-h-[80vh] overflow-y-auto draggable",
         id=_id,
     )
     all_services_cards = Div(id=f"all_{_id}")
@@ -689,10 +1158,12 @@ def styled_main_service_clients_container(
 
 
 # ---- INPUTS CARD ELEMENTS ----
-
-
 def input_topic_card(
-    topic_name: str, topic_type: str, ros_msg_type: type, column_class: str = ""
+    topic_name: str,
+    topic_type: str,
+    ros_msg_type: type,
+    column_class: str = "",
+    ft_has_map_element: bool = False,
 ) -> FT:
     """Creates a UI element for an input topic
 
@@ -711,7 +1182,9 @@ def input_topic_card(
         id=topic_name,
     )
     if ui_element := _INPUT_ELEMENTS.get(topic_type, None):
-        return card(ui_element(topic_name, topic_type=topic_type))
+        return card(
+            ui_element(topic_name, topic_type=topic_type, has_map=ft_has_map_element)
+        )
     else:
         # Unknown message type -> return the generic message element
         # Get fields dictionary
@@ -733,9 +1206,9 @@ def styled_main_inputs_container(inputs_grid_div_id: str) -> FT:
         DivHStacked(
             H4("Inputs", cls="cool-subtitle-mini"),
             _toggle_button(div_to_toggle=inputs_grid_div_id),
-            cls="space-x-0",
+            cls="space-x-0 drag-handle",
         ),
-        cls="draggable main-card max-h-[25vh] overflow-y-auto",
+        cls="draggable main-card max-h-[40vh] overflow-y-auto",
         body_cls="space-y-0",
     )
 
@@ -761,9 +1234,7 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
 
 
 # ---- OUTPUTS CARD ELEMENTS ----
-
-
-def output_topic_card(topic_name: str, topic_type: str, column_class: str = "") -> FT:
+def output_topic_card(topic_name: str, topic_type: str, column_class: str = "", map_output_markers: Optional[Dict] = None) -> FT:
     """Creates a UI element for an output topic
 
     :param topic_name: Topic name
@@ -772,12 +1243,12 @@ def output_topic_card(topic_name: str, topic_type: str, column_class: str = "") 
     :type topic_type: str
     :return: Output topic UI element
     """
-    card = Card(
-        H4(topic_name),
-        cls=f"m-2 {column_class} h-[48vh] inner-main-card",
-        id=topic_name,
+    return Card(
+        DivHStacked(H4(topic_name), _fullscreen_button(f"card-{topic_name}")),
+        _OUTPUT_ELEMENTS[topic_type](topic_name, map_output_markers=map_output_markers),
+        cls=f"m-2 {column_class} inner-main-card",
+        id=f"card-{topic_name}",
     )
-    return card(_OUTPUT_ELEMENTS[topic_type](topic_name))
 
 
 def styled_main_outputs_container(outputs_grid_div_id: str) -> FT:
@@ -790,7 +1261,7 @@ def styled_main_outputs_container(outputs_grid_div_id: str) -> FT:
         DivHStacked(
             H4("Outputs", cls="cool-subtitle-mini"),
             _toggle_button(div_to_toggle=outputs_grid_div_id),
-            cls="space-x-0",
+            cls="space-x-0 drag-handle",
         ),
         cls="draggable main-card overflow-y-auto max-h-[60vh]",
         body_cls="space-y-0",
@@ -999,7 +1470,7 @@ def settings_ui_element(
     try:
         field_type, type_args = parse_type(setting_details.get("type", ""))
     except Exception as e:
-        logging.error(
+        logger.error(
             f"Could not render setting: {setting_name}, with value: {setting_details} due to error: {e}"
         )
         field_type, type_args = None, None

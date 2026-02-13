@@ -1,7 +1,7 @@
 import inspect
 from enum import IntEnum as BaseIntEnum
 from functools import wraps
-from typing import Callable, List, Union
+from typing import Callable, List, Union, TypeVar
 
 from rclpy.utilities import ok as rclpy_is_ok
 from rclpy.lifecycle import Node as LifecycleNode
@@ -9,6 +9,7 @@ from launch import LaunchContext
 from launch.actions import OpaqueFunction
 import os
 import logging
+
 
 # Get ROS distro
 __installed_distro = os.environ.get("ROS_DISTRO", "").lower()
@@ -27,6 +28,10 @@ except ModuleNotFoundError as e:
 
 # logger for utils
 logger = logging.getLogger("Sugarcoat")
+
+
+# Define a generic type variable for topic message types
+MsgT = TypeVar("MsgT")
 
 
 class IncompatibleSetup(Exception):

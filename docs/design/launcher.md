@@ -1,101 +1,220 @@
-# Launcher
+# Recipes Launcher
 
-[Launcher](../apidocs/ros_sugar/ros_sugar.launch.launcher.md) is a class created to provide a more pythonic way to launch and configure ROS2 nodes.
+**Recipes: One script to rule them all.**
 
-Launcher starts a pre-configured component or a set of components as ROS2 nodes using multi-threaded or multi-process execution. Launcher spawns an internal [Monitor](./monitor.md) node in a separate thread in both execution types.
+The [`Launcher`](../apidocs/ros_sugar/ros_sugar.launch.launcher.md) is your entry point to the Sugarcoat ecosystem. It provides a clean, Pythonic API to configure, spawn, and orchestrate your ROS2 nodes without writing XML or complex launch files.
+
+Under the hood, every Launcher spawns an internal **Monitor** node. This hidden "Brain" is responsible for tracking component health, listening for events, and executing the orchestration logic.
+
+## Execution Architectures
+
+The Launcher supports two execution modes, configured via the `multi_processing` flag.
+
+::::{tab-set}
+
+:::{tab-item} Multi-Threaded
+:sync: threaded
+
+**Default for Debugging** (`multi_processing=False`)
+
+All components run in the same process as the Launcher and Monitor.
+* <span class="sd-text-success">**Pros:**</span> Fast startup, shared memory, easy debugging (breakpoints work everywhere).
+* <span class="sd-text-danger">**Cons:**</span> The Global Interpreter Lock (GIL) can bottleneck performance if you have many heavy nodes.
 
 ```{figure} /_static/images/diagrams/multi_threaded_dark.png
-:class: only-dark
-:alt: multi-threaded
+:class: dark-only
+:alt: multi-threaded architecture
 :align: center
 
-Multi-threaded execution
 ```
+
 ```{figure} /_static/images/diagrams/multi_threaded_light.png
-:class: only-light
-:alt: multi-threaded
+:class: light-only
+:alt: multi-threaded architecture
 :align: center
 
-Multi-threaded execution
+Multi-threaded Execution
+
 ```
 
-```{figure} /_static/images/diagrams/multi_process_dark.png
-:class: only-dark
-:alt: multi-process
-:align: center
-
-Multi-process execution
-```
-```{figure} /_static/images/diagrams/multi_process_light.png
-:class: only-light
-:alt: multi-process
-:align: center
-
-Multi-process execution
-```
-
-Launcher can also manage a set of Events-Actions through its internal Monitor node (See Monitor class).
-
-## Available options:
-When initializing the Launcher, you can:
-- Provide a ROS2 namespace to all the components
-- Provide a YAML config file.
-- Enable/Disable events monitoring
-
-
-You can add components to the launcher by using '[add_pkg](../apidocs/ros_sugar/ros_sugar.launch.launcher.md/#classes)' method to pass any number of components from the same ROS2 package created using Sugarcoat primitives. When adding components from a new package you can configure:
-
-- Enable/Disable multi-processing, if disabled the components are launched in threads
-- Select to activate one, many or all components on start (lifecycle nodes activation)
-- Set of Events/Actions related to the components
-
-Launcher forwards all the provided Events to its internal Monitor, when the Monitor detects an Event trigger it emits an InternalEvent back to the Launcher. Execution of the Action is done directly by the Launcher or a request is forwarded to the Monitor depending on the selected run method (multi-processes or multi-threaded).
-
-:::{note} While Launcher supports executing standard [ROS2 launch actions](https://github.com/ros2/launch). Launcher does not support standard [ROS2 launch events](https://github.com/ros2/launch/tree/rolling/launch/launch/events) for the current version.
 :::
 
-## Usage Example
+:::{tab-item} Multi-Process
+:sync: process
 
-```{code-block} python
-:caption: launcher test
-:linenos:
+**Production Mode** (`multi_processing=True`)
 
-from ros_sugar.core import BaseComponent
-from ros_sugar.actions import LogInfo
-from ros_sugar.events import OnLess
-from ros_sugar import Launcher
+Each component runs in its own isolated process. The Monitor the still runs in the same process as the Launcher.
 
-# Create your components
-my_component = BaseComponent(component_name='test_component')
+* <span class="sd-text-success">**Pros:**</span> True parallelism, crash isolation (one node crashing doesn't kill the system).
+* <span class="sd-text-danger">**Cons:**</span> Higher startup overhead.
 
+```{figure} /_static/images/diagrams/multi_process_dark.png
+:class: dark-only
+:alt: multi-process architecture
+:align: center
 
-# Create your events
-low_battery = OnLess(
-    "low_battery",
-    Topic(name="/battery_level", msg_type="Int"),
-    15,
-    ("data")
+```
+
+```{figure} /_static/images/diagrams/multi_process_light.png
+:class: light-only
+:alt: multi-process architecture
+:align: center
+
+Multi-process Execution
+
+```
+
+:::
+
+::::
+
+## Launcher Features
+
+### 1. Package & Component Loading
+
+You can add components from your current script or external packages.
+
+```python
+# Add from an external entry point (for multi-process separation)
+launcher.add_pkg(
+    package_name="my_robot_pkg",
+    components=[vision_component] # Pass config/events here
+    multiprocessing=True
 )
 
-# Events/Actions
-my_events_actions: Dict[event.Event, Action] = {
-    low_battery: LogInfo(msg="Battery is Low!)
-}
+```
 
-# We can add a config YAML file
-path_to_yaml = 'my_config.yaml'
+### 2. Lifecycle Management
 
-launcher = Launcher(
-    config_file=path_to_yaml,
-    activate_all_components_on_start=True,
-    multiprocessing=True,
-)
+Sugarcoat components are Lifecycle nodes. The Launcher handles the transition state machine for you.
 
-launcher.add_pkg(components=[my_component], ros_log_level="warn")
+* `activate_all_components_on_start=True`: Automatically transitions all nodes to **Active** after spawning.
 
-# If any component fails -> restart it with unlimited retries
+### 3. Global Fallbacks
+
+Define "Catch-All" policies for the entire system.
+
+```python
+# If ANY component reports a crash, restart it.
 launcher.on_component_fail(action_name="restart")
 
-# Bring up the system
-launcher.bringup(ros_log_level="info", introspect=False)
 ```
+
+### 4. Events Orchestration
+
+Pass your events/actions dictionary **once** to the `Launcher` and it will handle delegating the event monitoring to the concerned component.
+
+## Complete Usage Example
+
+```python
+from ros_sugar.core import BaseComponent, Event, Action
+from ros_sugar.actions import log, restart
+from ros_sugar.io import Topic
+from ros_sugar import Launcher
+
+# 1. Define Components
+# (Usually imported from your package)
+driver = BaseComponent(component_name='lidar_driver')
+planner = BaseComponent(component_name='path_planner')
+
+# Set Fallback Policy
+# If the driver crashes, try to restart it automatically
+driver.on_component_fail(fallback=restart(component=driver))
+
+# 2. Define Logic  for Events
+battery = Topic(name="/battery", msg_type="Float32")
+low_batt_evt = Event(battery.msg.data < 15.0)
+
+log_action = log(msg="WARNING: Battery Low!")
+
+# 3. Initialize Launcher
+launcher = Launcher(
+    config_file='config/robot_params.toml',     # Can optionally pass a configuration file
+    activate_all_components_on_start=True,
+    multi_processing=True # Use separate processes
+)
+
+# 4. Register Components
+# You can attach specific events to specific groups of components
+launcher.add_pkg(
+    components=[driver, planner],
+    ros_log_level="error"
+    events_actions={low_batt_evt: log_action}
+)
+
+# 7. Launch!
+# This blocks until Ctrl+C is pressed
+launcher.bringup()
+
+```
+
+## The Monitor (Internal Engine)
+
+:::{note}
+The Monitor is configured automatically. You do not need to instantiate or manage it manually.
+:::
+
+The **Monitor** is a specialized, non-lifecycle ROS2 node that acts as the central management node.
+
+**Responsibilities:**
+
+1. **Custom Actions Execution:** Handles executing custom Actions defined in the recipe.
+2. **Health Tracking:** Subscribes to the `/status` topic of every component.
+3. **Orchestration:** Holds clients for every component's Lifecycle and Parameter services, allowing it to restart, reconfigure, or stop nodes on demand.
+
+**Architecture:**
+
+::::{tab-set}
+
+:::{tab-item} Configuration
+:sync: config
+
+How the Launcher configures the Monitor with Events and Actions at startup.
+
+```{figure} /_static/images/diagrams/events_actions_config_dark.png
+:class: dark-only
+:alt: Monitoring events diagram
+:align: center
+:scale: 70
+
+```
+
+```{figure} /_static/images/diagrams/events_actions_config_light.png
+:class: light-only
+:alt: Monitoring events diagram
+:align: center
+:scale: 70
+
+Monitoring events
+
+```
+
+:::
+
+:::{tab-item} Execution
+:sync: exec
+
+How the Monitor processes triggers and executes actions at runtime.
+
+```{figure} /_static/images/diagrams/events_actions_exec_dark.png
+:class: dark-only
+:alt: An Event Trigger diagram
+:align: center
+:scale: 70
+
+```
+
+```{figure} /_static/images/diagrams/events_actions_exec_light.png
+:class: light-only
+:alt: An Event Trigger diagram
+:align: center
+:scale: 70
+
+An Event Trigger
+
+```
+
+:::
+
+::::

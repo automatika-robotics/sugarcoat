@@ -1,137 +1,150 @@
 # Actions
 
-Actions are methods or routines executed by a Component or by the System Monitor. They are the "Outputs" of the Event-Driven system.
+**Executable context-aware behaviors for your robotic system.**
 
-Actions can be triggered in two ways:
+Actions are not just static function calls; they are **dynamic, context-aware routines** that can adapt their parameters in real-time based on live system data.
 
-- **Event-Driven**: Executed when a specific Event is detected.
+They can represent:
 
-- **Fallback-Driven**: Executed by a Component when an internal Health Status failure is detected.
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Component Behaviors - </span> Routines defined within your components. *e.g., Stopping the robot, executing a motion pattern, or saying a sentence.*
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">System Behaviors - </span> Lifecycle management, configuration and plumbing. *e.g., Reconfiguring a node, restarting a driver, or re-routing input streams.*
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">User Custom Behaviors - </span> Arbitrary Python functions. *e.g., Calling an external REST API, logging to a file, or sending a slack notification.*
+
+
+## Trigger Mechanisms
+
+Actions sit dormant until activated by one of two mechanisms:
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`flash_on;1.2em;sd-text-primary` Event-Driven (Reflexive) - </span> Triggered instantly when a specific **Event** condition is met.
+    **Example:** "Obstacle Detected" $\rightarrow$ `stop_robot()`
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`healing;1.2em;sd-text-primary` Fallback-Driven (Restorative) - </span> Triggered automatically by a Component when its internal **Health Status** degrades.
+    **Example:** "Camera Driver Failed" $\rightarrow$ `restart_driver()`
+
 
 ## The `Action` Class
-The `Action` class is a generic wrapper for any `callable`. It allows you to package a function and its arguments to be executed later.
+
+At its core, the `Action` class is a wrapper around any Python callable. It packages a function along with its arguments, preparing them for execution at runtime.
+
+But unlike standard Python functions, Sugarcoat Actions possess a superpower: [Dynamic Data Injection](#dynamic-data-injection). You can bind their arguments directly to live ROS2 Topics, allowing the Action to fetch the latest topic message or a specific message argument the moment it triggers.
 
 ```python
 class Action:
     def __init__(self, method: Callable, args: tuple = (), kwargs: Optional[Dict] = None):
 ```
 
-- method: The function to be executed.
+- method: The function or routine to execute.
 
-- args: Tuple of positional arguments.
+- args: Positional arguments (can be static values OR dynamic Topic values).
 
-- kwargs: Dictionary of keyword arguments.
+- kwargs: Keyword arguments (can be static values OR dynamic Topic values).
 
+## Basic Usage
 
-## Usage Example:
 ```python
-    from ros_sugar.core import BaseComponent
-    from ros_sugar.config import BaseComponentConfig
-    from ros_sugar.actions import Action
-    import logging
+from ros_sugar.component import BaseComponent
+from ros_sugar.core import Action
+import logging
 
-    def function():
-        logging.info("I am executing an action!")
+def custom_routine():
+    logging.info("I am executing an action!")
 
-    my_component = BaseComponent(node_name='test_component')
-    new_config = BaseComponentConfig(loop_rate=50.0)
-    action1 = Action(method=my_component.start)
-    action2 = Action(method=my_component.reconfigure, args=(new_config, True),)
-    action3 = Action(method=function)
+my_component = BaseComponent(node_name='test_component')
+
+# 1. Component Method
+action1 = Action(method=my_component.start)
+
+# 2. Method with keyword arguments
+action2 = Action(method=my_component.update_parameter, kwargs={"param_name": "fallback_rate", "new_value": 1000})
+
+# 3. External Function
+action3 = Action(method=custom_routine)
+```
+
+## Dynamic Data Injection
+
+**This is Sugarcoat's superpower.**
+
+You can create complex, context-aware behaviors without writing any "glue code" or custom parsers.
+
+When you bind an Action argument to a `Topic`, the system automatically resolves the binding at runtime, fetching the current value from the topic attributes and injecting it into your function.
+
+### Example: Cross-Topic Data Access
+
+**Scenario**: An event occurs on Topic 1. You want to log a message that includes the current status from Topic 2 and a sensor reading from Topic 3.
+
+```python
+from ros_sugar.core import Event, Action
+from ros_sugar.io import Topic
+
+# 1. Define Topics
+topic_1 = Topic(name="system_alarm", msg_type="Bool")
+topic_2 = Topic(name="robot_mode", msg_type="String")
+topic_3 = Topic(name="battery_voltage", msg_type="Float32")
+
+# 2. Define the Event
+# Trigger when Topic 1 becomes True
+event_on_first_topic = Event(topic_1.msg.data.is_true())
+
+# 3. Define the Target Function
+def log_context_message(mode, voltage):
+    print(f"System Alarm! Current Mode: {mode}, Voltage: {voltage}V")
+
+# 4. Define the Dynamic Action
+# We bind the function arguments directly to the data fields of Topic 2 and Topic 3
+my_action = Action(
+    method=log_context_message,
+    # At runtime, these are replaced by the actual values from the topics
+    args=(topic_2.msg.data, topic_3.msg.data)
+)
 ```
 
 ## Pre-defined Actions
 
-While you can wrap any `function` in an Action, Sugarcoat provides the [`ComponentActions`](../apidocs/ros_sugar/ros_sugar.core.component_actions.md) module with a suite of pre-defined, thread-safe actions for managing components and system resources.
+Sugarcoat provides a suite of pre-defined, thread-safe actions for managing components and system resources via the `ros_sugar.actions` module.
 
-These actions are divided into Component-Level (affecting a specific component's lifecycle or config) and System-Level (general ROS2 utilities).
-
-Sugarcoat comes with a set of pre-defined component level actions and system level actions
+:::{admonition} Import Note
+:class: tip
+All pre-defined actions are **keyword-only** arguments. They can be imported directly:
+`from ros_sugar.actions import start, stop, reconfigure`
+:::
 
 ### Component-Level Actions
 
 These actions directly manipulate the state or configuration of a specific `BaseComponent` derived object.
 
-| Action Method | Arguments | Description |
-| :--- | :--- | :--- |
-| **`start`** | `component` | Triggers the component's Lifecycle transition to **Active**. |
-| **`stop`** | `component` | Triggers the component's Lifecycle transition to **Inactive** (stops execution loops). |
-| **`restart`** | `component`<br>`wait_time` (opt) | Stops the component, waits `wait_time` seconds (default 0), and Starts it again. |
-| **`reconfigure`** | `component`<br>`new_config`<br>`keep_alive` | Reloads the component with a new configuration object or any configuration file path. |
-| **`update_parameter`** | `component`<br>`param_name`<br>`new_value`<br>`keep_alive` | Updates a **single** configuration parameter. <br>`keep_alive=True` (default) keeps the node running during update. |
-| **`update_parameters`** | `component`<br>`params_names`<br>`new_values`<br>`keep_alive` | Updates **multiple** configuration parameters simultaneously. |
+| Action Method                           | Arguments                                                     | Description                                                                                                                                 |
+| :-------------------------------------- | :------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`start`**                             | `component`                                                   | Triggers the component's Lifecycle transition to **Active**.                                                                                |
+| **`stop`**                              | `component`                                                   | Triggers the component's Lifecycle transition to **Inactive**.                                                                              |
+| **`restart`**                           | `component`<br>`wait_time` (opt)                              | Stops the component, waits `wait_time` seconds (default 0), and Starts it again.                                                            |
+| **`reconfigure`**                       | `component`<br>`new_config`<br>`keep_alive`                   | Reloads the component with a new configuration object or file path. <br>`keep_alive=True` (default) keeps the node running during update.   |
+| **`update_parameter`**                  | `component`<br>`param_name`<br>`new_value`<br>`keep_alive`    | Updates a **single** configuration parameter.                                                                                               |
+| **`update_parameters`**                 | `component`<br>`params_names`<br>`new_values`<br>`keep_alive` | Updates **multiple** configuration parameters simultaneously.                                                                               |
+| **`send_component_service_request`**    | `component`<br>`srv_request_msg`                              | Sends a request to the component's main service with a specific message.                                                                    |
+| **`trigger_component_service`**         | `component`                                                   | Triggers the component's main service. <br>Creates the request message dynamically during runtime from the incoming Event topic data.       |
+| **`send_component_action_server_goal`** | `component`<br>`request_msg`                                  | Sends a goal to the component's main action server with a specific message.                                                                 |
+| **`trigger_component_action_server`**   | `component`                                                   | Triggers the component's main action server. <br>Creates the request message dynamically during runtime from the incoming Event topic data. |
 
 ### System-Level Actions
 
 These actions interact with the broader ROS2 system and are executed by the central `Monitor`.
 
-| Action Method | Arguments | Description |
-| :--- | :--- | :--- |
-| **`log`** | `msg`<br>`logger_name` (opt) | Logs a message to the ROS console. |
-| **`publish_message`** | `topic`<br>`msg`<br>`publish_rate`/`period` | Publishes a message to a specific topic. Can be single-shot or periodic. |
-| **`send_srv_request`** | `srv_name`<br>`srv_type`<br>`srv_request_msg` | Sends a request to a ROS 2 Service. |
-| **`send_action_goal`** | `action_name`<br>`action_type`<br>`action_request_msg` | Sends a goal to a ROS 2 Action Server. |
+| Action Method               | Arguments                                       | Description                                                              |
+| :-------------------------- | :---------------------------------------------- | :----------------------------------------------------------------------- |
+| **`log`**                   | `msg`<br>`logger_name` (opt)                    | Logs a message to the ROS console.                                       |
+| **`publish_message`**       | `topic`<br>`msg`<br>`publish_rate`/`period`     | Publishes a specific message to a topic. Can be single-shot or periodic. |
+| **`send_srv_request`**      | `srv_name`<br>`srv_type`<br>`srv_request_msg`   | Sends a request to a ROS 2 Service with a specific message.              |
+| **`trigger_service`**       | `srv_name`<br>`srv_type`                        | Triggers the a given ROS2 service.                                       |
+| **`send_action_goal`**      | `server_name`<br>`server_type`<br>`request_msg` | Sends a specific goal to a ROS 2 Action Server.                          |
+| **`trigger_action_server`** | `server_name`<br>`server_type`                  | Triggers a given ROS2 action server.                                 |
 
-:::{tip} The pre-defined Actions are all keyword only
+
+:::{admonition} Automatic Data Conversion
+:class: note
+When using **`trigger_*`** actions paired with an Event, Sugarcoat attempts to create the required service/action request from the incoming Event topic data automatically via **duck typing**.
+
+If automatic conversion is not possible, or if the action is not paired with an Event, it sends a default (empty) request.
 :::
-
-### Usage Example:
-```python
-    from ros_sugar.actions import ComponentActions
-
-    my_component = BaseComponent(node_name='test_component')
-    action1 = ComponentActions.start(component=my_component)
-    action2 = ComponentActions.log(msg="I am executing a cool action!")
-```
-
-## Dynamic Arguments (Event Parsers)
-
-In standard usage, arguments are fixed at definition time. However, when paired with an `Event`, you often need to use data from the triggering message (e.g., "Go to this location" where this is the location defined in the triggering event message).
-
-:::{seealso} See more on how the event parser affects the event management [here](events.md)
-:::
-
-You can use the `.event_parser()` method to map data from the event to the action's arguments.
-
-
-### Example
-
-Let's see how this can work in a small example: We will take the example used in [Kompass tutorial](https://automatika-robotics.github.io/kompass/tutorials/events_actions.html) where a `send_action_goal` action is used to send a ROS2 ActionServer goal by parsing a value from a published topic.
-
-First we define the action that sends the action server goal:
-
-```python
-from ros_sugar.actions import ComponentActions
-from kompass_interfaces.action import PlanPath
-
-# Define an Action to send a goal to the planner ActionServer
-send_goal: Action = ComponentActions.send_action_goal(
-    action_name="/planner/plan_path",
-    action_type=PlanPath,
-    action_request_msg=PlanPath.Goal(),
-)
-```
-Then a parser is defined to parse a `PointStamped` message into the required ROS2 goal message:
-
-```python
-from kompass_interfaces.msg import PathTrackingError
-from geomerty_msgs.msg import PointStamped
-
-# Define a method to parse a message of type PointStamped to the planner PlanPath Goal
-def goal_point_parser(*, msg: PointStamped, **_):
-    action_request = PlanPath.Goal()
-    goal = Pose()
-    goal.position.x = msg.point.x
-    goal.position.y = msg.point.y
-    action_request.goal = goal
-    end_tolerance = PathTrackingError()
-    end_tolerance.orientation_error = 0.2
-    end_tolerance.lateral_distance_error = 0.05
-    action_request.end_tolerance = end_tolerance
-    return action_request
-
-# Adds the parser method as an Event parser of the send_goal action
-send_goal.event_parser(goal_point_parser, output_mapping="action_request_msg")
-```
-
-As we see the defined `goal_point_parser` method takes the PointStamped message and turns it into a `PlanPath` goal request. Then at each event trigger the value of the `action_request` will be passed to the `send_action_goal` executable as the `action_request_msg`

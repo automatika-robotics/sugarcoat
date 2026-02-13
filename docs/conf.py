@@ -3,7 +3,6 @@ import os
 import sys
 from datetime import date
 import xml.etree.ElementTree as ET
-import shutil
 from pathlib import Path
 
 
@@ -24,6 +23,7 @@ extensions = [
     "myst_parser",  # install with `pip install myst-parser`
     "sphinx_sitemap",  # install with `pip install sphinx-sitemap`
     "sphinxcontrib.youtube",
+    "sphinx_design",
 ]
 
 autodoc2_packages = [
@@ -68,7 +68,10 @@ myst_heading_anchors = 7  # to remove cross reference errors with md
 
 html_baseurl = "https://automatika-robotics.github.io/sugarcoat/"
 language = "en"
-html_theme = "sphinx_book_theme"  # install with `pip install sphinx-book-theme`
+
+
+html_theme = "shibuya"  # install with `pip install shibuya`
+
 html_static_path = ["_static"]
 html_css_files = [
     "custom.css",
@@ -76,34 +79,19 @@ html_css_files = [
 html_favicon = "_static/favicon.png"
 
 html_theme_options = {
-    "logo": {
-        "image_light": "_static/SUGARCOAT_LIGHT.png",
-        "image_dark": "_static/SUGARCOAT_DARK.png",
-    },
-    "icon_links": [
-        {
-            "name": "Automatika",
-            "url": "https://automatikarobotics.com/",
-            "icon": "_static/automatika-logo.png",
-            "type": "local",
-        },
-        {
-            "name": "GitHub",
-            "url": "https://github.com/automatika-robotics/sugarcoat",
-            "icon": "fa-brands fa-github",
-        },
-        {
-            "name": "Discord",
-            "url": "https://discord.gg/B9ZU6qjzND",
-            "icon": "fa-brands fa-discord",
-        },
+    "light_logo": "_static/SUGARCOAT_LIGHT.png",
+    "dark_logo": "_static/SUGARCOAT_DARK.png",
+    "accent_color": "indigo",
+    "twitter_url": "https://x.com/__automatika__",
+    "github_url": "https://github.com/automatika-robotics/sugarcoat",
+    "discord_url": "https://discord.gg/B9ZU6qjzND",
+    "globaltoc_expand_depth": 1,
+    "open_in_chatgpt": True,
+    "open_in_claude": True,
+    # Navigation Links (Top bar)
+    "nav_links": [
+        {"title": "Automatika Robotics", "url": "https://automatikarobotics.com/"},
     ],
-    "path_to_docs": "docs",
-    "repository_url": "https://github.com/automatika-robotics/sugarcoat",
-    "repository_branch": "main",
-    "use_source_button": True,
-    "use_issues_button": True,
-    "use_edit_page_button": True,
 }
 
 LLMS_TXT_SELECTION = [
@@ -126,11 +114,11 @@ LLMS_TXT_SELECTION = [
     "advanced/use.md",
     "advanced/config.md",
     "advanced/types.md",
-    "advanced/web_ui.md",
+    "features/web_ui.md",
     # 6. Extensibility
     "advanced/create_service.md",
     "advanced/srvs.md",
-    "advanced/robot_plugins.md",
+    "features/robot_plugins.md",
 ]
 
 
@@ -182,27 +170,6 @@ def generate_llms_txt(app, exception):
         print(f"[llms.txt] Error writing file: {e}")
 
 
-def copy_markdown_files(app, exception):
-    """Copy source markdown files"""
-    if exception is None:  # Only run if build succeeded
-        # Source dir is where your .md files are
-        src_dir = app.srcdir  # This points to your `source/` folder
-        dst_dir = app.outdir  # This is typically `build/html`
-
-        for root, _, files in os.walk(src_dir):
-            for file in files:
-                if file.endswith(".md"):
-                    src_path = os.path.join(root, file)
-                    # Compute path relative to the source dir
-                    rel_path = os.path.relpath(src_path, src_dir)
-                    # Destination path inside the build output
-                    dst_path = os.path.join(dst_dir, rel_path)
-
-                    # Make sure the target directory exists
-                    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-                    shutil.copy2(src_path, dst_path)
-
-
 def create_robots_txt(app, exception):
     """Create robots.txt file to take advantage of sitemap crawl"""
     if exception is None:
@@ -218,6 +185,5 @@ Sitemap: {html_baseurl}/sitemap.xml
 
 def setup(app):
     """Plugin to post build and copy markdowns as well"""
-    app.connect("build-finished", copy_markdown_files)
     app.connect("build-finished", create_robots_txt)
     app.connect("build-finished", generate_llms_txt)

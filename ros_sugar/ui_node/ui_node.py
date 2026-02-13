@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List
+from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List, Literal
 import threading
 import asyncio
 import os
@@ -8,7 +8,7 @@ import importlib
 from functools import partial
 
 from ..config.base_attrs import BaseAttrs
-from ..core.component import BaseComponent, BaseComponentConfig
+from ..core.component import BaseComponent, BaseComponentConfig, Publisher
 from .. import base_clients
 from ..io.callbacks import GenericCallback
 from ..io.topic import Topic
@@ -22,6 +22,7 @@ from ..io import supported_types
 from automatika_ros_sugar.srv import ChangeParameters
 
 from rclpy.logging import get_logger
+from std_msgs.msg import Header
 
 
 @define
@@ -59,7 +60,9 @@ class UINode(BaseComponent):
         ] = {}
 
         # Initialize websocket callbacks
-        self.default_websocket_callback: Callable = lambda _: asyncio.sleep(0)
+        self.default_websocket_callback: Callable = lambda *args, **kwargs: (
+            asyncio.sleep(0)
+        )
 
         try:
             self.loop = asyncio.get_running_loop()
@@ -259,12 +262,14 @@ class UINode(BaseComponent):
                 or self.default_websocket_callback
             )
             callback.msg = msg
+            if hasattr(msg, "header") and isinstance(msg.header, Header):
+                callback._frame_id = msg.header.frame_id
             try:
                 ui_content = callback._get_ui_content()
                 payload["payload"] = ui_content
             except Exception as e:
                 return self._return_error(f"Topic callback error: {e}")
-            asyncio.run_coroutine_threadsafe(ws_callback(payload), self.loop)
+            asyncio.run_coroutine_threadsafe(ws_callback(payload, msg=msg), self.loop)
 
         _subscriber = self.create_subscription(
             msg_type=callback.input_topic.ros_msg_type,
@@ -354,7 +359,7 @@ class UINode(BaseComponent):
         if self._ros_action_clients.get(action_name, None):
             self._ros_action_clients_feedback_callbacks[action_name] = ws_callback
 
-    def send_srv_call(self, srv_call_data: Dict) -> Tuple[str, Any]:
+    def send_srv_call(self, srv_call_data: Dict) -> Tuple[bool, Any]:
         """
         Send a service call using the service request form data
         """
@@ -387,7 +392,7 @@ class UINode(BaseComponent):
             f'Server Error - Service "{srv_name}" request send but no service response received',
         )
 
-    def send_action_goal(self, action_goal_data: Dict) -> Tuple[str, Any]:
+    def send_action_goal(self, action_goal_data: Dict) -> Tuple[bool, Any]:
         """
         Send a service call using the service request form data
         """
@@ -456,6 +461,7 @@ class UINode(BaseComponent):
         """
         topic_name = data.pop("topic_name")
         topic_type_str = data.pop("topic_type")
+        frame_id = data.pop("frame_id", None)
         topic_type = getattr(supported_types, topic_type_str, None)
 
         if not topic_type:
@@ -465,7 +471,7 @@ class UINode(BaseComponent):
 
         if self.count_subscribers(topic_name) == 0:
             return self._return_error(
-                f'No subscribers found for the topic "{topic_name}". Please check the topic name in your recipe'
+                f'No subscribers found for the topic "{topic_name}". Please check the topic name and re-send data'
             )
 
         try:
@@ -480,8 +486,40 @@ class UINode(BaseComponent):
             return self._return_error(
                 f'Error occurred when converting {data} to Sugar type "{topic_type_str}": {e}'
             )
+        kwargs = {"output": output}
 
-        self.publishers_dict[topic_name].publish(output=output)
+        # Add the data frame_id if it is sent
+        if frame_id:
+            kwargs["frame_id"] = frame_id
+
+        try:
+            if publisher := self.publishers_dict.get(topic_name, None):
+                # Confirm that the topic type was not updated dynamically in the UI
+                if publisher.output_topic.msg_type.__name__ == topic_type_str:
+                    publisher.publish(**kwargs)
+                    return
+                else:
+                    # Destroy the old publisher to create a new one
+                    self.destroy_publisher(publisher._publisher)
+                    self.get_logger().debug(
+                        f"Destroying old publisher for {topic_name} of type {publisher.output_topic.msg_type.__name__}"
+                    )
+            # Handle creating publishers for dynamically added or modified outputs in the UI
+            self.publishers_dict[topic_name] = Publisher(
+                Topic(name=topic_name, msg_type=topic_type_str),
+                node_name=self.node_name,
+            )
+            self.publishers_dict[topic_name].set_node_name(self.node_name)
+            # Set ROS publisher for each output publisher
+            self.publishers_dict[topic_name].set_publisher(
+                self._add_ros_publisher(self.publishers_dict[topic_name])
+            )
+            self.publishers_dict[topic_name].publish(**kwargs)
+            return
+        except Exception as e:
+            self.get_logger().error(
+                f"Error publishing UI input data to topic {topic_name}: {e}"
+            )
 
     def _execution_step(self):
         """

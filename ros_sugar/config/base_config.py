@@ -200,6 +200,59 @@ def _convert_runtype_to_enum(
         raise ValueError(f"Unsupported ComponentRunTime value '{value}'")
 
 
+class ExternalProcessorType(Enum):
+    """
+    External processor type:
+    - MSG_PRE_PROCESSOR: Executes before publishing a ros msg
+    - MSG_POST_PROCESSOR: Executes after receiving a ros msg in a callback
+    """
+
+    MSG_PRE_PROCESSOR = "MsgPreProcessor"
+    MSG_POST_PROCESSOR = "MsgPostProcessor"
+
+    @classmethod
+    def values(cls):
+        return [member.value for member in cls]
+
+    def __str__(self) -> str:
+        """
+        Gets value of enum
+
+        :return: Enum value
+        :rtype: str
+        """
+        return self.value
+
+    def __repr__(self) -> str:
+        """
+        Gets value of enum
+
+        :return: Enum value
+        :rtype: str
+        """
+        return self.value
+
+    @classmethod
+    def to_str(cls, enum_value) -> str:
+        """
+        Return string value corresponding to enum value if exists
+
+        :param enum_value: _description_
+        :type enum_value: ExternalProcessorType | str
+        :raises ValueError: If the enum value is not from this class
+
+        :return: String value
+        :rtype: str
+        """
+        if isinstance(enum_value, ExternalProcessorType):
+            return enum_value.value
+        # If the value is already given as a string check if it valid and return it
+        elif isinstance(enum_value, str):
+            if enum_value in cls.values():
+                return enum_value
+        raise ValueError(f"{enum_value} is not a valid ExternalProcessorType value")
+
+
 def _convert_logging_severity_to_str(
     value: Union[LoggingSeverity, str],
 ) -> str:
@@ -222,21 +275,6 @@ def _convert_logging_severity_to_str(
             if value_enum.name.lower() == value.lower():
                 return value
         raise ValueError(f"Unsupported Logging Severity Value '{value}'")
-
-
-def _get_str_from_callbackgroup(
-    callback_group: Union[str, ros_callback_groups.CallbackGroup],
-) -> Optional[str]:
-    """
-    Get callback group from string
-    """
-    if not callback_group:
-        return
-
-    if isinstance(callback_group, ros_callback_groups.CallbackGroup):
-        return callback_group.__class__.__name__
-
-    return callback_group
 
 
 @define(kw_only=True)
@@ -268,12 +306,12 @@ class BaseComponentConfig(BaseConfig):
         default=100.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
     )
 
-    log_level: Union[str, LoggingSeverity] = field(
-        default=LoggingSeverity.INFO, converter=_convert_logging_severity_to_str
+    log_level: str = field(
+        default='info', converter=_convert_logging_severity_to_str
     )
 
-    rclpy_log_level: Union[str, LoggingSeverity] = field(
-        default=LoggingSeverity.WARN, converter=_convert_logging_severity_to_str
+    rclpy_log_level: str = field(
+        default='warn', converter=_convert_logging_severity_to_str
     )
 
     # Compatibility Plugin Package Name
@@ -286,19 +324,16 @@ class BaseComponentConfig(BaseConfig):
         default=False, alias="_enable_plugin_actions_handling"
     )
 
-    _run_type: Union[ComponentRunType, str] = field(
+    _run_type: ComponentRunType = field(
         default=ComponentRunType.TIMED,
         converter=_convert_runtype_to_enum,
         alias="_run_type",
     )
 
-    _callback_group: Optional[Union[ros_callback_groups.CallbackGroup, str]] = field(
-        default=None, converter=_get_str_from_callbackgroup, alias="_callback_group"
-    )
-
     _lifecycle_state_transition_timeout: float = field(
         default=10.0,
         validator=base_validators.in_range(min_value=1.0, max_value=1e9),
+        alias="_lifecycle_state_transition_timeout",
     )  # Component wait time for node to come back online after restart (used to avoid infinite loops). Recommended to use a high value
 
     wait_for_restart_time: float = field(

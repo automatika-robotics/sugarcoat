@@ -8,21 +8,6 @@ You can swap an existing topic connection (input or output) with a different top
 - **Service Name: /{component_name}/change_topic**
 - **Service Type: [automatika_ros_sugar/srv/ReplaceTopic](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ReplaceTopic.srv)**
 
-### 📥 Request
-
-| Field          | Type     | Description                                                                           |
-| -------------- | -------- | ------------------------------------------------------------------------------------- |
-| `direction`    | `uint8`  | Direction of the topic to replace. Use `0` for `INPUT_TOPIC`, `1` for `OUTPUT_TOPIC`. |
-| `old_name`     | `string` | The full name of the currently connected topic you want to replace.                   |
-| `new_name`     | `string` | The full name of the new topic to connect.                                            |
-| `new_msg_type` | `string` | Fully qualified message type of the new topic (see [supported types](types.md)).     |
-
-### 📤 Response
-
-| Field       | Type     | Description                                                  |
-| ----------- | -------- | ------------------------------------------------------------ |
-| `success`   | `bool`   | Indicates whether the topic replacement was successful.      |
-| `error_msg` | `string` | If unsuccessful, this provides a description of the failure. |
 
 ### Example
 
@@ -38,22 +23,6 @@ This `ChangeParameter` service allows updating a single configuration parameter 
 - **Service Name: /{component_name}/update_config_parameter**
 - **Service Type: [automatika_ros_sugar/srv/ChangeParameter](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ChangeParameter.srv)**
 
-### 📥 Request
-
-| Field        | Type     | Description                                                                        |
-| ------------ | -------- |------------------------------------------------------------------------------------|
-| `name`       | `string` | Name of the parameter to change with nested attributes if needed                   |
-| `value`      | `string` | New value for the parameter (as a string, internally converted to proper type).    |
-| `keep_alive` | `bool`   | If `true`, the component stays active during update. If `false`, it will deactivate, apply the change, and then reactivate. |
-
-
-### 📤 Response
-
-| Field       | Type     | Description                                          |
-| ----------- | -------- | ---------------------------------------------------- |
-| `success`   | `bool`   | Indicates if the parameter was successfully updated. |
-| `error_msg` | `string` | If failed, provides a descriptive error message.     |
-
 ### Example
 
 Lets change the `loop_rate` for our `AwesomeComponent` to `1Hz` with restarting the node:
@@ -68,22 +37,6 @@ The `ChangeParameters` service allows updating multiple parameters at once, maki
 - **Service Name: /{component_name}/update_config_parameters**
 - **Service Type: [automatika_ros_sugar/srv/ChangeParameters](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ChangeParameters.srv)**
 
-### 📥 Request
-
-| Field        | Type       | Description                                                                                          |
-| ------------ | ---------- | ---------------------------------------------------------------------------------------------------- |
-| `names`      | `string[]` | List of parameter names to update                        |
-| `values`     | `string[]` | New values for each parameter, given as strings (converted internally).                              |
-| `keep_alive` | `bool`     | If `true`, component remains active. If `false`, it will deactivate, apply updates, then reactivate. |
-
-
-
-### 📤 Response
-
-| Field       | Type       | Description                                                                  |
-| ----------- | ---------- | ---------------------------------------------------------------------------- |
-| `success`   | `bool[]`   | A list of success flags for each parameter update.                           |
-| `error_msg` | `string[]` | A list of error messages (or empty strings) corresponding to each parameter. |
 
 ### Example
 
@@ -98,21 +51,6 @@ The `ConfigureFromFile` service lets you reconfigure an entire component from a 
 
 - **Service Name: /{component_name}/configure_from_file**
 - **Service Type: [automatika_ros_sugar/srv/ConfigureFromFile](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ConfigureFromFile.srv)**
-
-### 📥 Request
-
-| Field          | Type     | Description                                                                                                                 |
-| -------------- | -------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `path_to_file` | `string` | Absolute path to the file containing the parameters under the component name.              |
-| `keep_alive`   | `bool`   | If `true`, keeps the component active during the update. If `false`, deactivates before applying changes, then reactivates. |
-
-
-### 📤 Response
-
-| Field       | Type     | Description                                                |
-| ----------- | -------- | ---------------------------------------------------------- |
-| `success`   | `bool`   | Indicates whether the file re-configuration update was successful. |
-| `error_msg` | `string` | If failed, provides a descriptive error message.           |
 
 
 ### Example
@@ -134,18 +72,3 @@ The `ExecuteMethod` service enables runtime invocation of any class method in th
 
 - **Service Name: /{component_name}/execute_method**
 - **Service Type: [automatika_ros_sugar/srv/ExecuteMethod](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ExecuteMethod.srv)**
-
-### 📥 Request
-
-| Field         | Type     | Description                                                                                             |
-| ------------- | -------- | ------------------------------------------------------------------------------------------------------- |
-| `name`        | `string` | The name of the method to invoke (as registered by the component).                                      |
-| `kwargs_json` | `string` | A JSON-formatted string containing the method's keyword arguments. Example: `"{'some_kwarg': 1.2}"` |
-
-
-### 📤 Response
-
-| Field       | Type     | Description                                       |
-| ----------- | -------- | ------------------------------------------------- |
-| `success`   | `bool`   | Indicates whether the method call was successful. |
-| `error_msg` | `string` | If failed, provides a descriptive error message.  |
