@@ -12,7 +12,7 @@
 
 **Sugarcoat** is a meta-framework that replaces fragmented _ROS2_ development with a unified workflow, offering a high-level API to build robust components and orchestrate them into cohesive, self-healing systems.
 
-By replacing verbose boilerplate and static launch files with **Event-Driven API**, Sugarcoat allows you to orchestrate complex robotic behaviors with the elegance of modern Python.
+By replacing verbose boilerplate and static launch files with an **Event-Driven API**, Sugarcoat allows you to orchestrate complex robotic behaviors with the elegance of modern Python.
 
 ## Why Sugarcoat? Bridging the Orchestration Gap
 

@@ -3,7 +3,7 @@
 **The Orchestration Layer for Event-Driven ROS2 Systems**
 
 <p style="font-size: 1.2em; line-height: 1.6; opacity: 0.9;">
-  Sugarcoat is a <b>meta-framework</b> that replaces fragmented *ROS2* development with a unified workflow, offering a high-level API to build robust components and orchestrate them into cohesive, self-healing systems. It replaces verbose boilerplate and static launch files with a declarative <b>Event-Driven API</b>, allowing you to orchestrate complex robotic behaviors with the elegance of modern Python.
+  Sugarcoat is a <b>meta-framework</b> that replaces fragmented <strong>ROS2</strong> development with a unified workflow, offering a high-level API to build robust components and orchestrate them into cohesive, self-healing systems. It replaces verbose boilerplate and static launch files with an <b>Event-Driven API</b>, allowing you to orchestrate complex robotic behaviors with the elegance of modern Python.
 </p>
 
 [Get Started](install.md) • [Why Sugarcoat?](why.md) • [View on GitHub](https://github.com/automatika-robotics/sugarcoat)
@@ -37,14 +37,14 @@ Install Sugarcoat to start building with it
 :link: why
 :link-type: doc
 
-Discover the advantages of _Sugarcoat-ing_ your standard ROS2 nodes
+Discover the advantages of _Sugarcoat-ing_ your standard ROS2 system
 :::
 
 :::{grid-item-card} {material-regular}`extension;1.5em;sd-text-primary` Design Concepts
 :link: design/concepts_overview
 :link-type: doc
 
-Learn about Components, Launchers, and behind the scenes architecture
+Learn about Components and behind the scenes architecture
 :::
 
 :::{grid-item-card} {material-regular}`rocket_launch;1.5em;sd-text-primary` Create a Package
