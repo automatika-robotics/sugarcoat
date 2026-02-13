@@ -32,7 +32,7 @@ class _ColoredFormatter(logging.Formatter):
         elif record.levelno == logging.ERROR:
             color = _ANSIColors.ERROR
         elif record.levelno == logging.CRITICAL:
-            color = _ANSIColors.CRITICAL
+            color = _ANSIColors.ERROR
         else:
             color = _ANSIColors.RESET
 

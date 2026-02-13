@@ -26,7 +26,7 @@ class ComponentLaunchAction(NodeLaunchAction):
         self,
         *,
         node: Union[BaseComponent, Monitor],
-        name: Union[str, List[launch.Substitution], None] = "node_name",
+        name: str = "node_name",
         namespace: Union[str, List[launch.Substitution], None] = None,
         log_level: LoggingSeverity = LoggingSeverity.INFO,
         **kwargs,
@@ -79,7 +79,7 @@ class ComponentLaunchAction(NodeLaunchAction):
             # Create a launch event of type InternalEvent with the event name
             event = InternalEvent(
                 event_name=event_name,
-                topics_value=dict,
+                topics_value={},
             )
 
             def func():
