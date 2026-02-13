@@ -50,7 +50,7 @@
 
 <p align="center">
 <picture align="center">
-  <img alt="EmbodiedAgents UI 示例 GIF" src="https://automatikarobotics.com/docs/ui_agents_vlm.gif" width="60%">
+  <img alt="EmbodiedAgents UI 示例 GIF" src="./docs/_static/videos/ui_agents.gif" width="60%">
 </picture>
 </p>
 
@@ -60,7 +60,7 @@
 
 <p align="center">
 <picture align="center">
-  <img alt="KOMPASS UI 示例 GIF" src="https://automatikarobotics.com/docs/ui_navigation.gif" width="60%">
+  <img alt="KOMPASS UI 示例 GIF" src="./docs/_static/videos/ui_navigation.gif" width="60%">
 </picture>
 </p>
 

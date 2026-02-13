@@ -51,7 +51,7 @@ Web UI がさまざまなタイプの Sugarcoat レシピに対して、どの�
 
 <p align="center">
 <picture align="center">
-  <img alt="EmbodiedAgents UI Example GIF" src="https://automatikarobotics.com/docs/ui_agents_vlm.gif" width="60%">
+  <img alt="EmbodiedAgents UI Example GIF" src="./docs/_static/videos/ui_agents.gif" width="60%">
 </picture>
 </p>
 
@@ -61,7 +61,7 @@ Web UI がさまざまなタイプの Sugarcoat レシピに対して、どの�
 
 <p align="center">
 <picture align="center">
-  <img alt="KOMPASS UI Example GIF" src="https://automatikarobotics.com/docs/ui_navigation.gif" width="60%">
+  <img alt="KOMPASS UI Example GIF" src="./docs/_static/videos/ui_navigation.gif" width="60%">
 </picture>
 </p>
 
