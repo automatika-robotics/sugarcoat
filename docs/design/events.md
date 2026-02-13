@@ -177,16 +177,11 @@ return_event = Event(needs_return, on_change=True)
 
 ## Next Steps
 
-Now that you understand Events, learn how to attach them to Actions.
+Now that you understand Events, learn how to attach them to Actions, to execute context-aware methods when an Event triggers.
 
-::::{grid} 1
-:gutter: 3
-
-:::{grid-item-card} {material-regular}`call_to_action;1.5em;sd-text-primary` Actions
-:link: actions
-:link-type: doc
-:class-card: sugar-card
-
-Learn how to execute context-aware methods when an Event triggers.
+:::{button-link} actions.html
+:color: primary
+:ref-type: doc
+:outline:
+Learn about Actions →
 :::
-::::

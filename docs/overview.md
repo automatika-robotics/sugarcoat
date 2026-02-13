@@ -1,15 +1,27 @@
 # Sugarcoat
 
-Build Event-Driven Modular Robotic Systems with an Intuitive Python API
+**The Orchestration Layer for Event-Driven ROS2 Systems**
 
-  <p style="font-size: 1.1em; opacity: 0.8;">
-    Sugarcoat is a <b>meta-framework</b> for developers who want to create robust, event-driven systems with multiple nodes that are easy to use and can be configured and launched with an intuitive Python API. It provides primitives for writing ROS2 nodes and events/actions which can start/stop/modify the nodes, in the spirit of true event-driven software. Sugarcoat is also a replacement for the ROS Launch API.
-  </p>
+<p style="font-size: 1.2em; line-height: 1.6; opacity: 0.9;">
+  Sugarcoat is a <b>meta-framework</b> that replaces fragmented *ROS2* development with a unified workflow, offering a high-level API to build robust components and orchestrate them into cohesive, self-healing systems. It replaces verbose boilerplate and static launch files with a declarative <b>Event-Driven API</b>, allowing you to orchestrate complex robotic behaviors with the elegance of modern Python.
+</p>
 
-  [Get Started](install.md) • [View on GitHub](https://github.com/automatika-robotics/sugarcoat)
+[Get Started](install.md) • [Why Sugarcoat?](why.md) • [View on GitHub](https://github.com/automatika-robotics/sugarcoat)
 
 
-<br/>
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`auto_awesome;1.5em;sd-text-primary` Syntactic Sugar</span> -
+  Write clean, imperative code. Define components, topics, and events without the repetitive ROS2 boilerplate.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`hub;1.5em;sd-text-primary` Event-Driven Core</span> -
+  Connect system states to actions. Trigger safety protocols or mode changes using native Python expressions.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`health_and_safety;1.5em;sd-text-primary` Built-in Resilience</span> -
+  Native support for health status, automated node recovery, and fallback actions.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`terminal;1.5em;sd-text-primary` Beyond Static Launching</span> -
+  A more flexible, Python-native alternative to `ros2 launch` that gives you full runtime control.
+
+
 
 ::::{grid} 1 2 2 3
 :gutter: 2
@@ -25,7 +37,7 @@ Install Sugarcoat to start building with it
 :link: why
 :link-type: doc
 
-Discover the advantages of using _Sugarcoat-ing_ standard ROS2
+Discover the advantages of _Sugarcoat-ing_ your standard ROS2 nodes
 :::
 
 :::{grid-item-card} {material-regular}`extension;1.5em;sd-text-primary` Design Concepts
