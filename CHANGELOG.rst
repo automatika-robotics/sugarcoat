@@ -2,6 +2,74 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (refactor) Removes callback_group from component config
+* (fix) Fixes action serialization for fallbacks
+* (refactor) Removes optional health monitoring and enables it for all components
+* (docs) Updates events/actions docs using new theme
+* (docs) Updates concepts overview
+* (docs) Updates core design docs pages
+* (fix) Removes outdated check in component_action decorator
+* (fix) Fixes UI outputs init error
+* (docs) Updates overview and install sections
+* (docs) Updates docs for events/actions and removes unnecessary md copying
+* (docs) Uses Shibuya theme for docs
+* (feature) Adds support for Path visulization in UI outputs
+* (feature) Adds UI callback for Path datatype
+* (fix) Handles point frame_id for UI output display on maps
+* (docs) Re-orgnize the index tree
+* (fix) Moves component fallback topics blackboard to init
+* (feature) Adds support for displaying point-like UI outputs on a Map element
+* (fix) Fixes clicked points transformation in UI map elements
+* (feature) Adds support for topic inputs in Fallback Actions
+* (fix) Fixes registering actions with multiple topics to events
+* (fix) Fixes parsing and clearing a component internal events/actions
+* (feature) Adds method to replace an Action input topic
+* (fix) Fixes checking on_any event with multi-topic condition source
+* (fix) Fixes sending topics blackboard values to action on internal (monitor) events
+* (fix) Fixes serialization error in base config
+* (fix) Fixes getting component internal events in launcher
+* (docs) Updates docs with new API updates for events and actions
+* (feature) Makes all UI cards draggable and resizable
+* (feature) Adds dark/light mode toggle to UI
+* (feature) Adds dynamic publishers creation in UI node
+* (feature) Improves launcher logging display and colors
+* (reafctor) Removes 'event_name' param from Event class and uses an internal unique ID instead
+* (fix) Adds a timestamp and unique ID to events topics dashboard to prevent 'stale' message processing in events
+* (refactor) Uses sugarcoat logger in UI node
+* (fix) Fixes launching opaque actions with new multi-condition event design
+* (refactor) Updates system actions
+* (feature) Adds support for complex conditions (and, or, not) in event and refactors the Event class
+* (refactor) Removes 'event_parsers' from action
+* (feature) Updates the point input ui element based based on a present map element
+* (refactor) Converts external processor types to an enum class
+* (feature) Adds style for buttons tooltip
+* (feature) Adds clicked point publishing to map canvas
+* (fix) Fixes error in actions and adds external processor deserialization to executable
+* (feature) Adds element and websocket to handle map data in UI
+* (fix) Fixes condition builder class to avoid errors when usinf deepcopy or inspect on an object
+* (feature) Adds automatic action parser from ROS types to Python types
+* (feature) Adds property to automatically get a component health status topic
+* (docs) Updates docus with new events-actions api
+* (refactor) Adds Action to core module
+* (refactor) Removes old events module
+* (refactor) Removes unused init args for main Event class
+* (feature) Adds conditions for string values (contains, not_contains, is_in, not_in)
+* (refactor) Moves event condition class to a new module
+* (feature) Adds condition builders for boolean values in events
+* (feature) Adds OnAny to events constructed from conditions
+* (refactor) Refactors actions module and adds method to create an automatic action parser from given topic message type
+* (feature) Adds internal events condition constructor and updates the event API
+* (feature) Adds trigger actions for sending empty ROS2 action/service calls
+* (refactor) Updates status topic name
+* (feature) Adds automatic parsing from topic values in Action
+* (feature) Handles parsing internal component event_actions in launcher
+* (feature) Update Task UI element with server info and request pop-up
+* (refactor) Moves all component and system level actions to 'actions' module
+* (feature) Adds component actions with automatic event parsers
+* Contributors: ahr, mkabtoul
+
 0.4.3 (2026-01-17)
 ------------------
 * (refactor) Organizes UI custom javascript into three functional scripts
