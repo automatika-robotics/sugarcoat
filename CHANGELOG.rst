@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.5.0 (2026-02-14)
+------------------
 * (refactor) Removes callback_group from component config
 * (fix) Fixes action serialization for fallbacks
 * (refactor) Removes optional health monitoring and enables it for all components
