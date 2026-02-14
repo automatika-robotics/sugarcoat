@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="indigo" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Universal Robot Plugins - Sugarcoat 0.5.0 documentation</title><link rel="shortcut icon" href="../_static/favicon.png"/><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Creating your ROS2 package using Sugarcoat" href="../advanced/use.html" /><link rel="prev" title="Zero-Code Dynamic Web UI" href="web_ui.html" />
+      <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/features/robot_plugins.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d1c6635e" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=44020203" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=cade9008" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://automatika-robotics.github.io/sugarcoat/features/robot_plugins.html"/>
+  <meta property="og:title" content="Universal Robot Plugins"/>
+    <meta name="twitter:card" content="summary"/>
+  </head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      <img class="light-logo" src="../_static/SUGARCOAT_LIGHT.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <img class="dark-logo" src="../_static/SUGARCOAT_DARK.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <strong>Sugarcoat</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul><li class="link">
+          <a href="https://automatikarobotics.com/">
+            <span>Automatika Robotics</span></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+  <a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+    <iconify-icon icon="simple-icons:discord"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Overview</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../overview.html">Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../install.html">Getting Started</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Design Concepts</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/component.html">Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/topics.html">Topics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/status.html">Health Status</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/events.html">Events</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/actions.html">Actions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/launcher.html">Recipes Launcher</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Out-of-the-Box Features</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="web_ui.html">Zero-Code Dynamic Web UI</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Universal Robot Plugins</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Using Sugarcoat</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/create_service.html">Converting a Sugarcoat Recipe into a systemd Service</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/config.html">Don&#8217;t Like YAML? We&#8217;ve Got You &#128526;</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">References</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../apidocs/index.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.actions</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#what-are-robot-plugins">What are Robot Plugins?</a></li>
+<li><a class="reference internal" href="#why-robot-plugins">Why Robot Plugins?</a></li>
+<li><a class="reference internal" href="#how-to-create-a-robot-plugin">How to Create a Robot Plugin</a></li>
+<li><a class="reference internal" href="#how-to-use-a-plugin-in-your-recipe">How to Use a Plugin in your Recipe</a></li>
+<li><a class="reference internal" href="#an-example-robot-plugin">An Example Robot Plugin</a><ul>
+<li><a class="reference internal" href="#custom-interfaces">1. Custom Interfaces</a></li>
+<li><a class="reference internal" href="#plugin-implementation">2. Plugin Implementation</a><ul>
+<li><a class="reference internal" href="#supported-types-types-py">Supported Types (<code class="docutils literal notranslate">py</span></code>)</a></li>
+<li><a class="reference internal" href="#service-clients-clients-py">Service Clients (<code class="docutils literal notranslate">py</span></code>)</a></li>
+<li><a class="reference internal" href="#plugin-entry-point-init-py">Plugin Entry Point (<code class="docutils literal notranslate">py</span></code>)</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#testing">3. Testing</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#see-the-example-robot-plugin-in-action">See the Example Robot Plugin in Action</a></li>
+</ul>
+</div><div id="ethical-ad-placement" data-ea-publisher="readthedocs"></div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">Sugarcoat</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Universal Robot Plugins</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="https://automatika-robotics.github.io/sugarcoat/_sources/features/robot_plugins.md.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="https://automatika-robotics.github.io/sugarcoat/_sources/features/robot_plugins.md.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="https://automatika-robotics.github.io/sugarcoat/_sources/features/robot_plugins.md.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:markdown"></iconify-icon>
+            <span>View as Markdown</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/features/robot_plugins.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/features/robot_plugins.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue" role="main">
+          <section class="tex2jax_ignore mathjax_ignore" id="universal-robot-plugins">
+<h1>Universal Robot Plugins<a class="headerlink" href="#universal-robot-plugins" title="Link to this heading">¶</a></h1>
+<p>Sugarcoat introduces Robot Plugins to <strong>seamlessly bridge your automation recipes with diverse robot hardware</strong>.</p>
+<p>By abstracting manufacturer-specific ROS2 interfaces, <span class="text-red-strong">plugins allow you to write generic, portable automation logic that runs on any robot without code changes</span></p>
+<section id="what-are-robot-plugins">
+<h2>What are Robot Plugins?<a class="headerlink" href="#what-are-robot-plugins" title="Link to this heading">¶</a></h2>
+<p>Different robot manufacturers often use custom messages, or services in their ROS2 interfaces to handle basic operations like sending robot actions or getting diverse low-level feedback such as odometry, battery info, etc. With traditional ROS2 packages, you will need to do code changes to handle each new message/service type. This creates a “lock-in” where your code becomes tightly coupled to a specific robot.</p>
+<p>Sugarcoat Robot Plugins acts as a translation layer. It sits between your Sugarcoat application and the robot’s hardware with all its custom types.</p>
+</section>
+<section id="why-robot-plugins">
+<h2>Why Robot Plugins?<a class="headerlink" href="#why-robot-plugins" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><span class="text-blue"><strong>Portability:</strong></span> Write your automation recipe once using standard types. Switch robots by simply changing the plugin configuration.</p></li>
+<li><p><span class="text-blue"><strong>Simplicity:</strong></span> The plugin handles all the complex type conversions and service calls behind the scenes.</p></li>
+<li><p><span class="text-blue"><strong>Modularity:</strong></span> Keep hardware-specific logic isolated in a separate package.</p></li>
+</ul>
+</section>
+<section id="how-to-create-a-robot-plugin">
+<h2>How to Create a Robot Plugin<a class="headerlink" href="#how-to-create-a-robot-plugin" title="Link to this heading">¶</a></h2>
+<p>To create your own custom plugin, you can create a ROS2 package based on the example <a class="reference external" href="https://github.com/automatika-robotics/robot-plugin-example">myrobot_plugin_interface</a> that we have created.</p>
+<p>Any plugin package must export a Python module containing two specific dictionaries in its <code class="docutils literal notranslate"><span class="pre">__init__.py</span></code>:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">robot_feedback</span></code>: Maps standard types to the robot’s specific feedback topics (e.g., getting <code class="docutils literal notranslate"><span class="pre">IMU</span></code> or <code class="docutils literal notranslate"><span class="pre">Odometry</span></code> like information).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">robot_action</span></code>: Maps standard types to the robot’s specific action topics or service clients (e.g., sending <code class="docutils literal notranslate"><span class="pre">Twist</span></code> like commands).</p></li>
+</ol>
+<p>The main steps to creating the plugin:</p>
+<ol class="arabic" start="0">
+<li><p>(Optional) <strong>Define Custom ROS Interfaces</strong>:</p>
+<p>If your robot’s manufacturer-specific messages or services are not available to import from another package, define them in <code class="docutils literal notranslate"><span class="pre">msg/</span></code> and <code class="docutils literal notranslate"><span class="pre">srv/</span></code> folders.</p>
+</li>
+<li><p><strong>Implement Type Converters (<code class="docutils literal notranslate"><span class="pre">types.py</span></code>)</strong>:</p>
+<p>Create a <code class="docutils literal notranslate"><span class="pre">types.py</span></code> module to handle data translation.</p>
+<ul class="simple">
+<li><p><strong>For Each Feedback:</strong> Define a callback function that transforms the custom ROS2 message into a standard Python type (like a NumPy array) which you can use directly in your system. Register it using <code class="docutils literal notranslate"><span class="pre">create_supported_type</span></code>.</p></li>
+<li><p><strong>For Each Action:</strong> Define a converter function that transforms standard Python inputs into the custom ROS2 message.</p></li>
+</ul>
+</li>
+<li><p><strong>Handle Service Clients (<code class="docutils literal notranslate"><span class="pre">clients.py</span></code>)</strong>:</p>
+<p>If your robot actions require calling a ROS2 service, create a class inheriting from <code class="docutils literal notranslate"><span class="pre">RobotPluginServiceClient</span></code> in <code class="docutils literal notranslate"><span class="pre">clients.py</span></code>. Implement the <code class="docutils literal notranslate"><span class="pre">_publish</span></code> method to construct and send the service request.</p>
+</li>
+<li><p><strong>Register the Plugin (<code class="docutils literal notranslate"><span class="pre">__init__.py</span></code>)</strong>:</p>
+<p>Expose your new capabilities in <code class="docutils literal notranslate"><span class="pre">__init__.py</span></code> by defining two dictionaries:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">robot_feedback</span></code>: Map standard names to <code class="docutils literal notranslate"><span class="pre">Topic</span></code> objects using your custom types.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">robot_action</span></code>: Map standard names to <code class="docutils literal notranslate"><span class="pre">Topic</span></code> objects (for topics) or Client classes (for services).</p></li>
+</ul>
+</li>
+<li><p><strong>Configure the Build</strong>:</p>
+<p>Use the same <code class="docutils literal notranslate"><span class="pre">CMakeLists.txt</span></code> and <code class="docutils literal notranslate"><span class="pre">package.xml</span></code> for your new plugin package. Make sure to add any additional used dependencies.</p>
+</li>
+</ol>
+<p>Check the <a class="reference internal" href="#an-example-robot-plugin">robot plugin example details</a> below for a complete breakdown of the process.</p>
+</section>
+<section id="how-to-use-a-plugin-in-your-recipe">
+<h2>How to Use a Plugin in your Recipe<a class="headerlink" href="#how-to-use-a-plugin-in-your-recipe" title="Link to this heading">¶</a></h2>
+<p>Using a robot plugin in your Sugarcoat automation recipe is extremely straightforward. After building and installing your plugin package, all you need to do is to specify the plugin package name when initializing the <code class="docutils literal notranslate"><span class="pre">Launcher</span></code> and Sugarcoat will take it from there!</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar</span> <span class="kn">import</span> <span class="n">Launcher</span>
+</span><span data-line="2">
+</span><span data-line="3"><span class="c1"># ... Define your components/events/actions/fallbacks here ...</span>
+</span><span data-line="4">
+</span><span data-line="5"><span class="c1"># Initialize the launcher with your specific robot plugin</span>
+</span><span data-line="6"><span class="n">launcher</span> <span class="o">=</span> <span class="n">Launcher</span><span class="p">(</span><span class="n">robot_plugin</span><span class="o">=</span><span class="s2">&quot;myrobot_plugin&quot;</span><span class="p">)</span>
+</span><span data-line="7">
+</span><span data-line="8"><span class="c1"># ... Add it all to the launcher and bringup the system ...</span>
+</span></pre></div>
+</div>
+</section>
+<section id="an-example-robot-plugin">
+<h2>An Example Robot Plugin<a class="headerlink" href="#an-example-robot-plugin" title="Link to this heading">¶</a></h2>
+<p>Lets explore an example of a custom plugin called <a class="reference external" href="https://github.com/automatika-robotics/robot-plugin-example"><code class="docutils literal notranslate"><span class="pre">myrobot_plugin</span></code></a>. The plugin is made to bridge a standard robot commands (<code class="docutils literal notranslate"><span class="pre">Twist</span></code>) and a standard feedback (<code class="docutils literal notranslate"><span class="pre">Odometry</span></code>) to two custom interfaces.</p>
+<section id="custom-interfaces">
+<h3>1. Custom Interfaces<a class="headerlink" href="#custom-interfaces" title="Link to this heading">¶</a></h3>
+<p>The plugin defines three ROS2 interfaces as an example of custom interfaces to communicate with the robot’s ROS2 interface exposed by the manufacturer:</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">CustomOdom.msg</span></code></strong>: A feedback message containing position (x, y, z) and orientation (pitch, roll, yaw).</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">CustomTwist.msg</span></code></strong>: A command message for 2D velocity (vx, vy) and angular velocity (vyaw).</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">RobotActionCall.srv</span></code></strong>: A service definition used to trigger actions on the robot, returning a success boolean.</p></li>
+</ul>
+</section>
+<section id="plugin-implementation">
+<h3>2. Plugin Implementation<a class="headerlink" href="#plugin-implementation" title="Link to this heading">¶</a></h3>
+<p>The core logic resides in the <code class="docutils literal notranslate"><span class="pre">myrobot_plugin</span></code> Python module.</p>
+<section id="supported-types-types-py">
+<h4>Supported Types (<code class="docutils literal notranslate"><span class="pre">types.py</span></code>)<a class="headerlink" href="#supported-types-types-py" title="Link to this heading">¶</a></h4>
+<p>This module defines how to translate between the custom robot types (<code class="docutils literal notranslate"><span class="pre">CustomOdom</span></code> and <code class="docutils literal notranslate"><span class="pre">CustomTwist</span></code>) and standard python types</p>
+<ul class="simple">
+<li><p><strong>Feedback (Callbacks):</strong> Functions that convert incoming ROS messages into standard types.</p>
+<ul>
+<li><p><em>Example:</em> <code class="docutils literal notranslate"><span class="pre">_odom_callback</span></code> converts <code class="docutils literal notranslate"><span class="pre">CustomOdom</span></code> into a NumPy array <code class="docutils literal notranslate"><span class="pre">[x,</span> <span class="pre">y,</span> <span class="pre">yaw]</span></code>.</p></li>
+</ul>
+</li>
+<li><p><strong>Actions (Converters):</strong> Functions that convert standard commands (like <code class="docutils literal notranslate"><span class="pre">vx</span></code>, <code class="docutils literal notranslate"><span class="pre">vy</span></code>, <code class="docutils literal notranslate"><span class="pre">omega</span></code>) into custom ROS2 messages.</p>
+<ul>
+<li><p><em>Example:</em> <code class="docutils literal notranslate"><span class="pre">_ctr_converter</span></code> converts velocity inputs into a <code class="docutils literal notranslate"><span class="pre">CustomTwist</span></code> message.</p></li>
+</ul>
+</li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.robot_plugin</span> <span class="kn">import</span> <span class="n">create_supported_type</span>
+</span><span data-line="2"><span class="c1"># Example: Creating a supported type for feedback</span>
+</span><span data-line="3"><span class="n">RobotOdometry</span> <span class="o">=</span> <span class="n">create_supported_type</span><span class="p">(</span><span class="n">CustomOdom</span><span class="p">,</span> <span class="n">callback</span><span class="o">=</span><span class="n">_odom_callback</span><span class="p">)</span>
+</span></pre></div>
+</div>
+</section>
+<section id="service-clients-clients-py">
+<h4>Service Clients (<code class="docutils literal notranslate"><span class="pre">clients.py</span></code>)<a class="headerlink" href="#service-clients-clients-py" title="Link to this heading">¶</a></h4>
+<p>For robots that handle actions via ROS services (instead of topics), this module defines custom client wrappers inheriting from RobotPluginServiceClient.</p>
+<ul class="simple">
+<li><p><strong>CustomTwistClient</strong>: Wraps the RobotActionCall service. It implements the _publish method to populate the service request (vx, vy, vyaw) and send it to the robot.</p></li>
+</ul>
+</section>
+<section id="plugin-entry-point-init-py">
+<h4>Plugin Entry Point (<code class="docutils literal notranslate"><span class="pre">__init__.py</span></code>)<a class="headerlink" href="#plugin-entry-point-init-py" title="Link to this heading">¶</a></h4>
+<p>This file exposes the plugin capabilities to the framework using two specific dictionaries:</p>
+<ol class="arabic simple">
+<li><p><strong>robot_feedback</strong>: Maps standard feedback names (e.g., “Odometry”) to Topic instances using the custom types defined in <a class="reference external" href="http://types.py">types.py</a>.</p></li>
+<li><p><strong>robot_action</strong>: Maps standard action names (e.g., “Twist”) to either a Topic or a ServiceClientHandler (like CustomTwistClient).</p></li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">types</span><span class="p">,</span> <span class="n">clients</span>
+</span><span data-line="2">
+</span><span data-line="3"><span class="c1"># Example configuration</span>
+</span><span data-line="4"><span class="n">robot_feedback</span> <span class="o">=</span> <span class="p">{</span>
+</span><span data-line="5">    <span class="s2">&quot;Odometry&quot;</span><span class="p">:</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;myrobot_odom&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="n">types</span><span class="o">.</span><span class="n">RobotOdometry</span><span class="p">),</span>
+</span><span data-line="6"><span class="p">}</span>
+</span><span data-line="7">
+</span><span data-line="8"><span class="n">robot_action</span> <span class="o">=</span> <span class="p">{</span>
+</span><span data-line="9">    <span class="s2">&quot;Twist&quot;</span><span class="p">:</span> <span class="n">clients</span><span class="o">.</span><span class="n">CustomTwistClient</span>
+</span><span data-line="10"><span class="p">}</span>
+</span></pre></div>
+</div>
+</section>
+</section>
+<section id="testing">
+<h3>3. Testing<a class="headerlink" href="#testing" title="Link to this heading">¶</a></h3>
+<p>A <code class="docutils literal notranslate"><span class="pre">server_node.py</span></code> is provided to simulate the robot’s ROS2 server. It spins a minimal node that listens to <code class="docutils literal notranslate"><span class="pre">robot_control_service</span></code> requests and logs the received velocity commands, allowing you to test the <code class="docutils literal notranslate"><span class="pre">CustomTwistClient</span></code> functionality.</p>
+</section>
+</section>
+<section id="see-the-example-robot-plugin-in-action">
+<h2>See the Example Robot Plugin in Action<a class="headerlink" href="#see-the-example-robot-plugin-in-action" title="Link to this heading">¶</a></h2>
+<p>Here the example plugin is tested with <a class="reference external" href="https://github.com/automatika-robotics/kompass"><strong>Kompass</strong></a> which is an event-driven navigation framework build on top of Sugarcoat.</p>
+<ul class="simple">
+<li><p>To replicate this test, start by installing Kompass from source by following the instructions <a class="reference external" href="https://automatika-robotics.github.io/kompass/install.html">here</a></p></li>
+<li><p>Pull the <a class="reference external" href="https://github.com/automatika-robotics/robot-plugin-example">myrobot_plugin_interface</a> to your ROS2 workspace and build it.</p></li>
+</ul>
+<p>Start by running the <a class="reference external" href="https://github.com/automatika-robotics/kompass/blob/main/kompass/recipes/turtlebot3.py"><code class="docutils literal notranslate"><span class="pre">turtlebot3_test</span></code></a> without the plugin and observe the subscribed and published topics. You will see that the components are subscribed to <code class="docutils literal notranslate"><span class="pre">/odometry/filtered</span></code> topic of type <code class="docutils literal notranslate"><span class="pre">Odometry</span></code>. The <code class="docutils literal notranslate"><span class="pre">DriveManager</span></code> component will also be publishing the robot commands as <code class="docutils literal notranslate"><span class="pre">Twist</span></code> messages on <code class="docutils literal notranslate"><span class="pre">/cmd_vel</span></code> topic (or <code class="docutils literal notranslate"><span class="pre">TwistStamped</span></code> based on your ROS2 distribution).</p>
+<p>To enable the plugin, just edit one line in the recipe to change the existing launcher initialization from the following:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1">
+</span><span data-line="2"><span class="n">launcher</span> <span class="o">=</span> <span class="n">Launcher</span><span class="p">(</span><span class="n">robot_plugin</span><span class="o">=</span><span class="s2">&quot;myrobot_plugin&quot;</span><span class="p">)</span>
+</span><span data-line="3">
+</span></pre></div>
+</div>
+<p>to:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1">
+</span><span data-line="2"><span class="n">launcher</span> <span class="o">=</span> <span class="n">Launcher</span><span class="p">(</span><span class="n">config_file</span><span class="o">=</span><span class="n">config_file</span><span class="p">,</span> <span class="n">robot_plugin</span><span class="o">=</span><span class="s2">&quot;myrobot_plugin&quot;</span><span class="p">)</span>
+</span><span data-line="3">
+</span></pre></div>
+</div>
+<p>Re-run the recipe after enabling the plugin, and Voila! The components now will be expecting the plugin odometry topic of type <code class="docutils literal notranslate"><span class="pre">CustomOdometry</span></code>. Moreover, the <code class="docutils literal notranslate"><span class="pre">DriveManager</span></code> will no longer publish the <code class="docutils literal notranslate"><span class="pre">/cmd_vel</span></code> topic. Instead, it has created a service client in accordance with our custom plugin.</p>
+<div class="video_wrapper align-center" style="text-align: center">
+<iframe allowfullscreen="true" src="https://www.youtube.com/embed/oZN6pcJKgfY" style="border: 0; height: 368px; width: 600px">
+</iframe></div></section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="web_ui.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Zero-Code Dynamic Web UI</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="../advanced/use.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Creating your ROS2 package using Sugarcoat</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Automatika Robotics</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div>
+      <div class="sy-foot-socials">
+<a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+<a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+  <iconify-icon icon="simple-icons:discord"></iconify-icon>
+</a></div>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script></body>
+</html>

@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="indigo" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Components - Sugarcoat 0.5.0 documentation</title><link rel="shortcut icon" href="../_static/favicon.png"/><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Topics" href="topics.html" /><link rel="prev" title="Design Concepts Overview" href="concepts_overview.html" />
+      <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/design/component.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d1c6635e" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=44020203" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=cade9008" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://automatika-robotics.github.io/sugarcoat/design/component.html"/>
+  <meta property="og:title" content="Components"/>
+    <meta name="twitter:card" content="summary"/>
+  </head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      <img class="light-logo" src="../_static/SUGARCOAT_LIGHT.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <img class="dark-logo" src="../_static/SUGARCOAT_DARK.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <strong>Sugarcoat</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul><li class="link">
+          <a href="https://automatikarobotics.com/">
+            <span>Automatika Robotics</span></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+  <a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+    <iconify-icon icon="simple-icons:discord"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Overview</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../overview.html">Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../install.html">Getting Started</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Design Concepts</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="topics.html">Topics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="status.html">Health Status</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="events.html">Events</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="actions.html">Actions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="launcher.html">Recipes Launcher</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Out-of-the-Box Features</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/web_ui.html">Zero-Code Dynamic Web UI</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/robot_plugins.html">Universal Robot Plugins</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Using Sugarcoat</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/create_service.html">Converting a Sugarcoat Recipe into a systemd Service</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/config.html">Don&#8217;t Like YAML? We&#8217;ve Got You &#128526;</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">References</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../apidocs/index.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.actions</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#why-build-with-sugarcoats-component">Why build with Sugarcoat&#8217;s Component?</a></li>
+<li><a class="reference internal" href="#execution-modes-run-types">Execution Modes (Run Types)</a></li>
+<li><a class="reference internal" href="#declarative-inputs-outputs">Declarative Inputs &amp; Outputs</a></li>
+<li><a class="reference internal" href="#the-component-immune-system-health-fallbacks">The Component Immune System: Health &amp; Fallbacks</a><ul>
+<li><a class="reference internal" href="#health-status">1. Health Status</a></li>
+<li><a class="reference internal" href="#fallbacks-self-healing">2. Fallbacks (Self-Healing)</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pro-tips-for-component-devs">Pro Tips for Component Devs</a></li>
+</ul>
+</div><div id="ethical-ad-placement" data-ea-publisher="readthedocs"></div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">Sugarcoat</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Components</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="https://automatika-robotics.github.io/sugarcoat/_sources/design/component.md.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="https://automatika-robotics.github.io/sugarcoat/_sources/design/component.md.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="https://automatika-robotics.github.io/sugarcoat/_sources/design/component.md.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:markdown"></iconify-icon>
+            <span>View as Markdown</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/design/component.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/design/component.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue" role="main">
+          <section class="tex2jax_ignore mathjax_ignore" id="components">
+<h1>Components<a class="headerlink" href="#components" title="Link to this heading">¶</a></h1>
+<p><strong>Stop writing boilerplate. Start writing core logic.</strong></p>
+<p>In Sugarcoat, a <code class="docutils literal notranslate"><span class="pre">Component</span></code> is the fundamental unit of execution. It replaces the standard ROS2 Node with a robust, <strong>Lifecycle-Managed</strong>, and <strong>Self-Healing</strong> entity designed for production-grade autonomy.</p>
+<p>While a standard ROS2 node requires you to manually handle parameter callbacks, error catching, and state transitions, a Sugarcoat Component handles this plumbing automatically, letting you focus entirely on your algorithm.</p>
+<section id="why-build-with-sugarcoats-component">
+<h2>Why build with Sugarcoat’s Component?<a class="headerlink" href="#why-build-with-sugarcoats-component" title="Link to this heading">¶</a></h2>
+<p>Sugarcoat Components come with “superpowers” out of the box.</p>
+<ul class="simple">
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-autorenew sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"></path><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"></path></svg> Lifecycle Native</span> - Every component is a <strong>Managed Lifecycle Node</strong>. It supports <code class="docutils literal notranslate"><span class="pre">Configure</span></code>, <code class="docutils literal notranslate"><span class="pre">Activate</span></code>, <code class="docutils literal notranslate"><span class="pre">Deactivate</span></code>, and <code class="docutils literal notranslate"><span class="pre">Shutdown</span></code> states automatically, ensuring deterministic startup and shutdown.</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-healing sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"></path><path d="M17.73 12.02l3.98-3.98c.39-.39.39-1.02 0-1.41l-4.34-4.34c-.39-.39-1.02-.39-1.41 0l-3.98 3.98L8 2.29C7.8 2.1 7.55 2 7.29 2c-.25 0-.51.1-.7.29L2.25 6.63c-.39.39-.39 1.02 0 1.41l3.98 3.98L2.25 16c-.39.39-.39 1.02 0 1.41l4.34 4.34c.39.39 1.02.39 1.41 0l3.98-3.98 3.98 3.98c.2.2.45.29.71.29.26 0 .51-.1.71-.29l4.34-4.34c.39-.39.39-1.02 0-1.41l-3.99-3.98zM12 9c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-4.71 1.96L3.66 7.34l3.63-3.63 3.62 3.62-3.62 3.63zM10 13c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm2 2c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm2-4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2.66 9.34l-3.63-3.62 3.63-3.63 3.62 3.62-3.62 3.63z"></path></svg> Self-Healing</span> - Components have a built-in “Immune System.” If an algorithm fails or a driver disconnects, the component can trigger <strong><a class="reference internal" href="#fallbacks-self-healing">Fallbacks</a></strong> to restart or reconfigure itself without crashing the stack.</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-monitor_heart sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><g><rect fill="none" height="24" width="24"></rect></g><g><g><path d="M15.11,12.45L14,10.24l-3.11,6.21C10.73,16.79,10.38,17,10,17s-0.73-0.21-0.89-0.55L7.38,13H2v5c0,1.1,0.9,2,2,2h16 c1.1,0,2-0.9,2-2v-5h-6C15.62,13,15.27,12.79,15.11,12.45z"></path><path d="M20,4H4C2.9,4,2,4.9,2,6v5h6c0.38,0,0.73,0.21,0.89,0.55L10,13.76l3.11-6.21c0.34-0.68,1.45-0.68,1.79,0L16.62,11H22V6 C22,4.9,21.1,4,20,4z"></path></g></g></svg> Health Aware</span> - Components actively report their <strong><a class="reference internal" href="#health-status">Health Status</a></strong> (Healthy, Algorithm Failure, etc.) to the system, enabling system-wide reflexes and alerts.</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-verified sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><g><rect fill="none" height="24" width="24"></rect></g><g><path d="M23,12l-2.44-2.79l0.34-3.69l-3.61-0.82L15.4,1.5L12,2.96L8.6,1.5L6.71,4.69L3.1,5.5L3.44,9.2L1,12l2.44,2.79l-0.34,3.7 l3.61,0.82L8.6,22.5l3.4-1.47l3.4,1.46l1.89-3.19l3.61-0.82l-0.34-3.69L23,12z M10.09,16.72l-3.8-3.81l1.48-1.48l2.32,2.33 l5.85-5.87l1.48,1.48L10.09,16.72z"></path></g></svg> Type-Safe Config</span> - Component configurations are validated using <code class="docutils literal notranslate"><span class="pre">attrs</span></code> models, catching type errors before runtime, and allowing easy Pythonic configuration in your recipe.</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-hub sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><rect fill="none" height="24" width="24"></rect><path d="M8.4,18.2C8.78,18.7,9,19.32,9,20c0,1.66-1.34,3-3,3s-3-1.34-3-3s1.34-3,3-3c0.44,0,0.85,0.09,1.23,0.26l1.41-1.77 c-0.92-1.03-1.29-2.39-1.09-3.69l-2.03-0.68C4.98,11.95,4.06,12.5,3,12.5c-1.66,0-3-1.34-3-3s1.34-3,3-3s3,1.34,3,3 c0,0.07,0,0.14-0.01,0.21l2.03,0.68c0.64-1.21,1.82-2.09,3.22-2.32l0-2.16C9.96,5.57,9,4.4,9,3c0-1.66,1.34-3,3-3s3,1.34,3,3 c0,1.4-0.96,2.57-2.25,2.91v2.16c1.4,0.23,2.58,1.11,3.22,2.32l2.03-0.68C18,9.64,18,9.57,18,9.5c0-1.66,1.34-3,3-3s3,1.34,3,3 s-1.34,3-3,3c-1.06,0-1.98-0.55-2.52-1.37l-2.03,0.68c0.2,1.29-0.16,2.65-1.09,3.69l1.41,1.77C17.15,17.09,17.56,17,18,17 c1.66,0,3,1.34,3,3s-1.34,3-3,3s-3-1.34-3-3c0-0.68,0.22-1.3,0.6-1.8l-1.41-1.77c-1.35,0.75-3.01,0.76-4.37,0L8.4,18.2z"></path></svg> Auto-Wiring</span> - Inputs and Outputs are declarative. Define a <code class="docutils literal notranslate"><span class="pre">Topic</span></code> as an input or output to your component, and Sugarcoat automatically handles the subscription, serialization, and callback plumbing for you.</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-bolt sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.96 17.55 11 21 11 21z"></path></svg> Event-Driven</span> - Components are reactive by design. They can be configured to execute their main logic only when triggered by an <strong><a class="reference internal" href="events.html"><span class="std std-doc">Event</span></a></strong> or a Service call, rather than running in a continuous loop.</p></li>
+</ul>
+<figure class="align-center">
+<img alt="component structure" class="dark-only" src="../_images/component_dark.png" />
+</figure>
+<figure class="align-center" id="id1">
+<img alt="component structure" class="light-only" src="../_images/component_light.png" />
+<figcaption>
+<p><span class="caption-text">Component Architecture</span><a class="headerlink" href="#id1" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="execution-modes-run-types">
+<h2>Execution Modes (Run Types)<a class="headerlink" href="#execution-modes-run-types" title="Link to this heading">¶</a></h2>
+<p>A Component isn’t just a <code class="docutils literal notranslate"><span class="pre">while(True)</span></code> loop. You can configure <em>how</em> its main functionality executes using the <code class="docutils literal notranslate"><span class="pre">run_type</span></code> property.</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Run Type</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>Best For…</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Timed</strong></p></td>
+<td><p>Executes the main step in a fixed-frequency loop (e.g., 10Hz).</p></td>
+<td><p>Controllers, Planners, Drivers</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Event</strong></p></td>
+<td><p>Dormant until triggered by a specific Topic or Event.</p></td>
+<td><p>Image Processors, Detectors</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Server</strong></p></td>
+<td><p>Dormant until a ROS2 Service Request is received.</p></td>
+<td><p>Calibration Nodes, Compute Servers</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>ActionServer</strong></p></td>
+<td><p>Dormant until a ROS2 Action Goal is received.</p></td>
+<td><p>Long-running tasks (Navigation, Arms)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Configuration Example:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.config</span> <span class="kn">import</span> <span class="n">ComponentRunType</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">BaseComponent</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="c1"># Can set from Component</span>
+</span><span data-line="5"><span class="n">comp</span> <span class="o">=</span> <span class="n">BaseComponent</span><span class="p">(</span><span class="n">component_name</span><span class="o">=</span><span class="s1">&#39;test&#39;</span><span class="p">)</span>
+</span><span data-line="6"><span class="n">comp</span><span class="o">.</span><span class="n">run_type</span> <span class="o">=</span> <span class="s2">&quot;Server&quot;</span>    <span class="c1"># or ComponentRunType.SERVER</span>
+</span><span data-line="7">
+</span></pre></div>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>All the functionalities implemented in ROS2 nodes can be found in the Component.</p>
+</div>
+</section>
+<section id="declarative-inputs-outputs">
+<h2>Declarative Inputs &amp; Outputs<a class="headerlink" href="#declarative-inputs-outputs" title="Link to this heading">¶</a></h2>
+<p>Wiring up data streams shouldn’t be tedious. Sugarcoat allows you to define inputs and outputs declaratively.</p>
+<p>When the component launches, it automatically creates the necessary publishers, subscribers, and type converters based on your definitions.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">BaseComponent</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="c1"># 1. Define your interface</span>
+</span><span data-line="5"><span class="n">map_topic</span>   <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;map&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;OccupancyGrid&quot;</span><span class="p">)</span>
+</span><span data-line="6"><span class="n">voice_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;voice_cmd&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Audio&quot;</span><span class="p">)</span>
+</span><span data-line="7"><span class="n">image_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;camera/rgb&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Image&quot;</span><span class="p">)</span>
+</span><span data-line="8">
+</span><span data-line="9"><span class="c1"># 2. Auto-wire the component</span>
+</span><span data-line="10"><span class="c1"># Sugarcoat handles the QoS, callback groups, and serialization automatically</span>
+</span><span data-line="11"><span class="n">comp</span> <span class="o">=</span> <span class="n">BaseComponent</span><span class="p">(</span>
+</span><span data-line="12">    <span class="n">component_name</span><span class="o">=</span><span class="s1">&#39;audio_processor&#39;</span><span class="p">,</span>
+</span><span data-line="13">    <span class="n">inputs</span><span class="o">=</span><span class="p">[</span><span class="n">map_topic</span><span class="p">,</span> <span class="n">image_topic</span><span class="p">],</span>
+</span><span data-line="14">    <span class="n">outputs</span><span class="o">=</span><span class="p">[</span><span class="n">voice_topic</span><span class="p">]</span>
+</span><span data-line="15"><span class="p">)</span>
+</span><span data-line="16">
+</span></pre></div>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Sugarcoat provides built-in “Converters” for common ROS2 types (Images, Pose, etc.), so you can work with native Python objects instead of raw ROS2 messages. <a class="reference external" href="https://www.google.com/search?q=../advanced/types.md">See Supported Types</a>.</p>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p>Check the full configuration options of Topics <a class="reference internal" href="topics.html"><span class="std std-doc">here</span></a></p>
+</div>
+</section>
+<section id="the-component-immune-system-health-fallbacks">
+<h2>The Component Immune System: Health &amp; Fallbacks<a class="headerlink" href="#the-component-immune-system-health-fallbacks" title="Link to this heading">¶</a></h2>
+<p>A robust robot doesn’t just crash when an error occurs; it degrades gracefully.</p>
+<section id="health-status">
+<h3>1. Health Status<a class="headerlink" href="#health-status" title="Link to this heading">¶</a></h3>
+<p>Instead of printing a log message and dying, a Component reports its <strong>Health Status</strong>. This status is both:</p>
+<ul class="simple">
+<li><p>Internal: Used immediately by the component to trigger local recovery strategies.</p></li>
+<li><p>External: Broadcasted to alert other parts of the system.</p></li>
+</ul>
+</section>
+<section id="fallbacks-self-healing">
+<h3>2. Fallbacks (Self-Healing)<a class="headerlink" href="#fallbacks-self-healing" title="Link to this heading">¶</a></h3>
+<p>You can define <strong>reflexes</strong> that trigger automatically when health degrades.</p>
+<ul class="simple">
+<li><p><em>Is the driver dead?</em>  <strong>Restart</strong> the node.</p></li>
+<li><p><em>Is the planner stuck?</em>  <strong>Reconfigure</strong> the tolerance parameters.</p></li>
+<li><p><em>Is the sensor noisy?</em>  <strong>Switch</strong> to a different algorithm.</p></li>
+</ul>
+<blockquote>
+<div><p><strong>Learn More:</strong> <a class="reference internal" href="status.html"><span class="std std-doc">Health Status Guide</span></a> and <a class="reference internal" href="fallbacks.html"><span class="std std-doc">Fallbacks Tutorial</span></a>.</p>
+</div></blockquote>
+</section>
+</section>
+<section id="pro-tips-for-component-devs">
+<h2>Pro Tips for Component Devs<a class="headerlink" href="#pro-tips-for-component-devs" title="Link to this heading">¶</a></h2>
+<div class="tip admonition">
+<p class="admonition-title">Best Practices</p>
+<ul class="simple">
+<li><p><strong>Keep <code class="docutils literal notranslate"><span class="pre">__init__</span></code> Light:</strong> Do not open heavy resources (cameras, models) in <code class="docutils literal notranslate"><span class="pre">__init__</span></code>. Use <code class="docutils literal notranslate"><span class="pre">custom_on_configure</span></code> or <code class="docutils literal notranslate"><span class="pre">custom_on_activate</span></code>. This allows your node to be introspected and configured <em>before</em> it starts consuming resources.</p></li>
+<li><p><strong>Always Report Status:</strong> Make it a habit to call <code class="docutils literal notranslate"><span class="pre">self.health_status.set_healthy()</span></code> at the end of a successful <code class="docutils literal notranslate"><span class="pre">_execution_step</span></code>. This acts as a heartbeat for the system.</p></li>
+<li><p><strong>Catch, Don’t Crash:</strong> Wrap your main logic in <code class="docutils literal notranslate"><span class="pre">try/except</span></code> blocks. Instead of raising an exception, catch it and report <code class="docutils literal notranslate"><span class="pre">set_fail_algorithm</span></code>, for example. This keeps the process alive and allows your <a class="reference external" href="https://www.google.com/search?q=fallbacks.md">Fallbacks</a> to kick in and save the day.</p></li>
+</ul>
+</div>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="concepts_overview.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Design Concepts Overview</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="topics.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Topics</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Automatika Robotics</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div>
+      <div class="sy-foot-socials">
+<a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+<a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+  <iconify-icon icon="simple-icons:discord"></iconify-icon>
+</a></div>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script></body>
+</html>

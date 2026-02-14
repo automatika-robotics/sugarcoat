@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="indigo" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Actions - Sugarcoat 0.5.0 documentation</title><link rel="shortcut icon" href="../_static/favicon.png"/><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Fallbacks" href="fallbacks.html" /><link rel="prev" title="Events" href="events.html" />
+      <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/design/actions.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d1c6635e" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=44020203" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=cade9008" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://automatika-robotics.github.io/sugarcoat/design/actions.html"/>
+  <meta property="og:title" content="Actions"/>
+    <meta name="twitter:card" content="summary"/>
+  </head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      <img class="light-logo" src="../_static/SUGARCOAT_LIGHT.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <img class="dark-logo" src="../_static/SUGARCOAT_DARK.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <strong>Sugarcoat</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul><li class="link">
+          <a href="https://automatikarobotics.com/">
+            <span>Automatika Robotics</span></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+  <a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+    <iconify-icon icon="simple-icons:discord"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Overview</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../overview.html">Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../install.html">Getting Started</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Design Concepts</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="component.html">Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="topics.html">Topics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="status.html">Health Status</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="events.html">Events</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Actions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="launcher.html">Recipes Launcher</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Out-of-the-Box Features</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/web_ui.html">Zero-Code Dynamic Web UI</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/robot_plugins.html">Universal Robot Plugins</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Using Sugarcoat</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/create_service.html">Converting a Sugarcoat Recipe into a systemd Service</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/config.html">Don&#8217;t Like YAML? We&#8217;ve Got You &#128526;</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">References</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../apidocs/index.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.actions</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#trigger-mechanisms">Trigger Mechanisms</a></li>
+<li><a class="reference internal" href="#the-action-class">The <code class="docutils literal notranslate"><span class="pre">Action</span></code> Class</a></li>
+<li><a class="reference internal" href="#basic-usage">Basic Usage</a></li>
+<li><a class="reference internal" href="#dynamic-data-injection">Dynamic Data Injection</a><ul>
+<li><a class="reference internal" href="#example-cross-topic-data-access">Example: Cross-Topic Data Access</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pre-defined-actions">Pre-defined Actions</a><ul>
+<li><a class="reference internal" href="#component-level-actions">Component-Level Actions</a></li>
+<li><a class="reference internal" href="#system-level-actions">System-Level Actions</a></li>
+</ul>
+</li>
+</ul>
+</div><div id="ethical-ad-placement" data-ea-publisher="readthedocs"></div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">Sugarcoat</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Actions</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="https://automatika-robotics.github.io/sugarcoat/_sources/design/actions.md.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="https://automatika-robotics.github.io/sugarcoat/_sources/design/actions.md.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="https://automatika-robotics.github.io/sugarcoat/_sources/design/actions.md.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:markdown"></iconify-icon>
+            <span>View as Markdown</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/design/actions.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/design/actions.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue" role="main">
+          <section class="tex2jax_ignore mathjax_ignore" id="actions">
+<h1>Actions<a class="headerlink" href="#actions" title="Link to this heading">¶</a></h1>
+<p><strong>Executable context-aware behaviors for your robotic system.</strong></p>
+<p>Actions are not just static function calls; they are <strong>dynamic, context-aware routines</strong> that can adapt their parameters in real-time based on live system data.</p>
+<p>They can represent:</p>
+<ul class="simple">
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Component Behaviors - </span> Routines defined within your components. <em>e.g., Stopping the robot, executing a motion pattern, or saying a sentence.</em></p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">System Behaviors - </span> Lifecycle management, configuration and plumbing. <em>e.g., Reconfiguring a node, restarting a driver, or re-routing input streams.</em></p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">User Custom Behaviors - </span> Arbitrary Python functions. <em>e.g., Calling an external REST API, logging to a file, or sending a slack notification.</em></p></li>
+</ul>
+<section id="trigger-mechanisms">
+<h2>Trigger Mechanisms<a class="headerlink" href="#trigger-mechanisms" title="Link to this heading">¶</a></h2>
+<p>Actions sit dormant until activated by one of two mechanisms:</p>
+<ul class="simple">
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.2em" height="1.2em" class="sd-material-icon sd-material-icon-flash_on sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"></path><path d="M7 2v11h3v9l7-12h-4l4-8z"></path></svg> Event-Driven (Reflexive) - </span> Triggered instantly when a specific <strong>Event</strong> condition is met.
+<strong>Example:</strong> “Obstacle Detected” <span class="math notranslate nohighlight">\(\rightarrow\)</span> <code class="docutils literal notranslate"><span class="pre">stop_robot()</span></code></p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.2em" height="1.2em" class="sd-material-icon sd-material-icon-healing sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"></path><path d="M17.73 12.02l3.98-3.98c.39-.39.39-1.02 0-1.41l-4.34-4.34c-.39-.39-1.02-.39-1.41 0l-3.98 3.98L8 2.29C7.8 2.1 7.55 2 7.29 2c-.25 0-.51.1-.7.29L2.25 6.63c-.39.39-.39 1.02 0 1.41l3.98 3.98L2.25 16c-.39.39-.39 1.02 0 1.41l4.34 4.34c.39.39 1.02.39 1.41 0l3.98-3.98 3.98 3.98c.2.2.45.29.71.29.26 0 .51-.1.71-.29l4.34-4.34c.39-.39.39-1.02 0-1.41l-3.99-3.98zM12 9c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-4.71 1.96L3.66 7.34l3.63-3.63 3.62 3.62-3.62 3.63zM10 13c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm2 2c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm2-4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2.66 9.34l-3.63-3.62 3.63-3.63 3.62 3.62-3.62 3.63z"></path></svg> Fallback-Driven (Restorative) - </span> Triggered automatically by a Component when its internal <strong>Health Status</strong> degrades.
+<strong>Example:</strong> “Camera Driver Failed” <span class="math notranslate nohighlight">\(\rightarrow\)</span> <code class="docutils literal notranslate"><span class="pre">restart_driver()</span></code></p></li>
+</ul>
+</section>
+<section id="the-action-class">
+<h2>The <code class="docutils literal notranslate"><span class="pre">Action</span></code> Class<a class="headerlink" href="#the-action-class" title="Link to this heading">¶</a></h2>
+<p>At its core, the <code class="docutils literal notranslate"><span class="pre">Action</span></code> class is a wrapper around any Python callable. It packages a function along with its arguments, preparing them for execution at runtime.</p>
+<p>But unlike standard Python functions, Sugarcoat Actions possess a superpower: <a class="reference internal" href="#dynamic-data-injection">Dynamic Data Injection</a>. You can bind their arguments directly to live ROS2 Topics, allowing the Action to fetch the latest topic message or a specific message argument the moment it triggers.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="k">class</span> <span class="nc">Action</span><span class="p">:</span>
+</span><span data-line="2">    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="nb">tuple</span> <span class="o">=</span> <span class="p">(),</span> <span class="n">kwargs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+</span></pre></div>
+</div>
+<ul class="simple">
+<li><p>method: The function or routine to execute.</p></li>
+<li><p>args: Positional arguments (can be static values OR dynamic Topic values).</p></li>
+<li><p>kwargs: Keyword arguments (can be static values OR dynamic Topic values).</p></li>
+</ul>
+</section>
+<section id="basic-usage">
+<h2>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.component</span> <span class="kn">import</span> <span class="n">BaseComponent</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">Action</span>
+</span><span data-line="3"><span class="kn">import</span> <span class="nn">logging</span>
+</span><span data-line="4">
+</span><span data-line="5"><span class="k">def</span> <span class="nf">custom_routine</span><span class="p">():</span>
+</span><span data-line="6">    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;I am executing an action!&quot;</span><span class="p">)</span>
+</span><span data-line="7">
+</span><span data-line="8"><span class="n">my_component</span> <span class="o">=</span> <span class="n">BaseComponent</span><span class="p">(</span><span class="n">node_name</span><span class="o">=</span><span class="s1">&#39;test_component&#39;</span><span class="p">)</span>
+</span><span data-line="9">
+</span><span data-line="10"><span class="c1"># 1. Component Method</span>
+</span><span data-line="11"><span class="n">action1</span> <span class="o">=</span> <span class="n">Action</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="n">my_component</span><span class="o">.</span><span class="n">start</span><span class="p">)</span>
+</span><span data-line="12">
+</span><span data-line="13"><span class="c1"># 2. Method with keyword arguments</span>
+</span><span data-line="14"><span class="n">action2</span> <span class="o">=</span> <span class="n">Action</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="n">my_component</span><span class="o">.</span><span class="n">update_parameter</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;param_name&quot;</span><span class="p">:</span> <span class="s2">&quot;fallback_rate&quot;</span><span class="p">,</span> <span class="s2">&quot;new_value&quot;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">})</span>
+</span><span data-line="15">
+</span><span data-line="16"><span class="c1"># 3. External Function</span>
+</span><span data-line="17"><span class="n">action3</span> <span class="o">=</span> <span class="n">Action</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="n">custom_routine</span><span class="p">)</span>
+</span></pre></div>
+</div>
+</section>
+<section id="dynamic-data-injection">
+<h2>Dynamic Data Injection<a class="headerlink" href="#dynamic-data-injection" title="Link to this heading">¶</a></h2>
+<p><strong>This is Sugarcoat’s superpower.</strong></p>
+<p>You can create complex, context-aware behaviors without writing any “glue code” or custom parsers.</p>
+<p>When you bind an Action argument to a <code class="docutils literal notranslate"><span class="pre">Topic</span></code>, the system automatically resolves the binding at runtime, fetching the current value from the topic attributes and injecting it into your function.</p>
+<section id="example-cross-topic-data-access">
+<h3>Example: Cross-Topic Data Access<a class="headerlink" href="#example-cross-topic-data-access" title="Link to this heading">¶</a></h3>
+<p><strong>Scenario</strong>: An event occurs on Topic 1. You want to log a message that includes the current status from Topic 2 and a sensor reading from Topic 3.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">Event</span><span class="p">,</span> <span class="n">Action</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="c1"># 1. Define Topics</span>
+</span><span data-line="5"><span class="n">topic_1</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;system_alarm&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Bool&quot;</span><span class="p">)</span>
+</span><span data-line="6"><span class="n">topic_2</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;robot_mode&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;String&quot;</span><span class="p">)</span>
+</span><span data-line="7"><span class="n">topic_3</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;battery_voltage&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Float32&quot;</span><span class="p">)</span>
+</span><span data-line="8">
+</span><span data-line="9"><span class="c1"># 2. Define the Event</span>
+</span><span data-line="10"><span class="c1"># Trigger when Topic 1 becomes True</span>
+</span><span data-line="11"><span class="n">event_on_first_topic</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span><span class="n">topic_1</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">is_true</span><span class="p">())</span>
+</span><span data-line="12">
+</span><span data-line="13"><span class="c1"># 3. Define the Target Function</span>
+</span><span data-line="14"><span class="k">def</span> <span class="nf">log_context_message</span><span class="p">(</span><span class="n">mode</span><span class="p">,</span> <span class="n">voltage</span><span class="p">):</span>
+</span><span data-line="15">    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;System Alarm! Current Mode: </span><span class="si">{</span><span class="n">mode</span><span class="si">}</span><span class="s2">, Voltage: </span><span class="si">{</span><span class="n">voltage</span><span class="si">}</span><span class="s2">V&quot;</span><span class="p">)</span>
+</span><span data-line="16">
+</span><span data-line="17"><span class="c1"># 4. Define the Dynamic Action</span>
+</span><span data-line="18"><span class="c1"># We bind the function arguments directly to the data fields of Topic 2 and Topic 3</span>
+</span><span data-line="19"><span class="n">my_action</span> <span class="o">=</span> <span class="n">Action</span><span class="p">(</span>
+</span><span data-line="20">    <span class="n">method</span><span class="o">=</span><span class="n">log_context_message</span><span class="p">,</span>
+</span><span data-line="21">    <span class="c1"># At runtime, these are replaced by the actual values from the topics</span>
+</span><span data-line="22">    <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">topic_2</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">topic_3</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+</span><span data-line="23"><span class="p">)</span>
+</span></pre></div>
+</div>
+</section>
+</section>
+<section id="pre-defined-actions">
+<h2>Pre-defined Actions<a class="headerlink" href="#pre-defined-actions" title="Link to this heading">¶</a></h2>
+<p>Sugarcoat provides a suite of pre-defined, thread-safe actions for managing components and system resources via the <code class="docutils literal notranslate"><span class="pre">ros_sugar.actions</span></code> module.</p>
+<div class="tip admonition">
+<p class="admonition-title">Import Note</p>
+<p>All pre-defined actions are <strong>keyword-only</strong> arguments. They can be imported directly:
+<code class="docutils literal notranslate"><span class="pre">from</span> <span class="pre">ros_sugar.actions</span> <span class="pre">import</span> <span class="pre">start,</span> <span class="pre">stop,</span> <span class="pre">reconfigure</span></code></p>
+</div>
+<section id="component-level-actions">
+<h3>Component-Level Actions<a class="headerlink" href="#component-level-actions" title="Link to this heading">¶</a></h3>
+<p>These actions directly manipulate the state or configuration of a specific <code class="docutils literal notranslate"><span class="pre">BaseComponent</span></code> derived object.</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head text-left"><p>Action Method</p></th>
+<th class="head text-left"><p>Arguments</p></th>
+<th class="head text-left"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">start</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code></p></td>
+<td class="text-left"><p>Triggers the component’s Lifecycle transition to <strong>Active</strong>.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">stop</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code></p></td>
+<td class="text-left"><p>Triggers the component’s Lifecycle transition to <strong>Inactive</strong>.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">restart</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code><br><code class="docutils literal notranslate"><span class="pre">wait_time</span></code> (opt)</p></td>
+<td class="text-left"><p>Stops the component, waits <code class="docutils literal notranslate"><span class="pre">wait_time</span></code> seconds (default 0), and Starts it again.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">reconfigure</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code><br><code class="docutils literal notranslate"><span class="pre">new_config</span></code><br><code class="docutils literal notranslate"><span class="pre">keep_alive</span></code></p></td>
+<td class="text-left"><p>Reloads the component with a new configuration object or file path. <br><code class="docutils literal notranslate"><span class="pre">keep_alive=True</span></code> (default) keeps the node running during update.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">update_parameter</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code><br><code class="docutils literal notranslate"><span class="pre">param_name</span></code><br><code class="docutils literal notranslate"><span class="pre">new_value</span></code><br><code class="docutils literal notranslate"><span class="pre">keep_alive</span></code></p></td>
+<td class="text-left"><p>Updates a <strong>single</strong> configuration parameter.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">update_parameters</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code><br><code class="docutils literal notranslate"><span class="pre">params_names</span></code><br><code class="docutils literal notranslate"><span class="pre">new_values</span></code><br><code class="docutils literal notranslate"><span class="pre">keep_alive</span></code></p></td>
+<td class="text-left"><p>Updates <strong>multiple</strong> configuration parameters simultaneously.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">send_component_service_request</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code><br><code class="docutils literal notranslate"><span class="pre">srv_request_msg</span></code></p></td>
+<td class="text-left"><p>Sends a request to the component’s main service with a specific message.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">trigger_component_service</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code></p></td>
+<td class="text-left"><p>Triggers the component’s main service. <br>Creates the request message dynamically during runtime from the incoming Event topic data.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">send_component_action_server_goal</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code><br><code class="docutils literal notranslate"><span class="pre">request_msg</span></code></p></td>
+<td class="text-left"><p>Sends a goal to the component’s main action server with a specific message.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">trigger_component_action_server</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">component</span></code></p></td>
+<td class="text-left"><p>Triggers the component’s main action server. <br>Creates the request message dynamically during runtime from the incoming Event topic data.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="system-level-actions">
+<h3>System-Level Actions<a class="headerlink" href="#system-level-actions" title="Link to this heading">¶</a></h3>
+<p>These actions interact with the broader ROS2 system and are executed by the central <code class="docutils literal notranslate"><span class="pre">Monitor</span></code>.</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head text-left"><p>Action Method</p></th>
+<th class="head text-left"><p>Arguments</p></th>
+<th class="head text-left"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">log</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">msg</span></code><br><code class="docutils literal notranslate"><span class="pre">logger_name</span></code> (opt)</p></td>
+<td class="text-left"><p>Logs a message to the ROS console.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">publish_message</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic</span></code><br><code class="docutils literal notranslate"><span class="pre">msg</span></code><br><code class="docutils literal notranslate"><span class="pre">publish_rate</span></code>/<code class="docutils literal notranslate"><span class="pre">period</span></code></p></td>
+<td class="text-left"><p>Publishes a specific message to a topic. Can be single-shot or periodic.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">send_srv_request</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">srv_name</span></code><br><code class="docutils literal notranslate"><span class="pre">srv_type</span></code><br><code class="docutils literal notranslate"><span class="pre">srv_request_msg</span></code></p></td>
+<td class="text-left"><p>Sends a request to a ROS 2 Service with a specific message.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">trigger_service</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">srv_name</span></code><br><code class="docutils literal notranslate"><span class="pre">srv_type</span></code></p></td>
+<td class="text-left"><p>Triggers the a given ROS2 service.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">send_action_goal</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">server_name</span></code><br><code class="docutils literal notranslate"><span class="pre">server_type</span></code><br><code class="docutils literal notranslate"><span class="pre">request_msg</span></code></p></td>
+<td class="text-left"><p>Sends a specific goal to a ROS 2 Action Server.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">trigger_action_server</span></code></strong></p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">server_name</span></code><br><code class="docutils literal notranslate"><span class="pre">server_type</span></code></p></td>
+<td class="text-left"><p>Triggers a given ROS2 action server.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="note admonition">
+<p class="admonition-title">Automatic Data Conversion</p>
+<p>When using <strong><code class="docutils literal notranslate"><span class="pre">trigger_*</span></code></strong> actions paired with an Event, Sugarcoat attempts to create the required service/action request from the incoming Event topic data automatically via <strong>duck typing</strong>.</p>
+<p>If automatic conversion is not possible, or if the action is not paired with an Event, it sends a default (empty) request.</p>
+</div>
+</section>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="events.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Events</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="fallbacks.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Fallbacks</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Automatika Robotics</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div>
+      <div class="sy-foot-socials">
+<a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+<a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+  <iconify-icon icon="simple-icons:discord"></iconify-icon>
+</a></div>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script>
+      <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script></body>
+</html>

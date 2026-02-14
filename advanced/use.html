@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="indigo" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Creating your ROS2 package using Sugarcoat - Sugarcoat 0.5.0 documentation</title><link rel="shortcut icon" href="../_static/favicon.png"/><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Converting a Sugarcoat Recipe into a systemd Service" href="create_service.html" /><link rel="prev" title="Universal Robot Plugins" href="../features/robot_plugins.html" />
+      <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/advanced/use.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d1c6635e" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=44020203" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=cade9008" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://automatika-robotics.github.io/sugarcoat/advanced/use.html"/>
+  <meta property="og:title" content="Creating your ROS2 package using Sugarcoat"/>
+    <meta name="twitter:card" content="summary"/>
+  </head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      <img class="light-logo" src="../_static/SUGARCOAT_LIGHT.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <img class="dark-logo" src="../_static/SUGARCOAT_DARK.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <strong>Sugarcoat</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul><li class="link">
+          <a href="https://automatikarobotics.com/">
+            <span>Automatika Robotics</span></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+  <a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+    <iconify-icon icon="simple-icons:discord"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Overview</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../overview.html">Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../install.html">Getting Started</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Design Concepts</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/component.html">Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/topics.html">Topics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/status.html">Health Status</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/events.html">Events</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/actions.html">Actions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../design/launcher.html">Recipes Launcher</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Out-of-the-Box Features</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/web_ui.html">Zero-Code Dynamic Web UI</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/robot_plugins.html">Universal Robot Plugins</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Using Sugarcoat</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="create_service.html">Converting a Sugarcoat Recipe into a systemd Service</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="config.html">Don&#8217;t Like YAML? We&#8217;ve Got You &#128526;</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">References</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../apidocs/index.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.actions</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div id="ethical-ad-placement" data-ea-publisher="readthedocs"></div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">Sugarcoat</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Creating your ROS2 package using Sugarcoat</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="https://automatika-robotics.github.io/sugarcoat/_sources/advanced/use.md.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="https://automatika-robotics.github.io/sugarcoat/_sources/advanced/use.md.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="https://automatika-robotics.github.io/sugarcoat/_sources/advanced/use.md.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:markdown"></iconify-icon>
+            <span>View as Markdown</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/advanced/use.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/advanced/use.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue" role="main">
+          <section class="tex2jax_ignore mathjax_ignore" id="creating-your-ros2-package-using-sugarcoat">
+<h1>Creating your ROS2 package using Sugarcoat<a class="headerlink" href="#creating-your-ros2-package-using-sugarcoat" title="Link to this heading">¶</a></h1>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>To see detailed examples on packages created using Sugarcoat, check out <a class="reference external" href="https://automatika-robotics.github.io/kompass/">Kompass</a> and <a class="reference external" href="https://automatika-robotics.github.io/embodied-agents/">EmbodiedAgents</a></p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Before building your own package based on Sugarcoat, you can check out all the basic design concepts <a class="reference internal" href="../design/concepts_overview.html"><span class="std std-doc">here</span></a></p>
+</div>
+<p>1- Start by creating a standard ROS2 python package. (see instruction <a class="reference external" href="https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html">here</a>)</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span data-line="1">ros2<span class="w"> </span>pkg<span class="w"> </span>create<span class="w"> </span>--build-type<span class="w"> </span>ament_python<span class="w"> </span>--license<span class="w"> </span>Apache-2.0<span class="w"> </span>my-awesome-pkg
+</span></pre></div>
+</div>
+<p>2- Create your first functional unit (component) in a new file:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="nb">cd</span><span class="w"> </span>my-awesome-pkg<span class="se">\m</span>y_awesome_pkg
+</span><span data-line="2">touch<span class="w"> </span>awesome_component.py
+</span></pre></div>
+</div>
+<p>3- Setup your component configuration by extending <code class="docutils literal notranslate"><span class="pre">BaseComponentConfig</span></code> based on <a class="reference external" href="https://www.attrs.org/en/stable/">attrs</a> package:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">attrs</span> <span class="kn">import</span> <span class="n">field</span><span class="p">,</span> <span class="n">define</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.config</span> <span class="kn">import</span> <span class="n">BaseComponentConfig</span><span class="p">,</span> <span class="n">base_validators</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="nd">@define</span><span class="p">(</span><span class="n">kw_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span data-line="5"><span class="k">class</span> <span class="nc">AwesomeConfig</span><span class="p">(</span><span class="n">BaseComponentConfig</span><span class="p">):</span>
+</span><span data-line="6"><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span data-line="7"><span class="sd">    Component configuration parameters</span>
+</span><span data-line="8"><span class="sd">    &quot;&quot;&quot;</span>
+</span><span data-line="9">
+</span><span data-line="10">    <span class="n">extra_float</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+</span><span data-line="11">        <span class="n">default</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">validator</span><span class="o">=</span><span class="n">base_validators</span><span class="o">.</span><span class="n">in_range</span><span class="p">(</span><span class="n">min_value</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">,</span> <span class="n">max_value</span><span class="o">=</span><span class="mf">1e9</span><span class="p">)</span>
+</span><span data-line="12">    <span class="p">)</span>
+</span><span data-line="13">
+</span><span data-line="14">    <span class="n">extra_flag</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span></pre></div>
+</div>
+<p>4- Initialize your component by inheriting from <code class="docutils literal notranslate"><span class="pre">BaseComponent</span></code> class. Next, you can code the exact desired functionality in your component. (Refer to the <a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html#classes"><span class="std std-ref">BaseComponent</span></a> API docs for more details on the available methods)</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">ComponentFallbacks</span><span class="p">,</span> <span class="n">BaseComponent</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="k">class</span> <span class="nc">AwesomeComponent</span><span class="p">(</span><span class="n">BaseComponent</span><span class="p">):</span>
+</span><span data-line="5">    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+</span><span data-line="6">        <span class="bp">self</span><span class="p">,</span>
+</span><span data-line="7">        <span class="o">*</span><span class="p">,</span>
+</span><span data-line="8">        <span class="n">component_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+</span><span data-line="9">        <span class="n">inputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Topic</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span data-line="10">        <span class="n">outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Topic</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span data-line="11">        <span class="n">config_file</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span data-line="12">        <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AwesomeConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span data-line="13">        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+</span><span data-line="14">    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span data-line="15">        <span class="c1"># Set default config if config is not provided</span>
+</span><span data-line="16">        <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">:</span> <span class="n">AwesomeConfig</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">AwesomeConfig</span><span class="p">()</span>
+</span><span data-line="17">
+</span><span data-line="18">        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+</span><span data-line="19">            <span class="n">component_name</span><span class="o">=</span><span class="n">component_name</span><span class="p">,</span>
+</span><span data-line="20">            <span class="n">inputs</span><span class="o">=</span><span class="n">inputs</span><span class="p">,</span>
+</span><span data-line="21">            <span class="n">outputs</span><span class="o">=</span><span class="n">outputs</span><span class="p">,</span>
+</span><span data-line="22">            <span class="n">config</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">,</span>
+</span><span data-line="23">            <span class="n">config_file</span><span class="o">=</span><span class="n">config_file</span><span class="p">,</span>
+</span><span data-line="24">            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+</span><span data-line="25">        <span class="p">)</span>
+</span><span data-line="26">
+</span><span data-line="27">    <span class="k">def</span> <span class="nf">_execution_step</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+</span><span data-line="28"><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span data-line="29"><span class="sd">        The execution step is the main (timed) functional unit in the component. Gets called automatically at every loop step (with a frequency of &#39;self.config.loop_rate&#39;).</span>
+</span><span data-line="30"><span class="sd">        &quot;&quot;&quot;</span>
+</span><span data-line="31">        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_execution_step</span><span class="p">()</span>
+</span><span data-line="32">        <span class="c1"># Add your main execution step here, to be executed at each loop step for timed components</span>
+</span></pre></div>
+</div>
+<p>5- Follow the previous method to create any number of functional units in your package.</p>
+<p>6- To use your components with Sugarcoat Launcher in multi-threaded execution, jump to step 11. To Setup multi-process execution check step 7.</p>
+<p>7- Next, to use your components with Sugarcoat Launcher in multi-process execution you need to create an entry point for the ROS2 package.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="nb">cd</span><span class="w"> </span>my-awesome-pkg<span class="se">\m</span>y_awesome_pkg
+</span><span data-line="2">touch<span class="w"> </span>executable.py
+</span></pre></div>
+</div>
+<p>8- Import your component and their configuration classes and get the <code class="docutils literal notranslate"><span class="pre">executable_main</span></code> from <code class="docutils literal notranslate"><span class="pre">ros_sugar</span></code> (Sugarcoat):</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="ch">#!/usr/bin/env python3</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar</span> <span class="kn">import</span> <span class="n">executable_main</span>
+</span><span data-line="3"><span class="kn">from</span> <span class="nn">my_awesome_pkg.awesome_component</span> <span class="kn">import</span> <span class="n">AwesomeComponent</span><span class="p">,</span> <span class="n">AwesomeConfig</span>
+</span><span data-line="4"><span class="c1"># Import your other components/config here ...</span>
+</span><span data-line="5">
+</span><span data-line="6"><span class="c1"># Create lists of available components/config classes</span>
+</span><span data-line="7"><span class="n">_components_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">AwesomeComponent</span><span class="p">]</span>
+</span><span data-line="8"><span class="n">_configs_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">AwesomeConfig</span><span class="p">]</span>
+</span><span data-line="9">
+</span><span data-line="10"><span class="c1"># Create entry point main</span>
+</span><span data-line="11"><span class="k">def</span> <span class="nf">main</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+</span><span data-line="12">    <span class="n">executable_main</span><span class="p">(</span><span class="n">list_of_components</span><span class="o">=</span><span class="n">_components_list</span><span class="p">,</span> <span class="n">list_of_configs</span><span class="o">=</span><span class="n">_configs_list</span><span class="p">)</span>
+</span></pre></div>
+</div>
+<p>9- Add your entry point to the ROS2 package <a class="reference external" href="http://setup.py">setup.py</a>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">setuptools</span> <span class="kn">import</span> <span class="n">find_packages</span><span class="p">,</span> <span class="n">setup</span>
+</span><span data-line="2">
+</span><span data-line="3"><span class="n">package_name</span> <span class="o">=</span> <span class="s2">&quot;my_awesome_pkg&quot;</span>
+</span><span data-line="4">
+</span><span data-line="5"><span class="n">console_scripts</span> <span class="o">=</span> <span class="p">[</span>
+</span><span data-line="6">    <span class="s2">&quot;executable = my_awesome_pkg.executable:main&quot;</span><span class="p">,</span>
+</span><span data-line="7"><span class="p">]</span>
+</span><span data-line="8">
+</span><span data-line="9"><span class="n">setup</span><span class="p">(</span>
+</span><span data-line="10">    <span class="n">name</span><span class="o">=</span><span class="n">package_name</span><span class="p">,</span>
+</span><span data-line="11">    <span class="n">version</span><span class="o">=</span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
+</span><span data-line="12">    <span class="n">packages</span><span class="o">=</span><span class="n">find_packages</span><span class="p">(),</span>
+</span><span data-line="13">    <span class="n">install_requires</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;setuptools&quot;</span><span class="p">],</span>
+</span><span data-line="14">    <span class="n">zip_safe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span data-line="15">    <span class="n">maintainer</span><span class="o">=</span><span class="s2">&quot;Cyberdyne Systems&quot;</span><span class="p">,</span>
+</span><span data-line="16">    <span class="n">maintainer_email</span><span class="o">=</span><span class="s2">&quot;contact@cyberdynesystems.com&quot;</span><span class="p">,</span>
+</span><span data-line="17">    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;My awesome ROS2 sugarcoated package&quot;</span><span class="p">,</span>
+</span><span data-line="18">    <span class="n">entry_points</span><span class="o">=</span><span class="p">{</span>
+</span><span data-line="19">        <span class="s2">&quot;console_scripts&quot;</span><span class="p">:</span> <span class="n">console_scripts</span><span class="p">,</span>
+</span><span data-line="20">    <span class="p">},</span>
+</span><span data-line="21"><span class="p">)</span>
+</span></pre></div>
+</div>
+<p>10- Build your ROS2 package with colcon (instructions <a class="reference external" href="https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html#build-a-package">here</a>)</p>
+<p>11- Now you can use and launch your awesome new package with Sugarcoat launcher using a simple python script:</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">Using Sugarcoat Launcher with your awesome package</span><a class="headerlink" href="#id1" title="Link to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="linenos"> 1</span><span class="kn">from</span> <span class="nn">my_awesome_pkg.awesome_component</span> <span class="kn">import</span> <span class="n">AwesomeComponent</span><span class="p">,</span> <span class="n">AwesomeConfig</span>
+</span><span data-line="2"><span class="linenos"> 2</span><span class="kn">from</span> <span class="nn">ros_sugar.actions</span> <span class="kn">import</span> <span class="n">LogInfo</span>
+</span><span data-line="3"><span class="linenos"> 3</span><span class="kn">from</span> <span class="nn">ros_sugar.events</span> <span class="kn">import</span> <span class="n">OnLess</span>
+</span><span data-line="4"><span class="linenos"> 4</span><span class="kn">from</span> <span class="nn">ros_sugar</span> <span class="kn">import</span> <span class="n">Launcher</span>
+</span><span data-line="5"><span class="linenos"> 5</span><span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+</span><span data-line="6"><span class="linenos"> 6</span>
+</span><span data-line="7"><span class="linenos"> 7</span><span class="c1"># Define a set of topics</span>
+</span><span data-line="8"><span class="linenos"> 8</span><span class="n">map_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;map&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;OccupancyGrid&quot;</span><span class="p">)</span>
+</span><span data-line="9"><span class="linenos"> 9</span><span class="n">audio_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;voice&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Audio&quot;</span><span class="p">)</span>
+</span><span data-line="10"><span class="linenos">10</span><span class="n">image_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;camera/rgb&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Image&quot;</span><span class="p">)</span>
+</span><span data-line="11"><span class="linenos">11</span>
+</span><span data-line="12"><span class="linenos">12</span><span class="c1"># Init your components</span>
+</span><span data-line="13"><span class="linenos">13</span><span class="n">my_component</span> <span class="o">=</span> <span class="n">AwesomeComponent</span><span class="p">(</span><span class="n">component_name</span><span class="o">=</span><span class="s1">&#39;awesome_component&#39;</span><span class="p">,</span> <span class="n">inputs</span><span class="o">=</span><span class="p">[</span><span class="n">map_topic</span><span class="p">,</span> <span class="n">image_topic</span><span class="p">],</span> <span class="n">outputs</span><span class="o">=</span><span class="p">[</span><span class="n">audio_topic</span><span class="p">])</span>
+</span><span data-line="14"><span class="linenos">14</span>
+</span><span data-line="15"><span class="linenos">15</span><span class="c1"># Create your events</span>
+</span><span data-line="16"><span class="linenos">16</span><span class="n">low_battery</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span><span class="n">battery_level_topic</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span> <span class="o">&lt;</span> <span class="mf">15.0</span><span class="p">)</span>
+</span><span data-line="17"><span class="linenos">17</span>
+</span><span data-line="18"><span class="linenos">18</span><span class="c1"># Events/Actions</span>
+</span><span data-line="19"><span class="linenos">19</span><span class="n">my_events_actions</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">Event</span><span class="p">,</span> <span class="n">Action</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+</span><span data-line="20"><span class="linenos">20</span>    <span class="n">low_battery</span><span class="p">:</span> <span class="n">LogInfo</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="s2">&quot;Battery is Low!)</span>
+</span><span data-line="21"><span class="linenos">21</span><span class="p">}</span>
+</span><span data-line="22"><span class="linenos">22</span>
+</span><span data-line="23"><span class="linenos">23</span>
+</span><span data-line="24"><span class="linenos">24</span><span class="c1"># Create your launcher</span>
+</span><span data-line="25"><span class="linenos">25</span><span class="n">launcher</span> <span class="o">=</span> <span class="n">Launcher</span><span class="p">()</span>
+</span><span data-line="26"><span class="linenos">26</span>
+</span><span data-line="27"><span class="linenos">27</span><span class="c1"># Add your package components</span>
+</span><span data-line="28"><span class="linenos">28</span><span class="n">launcher</span><span class="o">.</span><span class="n">add_pkg</span><span class="p">(</span>
+</span><span data-line="29"><span class="linenos">29</span>    <span class="n">components</span><span class="o">=</span><span class="p">[</span><span class="n">my_component</span><span class="p">],</span>
+</span><span data-line="30"><span class="linenos">30</span>    <span class="n">package_name</span><span class="o">=</span><span class="s1">&#39;my_awesome_pkg&#39;</span><span class="p">,</span>
+</span><span data-line="31"><span class="linenos">31</span>    <span class="n">executable_entry_point</span><span class="o">=</span><span class="s1">&#39;executable&#39;</span><span class="p">,</span>
+</span><span data-line="32"><span class="linenos">32</span>    <span class="n">events_actions</span><span class="o">=</span><span class="n">my_events_actions</span><span class="p">,</span>
+</span><span data-line="33"><span class="linenos">33</span>    <span class="n">activate_all_components_on_start</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span data-line="34"><span class="linenos">34</span>    <span class="n">multiprocessing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span data-line="35"><span class="linenos">35</span><span class="p">)</span>
+</span><span data-line="36"><span class="linenos">36</span>
+</span><span data-line="37"><span class="linenos">37</span><span class="c1"># If any component fails -&gt; restart it with unlimited retries</span>
+</span><span data-line="38"><span class="linenos">38</span><span class="n">launcher</span><span class="o">.</span><span class="n">on_component_fail</span><span class="p">(</span><span class="n">action_name</span><span class="o">=</span><span class="s2">&quot;restart&quot;</span><span class="p">)</span>
+</span><span data-line="39"><span class="linenos">39</span>
+</span><span data-line="40"><span class="linenos">40</span><span class="c1"># Bring up the system</span>
+</span><span data-line="41"><span class="linenos">41</span><span class="n">launcher</span><span class="o">.</span><span class="n">bringup</span><span class="p">()</span>
+</span></pre></div>
+</div>
+</div>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="../features/robot_plugins.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Universal Robot Plugins</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="create_service.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Converting a Sugarcoat Recipe into a systemd Service</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Automatika Robotics</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div>
+      <div class="sy-foot-socials">
+<a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+<a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+  <iconify-icon icon="simple-icons:discord"></iconify-icon>
+</a></div>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script></body>
+</html>

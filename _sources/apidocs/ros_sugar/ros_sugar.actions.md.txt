@@ -1,0 +1,196 @@
+# {py:mod}`ros_sugar.actions`
+
+```{py:module} ros_sugar.actions
+```
+
+```{autodoc2-docstring} ros_sugar.actions
+:allowtitles:
+```
+
+## Module Contents
+
+### Functions
+
+````{list-table}
+:class: autosummary longtable
+:align: left
+
+* - {py:obj}`send_srv_request <ros_sugar.actions.send_srv_request>`
+  - ```{autodoc2-docstring} ros_sugar.actions.send_srv_request
+    :summary:
+    ```
+* - {py:obj}`trigger_service <ros_sugar.actions.trigger_service>`
+  - ```{autodoc2-docstring} ros_sugar.actions.trigger_service
+    :summary:
+    ```
+* - {py:obj}`send_component_service_request <ros_sugar.actions.send_component_service_request>`
+  - ```{autodoc2-docstring} ros_sugar.actions.send_component_service_request
+    :summary:
+    ```
+* - {py:obj}`trigger_component_service <ros_sugar.actions.trigger_component_service>`
+  - ```{autodoc2-docstring} ros_sugar.actions.trigger_component_service
+    :summary:
+    ```
+* - {py:obj}`send_action_goal <ros_sugar.actions.send_action_goal>`
+  - ```{autodoc2-docstring} ros_sugar.actions.send_action_goal
+    :summary:
+    ```
+* - {py:obj}`trigger_action_server <ros_sugar.actions.trigger_action_server>`
+  - ```{autodoc2-docstring} ros_sugar.actions.trigger_action_server
+    :summary:
+    ```
+* - {py:obj}`send_component_action_server_goal <ros_sugar.actions.send_component_action_server_goal>`
+  - ```{autodoc2-docstring} ros_sugar.actions.send_component_action_server_goal
+    :summary:
+    ```
+* - {py:obj}`trigger_component_action_server <ros_sugar.actions.trigger_component_action_server>`
+  - ```{autodoc2-docstring} ros_sugar.actions.trigger_component_action_server
+    :summary:
+    ```
+* - {py:obj}`publish_message <ros_sugar.actions.publish_message>`
+  - ```{autodoc2-docstring} ros_sugar.actions.publish_message
+    :summary:
+    ```
+* - {py:obj}`start <ros_sugar.actions.start>`
+  - ```{autodoc2-docstring} ros_sugar.actions.start
+    :summary:
+    ```
+* - {py:obj}`stop <ros_sugar.actions.stop>`
+  - ```{autodoc2-docstring} ros_sugar.actions.stop
+    :summary:
+    ```
+* - {py:obj}`restart <ros_sugar.actions.restart>`
+  - ```{autodoc2-docstring} ros_sugar.actions.restart
+    :summary:
+    ```
+* - {py:obj}`reconfigure <ros_sugar.actions.reconfigure>`
+  - ```{autodoc2-docstring} ros_sugar.actions.reconfigure
+    :summary:
+    ```
+* - {py:obj}`update_parameter <ros_sugar.actions.update_parameter>`
+  - ```{autodoc2-docstring} ros_sugar.actions.update_parameter
+    :summary:
+    ```
+* - {py:obj}`update_parameters <ros_sugar.actions.update_parameters>`
+  - ```{autodoc2-docstring} ros_sugar.actions.update_parameters
+    :summary:
+    ```
+* - {py:obj}`log <ros_sugar.actions.log>`
+  - ```{autodoc2-docstring} ros_sugar.actions.log
+    :summary:
+    ```
+````
+
+### API
+
+````{py:function} send_srv_request(*, srv_name: str, srv_type: type, srv_request_msg: typing.Any) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.send_srv_request
+
+```{autodoc2-docstring} ros_sugar.actions.send_srv_request
+```
+````
+
+````{py:function} trigger_service(*, srv_name: str, srv_type: type) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.trigger_service
+
+```{autodoc2-docstring} ros_sugar.actions.trigger_service
+```
+````
+
+````{py:function} send_component_service_request(*, component: ros_sugar.core.component.BaseComponent, srv_request_msg: typing.Any) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.send_component_service_request
+
+```{autodoc2-docstring} ros_sugar.actions.send_component_service_request
+```
+````
+
+````{py:function} trigger_component_service(*, component: ros_sugar.core.component.BaseComponent) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.trigger_component_service
+
+```{autodoc2-docstring} ros_sugar.actions.trigger_component_service
+```
+````
+
+````{py:function} send_action_goal(*, server_name: str, server_type: type, request_msg: typing.Any) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.send_action_goal
+
+```{autodoc2-docstring} ros_sugar.actions.send_action_goal
+```
+````
+
+````{py:function} trigger_action_server(*, server_name: str, server_type: type) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.trigger_action_server
+
+```{autodoc2-docstring} ros_sugar.actions.trigger_action_server
+```
+````
+
+````{py:function} send_component_action_server_goal(*, component: ros_sugar.core.component.BaseComponent, request_msg: typing.Any) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.send_component_action_server_goal
+
+```{autodoc2-docstring} ros_sugar.actions.send_component_action_server_goal
+```
+````
+
+````{py:function} trigger_component_action_server(*, component: ros_sugar.core.component.BaseComponent) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.trigger_component_action_server
+
+```{autodoc2-docstring} ros_sugar.actions.trigger_component_action_server
+```
+````
+
+````{py:function} publish_message(*, topic: ros_sugar.io.topic.Topic, msg: typing.Any, publish_rate: typing.Optional[float] = None, publish_period: typing.Optional[float] = None) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.publish_message
+
+```{autodoc2-docstring} ros_sugar.actions.publish_message
+```
+````
+
+````{py:function} start(*, component: ros_sugar.core.component.BaseComponent) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.start
+
+```{autodoc2-docstring} ros_sugar.actions.start
+```
+````
+
+````{py:function} stop(*, component: ros_sugar.core.component.BaseComponent) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.stop
+
+```{autodoc2-docstring} ros_sugar.actions.stop
+```
+````
+
+````{py:function} restart(*, component: ros_sugar.core.component.BaseComponent, wait_time: typing.Optional[float] = None) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.restart
+
+```{autodoc2-docstring} ros_sugar.actions.restart
+```
+````
+
+````{py:function} reconfigure(*, component: ros_sugar.core.component.BaseComponent, new_config: typing.Union[str, object], keep_alive: bool = False) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.reconfigure
+
+```{autodoc2-docstring} ros_sugar.actions.reconfigure
+```
+````
+
+````{py:function} update_parameter(*, component: ros_sugar.core.component.BaseComponent, param_name: str, new_value: typing.Any, keep_alive: bool = True) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.update_parameter
+
+```{autodoc2-docstring} ros_sugar.actions.update_parameter
+```
+````
+
+````{py:function} update_parameters(*, component: ros_sugar.core.component.BaseComponent, params_names: typing.List[str], new_values: typing.List, keep_alive: bool = True) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.actions.update_parameters
+
+```{autodoc2-docstring} ros_sugar.actions.update_parameters
+```
+````
+
+````{py:function} log(*, msg: str, logger_name: typing.Optional[str] = None) -> ros_sugar.core.action.LogInfo
+:canonical: ros_sugar.actions.log
+
+```{autodoc2-docstring} ros_sugar.actions.log
+```
+````

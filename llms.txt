@@ -1,0 +1,2191 @@
+# Sugarcoat Documentation
+
+The following text contains the documentation for the Sugarcoat framework by Automatika Robotics. It is optimized for context ingestion.
+
+## File: overview.md
+```markdown
+# Sugarcoat
+
+**The Orchestration Layer for Event-Driven ROS2 Systems**
+
+<p style="font-size: 1.2em; line-height: 1.6; opacity: 0.9;">
+  Sugarcoat is a <b>meta-framework</b> that replaces fragmented <strong>ROS2</strong> development with a unified workflow, offering a high-level API to build robust components and orchestrate them into cohesive, self-healing systems. It replaces verbose boilerplate and static launch files with an <b>Event-Driven API</b>, allowing you to orchestrate complex robotic behaviors with the elegance of modern Python.
+</p>
+
+[Get Started](install.md) • [Why Sugarcoat?](why.md) • [View on GitHub](https://github.com/automatika-robotics/sugarcoat)
+
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`auto_awesome;1.5em;sd-text-primary` Syntactic Sugar</span> -
+  Write clean, imperative code. Define components, topics, and events without the repetitive ROS2 boilerplate.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`hub;1.5em;sd-text-primary` Event-Driven Core</span> -
+  Connect system states to actions. Trigger safety protocols or mode changes using native Python expressions.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`health_and_safety;1.5em;sd-text-primary` Built-in Resilience</span> -
+  Native support for health status, automated node recovery, and fallback actions.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`terminal;1.5em;sd-text-primary` Beyond Static Launching</span> -
+  A more flexible, Python-native alternative to `ros2 launch` that gives you full runtime control.
+
+
+
+::::{grid} 1 2 2 3
+:gutter: 2
+
+:::{grid-item-card} {material-regular}`download;1.5em;sd-text-primary` Installation
+:link: install
+:link-type: doc
+
+Install Sugarcoat to start building with it
+:::
+
+:::{grid-item-card} {material-regular}`bolt;1.5em;sd-text-primary` Why Sugarcoat?
+:link: why
+:link-type: doc
+
+Discover the advantages of _Sugarcoat-ing_ your standard ROS2 system
+:::
+
+:::{grid-item-card} {material-regular}`extension;1.5em;sd-text-primary` Design Concepts
+:link: design/concepts_overview
+:link-type: doc
+
+Learn about Components and behind the scenes architecture
+:::
+
+:::{grid-item-card} {material-regular}`rocket_launch;1.5em;sd-text-primary` Create a Package
+:link: advanced/use
+:link-type: doc
+
+Step-by-step guide to creating your own ROS2 package using Sugarcoat
+:::
+
+:::{grid-item-card} {material-regular}`power;1.5em;sd-text-primary` Robot Plugins
+:link: features/robot_plugins
+:link-type: doc
+
+Learn how your ROS2 based system runs on differents hardware seemlessly
+:::
+
+:::{grid-item-card} {material-regular}`desktop_windows;1.5em;sd-text-primary` Web UI
+:link: features/web_ui
+:link-type: doc
+
+Explore the Dynamic Web UI for real-time visualization and control
+:::
+::::
+
+
+## Ecosystem
+
+Frameworks built using the Sugarcoat standard:
+
+::::{grid} 1 1 2 2
+:gutter: 3
+
+:::{grid-item-card} <span class="text-red-strong">Kompass</span>
+:link: https://automatikarobotics.com/kompass/
+:class-card: sugar-card
+
+A framework for building robust and comprehensive event-driven navigation stacks.
+:::
+
+:::{grid-item-card}  <span class="text-red-strong">EmbodiedAgents</span>
+:link: https://automatika-robotics.github.io/embodied-agents/
+:class-card: sugar-card
+
+A fully-loaded framework for creating interactive embodied agents that can think, understand and act.
+:::
+::::
+
+
+
+## Contributions
+
+Sugarcoat has been developed in collaboration between [Automatika Robotics](https://automatikarobotics.com/) and [Inria](https://inria.fr/). Contributions from the community are most welcome.
+```
+
+## File: why.md
+```markdown
+# Why Sugarcoat?
+
+In the standard ROS2 ecosystem, developers are given powerful tools to create individual "bricks" (Nodes), but very few tools to create the "building" (the System). Moreover, development in ROS2 often feels like a constant battle against boilerplate.
+
+As robotic systems scale, they inevitably face the Orchestration Gap: a void between low-level drivers and high-level mission planning where system-level resilience, safety, and connectivity should live.
+
+
+**Sugarcoat** was built to end the fragmentation. It is a meta-framework that provides a unified, Pythonic way to <span class="text-red-strong">build</span> individual components and <span class="text-red-strong">orchestrate</span> them into a resilient, event-driven ecosystem.
+
+## The Architectural Shift
+
+Standard ROS2 primitives (Publishers, Subscribers, Services) are designed for communication between fragmented entities. However, ROS2 does not natively provide a way to orchestrate these fragments into a cohesive organism.
+
+- The "Manager Node" Problem: To coordinate five nodes, developers usually write a sixth "Manager Node" This node quickly becomes a "spaghetti" of callbacks, timers, and hardcoded logic that is difficult to test and prone to failure.
+
+- Static Orchestration: Standard Launch files are "fire-and-forget." They can start your system, but they cannot monitor its health or react to a sensor failure at 2:00 AM.
+
+### Lessons from Nav2 and Behavior Trees
+
+Projects like *Nav2* recognized this orchestration gap and introduced Behavior Trees (BTs) for system-level orchestration. While BTs are powerful for repetitive navigation tasks with known flows, they are insufficient for a truly dynamic system and introduce unnecessary technical obscurity. Making small logic changes often requires modifying XML files or graphical trees (eww!).
+
+One of the main problems is that BTs have a sequential polling mechanism (Behavior Trees process logic by "ticking" through a tree) that is often ill-suited for real-world safety and high-speed autonomy:
+
+- **Latency**: A safety condition must wait for the tree to tick to its specific branch to be evaluated.
+
+- **Blocking**: If a complex action (like a long move command) is running, the system's ability to react to a sudden hardware failure depends entirely on how that specific node handles preemption.
+
+- **Global Scope**: It is notoriously difficult in BTs to implement a "Global Killswitch" that can instantly stop all nodes across the entire system regardless of the current tree state.
+
+## The Sugarcoat Solution: Reactive Orchestration
+
+Sugarcoat provides an **imperative, event-driven middle layer**. It operates on a Parallel Event Engine, doesn't "tick" through a list; it listens to the entire system at once. Its true distributed event-driven automation.
+
+<span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Unified Event-Driven Development<span>
+
+**Sugarcoat Components** turn ROS2 nodes into self-aware units with built-in **Automatic Lifecycle Management** (Configure, Activate, Deactivate), **Type-Safe Configurations**, and **Built-in Health-Status** where the system doesn't just knows if a component is alive, but also has a notion of the health of the component and the *type of error* it encountered.
+
+Moreover, instead of a static launch file or a rigid Behavior Tree, Sugarcoat uses an **Event-Driven** design with an intuitive Python API; you define **Events** and **Actions** in pure, readable Python.
+
+```python
+# The Orchestration Layer
+# If the height is beyond a limit OR the battery is low, return to station.
+
+emergency_event = Event(location.msg.position.z > 100.0 | battery.msg.data < 10.0)
+```
+
+<span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Native Resilience & Fallbacks</span>
+
+Sugarcoat makes **Fault Tolerance** a core primitive of ROS2 nodes. You can define **Fallbacks** for every component, ensuring the robot can self-heal (e.g., restarting a driver or switching to a backup sensor) automatically. And this fallback logic can be executed at the level of the component, instead of just by a central monitor checking heart-beat.
+
+
+## Sugarcoat Vs. Standard ROS2 Patterns
+
+Sugarcoat focuses on *how the system behaves*. It fills the gap between fragmented "raw" nodes and over-engineered mission planners.
+
+| Feature | Standard ROS2 | Behavior Trees | Sugarcoat |
+| --- | --- | --- | --- |
+| **Logic Execution** | **Fragmented.** Logic is hidden in callbacks across "Manager" nodes. | **Sequential Polling.** Logic is checked via "ticks" that move through a tree. | **Parallel & Event-Driven.** Events are monitored in parallel for instant execution. |
+| **Reaction Time** | **Variable.** Dependent on individual node processing and callback queues. | **Latency-Prone.** Must wait for the "tick" to reach the specific safety branch. | **Immediate.** Triggers the microsecond an event condition is met, regardless of system state. |
+| **Fault Handling** | **Passive.** If a node crashes, the system enters an undefined state. | **Task-Specific.** Handles failures based on task definition. | **Fast-Reactive.** Built-in distributed **Fallbacks** monitor component health and trigger recovery automatically. |
+| **Human Robot Interface** | **External Frontend.** An interface needs to be developed, just like the automation backend. | **External Frontend.** Same as Standard ROS2. | **Instant.** Auto-generates a **Web UI** for every topic, parameter, and event. |
+| **Hardware Portability** | **None.** Remapping topics and message types across different robots is manual and error-prone. | **None.** Same as Standard ROS2. | **Universal.** Robot Plugins act as a translation layer, allowing one recipe to run on any robot.|
+| **Configuration** | **Declarative.** Parameters are parsed from YAML config files. | **Declarative.** Same as Standard ROS2. | **Both Imperative and Declarative.** Configure in the Python 'Recipe' or declare in YAML/TOML/JSON configs. |
+
+## {material-regular}`terminal;1.5em;sd-text-primary` The Development Experience
+
+To understand the power of Sugarcoat, consider the developer's journey for a high-stakes task: implementing a **System-Wide Emergency Stop** in an existing navigation system, as per a client request.
+
+### 1. The Standard ROS2 Approach (Fragmented)
+
+ You write a "Safety Node":
+ - Write a custom Node using `rclpy` or `rclcpp` primitives
+ - Write the subscriber to the sensor topic
+ - Implement the callback function with the check
+ - Write publishers to the managed nodes
+ - Send "Stop" commands to five different motor nodes.
+
+ If the Safety Node hangs, or if the motor nodes are busy processing other callbacks, the stop command is delayed or missed. You have created a single point of failure with high "glue code" maintenance.
+
+
+### 2. The Nav2/BT Approach (Sequential)
+
+ You write the "Condition Node":
+ - Write a custom node that inherits from BTs `ConditionNode`
+ - Write the subscriber to the sensor topic
+ - Implement the callback function with the check
+
+Then you insert it at the top of your Behavior Tree in the `XML` file.
+
+If a sub-branch is currently executing a long-running action, the tree may not "tick" back to your safety condition until the action yields. Implementing a global "killswitch" that stops *everything* (including nodes outside the tree) is notoriously complex.
+
+### 3. The Sugarcoat Approach (Reactive & Parallel)
+
+You define a **Global Event** in your Python recipe. Because all events are being monitored in parallel, it doesn't matter what your components are currently doing.
+
+```python
+from ros_sugar.core import Event, Action
+
+# Define the Global Trigger
+# This event is monitored independently of your main logic flow
+collision_risk = Event(sensor.msg.min_dist < 0.5)
+
+# Trigger a System-Wide Action
+# Sugarcoat can stop all components, trigger fallbacks, and alert the UI instantly
+launcher.add_pkg(components=[...], events_actions={collision_risk: Action(stop)})
+
+```
+
+**The Result:** The logic is readable, lives at the system level, and executes with zero polling latency. You get a robust, self-healing robot with a fraction of the code.
+
+
+## {material-regular}`auto_awesome;1.5em;sd-text-primary` Move Faster, Build Tougher
+
+Whether you are building a single prototype or a fleet of autonomous mobile robots, Sugarcoat lets you focus on the **logic that matters**.
+
+By treating the system as a single, event-driven entity rather than a collection of loose nodes, you reduce development time, eliminate "glue code" bugs, and ship robots that are inherently more reliable.
+
+:::{button-link} design/concepts_overview.html
+:color: primary
+:ref-type: doc
+:outline:
+Explore Design Concepts →
+:::
+```
+
+## File: design/concepts_overview.md
+```markdown
+# Design Concepts Overview
+
+The Sugarcoat philosophy is centered around four key pillars: [**Modular Execution**](#1-the-component-smart-execution), [**Active Resilience**](#2-active-resilience-status--fallbacks), [**Event-Driven Behavior**](#3-dynamic-behavior-events--actions), and [**Centralized Orchestration**](#4-orchestration--recipes-launcher).
+
+A [Component](#1-the-component-smart-execution) is the main execution unit in Sugarcoat, each component is configured with [Inputs/Outputs](topics.md) and [Fallback](#2-active-resilience-status--fallbacks) behaviors. Additionally, each component updates its own [Health Status](#2-active-resilience-status--fallbacks), to keep track of the well/mal-functioning of the component. Components can be handled and reconfigured dynamically at runtime using [Events](#3-dynamic-behavior-events--actions) and [Actions](#3-dynamic-behavior-events--actions). Events, Actions and Components are configured in imperative scripts called "Recipes" and brought to life using the [Launcher](#4-orchestration--recipes-launcher).
+
+
+```{image} /_static/images/diagrams/component_dark.png
+:class: dark-only
+:align: center
+
+```
+
+```{image} /_static/images/diagrams/component_light.png
+:class: light-only
+:align: center
+
+```
+
+## 1. The Component: Smart Execution
+
+At the heart of the system is the [Component](component.md). Unlike a standard ROS2 node, a Sugarcoat Component is Lifecycle-managed and Health-aware by default. It executes a specific logic (e.g., a path planner, a driver, or a controller), and validates its own configuration automatically.
+
+## 2. Active Resilience: Status & Fallbacks
+
+Robots fail. Sugarcoat Components are designed to handle failure gracefully rather than crashing.
+
+- [**Health Status**](status.md): Every component continuously reports its internal state, distinguishing between Algorithm failures (e.g., "no path found"), Component failures (e.g., "driver crash"), or System failures (e.g., "missing input").
+
+- [**Fallbacks**](fallbacks.md): When a failure is detected, the component automatically triggers pre-configured recovery strategies—such as retrying an operation, re-initializing a driver, or safely shutting down—without requiring external intervention.
+
+## 3. Dynamic Behavior: Events & Actions
+
+To create reactive autonomy, Sugarcoat layers an **Event-Driven system** on top of standard data flows.
+
+- [**Events**](events.md): These act as triggers that monitor ROS2 topics for specific conditions (e.g., "Battery < 20%", "Target Lost", or "New Terrain Detected").
+
+- [**Actions**](actions.md): When an Event triggers (or a Fallback activates), an Action is executed. Actions can reconfigure components, switch controllers, start/stop processes, or send goals to other nodes.
+
+## 4. Orchestration & Recipes Launcher
+
+Finally, the system is brought to life and supervised by the [**Launcher**](./launcher.md), a Pythonic interface to define and deploy your system. It supports running components in Multi-threaded or Multi-process modes, managing their lifecycles automatically and handling event/action coordination.
+```
+
+## File: design/component.md
+```markdown
+# Components
+
+**Stop writing boilerplate. Start writing core logic.**
+
+In Sugarcoat, a `Component` is the fundamental unit of execution. It replaces the standard ROS2 Node with a robust, **Lifecycle-Managed**, and **Self-Healing** entity designed for production-grade autonomy.
+
+While a standard ROS2 node requires you to manually handle parameter callbacks, error catching, and state transitions, a Sugarcoat Component handles this plumbing automatically, letting you focus entirely on your algorithm.
+
+## Why build with Sugarcoat's Component?
+
+
+Sugarcoat Components come with "superpowers" out of the box.
+
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`autorenew;1.5em;sd-text-primary` Lifecycle Native</span> - Every component is a **Managed Lifecycle Node**. It supports `Configure`, `Activate`, `Deactivate`, and `Shutdown` states automatically, ensuring deterministic startup and shutdown.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`healing;1.5em;sd-text-primary` Self-Healing</span> - Components have a built-in "Immune System." If an algorithm fails or a driver disconnects, the component can trigger **[Fallbacks](#2-fallbacks-self-healing)** to restart or reconfigure itself without crashing the stack.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`monitor_heart;1.5em;sd-text-primary` Health Aware</span> - Components actively report their **[Health Status](#1-health-status)** (Healthy, Algorithm Failure, etc.) to the system, enabling system-wide reflexes and alerts.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`verified;1.5em;sd-text-primary` Type-Safe Config</span> - Component configurations are validated using `attrs` models, catching type errors before runtime, and allowing easy Pythonic configuration in your recipe.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`hub;1.5em;sd-text-primary` Auto-Wiring</span> - Inputs and Outputs are declarative. Define a `Topic` as an input or output to your component, and Sugarcoat automatically handles the subscription, serialization, and callback plumbing for you.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`bolt;1.5em;sd-text-primary` Event-Driven</span> - Components are reactive by design. They can be configured to execute their main logic only when triggered by an **[Event](events.md)** or a Service call, rather than running in a continuous loop.
+
+
+```{figure} /_static/images/diagrams/component_dark.png
+:class: dark-only
+:alt: component structure
+:align: center
+```
+
+```{figure} /_static/images/diagrams/component_light.png
+:class: light-only
+:alt: component structure
+:align: center
+
+Component Architecture
+```
+
+
+## Execution Modes (Run Types)
+
+A Component isn't just a `while(True)` loop. You can configure *how* its main functionality executes using the `run_type` property.
+
+| Run Type | Description | Best For... |
+| --- | --- | --- |
+| **Timed** | Executes the main step in a fixed-frequency loop (e.g., 10Hz). | Controllers, Planners, Drivers |
+| **Event** | Dormant until triggered by a specific Topic or Event. | Image Processors, Detectors |
+| **Server** | Dormant until a ROS2 Service Request is received. | Calibration Nodes, Compute Servers |
+| **ActionServer** | Dormant until a ROS2 Action Goal is received. | Long-running tasks (Navigation, Arms) |
+
+**Configuration Example:**
+
+
+```python
+from ros_sugar.config import ComponentRunType
+from ros_sugar.core import BaseComponent
+
+# Can set from Component
+comp = BaseComponent(component_name='test')
+comp.run_type = "Server"    # or ComponentRunType.SERVER
+
+```
+
+:::{tip} All the functionalities implemented in ROS2 nodes can be found in the Component.
+:::
+
+## Declarative Inputs & Outputs
+
+Wiring up data streams shouldn't be tedious. Sugarcoat allows you to define inputs and outputs declaratively.
+
+When the component launches, it automatically creates the necessary publishers, subscribers, and type converters based on your definitions.
+
+```python
+from ros_sugar.core import BaseComponent
+from ros_sugar.io import Topic
+
+# 1. Define your interface
+map_topic   = Topic(name="map", msg_type="OccupancyGrid")
+voice_topic = Topic(name="voice_cmd", msg_type="Audio")
+image_topic = Topic(name="camera/rgb", msg_type="Image")
+
+# 2. Auto-wire the component
+# Sugarcoat handles the QoS, callback groups, and serialization automatically
+comp = BaseComponent(
+    component_name='audio_processor',
+    inputs=[map_topic, image_topic],
+    outputs=[voice_topic]
+)
+
+```
+
+:::{tip}
+Sugarcoat provides built-in "Converters" for common ROS2 types (Images, Pose, etc.), so you can work with native Python objects instead of raw ROS2 messages. [See Supported Types](https://www.google.com/search?q=../advanced/types.md).
+:::
+
+
+:::{seealso} Check the full configuration options of Topics [here](topics.md)
+:::
+
+
+## The Component Immune System: Health & Fallbacks
+
+A robust robot doesn't just crash when an error occurs; it degrades gracefully.
+
+### 1. Health Status
+
+Instead of printing a log message and dying, a Component reports its **Health Status**. This status is both:
+
+- Internal: Used immediately by the component to trigger local recovery strategies.
+
+- External: Broadcasted to alert other parts of the system.
+
+### 2. Fallbacks (Self-Healing)
+
+You can define **reflexes** that trigger automatically when health degrades.
+
+* *Is the driver dead?*  **Restart** the node.
+* *Is the planner stuck?*  **Reconfigure** the tolerance parameters.
+* *Is the sensor noisy?*  **Switch** to a different algorithm.
+
+> **Learn More:** [Health Status Guide](./status.md) and [Fallbacks Tutorial](./fallbacks.md).
+
+
+## Pro Tips for Component Devs
+
+:::{admonition} Best Practices
+:class: tip
+
+* **Keep `__init__` Light:** Do not open heavy resources (cameras, models) in `__init__`. Use `custom_on_configure` or `custom_on_activate`. This allows your node to be introspected and configured *before* it starts consuming resources.
+
+* **Always Report Status:** Make it a habit to call `self.health_status.set_healthy()` at the end of a successful `_execution_step`. This acts as a heartbeat for the system.
+
+* **Catch, Don't Crash:** Wrap your main logic in `try/except` blocks. Instead of raising an exception, catch it and report `set_fail_algorithm`, for example. This keeps the process alive and allows your [Fallbacks](https://www.google.com/search?q=fallbacks.md) to kick in and save the day.
+:::
+```
+
+## File: design/topics.md
+```markdown
+# Topics
+
+**The connective tissue of your system.**
+
+Topics are defined in Sugarcoat with a `Topic` class that specifies the **Data Contract** (Type/Name of the ROS2 topic), the **Behavior** (QoS), and the **Freshness Constraints** (Timeout) for a specific stream of information.
+
+Topics act as the bridge for both:
+
+1.  **Component I/O:** They define what data a Component produces or consumes.
+2.  **Event Triggers:** They act as the "Sensors" for the Event-Driven system, feeding data into the Blackboard.
+
+## Why use Sugarcoat Topics?
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`link;1.5em;sd-text-primary` Declarative Wiring</span> - No more hardcoded strings buried in your components. Define your Topics as shared resources and pass them into Components during configuration.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`timer;1.5em;sd-text-primary` Freshness Monitoring</span> - Sugarcoat Topic can enforce a `data_timeout`. If the data is too old, the Event system knows to ignore it, preventing "Stale Data" bugs.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`auto_awesome;1.5em;sd-text-primary` Lazy Type Resolution</span> - You don't need to import message classes at the top of every file. Sugarcoat resolves types like `'OccupancyGrid'` or `'Odometry'` at runtime, keeping your code clean and decoupling dependencies.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`tune;1.5em;sd-text-primary` QoS Abstraction</span> - Quality of Service profiles are configured via simple Python objects directly in your recipe.
+
+## Usage Example
+
+```python
+from ros_sugar.config import QoSConfig
+from ros_sugar.io import Topic
+
+qos_conf = QoSConfig(
+    history=qos.HistoryPolicy.KEEP_LAST,
+    queue_size=20,
+    reliability=qos.ReliabilityPolicy.BEST_EFFORT,
+    durability=qos.DurabilityPolicy.TRANSIENT_LOCAL
+)
+
+topic = Topic(name='/local_map', msg_type='OccupancyGrid', qos_profile=qos_conf)
+```
+
+## Advanced: Smart Type Resolution
+
+One of Sugarcoat's most convenient features is **String-Based Type Resolution**. In standard ROS2, you must import the specific message class (`from geometry_msgs.msg import Twist`) to create a publisher or subscriber. Sugarcoat handles this import for you dynamically.
+
+```python
+from ros_sugar.io import Topic
+from std_msgs.msg import String
+
+# Method 1: The Standard Way (Explicit Class)
+# Requires 'from std_msgs.msg import String'
+topic_1 = Topic(name='/chatter', msg_type=String)
+
+# Method 2: The Sugarcoat Way (String Literal)
+# No import required. Sugarcoat finds 'std_msgs/msg/String' automatically.
+topic_2 = Topic(name='/chatter', msg_type='String')
+
+```
+
+:::{seealso}
+See the full list of automatically supported message types [here](../advanced/types.md).
+:::
+
+## Component Integration
+
+Once defined, Topics are passed to [Components](./component.md) to automatically generate the ROS2 infrastructure.
+
+```python
+from ros_sugar.core import BaseComponent
+from ros_sugar.io import Topic
+
+# When this component starts, it automatically creates:
+# - A Subscriber to '/scan' (LaserScan)
+# - A Publisher to '/cmd_vel' (Twist)
+my_node = BaseComponent(
+    component_name="safety_controller",
+    inputs=[Topic(name="/scan", msg_type="LaserScan")],
+    outputs=[Topic(name="/cmd_vel", msg_type="Twist")]
+)
+
+```
+```
+
+## File: design/launcher.md
+```markdown
+# Recipes Launcher
+
+**Recipes: One script to rule them all.**
+
+The [`Launcher`](../apidocs/ros_sugar/ros_sugar.launch.launcher.md) is your entry point to the Sugarcoat ecosystem. It provides a clean, Pythonic API to configure, spawn, and orchestrate your ROS2 nodes without writing XML or complex launch files.
+
+Under the hood, every Launcher spawns an internal **Monitor** node. This hidden "Brain" is responsible for tracking component health, listening for events, and executing the orchestration logic.
+
+## Execution Architectures
+
+The Launcher supports two execution modes, configured via the `multi_processing` flag.
+
+::::{tab-set}
+
+:::{tab-item} Multi-Threaded
+:sync: threaded
+
+**Default for Debugging** (`multi_processing=False`)
+
+All components run in the same process as the Launcher and Monitor.
+* <span class="sd-text-success">**Pros:**</span> Fast startup, shared memory, easy debugging (breakpoints work everywhere).
+* <span class="sd-text-danger">**Cons:**</span> The Global Interpreter Lock (GIL) can bottleneck performance if you have many heavy nodes.
+
+```{figure} /_static/images/diagrams/multi_threaded_dark.png
+:class: dark-only
+:alt: multi-threaded architecture
+:align: center
+
+```
+
+```{figure} /_static/images/diagrams/multi_threaded_light.png
+:class: light-only
+:alt: multi-threaded architecture
+:align: center
+
+Multi-threaded Execution
+
+```
+
+:::
+
+:::{tab-item} Multi-Process
+:sync: process
+
+**Production Mode** (`multi_processing=True`)
+
+Each component runs in its own isolated process. The Monitor the still runs in the same process as the Launcher.
+
+* <span class="sd-text-success">**Pros:**</span> True parallelism, crash isolation (one node crashing doesn't kill the system).
+* <span class="sd-text-danger">**Cons:**</span> Higher startup overhead.
+
+```{figure} /_static/images/diagrams/multi_process_dark.png
+:class: dark-only
+:alt: multi-process architecture
+:align: center
+
+```
+
+```{figure} /_static/images/diagrams/multi_process_light.png
+:class: light-only
+:alt: multi-process architecture
+:align: center
+
+Multi-process Execution
+
+```
+
+:::
+
+::::
+
+## Launcher Features
+
+### 1. Package & Component Loading
+
+You can add components from your current script or external packages.
+
+```python
+# Add from an external entry point (for multi-process separation)
+launcher.add_pkg(
+    package_name="my_robot_pkg",
+    components=[vision_component] # Pass config/events here
+    multiprocessing=True
+)
+
+```
+
+### 2. Lifecycle Management
+
+Sugarcoat components are Lifecycle nodes. The Launcher handles the transition state machine for you.
+
+* `activate_all_components_on_start=True`: Automatically transitions all nodes to **Active** after spawning.
+
+### 3. Global Fallbacks
+
+Define "Catch-All" policies for the entire system.
+
+```python
+# If ANY component reports a crash, restart it.
+launcher.on_component_fail(action_name="restart")
+
+```
+
+### 4. Events Orchestration
+
+Pass your events/actions dictionary **once** to the `Launcher` and it will handle delegating the event monitoring to the concerned component.
+
+## Complete Usage Example
+
+```python
+from ros_sugar.core import BaseComponent, Event, Action
+from ros_sugar.actions import log, restart
+from ros_sugar.io import Topic
+from ros_sugar import Launcher
+
+# 1. Define Components
+# (Usually imported from your package)
+driver = BaseComponent(component_name='lidar_driver')
+planner = BaseComponent(component_name='path_planner')
+
+# Set Fallback Policy
+# If the driver crashes, try to restart it automatically
+driver.on_component_fail(fallback=restart(component=driver))
+
+# 2. Define Logic  for Events
+battery = Topic(name="/battery", msg_type="Float32")
+low_batt_evt = Event(battery.msg.data < 15.0)
+
+log_action = log(msg="WARNING: Battery Low!")
+
+# 3. Initialize Launcher
+launcher = Launcher(
+    config_file='config/robot_params.toml',     # Can optionally pass a configuration file
+    activate_all_components_on_start=True,
+    multi_processing=True # Use separate processes
+)
+
+# 4. Register Components
+# You can attach specific events to specific groups of components
+launcher.add_pkg(
+    components=[driver, planner],
+    ros_log_level="error"
+    events_actions={low_batt_evt: log_action}
+)
+
+# 7. Launch!
+# This blocks until Ctrl+C is pressed
+launcher.bringup()
+
+```
+
+## The Monitor (Internal Engine)
+
+:::{note}
+The Monitor is configured automatically. You do not need to instantiate or manage it manually.
+:::
+
+The **Monitor** is a specialized, non-lifecycle ROS2 node that acts as the central management node.
+
+**Responsibilities:**
+
+1. **Custom Actions Execution:** Handles executing custom Actions defined in the recipe.
+2. **Health Tracking:** Subscribes to the `/status` topic of every component.
+3. **Orchestration:** Holds clients for every component's Lifecycle and Parameter services, allowing it to restart, reconfigure, or stop nodes on demand.
+
+**Architecture:**
+
+::::{tab-set}
+
+:::{tab-item} Configuration
+:sync: config
+
+How the Launcher configures the Monitor with Events and Actions at startup.
+
+```{figure} /_static/images/diagrams/events_actions_config_dark.png
+:class: dark-only
+:alt: Monitoring events diagram
+:align: center
+:scale: 70
+
+```
+
+```{figure} /_static/images/diagrams/events_actions_config_light.png
+:class: light-only
+:alt: Monitoring events diagram
+:align: center
+:scale: 70
+
+Monitoring events
+
+```
+
+:::
+
+:::{tab-item} Execution
+:sync: exec
+
+How the Monitor processes triggers and executes actions at runtime.
+
+```{figure} /_static/images/diagrams/events_actions_exec_dark.png
+:class: dark-only
+:alt: An Event Trigger diagram
+:align: center
+:scale: 70
+
+```
+
+```{figure} /_static/images/diagrams/events_actions_exec_light.png
+:class: light-only
+:alt: An Event Trigger diagram
+:align: center
+:scale: 70
+
+An Event Trigger
+
+```
+
+:::
+
+::::
+```
+
+## File: design/events.md
+```markdown
+# Events
+
+**Dynamic behavior switching based on real-time environmental context.**
+
+Sugarcoat's Event-Driven architecture enables dynamic behavior switching based on real-time environmental context. This allows robots to react instantly to changes in their internal state or external environment without complex, brittle if/else chains.
+
+An Event in Sugarcoat monitors a specific **ROS2 Topic**, and defines a triggering condition based on the incoming topic data. You can write natural Python expressions (e.g., topic.msg.data > 5) to define exactly when an event should trigger the associated Action(s).
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`hub;1.5em;sd-text-primary` Compose Logic - </span> Combine triggers using simple Pythonic syntax (`(lidar_clear) & (goal_seen)`).
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`sync;1.5em;sd-text-primary` Fuse Data - </span> Monitor multiple topics simultaneously via a synchronized **Blackboard** that ensures data freshness.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`speed;1.5em;sd-text-primary` Stay Fast - </span> All evaluation happens asynchronously in a dedicated worker pool. Your main component loop **never blocks**.
+
+
+:::{admonition} Think in Behaviors
+:class: tip
+Events are designed to be read like a sentence:
+*"If the battery is low AND we are far from home, THEN navigate to the charging dock."*
+:::
+
+:::{tip} Events can be paired with Sugarcoat [`Action`](actions.md)(s) or with any standard [ROS2 Launch Action](https://docs.ros.org/en/kilted/Tutorials/Intermediate/Launch/Using-Event-Handlers.html)
+:::
+
+## Defining Events
+
+The Event API uses a fluent, expressive syntax that allows you to access ROS2 message attributes directly via `topic.msg`.
+
+### Basic Single-Topic Event
+
+```python
+from ros_sugar.core import Event
+from ros_sugar.io import Topic
+
+# 1. Define the Source
+# `data_timeout` parameter is optional. It ensures data is considered "stale" after 0.5s
+battery = Topic(name="/battery_level", msg_type="Float32", data_timeout=0.5)
+
+# 2. Define the Event
+# Triggers when percentage drops below 20%
+low_batt_event = Event(battery.msg.data < 20.0)
+```
+
+### Composed Conditions (Logic & Multi-Topic)
+
+You can combine multiple conditions using standard Python bitwise operators (`&`, `|`, `~`) to create complex behavioral triggers. Events can also span multiple different topics. Sugarcoat automatically manages a "Blackboard" of the latest messages from all involved topics, ensuring synchronization and data "freshness".
+
+- **Example**: Trigger a "Stop" event only if an obstacle is detected AND the robot is currently in "Auto" mode.
+
+```python
+from ros_sugar.core import Event
+from ros_sugar.io import Topic
+
+lidar_topic = Topic(name="/person_detected", msg_type="Bool", data_timeout=0.5)
+status_topic = Topic(name="/robot_mode", msg_type="String", data_timeout=60.0)
+
+# Complex Multi-Topic Condition
+emergency_stop_event = Event((lidar_topic.msg.data.is_true()) & (status_topic.msg.data == "AUTO"))
+```
+
+:::{admonition} Handling Stale Data
+:class: warning
+When combining multiple topics, data synchronization is critical. Use the `data_timeout` parameter on your `Topic` definition to ensure you never act on old sensor data.
+:::
+
+## Event Configuration
+
+Refine *when* and *how* the event triggers using these parameters:
+
+* <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`change_circle` On Change (`on_change=True`)</span> - Triggers **only** when the condition transitions from `False` to `True` (Edge Trigger). Useful for state transitions (e.g., "Goal Reached") rather than continuous firing.
+* <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`all_inclusive` On Any (`Topic`)</span> - If you pass the `Topic` object itself as the condition, the event triggers on **every received message**, regardless of content.
+* <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`looks_one` Handle Once (`handle_once=True`)</span> - The event will fire exactly one time during the lifecycle of the system. Useful for initialization sequences.
+* <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`timer` Event Delay (`keep_event_delay=2.0`)</span> - Prevents rapid firing (debouncing). Ignores subsequent triggers for the specified duration (in seconds).
+
+
+## Supported Conditional Operators
+
+You can use standard Python operators or specific helper methods on any topic attribute to define the <span class="text-blue">**event triggering condition**</span>
+
+| Operator / Method | Description | Example |
+| :--- | :--- | :--- |
+| **`==`**, **`!=`** | Equality checks. | `topic.msg.status == "IDLE"` |
+| **`>`**, **`>=`**, **`<`**, **`<=`** | Numeric comparisons. | `topic.msg.temperature > 75.0` |
+| **`.is_true()`** | Boolean True check. | `topic.msg.is_ready.is_true()` |
+| **`.is_false()`**, **`~`** | Boolean False check. | `topic.msg.is_ready.is_false()` or `~topic.msg.is_ready` |
+| **`.is_in(list)`** | Value exists in a list. | `topic.msg.mode.is_in(["AUTO", "TELEOP"])` |
+| **`.not_in(list)`** | Value is not in a list. | `topic.msg.id.not_in([0, 1])` |
+| **`.contains(val)`** | String/List contains a value. | `topic.msg.description.contains("error")` |
+| **`.contains_any(list)`** | List contains *at least one* of the values. | `topic.msg.error_codes.contains_any([404, 500])` |
+| **`.contains_all(list)`** | List contains *all* of the values. | `topic.msg.detections.labels.contains_all(["window", "desk"])` |
+| **`.not_contains_any(list)`** | List contains *none* of the values. | `topic.msg.active_ids.not_contains_any([99, 100])` |
+
+
+## Usage Examples
+
+### 1. Automatic Adaptation (Terrain Switching)
+Scenario: A perception or ML node publishes a string to `/terrain_type`. We want to change the robot's gait when the terrain changes.
+
+```{code-block} python
+:caption: quadruped_controller.py
+:linenos:
+
+from typing import Literal
+from ros_sugar.component import BaseComponent
+
+class QuadrupedController(BaseComponent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Some logic
+
+    def switch_gait_controller(self, controller_type: Literal['stairs', 'sand', 'snow', 'gravel']):
+        self.get_logger().info("New terrain detected! Switching gait.")
+        # Logic to change controller parameters...
+```
+
+```{code-block} python
+:caption: quadruped_controller_recipe.py
+:linenos:
+
+from my_pkg.components import QuadrupedController
+from ros_sugar.core import Event, Action
+from ros_sugar.io import Topic
+from ros_sugar import Launcher
+
+quad_controller = QuadrupedController(component_name="quadruped_controller")
+
+# Define the Event Topic
+terrain_topic = Topic(name="/terrain_type", msg_type="String")
+
+# Define the Event
+# Logic: Trigger when the detected terrain changes
+# on_change=True ensures we only trigger the switch the FIRST time stairs are seen.
+# Add an optional delay to prevent rapid event triggering
+event_terrain_changed = Event(terrain_topic,on_change=True, keep_event_delay=60.0)
+
+# Define the Action
+# Call self.switch_gait_controller() when triggered and pass the detected terrain to the method
+change_gait_action = Action(method=self.activate_stairs_controller, args=(terrain_topic.msg.data))
+
+# Register
+my_launcher = Launcher()
+my_launcher.add_pkg(
+            components=[quad_controller],
+            events_actions={stairs_event: change_gait_action},
+        )
+```
+
+
+### 2. An Autonomous Drone
+Scenario: An autonomous drone **stops** if an obstacle is close OR the bumper is hit. It also sends a warning if the battery is low AND we are far from the land.
+
+```python
+from ros_sugar.core import Event, Action
+from ros_sugar.io import Topic
+
+# --- Topics ---
+proximity_sensor   = Topic(name="/radar_front", msg_type="Float32", data_timeout=0.2)
+bumper  = Topic(name="/bumper", msg_type="Bool", data_timeout=0.1)
+battery = Topic(name="/battery", msg_type="Float32")
+location = Topic(name="/pose", msg_type="Pose")
+
+# --- Conditions ---
+# 1. Safety Condition (Composite OR)
+# Stop if proximity_sensor < 0.2m OR Bumper is Hit
+is_danger = (proximity_sensor.msg.data < 0.2) | (bumper.msg.data.is_true())
+
+# 2. Return Home Condition (Composite AND)
+# Return if Battery < 20% AND Distance > 100m
+needs_return = (battery.msg.data < 20.0) & (location.position.z > 100.0)
+
+# --- Events ---
+safety_event = Event(is_danger)
+
+return_event = Event(needs_return, on_change=True)
+```
+
+
+## Next Steps
+
+Now that you understand Events, learn how to attach them to Actions, to execute context-aware methods when an Event triggers.
+
+:::{button-link} actions.html
+:color: primary
+:ref-type: doc
+:outline:
+Learn about Actions →
+:::
+```
+
+## File: design/actions.md
+```markdown
+# Actions
+
+**Executable context-aware behaviors for your robotic system.**
+
+Actions are not just static function calls; they are **dynamic, context-aware routines** that can adapt their parameters in real-time based on live system data.
+
+They can represent:
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Component Behaviors - </span> Routines defined within your components. *e.g., Stopping the robot, executing a motion pattern, or saying a sentence.*
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">System Behaviors - </span> Lifecycle management, configuration and plumbing. *e.g., Reconfiguring a node, restarting a driver, or re-routing input streams.*
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">User Custom Behaviors - </span> Arbitrary Python functions. *e.g., Calling an external REST API, logging to a file, or sending a slack notification.*
+
+
+## Trigger Mechanisms
+
+Actions sit dormant until activated by one of two mechanisms:
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`flash_on;1.2em;sd-text-primary` Event-Driven (Reflexive) - </span> Triggered instantly when a specific **Event** condition is met.
+    **Example:** "Obstacle Detected" $\rightarrow$ `stop_robot()`
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`healing;1.2em;sd-text-primary` Fallback-Driven (Restorative) - </span> Triggered automatically by a Component when its internal **Health Status** degrades.
+    **Example:** "Camera Driver Failed" $\rightarrow$ `restart_driver()`
+
+
+## The `Action` Class
+
+At its core, the `Action` class is a wrapper around any Python callable. It packages a function along with its arguments, preparing them for execution at runtime.
+
+But unlike standard Python functions, Sugarcoat Actions possess a superpower: [Dynamic Data Injection](#dynamic-data-injection). You can bind their arguments directly to live ROS2 Topics, allowing the Action to fetch the latest topic message or a specific message argument the moment it triggers.
+
+```python
+class Action:
+    def __init__(self, method: Callable, args: tuple = (), kwargs: Optional[Dict] = None):
+```
+
+- method: The function or routine to execute.
+
+- args: Positional arguments (can be static values OR dynamic Topic values).
+
+- kwargs: Keyword arguments (can be static values OR dynamic Topic values).
+
+## Basic Usage
+
+```python
+from ros_sugar.component import BaseComponent
+from ros_sugar.core import Action
+import logging
+
+def custom_routine():
+    logging.info("I am executing an action!")
+
+my_component = BaseComponent(node_name='test_component')
+
+# 1. Component Method
+action1 = Action(method=my_component.start)
+
+# 2. Method with keyword arguments
+action2 = Action(method=my_component.update_parameter, kwargs={"param_name": "fallback_rate", "new_value": 1000})
+
+# 3. External Function
+action3 = Action(method=custom_routine)
+```
+
+## Dynamic Data Injection
+
+**This is Sugarcoat's superpower.**
+
+You can create complex, context-aware behaviors without writing any "glue code" or custom parsers.
+
+When you bind an Action argument to a `Topic`, the system automatically resolves the binding at runtime, fetching the current value from the topic attributes and injecting it into your function.
+
+### Example: Cross-Topic Data Access
+
+**Scenario**: An event occurs on Topic 1. You want to log a message that includes the current status from Topic 2 and a sensor reading from Topic 3.
+
+```python
+from ros_sugar.core import Event, Action
+from ros_sugar.io import Topic
+
+# 1. Define Topics
+topic_1 = Topic(name="system_alarm", msg_type="Bool")
+topic_2 = Topic(name="robot_mode", msg_type="String")
+topic_3 = Topic(name="battery_voltage", msg_type="Float32")
+
+# 2. Define the Event
+# Trigger when Topic 1 becomes True
+event_on_first_topic = Event(topic_1.msg.data.is_true())
+
+# 3. Define the Target Function
+def log_context_message(mode, voltage):
+    print(f"System Alarm! Current Mode: {mode}, Voltage: {voltage}V")
+
+# 4. Define the Dynamic Action
+# We bind the function arguments directly to the data fields of Topic 2 and Topic 3
+my_action = Action(
+    method=log_context_message,
+    # At runtime, these are replaced by the actual values from the topics
+    args=(topic_2.msg.data, topic_3.msg.data)
+)
+```
+
+## Pre-defined Actions
+
+Sugarcoat provides a suite of pre-defined, thread-safe actions for managing components and system resources via the `ros_sugar.actions` module.
+
+:::{admonition} Import Note
+:class: tip
+All pre-defined actions are **keyword-only** arguments. They can be imported directly:
+`from ros_sugar.actions import start, stop, reconfigure`
+:::
+
+### Component-Level Actions
+
+These actions directly manipulate the state or configuration of a specific `BaseComponent` derived object.
+
+| Action Method                           | Arguments                                                     | Description                                                                                                                                 |
+| :-------------------------------------- | :------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`start`**                             | `component`                                                   | Triggers the component's Lifecycle transition to **Active**.                                                                                |
+| **`stop`**                              | `component`                                                   | Triggers the component's Lifecycle transition to **Inactive**.                                                                              |
+| **`restart`**                           | `component`<br>`wait_time` (opt)                              | Stops the component, waits `wait_time` seconds (default 0), and Starts it again.                                                            |
+| **`reconfigure`**                       | `component`<br>`new_config`<br>`keep_alive`                   | Reloads the component with a new configuration object or file path. <br>`keep_alive=True` (default) keeps the node running during update.   |
+| **`update_parameter`**                  | `component`<br>`param_name`<br>`new_value`<br>`keep_alive`    | Updates a **single** configuration parameter.                                                                                               |
+| **`update_parameters`**                 | `component`<br>`params_names`<br>`new_values`<br>`keep_alive` | Updates **multiple** configuration parameters simultaneously.                                                                               |
+| **`send_component_service_request`**    | `component`<br>`srv_request_msg`                              | Sends a request to the component's main service with a specific message.                                                                    |
+| **`trigger_component_service`**         | `component`                                                   | Triggers the component's main service. <br>Creates the request message dynamically during runtime from the incoming Event topic data.       |
+| **`send_component_action_server_goal`** | `component`<br>`request_msg`                                  | Sends a goal to the component's main action server with a specific message.                                                                 |
+| **`trigger_component_action_server`**   | `component`                                                   | Triggers the component's main action server. <br>Creates the request message dynamically during runtime from the incoming Event topic data. |
+
+### System-Level Actions
+
+These actions interact with the broader ROS2 system and are executed by the central `Monitor`.
+
+| Action Method               | Arguments                                       | Description                                                              |
+| :-------------------------- | :---------------------------------------------- | :----------------------------------------------------------------------- |
+| **`log`**                   | `msg`<br>`logger_name` (opt)                    | Logs a message to the ROS console.                                       |
+| **`publish_message`**       | `topic`<br>`msg`<br>`publish_rate`/`period`     | Publishes a specific message to a topic. Can be single-shot or periodic. |
+| **`send_srv_request`**      | `srv_name`<br>`srv_type`<br>`srv_request_msg`   | Sends a request to a ROS 2 Service with a specific message.              |
+| **`trigger_service`**       | `srv_name`<br>`srv_type`                        | Triggers the a given ROS2 service.                                       |
+| **`send_action_goal`**      | `server_name`<br>`server_type`<br>`request_msg` | Sends a specific goal to a ROS 2 Action Server.                          |
+| **`trigger_action_server`** | `server_name`<br>`server_type`                  | Triggers a given ROS2 action server.                                 |
+
+
+:::{admonition} Automatic Data Conversion
+:class: note
+When using **`trigger_*`** actions paired with an Event, Sugarcoat attempts to create the required service/action request from the incoming Event topic data automatically via **duck typing**.
+
+If automatic conversion is not possible, or if the action is not paired with an Event, it sends a default (empty) request.
+:::
+```
+
+## File: design/fallbacks.md
+```markdown
+# Fallbacks
+
+**All robots can fail, but smart robots recover.**
+
+Fallbacks are the **Self-Healing Mechanism** of a Sugarcoat component. They define the specific set of [Actions](actions.md) to execute automatically when a failure is detected in the component's [Health Status](status.md).
+
+Instead of crashing or freezing when an error occurs, a Component can be configured to attempt intelligent recovery strategies:
+* *Algorithm stuck?* $\rightarrow$ **Switch** to a simpler backup.
+* *Driver disconnected?* $\rightarrow$ **Re-initialize** the hardware.
+* *Sensor timeout?* $\rightarrow$ **Restart** the node.
+
+```{figure} /_static/images/diagrams/fallbacks_dark.png
+:class: dark-only
+:alt: fig-fallbacks
+:align: center
+```
+
+```{figure} /_static/images/diagrams/fallbacks_light.png
+:class: light-only
+:alt: fig-fallbacks
+:align: center
+
+The Self-Healing Loop
+```
+
+
+## The Recovery Hierarchy
+
+When a component reports a failure, Sugarcoat doesn't just panic. It checks for a registered fallback strategy in a specific order of priority.
+
+This allows you to define granular responses for different types of errors.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`link_off;1.5em;sd-text-primary` 1. System Failure</span> `on_system_fail`
+  **The Context is Broken.**
+  External failures like missing input topics or disk full.
+  *Example Strategy:* Wait for data, or restart the data pipeline.
+
+- <span class="sd-text-danger" style="font-weight: bold; font-size: 1.1em;">{material-regular}`error;1.5em;sd-text-danger` 2. Component Failure</span> `on_component_fail`
+  **The Node is Broken.**
+  Internal crashes or hardware disconnects.
+  *Example Strategy:* Restart the component lifecycle or re-initialize drivers.
+
+- <span class="sd-text-warning" style="font-weight: bold; font-size: 1.1em;">{material-regular}`warning;1.5em;sd-text-warning` 3. Algorithm Failure</span> `on_algorithm_fail`
+  **The Logic is Broken.**
+  The code ran but couldn't solve the problem (e.g., path not found).
+  *Example Strategy:* Reconfigure parameters (looser tolerance) or switch algorithms.
+
+- <span class="sd-text-secondary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`help_center;1.5em;sd-text-secondary` 4. Catch-All</span> `on_fail`
+  **Generic Safety Net.**
+  If no specific handler is found above, this fallback is executed.
+  *Example Strategy:* Log an error or stop the robot.
+
+
+
+## Recovery Strategies
+
+A Fallback isn't just a single function call. It is a robust policy defined by **Actions** and **Retries**.
+
+### 1. The Persistent Retry (Single Action)
+*Try, try again.*
+The system executes the action repeatedly until it returns `True` (success) or `max_retries` is reached.
+
+```python
+# Try to restart the driver up to 3 times
+driver.on_component_fail(fallback=restart(component=driver), max_retries=3)
+
+```
+
+### 2. The Escalation Ladder (List of Actions)
+
+*If at first you don't succeed, try something stronger.*
+You can define a sequence of actions. If the first one fails (after its retries), the system moves to the next one.
+
+1. **Clear Costmaps** (Low cost, fast)
+2. **Reconfigure Planner** (Medium cost)
+3. **Restart Planner Node** (High cost, slow)
+
+```python
+# Tiered Recovery for a Navigation Planner
+planner.on_algorithm_fail(
+    fallback=[
+        Action(method=planner.clear_costmaps),      # Step 1
+        Action(method=planner.switch_to_fallback),  # Step 2
+        restart(component=planner)                  # Step 3
+    ],
+    max_retries=1 # Try each step once before escalating
+)
+
+```
+
+### 3. The "Give Up" State
+
+If all strategies fail (all retries of all actions exhausted), the component enters the **Give Up** state and executes the `on_giveup` action. This is the "End of Line", usually used to park the robot safely or alert a human.
+
+
+
+## How to Implement Fallbacks
+
+### Method A: In Your Recipe (Recommended)
+
+You can configure fallbacks externally without touching the component code. This makes your system modular and reusable.
+
+```python
+from ros_sugar.actions import restart, log
+
+# 1. Define component
+lidar = BaseComponent(component_name='lidar_driver')
+
+# 2. Attach Fallbacks
+# If it crashes, restart it (Unlimited retries)
+lidar.on_component_fail(fallback=restart(component=lidar))
+
+# If data is missing (System), just log it and wait
+lidar.on_system_fail(fallback=log(msg="Waiting for Lidar data..."))
+
+# If all else fails, scream
+lidar.on_giveup(fallback=log(msg="LIDAR IS DEAD. STOPPING ROBOT."))
+
+```
+
+### Method B: In Component Class (Advanced)
+
+For tightly coupled recovery logic (like re-handshaking a specific serial protocol), you can define custom fallback methods inside your class.
+
+:::{tip}
+Use the `@component_fallback` decorator. It ensures the method is only called when the component is in a valid state to handle it.
+:::
+
+```python
+from ros_sugar.core import BaseComponent, component_fallback
+from ros_sugar.core import Action
+
+class MyDriver(BaseComponent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Register the custom fallback internally
+        self.on_system_fail(
+            fallback=Action(self.try_reconnect),
+            max_retries=3
+        )
+
+    def _execution_step(self):
+        try:
+            self.hw.read()
+            self.health_status.set_healthy()
+        except ConnectionError:
+            # This trigger starts the fallback loop!
+            self.health_status.set_fail_system()
+
+    @component_fallback
+    def try_reconnect(self) -> bool:
+        """Custom recovery logic"""
+        self.get_logger().info("Attempting handshake...")
+        if self.hw.connect():
+            return True # Recovery Succeeded!
+        return False    # Recovery Failed, will retry...
+
+```
+```
+
+## File: design/status.md
+```markdown
+# Health Status
+
+The **Health Status** is the heartbeat of a Sugarcoat component. It allows every part of your system to explicitly declare its operational state, not just "Alive" or "Dead," but *how* it is functioning.
+
+Unlike standard ROS2 nodes, Sugarcoat components are **Self-Aware**. They differentiate between a math error (Algorithm Failure), a hardware crash (Component Failure), or a missing input (System Failure).
+
+These reports are broadcast back to the system to trigger:
+* **Alerts:** Notify the operator of specific issues.
+* **Reflexes:** Trigger [Events](events.md) to handle the situation.
+* **Self-Healing:** Execute automatic [Fallbacks](fallbacks.md) to recover the node.
+
+
+
+## Status Hierarchy
+
+The status is broadcast using the [automatika_ros_sugar/msg/ComponentStatus](https://github.com/automatika-robotics/sugarcoat/blob/main/msg/ComponentStatus.msg) message. Sugarcoat defines distinct failure levels to help you pinpoint the root cause of an issue.
+
+- <span class="sd-text-success" style="font-weight: bold; font-size: 1.1em;">{material-regular}`check_circle;1.5em;sd-text-success` HEALTHY</span>
+  **"Everything is awesome."**
+  The component executed its main loop successfully and produced valid output.
+
+- <span class="sd-text-warning" style="font-weight: bold; font-size: 1.1em;">{material-regular}`warning;1.5em;sd-text-warning` ALGORITHM_FAILURE</span>
+  **"I ran, but I couldn't solve it."**
+  The node is healthy, but the logic failed.
+  *Examples:* Path planner couldn't find a path; Object detector found nothing; Optimization solver did not converge.
+
+- <span class="sd-text-danger" style="font-weight: bold; font-size: 1.1em;">{material-regular}`error;1.5em;sd-text-danger` COMPONENT_FAILURE</span>
+  **"I am broken."**
+  An internal crash or hardware issue occurred within this specific node.
+  *Examples:* Memory leak; Exception raised in a callback; Division by zero.
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">{material-regular}`link_off;1.5em;sd-text-primary` SYSTEM_FAILURE</span>
+  **"I am fine, but my inputs are broken."**
+  The failure is caused by an external dependency.
+  *Examples:* Input topic is empty or stale; Network is down; Disk is full.
+
+
+## Reporting Status
+
+Every `BaseComponent` has an internal `self.health_status` object. You interact with this object inside your `_execution_step` or callbacks to declare the current state.
+
+### 1. The Happy Path
+Always mark the component as healthy at the end of a successful execution. This resets any previous error counters.
+
+```python
+self.health_status.set_healthy()
+
+```
+
+### 2. Declaring Failures
+
+When things go wrong, be specific. This helps the [Fallback System](https://www.google.com/search?q=fallbacks.md) decide whether to *Retry* (Algorithm), *Restart* (Component), or *Wait* (System).
+
+**Algorithm Failure:**
+
+```python
+# Optional: List the specific algorithm that failed
+self.health_status.set_fail_algorithm(algorithm_names=["A_Star_Planner"])
+
+```
+
+**Component Failure:**
+
+```python
+# Report that this component crashed
+self.health_status.set_fail_component()
+
+# Or blame a sub-module
+self.health_status.set_fail_component(component_names=["Camera_Driver_API"])
+
+```
+
+**System Failure:**
+
+```python
+# Report missing data on specific topics
+self.health_status.set_fail_system(topic_names=["/camera/rgb", "/odom"])
+
+```
+
+
+## Automatic Broadcasting
+
+You do not need to manually publish the status message.
+
+<span class="sd-text-primary" style="font-weight: bold;">Sugarcoat automatically broadcasts the status at the start of every execution step.</span>
+
+This ensures a consistent "Heartbeat" frequency, even if your algorithm blocks or hangs (up to the threading limits).
+
+:::{tip}
+If you need to trigger an immediate alert from a deeply nested callback or a separate thread, you *can* force a publish:
+`self.health_status_publisher.publish(self.health_status())`
+:::
+
+
+## Implementation Pattern
+
+Here is the robust pattern for writing an execution step using Health Status. This pattern enables the **Self-Healing** capabilities of Sugarcoat.
+
+```python
+def _execution_step(self):
+    try:
+        # 1. Check Pre-conditions (System Level)
+        if self.input_image is None:
+            self.get_logger().warn("Waiting for video stream...")
+            self.health_status.set_fail_system(topic_names=[self.input_image.name])
+            return
+
+        # 2. Run Logic
+        result = self.ai_model.detect(self.input_image)
+
+        # 3. Check Logic Output (Algorithm Level)
+        if result is None or len(result.detections) == 0:
+            self.health_status.set_fail_algorithm(algorithm_names=["yolo_detector"])
+            return
+
+        # 4. Success!
+        self.publish_result(result)
+        self.health_status.set_healthy()
+
+    except ConnectionError:
+        # 5. Handle Crashes (Component Level)
+        # This will trigger the 'on_component_fail' fallback (e.g., Restart)
+        self.get_logger().error("Camera hardware disconnected!")
+        self.health_status.set_fail_component(component_names=["hardware_interface"])
+
+```
+```
+
+## File: advanced/use.md
+```markdown
+# Creating your ROS2 package using Sugarcoat
+
+:::{tip} To see detailed examples on packages created using Sugarcoat, check out [Kompass](https://automatika-robotics.github.io/kompass/) and [EmbodiedAgents](https://automatika-robotics.github.io/embodied-agents/)
+:::
+
+:::{note} Before building your own package based on Sugarcoat, you can check out all the basic design concepts [here](../design/concepts_overview.md)
+:::
+
+1- Start by creating a standard ROS2 python package. (see instruction [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html))
+
+```bash
+ros2 pkg create --build-type ament_python --license Apache-2.0 my-awesome-pkg
+```
+
+2- Create your first functional unit (component) in a new file:
+
+```bash
+cd my-awesome-pkg\my_awesome_pkg
+touch awesome_component.py
+```
+
+3- Setup your component configuration by extending `BaseComponentConfig` based on [attrs](https://www.attrs.org/en/stable/) package:
+
+```python
+from attrs import field, define
+from ros_sugar.config import BaseComponentConfig, base_validators
+
+@define(kw_only=True)
+class AwesomeConfig(BaseComponentConfig):
+    """
+    Component configuration parameters
+    """
+
+    extra_float: float = field(
+        default=10.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
+    )
+
+    extra_flag: bool = field(default=True)
+```
+
+4- Initialize your component by inheriting from `BaseComponent` class. Next, you can code the exact desired functionality in your component. (Refer to the [BaseComponent](../apidocs/ros_sugar/ros_sugar.core.component.md/#classes) API docs for more details on the available methods)
+
+```python
+from ros_sugar.core import ComponentFallbacks, BaseComponent
+from ros_sugar.io import Topic
+
+class AwesomeComponent(BaseComponent):
+    def __init__(
+        self,
+        *,
+        component_name: str,
+        inputs: Optional[Sequence[Topic]] = None,
+        outputs: Optional[Sequence[Topic]] = None,
+        config_file: Optional[str] = None,
+        config: Optional[AwesomeConfig] = None,
+        **kwargs,
+    ) -> None:
+        # Set default config if config is not provided
+        self.config: AwesomeConfig = config or AwesomeConfig()
+
+        super().__init__(
+            component_name=component_name,
+            inputs=inputs,
+            outputs=outputs,
+            config=self.config,
+            config_file=config_file,
+            **kwargs,
+        )
+
+    def _execution_step(self):
+        """
+        The execution step is the main (timed) functional unit in the component. Gets called automatically at every loop step (with a frequency of 'self.config.loop_rate').
+        """
+        super()._execution_step()
+        # Add your main execution step here, to be executed at each loop step for timed components
+```
+
+5- Follow the previous method to create any number of functional units in your package.
+
+6- To use your components with Sugarcoat Launcher in multi-threaded execution, jump to step 11. To Setup multi-process execution check step 7.
+
+7- Next, to use your components with Sugarcoat Launcher in multi-process execution you need to create an entry point for the ROS2 package.
+
+```bash
+cd my-awesome-pkg\my_awesome_pkg
+touch executable.py
+```
+
+8- Import your component and their configuration classes and get the `executable_main` from `ros_sugar` (Sugarcoat):
+
+```python
+#!/usr/bin/env python3
+from ros_sugar import executable_main
+from my_awesome_pkg.awesome_component import AwesomeComponent, AwesomeConfig
+# Import your other components/config here ...
+
+# Create lists of available components/config classes
+_components_list = [AwesomeComponent]
+_configs_list = [AwesomeConfig]
+
+# Create entry point main
+def main(args=None):
+    executable_main(list_of_components=_components_list, list_of_configs=_configs_list)
+```
+
+9- Add your entry point to the ROS2 package setup.py:
+
+```python
+from setuptools import find_packages, setup
+
+package_name = "my_awesome_pkg"
+
+console_scripts = [
+    "executable = my_awesome_pkg.executable:main",
+]
+
+setup(
+    name=package_name,
+    version="1",
+    packages=find_packages(),
+    install_requires=["setuptools"],
+    zip_safe=True,
+    maintainer="Cyberdyne Systems",
+    maintainer_email="contact@cyberdynesystems.com",
+    description="My awesome ROS2 sugarcoated package",
+    entry_points={
+        "console_scripts": console_scripts,
+    },
+)
+```
+
+10- Build your ROS2 package with colcon (instructions [here](https://docs.ros.org/en/iron/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html#build-a-package))
+
+11- Now you can use and launch your awesome new package with Sugarcoat launcher using a simple python script:
+
+```{code-block} python
+:caption: Using Sugarcoat Launcher with your awesome package
+:linenos:
+
+from my_awesome_pkg.awesome_component import AwesomeComponent, AwesomeConfig
+from ros_sugar.actions import LogInfo
+from ros_sugar.events import OnLess
+from ros_sugar import Launcher
+from ros_sugar.io import Topic
+
+# Define a set of topics
+map_topic = Topic(name="map", msg_type="OccupancyGrid")
+audio_topic = Topic(name="voice", msg_type="Audio")
+image_topic = Topic(name="camera/rgb", msg_type="Image")
+
+# Init your components
+my_component = AwesomeComponent(component_name='awesome_component', inputs=[map_topic, image_topic], outputs=[audio_topic])
+
+# Create your events
+low_battery = Event(battery_level_topic.msg.data < 15.0)
+
+# Events/Actions
+my_events_actions: Dict[event.Event, Action] = {
+    low_battery: LogInfo(msg="Battery is Low!)
+}
+
+
+# Create your launcher
+launcher = Launcher()
+
+# Add your package components
+launcher.add_pkg(
+    components=[my_component],
+    package_name='my_awesome_pkg',
+    executable_entry_point='executable',
+    events_actions=my_events_actions,
+    activate_all_components_on_start=True,
+    multiprocessing=True,
+)
+
+# If any component fails -> restart it with unlimited retries
+launcher.on_component_fail(action_name="restart")
+
+# Bring up the system
+launcher.bringup()
+```
+```
+
+## File: advanced/config.md
+```markdown
+# Don't Like YAML? We've Got You 😎
+
+Tired of YAML indentation gymnastics? **We feel your pain — and we fixed it.**
+
+In addition the Pythonic configuration API, Sugarcoat allows you to configure your Components using **YAML**, **TOML**, or **JSON** — just clean, intuitive config files written your way.
+
+
+## YAML
+
+Still love YAML? No problem — just drop the `ros__parameters` noise:
+
+```yaml
+/**: # Common parameters for all components
+  common_int_param: 0
+
+my_component_name:
+  float_param: 1.5
+  boolean_param: true
+```
+
+## TOML
+
+More of a TOML fan? We've got you covered:
+
+```toml
+["/**"]
+common_int_param = 0
+
+
+[my_component_name]
+float_param = 1.5
+boolean_param = true
+```
+
+## JSON
+
+Prefer curly braces? Configure just as easily with JSON:
+
+```json
+{
+    "/**": {
+        "common_int_param": 0,
+    },
+    "my_component_name": {
+        "float_param": 1.5,
+        "boolean_param": true,
+    }
+}
+```
+:::{seealso} You can check complete examples of detailed configuration files in [kompass source code](https://github.com/automatika-robotics/kompass/tree/main/kompass/params)
+:::
+```
+
+## File: advanced/types.md
+```markdown
+# Supported ROS2 Messages
+
+Sugarcoat components create automatic subscribers and callbacks to all inputs and publishers to all outputs.
+
+```{tip}
+Access all callbacks in a `BaseComponent` in `self.callbacks: Dict[str, GenericCallback]` and get the topic incoming message using `get_ouput` method in the [`GenericCallback`](../apidocs/ros_sugar/ros_sugar.io.callbacks.md#classes) class
+```
+
+```{tip}
+Access all publishers in a `BaseComponent` in `self.publishers_dict: Dict[str, Publisher]` and publish a new message to the topic using `publish` method in the [`Publisher`](../apidocs/ros_sugar/ros_sugar.io.publisher.md#classes) class
+```
+
+Many supported message types in Sugarcoat come with pre-defined callback and publisher classes to convert ROS2 messages to Python types. Below is a list of supported messages and the types accepted by their publishers `publish` method and returned by their callback `get_output` method:
+
+```{list-table}
+:widths: 10 30 15 20
+:header-rows: 1
+* - Message
+  - ROS2 package
+  - Callback return type
+  - Publisher converts from
+
+* - **[String](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - std_msgs
+  - `str`
+  - `str`
+
+* - **[Bool](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - std_msgs
+  - `bool`
+  - `bool`
+
+* - **[Float32](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - std_msgs
+  - `float`
+  - `float`
+
+* - **[Float32MultiArray](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - std_msgs
+  - `numpy.ndarray[float]`
+  - `numpy.ndarray[float]`
+
+* - **[Float64](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - std_msgs
+  - `float`
+  - `float`
+
+* - **[Float64MultiArray](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - std_msgs
+  - `numpy.ndarray[float]`
+  - `numpy.ndarray[float]`
+
+* - **[Point](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - geometry_msgs
+  - `numpy.ndarray`
+  - `numpy.ndarray`
+
+* - **[PointStamped](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - geometry_msgs
+  - `numpy.ndarray`
+  - `numpy.ndarray`
+
+* - **[Pose](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - geometry_msgs
+  - `numpy.ndarray`
+  - `numpy.ndarray`
+
+* - **[PoseStamped](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - geometry_msgs
+  - `numpy.ndarray`
+  - `numpy.ndarray`
+
+* - **[Twist](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - geometry_msgs
+  - `geometry_msgs.msg.Twist`
+  - `geometry_msgs.msg.Twist`
+
+* - **[Image](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - sensor_msgs
+  - `numpy.ndarray`
+  - `sensor_msgs.msg.Image | numpy.ndarray`
+
+
+* - **[CompressedImage](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - sensor_msgs
+  - `numpy.ndarray`
+  - `sensor_msgs.msg.CompressedImage | numpy.ndarray`
+
+* - **[Audio](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - sensor_msgs
+  - `bytes`
+  - `str | bytes`
+
+* - **[Odometry](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - nav_msgs
+  - `numpy.ndarray`
+  - `nav_msgs.msg.Odometry`
+
+* - **[LaserScan](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - sensor_msgs
+  - `sensor_msgs.msg.LaserScan`
+  - `sensor_msgs.msg.LaserScan`
+
+* - **[Path](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - nav_msgs
+  - `nav_msgs.msg.Path`
+  - `nav_msgs.msg.Path`
+
+* - **[MapMetaData](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - nav_msgs
+  - `Dict`
+  - `nav_msgs.msg.MapMetaData`
+
+* - **[OccupancyGrid](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - nav_msgs
+  - `nav_msgs.msg.OccupancyGrid | np.ndarray | Dict`
+  - `numpy.ndarray`
+
+* - **[ComponentStatus](../apidocs/ros_sugar/ros_sugar.io.supported_types.md#classes)**
+  - ros_sugar_interfaces
+  - `ros_sugar_interfaces.msg.ComponentStatus`
+  - `ros_sugar_interfaces.msg.ComponentStatus`
+
+```
+```
+
+## File: features/web_ui.md
+```markdown
+# Zero-Code Dynamic Web UI
+
+The **Dynamic Web UI** brings an entirely new level of **system visibility**, **control**, and **ease of use** to Sugarcoat Recipes.
+Built with [**FastHTML**](https://www.fastht.ml/) and [**MonsterUI**](https://monsterui.answer.ai/), it **automatically generates a responsive, extensible web interface** for any Sugarcoat recipe, eliminating the need for manual front-end work.
+
+With zero configuration, your ROS2 system instantly becomes a **fully monitorable and configurable web application**, complete with real-time data streaming and visual feedback.
+
+## Key Capabilities
+
+The Dynamic Web UI acts as a **universal dashboard** for your Sugarcoat recipes. Once enabled, it introspects your recipe's `Components`, `Inputs`, and `Outputs`, and automatically builds a front-end to match your running system.
+
+You can view, control, and debug every part of your ROS2 application directly from the browser — no manual HTML, JavaScript, or dashboard setup required.
+
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Automatic Settings UI</span> -
+  Dynamically generates interfaces for configuring the parameters and settings of all `Components` used in your recipe.
+
+  <p align="center">
+  <picture align="center">
+    <img alt="Updating component settings through UI Example GIF" src="https://automatikarobotics.com/docs/ui_updating_settings.gif" width="90%">
+  </picture>
+  </p>
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Auto I/O Visualization</span> -
+  Automatically builds front-end controls and data visualizations for all defined UI `Inputs` and `Outputs`.
+
+  <p align="center">
+  <picture align="center">
+    <img alt="Updating component settings through UI Example GIF" src="https://automatikarobotics.com/docs/ui_navigation.gif" width="90%">
+  </picture>
+  </p>
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">WebSocket-Based Streaming</span> -
+  Provides bidirectional, low-latency communication for **text**, **image**, **map** and **audio** data streams.
+
+<p align="center">
+<picture align="center">
+  <img alt="EmbodiedAgents UI Example GIF" src="https://automatikarobotics.com/docs/ui_agents_vlm.gif" width="80%">
+</picture>
+</p>
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Responsive Layouts</span> -
+  Uses grid-based, adaptive layouts for clear visualization of system elements, optimized for both desktop and mobile.
+
+  <p align="center">
+  <picture align="center">
+    <img alt="Updating component settings through UI Example GIF" src="https://automatikarobotics.com/docs/ui_responsive_layout.gif" width="90%">
+  </picture>
+  </p>
+
+- <span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;">Extensible Design</span> -
+  Developers can extend the UI to support **custom message types**, **interactive widgets**, or **bespoke visualizations**.
+
+
+## {material-regular}`rocket_launch;1.5em;sd-text-primary` Automatic UI Generation in Action
+
+
+Lets see the **Dynamic Web UI** in action by automatically generating a fully functional, real-time interface for interacting with your Sugarcoat recipe.
+
+In the example below, we show how to enable the UI directly within a recipe to send and receive text messages, visualize detections, or stream live camera images from your robot — all without writing a single line of code.
+
+For a complete, real-world example, see how a similar UI is used in the VLM agent recipe from [**EmbodiedAgents**](https://automatika-robotics.github.io/embodied-agents/).
+
+
+### Step 1 — Define Your Topics
+
+Begin by declaring the topics that represent your system's **inputs** and **outputs**:
+
+```python
+from ros_sugar import Launcher
+from ros_sugar.io import Topic
+
+# Configure your Topics
+image_topic = Topic(name="image_raw", msg_type="Image")     # the robot camera topic
+detections_topic = Topic(name="detections", msg_type="Detections")      # a detections component topic (see EmbodiedAgents)
+
+text_query = Topic(name="question", msg_type="String")
+text_answer = Topic(name="answer", msg_type="String")
+```
+
+### Step 2 — Define your Components and Initialize the Launcher
+
+```python
+# Configure your actual components here
+# my_component_1 = ...
+# my_component_2 = ...
+
+launcher = Launcher()
+
+# Add your configured components to the launcher
+# launcher.add_pkg(
+#     package_name="my package",
+#     components=[my_component_1, my_component_2],
+#     multiprocessing=True,    # Optionally enable multi-processing
+# )
+```
+
+### Step 3 — Enable the Web UI
+
+Enable the Dynamic Web UI by calling `enable_ui` method on your `Launcher` instance. In this example:
+
+- The `text_query` topic is set as a UI input, allowing the user to send text messages (publish to ROS2 topic) directly from the browser.
+
+- The `text_answer` and `detections_topic` (or `image_topic`) are UI outputs, meaning the UI automatically subscribes to these topics and displays messages in real time.
+
+```python
+launcher.enable_ui(
+    inputs=[text_query],
+    outputs=[text_answer, detections_topic],
+)
+
+# Bringup you recipe
+launcher.bringup()
+```
+
+### Resulting Interface
+
+When the recipe runs, a dynamic web interface like the one below is automatically generated — ready to send, receive, and visualize data from your components.
+
+<p align="center">
+<picture align="center">
+  <img alt="EmbodiedAgents UI Example GIF" src="https://automatikarobotics.com/docs/ui_agents_router.gif" width="80%">
+</picture>
+</p>
+
+:::{note}
+The UI also automatically renders configuration panels for all registered components, allowing you to inspect and modify parameters in real time — no manual UI setup required.
+:::
+```
+
+## File: advanced/create_service.md
+```markdown
+# Converting a Sugarcoat Recipe into a systemd Service
+
+:::{note}
+Recipes written with Sugarcoat packages can be easily launched as `systemd` services using the `create_service` tool provided with the package.
+:::
+
+:::{tip}
+This is ideal for deploying Sugarcoat components in production environments or embedded systems where automatic startup and restart behavior is critical.
+:::
+
+Once you have a Python script written for your Sugarcoat-based package (lets call it `my_awesome_system.py`), you can install it as a systemd service with the following command:
+
+```bash
+ros2 run automatika_ros_sugar create_service <path-to-python-script> <service-name>
+```
+
+## Arguments
+
+- `<path-to-python-script>`: The full path to your Sugarcoat Python script (e.g., `/path/to/my_awesome_system.py`).
+- `<service-name>`: The name of the systemd service (do **not** include the `.service` extension).
+
+## Example
+
+```bash
+ros2 run automatika_ros_sugar create_service ~/ros2_ws/my_awesome_system.py my_awesome_service
+```
+
+This command will install and optionally enable a `systemd` service named `my_awesome_service.service`.
+
+## Full Command Usage
+
+```text
+usage: create_service [-h] [--service-description SERVICE_DESCRIPTION]
+                      [--install-path INSTALL_PATH]
+                      [--source-workspace-path SOURCE_WORKSPACE_PATH]
+                      [--no-enable] [--restart-time RESTART_TIME]
+                      service_file_path service_name
+```
+
+Install a Python script as a systemd service.
+
+### Positional Arguments
+
+- **`service_file_path`**: Path to the Python script you want to install as a service.
+- **`service_name`**: Name of the systemd service (without `.service` extension).
+
+### Optional Arguments
+
+- `-h, --help`: Show the help message and exit.
+- `--service-description SERVICE_DESCRIPTION`: Human-readable description of the service. Defaults to `"Sugarcoat Description"`.
+- `--install-path INSTALL_PATH`: Directory to install the systemd service file. Defaults to `/etc/systemd/system`.
+- `--source-workspace-path SOURCE_WORKSPACE_PATH`: Path to the ROS workspace `setup` script. If omitted, it auto-detects the active ROS distribution.
+- `--no-enable`: Skip enabling the service after installation.
+- `--restart-time RESTART_TIME`: Time to wait before restarting the service if it fails (e.g., `3s`). Default is `3s`.
+
+## What This Does
+
+This command:
+
+1. Creates a `.service` file for `systemd`.
+2. Installs it in the specified or default location.
+3. Sources the appropriate ROS environment.
+4. Optionally enables and starts the service immediately.
+
+Once installed, you can manage the service using standard `systemd` commands:
+
+```bash
+sudo systemctl start my_awesome_service
+sudo systemctl status my_awesome_service
+sudo systemctl stop my_awesome_service
+sudo systemctl enable my_awesome_service
+```
+```
+
+## File: advanced/srvs.md
+```markdown
+# Default Services In Sugarcoat Components
+
+In addition to the standard [ROS2 Lifecycle Node](https://github.com/ros2/demos/blob/rolling/lifecycle/README.rst) services, Sugarcoat Components provide a powerful set of built-in services for live reconfiguration. These services allow you to dynamically adjust inputs, outputs, and parameters on-the-fly, making it easier to respond to changing runtime conditions or trigger intelligent behavior in response to events. Like any ROS2 services, they can be called from other Nodes or with the ROS2 CLI, and can also be called programmatically as part of an action sequence or event-driven workflow in the launch script.
+
+## Replacing an Input or Output with a different Topic
+You can swap an existing topic connection (input or output) with a different topic online without restarting your script. The service will stop the running lifecycle node, replace the connection and restart it again.
+
+- **Service Name: /{component_name}/change_topic**
+- **Service Type: [automatika_ros_sugar/srv/ReplaceTopic](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ReplaceTopic.srv)**
+
+
+### Example
+
+To replace the output topic name of the `AwesomeComponent` created in the [previous example](use.md), we can send the following service e call to the node:
+
+```shell
+ros2 service call /awesome_component/change_topic automatika_ros_sugar/srv/ReplaceTopic "{direction: 1, old_name: '/voice', new_name: '/audio_device_0', new_msg_type: 'Audio'}"
+```
+
+## Updating a configuration parameter value
+This `ChangeParameter` service allows updating a single configuration parameter at runtime. You can choose whether the component remains active during the change, or temporarily deactivates for a safe update.
+
+- **Service Name: /{component_name}/update_config_parameter**
+- **Service Type: [automatika_ros_sugar/srv/ChangeParameter](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ChangeParameter.srv)**
+
+### Example
+
+Lets change the `loop_rate` for our `AwesomeComponent` to `1Hz` with restarting the node:
+
+```shell
+ros2 service call /awesome_component/update_config_parameter automatika_ros_sugar/srv/ChangeParameter "{name: 'loop_rate', value: '1', keep_alive: false}"
+```
+
+## Updating a set of configuration parameters
+The `ChangeParameters` service allows updating multiple parameters at once, making it ideal for switching modes, profiles, or reconfiguring components in batches. Similar to `ChangeParameter` service, you can choose whether the component stays active or temporarily deactivates during the update.
+
+- **Service Name: /{component_name}/update_config_parameters**
+- **Service Type: [automatika_ros_sugar/srv/ChangeParameters](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ChangeParameters.srv)**
+
+
+### Example
+
+Lets change multiple parameters at once for our `AwesomeComponent` with restarting the node:
+
+```shell
+ros2 service call /awesome_component/update_config_parameters automatika_ros_sugar/srv/ChangeParameters "{names: ['loop_rate', 'fallback_rate'], values: ['1', '10'], keep_alive: false}"
+```
+
+## Reconfiguring the Component from a given file
+The `ConfigureFromFile` service lets you reconfigure an entire component from a YAML, JSON or TOML configuration file while the node is online. This is useful for applying scenario-specific settings, or restoring saved configurations—all in a single operation.
+
+- **Service Name: /{component_name}/configure_from_file**
+- **Service Type: [automatika_ros_sugar/srv/ConfigureFromFile](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ConfigureFromFile.srv)**
+
+
+### Example
+
+Example YAML configuration file for our `AwesomeComponent`:
+
+```yaml
+/**: # Common parameters for all components
+  fallback_rate: 10.0
+
+# Parameters specific to component under component name
+awesome_component:
+  loop_rate: 100.0
+```
+
+## Executing a Component's method
+
+The `ExecuteMethod` service enables runtime invocation of any class method in the component. This is useful for triggering specific behaviors, tools, or diagnostics during runtime without writing additional interfaces.
+
+- **Service Name: /{component_name}/execute_method**
+- **Service Type: [automatika_ros_sugar/srv/ExecuteMethod](https://github.com/automatika-robotics/sugarcoat/blob/main/srv/ExecuteMethod.srv)**
+```
+
+## File: features/robot_plugins.md
+```markdown
+# Universal Robot Plugins
+
+Sugarcoat introduces Robot Plugins to **seamlessly bridge your automation recipes with diverse robot hardware**.
+
+By abstracting manufacturer-specific ROS2 interfaces, <span class="text-red-strong">plugins allow you to write generic, portable automation logic that runs on any robot without code changes</span>
+
+## What are Robot Plugins?
+
+Different robot manufacturers often use custom messages, or services in their ROS2 interfaces to handle basic operations like sending robot actions or getting diverse low-level feedback such as odometry, battery info, etc. With traditional ROS2 packages, you will need to do code changes to handle each new message/service type. This creates a "lock-in" where your code becomes tightly coupled to a specific robot.
+
+Sugarcoat Robot Plugins acts as a translation layer. It sits between your Sugarcoat application and the robot's hardware with all its custom types.
+
+## Why Robot Plugins?
+
+* <span class="text-blue">**Portability:**</span> Write your automation recipe once using standard types. Switch robots by simply changing the plugin configuration.
+
+* <span class="text-blue">**Simplicity:**</span> The plugin handles all the complex type conversions and service calls behind the scenes.
+
+* <span class="text-blue">**Modularity:**</span> Keep hardware-specific logic isolated in a separate package.
+
+## How to Create a Robot Plugin
+
+To create your own custom plugin, you can create a ROS2 package based on the example [myrobot_plugin_interface](https://github.com/automatika-robotics/robot-plugin-example) that we have created.
+
+Any plugin package must export a Python module containing two specific dictionaries in its `__init__.py`:
+
+1.  `robot_feedback`: Maps standard types to the robot's specific feedback topics (e.g., getting `IMU` or `Odometry` like information).
+2.  `robot_action`: Maps standard types to the robot's specific action topics or service clients (e.g., sending `Twist` like commands).
+
+The main steps to creating the plugin:
+
+0.  (Optional) **Define Custom ROS Interfaces**:
+
+    If your robot's manufacturer-specific messages or services are not available to import from another package, define them in `msg/` and `srv/` folders.
+
+1.  **Implement Type Converters (`types.py`)**:
+
+    Create a `types.py` module to handle data translation.
+    * **For Each Feedback:** Define a callback function that transforms the custom ROS2 message into a standard Python type (like a NumPy array) which you can use directly in your system. Register it using `create_supported_type`.
+    * **For Each Action:** Define a converter function that transforms standard Python inputs into the custom ROS2 message.
+
+2.  **Handle Service Clients (`clients.py`)**:
+
+    If your robot actions require calling a ROS2 service, create a class inheriting from `RobotPluginServiceClient` in `clients.py`. Implement the `_publish` method to construct and send the service request.
+
+3.  **Register the Plugin (`__init__.py`)**:
+
+    Expose your new capabilities in `__init__.py` by defining two dictionaries:
+    * `robot_feedback`: Map standard names to `Topic` objects using your custom types.
+    * `robot_action`: Map standard names to `Topic` objects (for topics) or Client classes (for services).
+
+4.  **Configure the Build**:
+
+    Use the same `CMakeLists.txt` and `package.xml` for your new plugin package. Make sure to add any additional used dependencies.
+
+Check the [robot plugin example details](#an-example-robot-plugin) below for a complete breakdown of the process.
+
+
+## How to Use a Plugin in your Recipe
+
+Using a robot plugin in your Sugarcoat automation recipe is extremely straightforward. After building and installing your plugin package, all you need to do is to specify the plugin package name when initializing the `Launcher` and Sugarcoat will take it from there!
+
+```python
+from ros_sugar import Launcher
+
+# ... Define your components/events/actions/fallbacks here ...
+
+# Initialize the launcher with your specific robot plugin
+launcher = Launcher(robot_plugin="myrobot_plugin")
+
+# ... Add it all to the launcher and bringup the system ...
+```
+
+## An Example Robot Plugin
+
+Lets explore an example of a custom plugin called [`myrobot_plugin`](https://github.com/automatika-robotics/robot-plugin-example). The plugin is made to bridge a standard robot commands (`Twist`) and a standard feedback (`Odometry`) to two custom interfaces.
+
+### 1. Custom Interfaces
+
+The plugin defines three ROS2 interfaces as an example of custom interfaces to communicate with the robot's ROS2 interface exposed by the manufacturer:
+
+* **`CustomOdom.msg`**: A feedback message containing position (x, y, z) and orientation (pitch, roll, yaw).
+* **`CustomTwist.msg`**: A command message for 2D velocity (vx, vy) and angular velocity (vyaw).
+* **`RobotActionCall.srv`**: A service definition used to trigger actions on the robot, returning a success boolean.
+
+### 2. Plugin Implementation
+
+The core logic resides in the `myrobot_plugin` Python module.
+
+#### Supported Types (`types.py`)
+
+This module defines how to translate between the custom robot types (`CustomOdom` and `CustomTwist`) and standard python types
+
+* **Feedback (Callbacks):** Functions that convert incoming ROS messages into standard types.
+    * *Example:* `_odom_callback` converts `CustomOdom` into a NumPy array `[x, y, yaw]`.
+* **Actions (Converters):** Functions that convert standard commands (like `vx`, `vy`, `omega`) into custom ROS2 messages.
+    * *Example:* `_ctr_converter` converts velocity inputs into a `CustomTwist` message.
+
+```python
+from ros_sugar.robot_plugin import create_supported_type
+# Example: Creating a supported type for feedback
+RobotOdometry = create_supported_type(CustomOdom, callback=_odom_callback)
+```
+
+#### Service Clients (`clients.py`)
+
+For robots that handle actions via ROS services (instead of topics), this module defines custom client wrappers inheriting from RobotPluginServiceClient.
+
+* **CustomTwistClient**: Wraps the RobotActionCall service. It implements the _publish method to populate the service request (vx, vy, vyaw) and send it to the robot.
+
+#### Plugin Entry Point (`__init__.py`)
+
+This file exposes the plugin capabilities to the framework using two specific dictionaries:
+
+1. **robot_feedback**: Maps standard feedback names (e.g., "Odometry") to Topic instances using the custom types defined in types.py.
+
+2. **robot_action**: Maps standard action names (e.g., "Twist") to either a Topic or a ServiceClientHandler (like CustomTwistClient).
+
+```python
+from . import types, clients
+
+# Example configuration
+robot_feedback = {
+    "Odometry": Topic(name="myrobot_odom", msg_type=types.RobotOdometry),
+}
+
+robot_action = {
+    "Twist": clients.CustomTwistClient
+}
+```
+
+### 3. Testing
+
+A `server_node.py` is provided to simulate the robot's ROS2 server. It spins a minimal node that listens to `robot_control_service` requests and logs the received velocity commands, allowing you to test the `CustomTwistClient` functionality.
+
+
+## See the Example Robot Plugin in Action
+
+Here the example plugin is tested with [**Kompass**](https://github.com/automatika-robotics/kompass) which is an event-driven navigation framework build on top of Sugarcoat.
+
+- To replicate this test, start by installing Kompass from source by following the instructions [here](https://automatika-robotics.github.io/kompass/install.html)
+
+- Pull the [myrobot_plugin_interface](https://github.com/automatika-robotics/robot-plugin-example) to your ROS2 workspace and build it.
+
+Start by running the [`turtlebot3_test`](https://github.com/automatika-robotics/kompass/blob/main/kompass/recipes/turtlebot3.py) without the plugin and observe the subscribed and published topics. You will see that the components are subscribed to `/odometry/filtered` topic of type `Odometry`. The `DriveManager` component will also be publishing the robot commands as `Twist` messages on `/cmd_vel` topic (or `TwistStamped` based on your ROS2 distribution).
+
+To enable the plugin, just edit one line in the recipe to change the existing launcher initialization from the following:
+```python
+
+launcher = Launcher(robot_plugin="myrobot_plugin")
+
+```
+to:
+
+```python
+
+launcher = Launcher(config_file=config_file, robot_plugin="myrobot_plugin")
+
+```
+
+Re-run the recipe after enabling the plugin, and Voila! The components now will be expecting the plugin odometry topic of type `CustomOdometry`. Moreover, the `DriveManager` will no longer publish the `/cmd_vel` topic. Instead, it has created a service client in accordance with our custom plugin.
+
+
+```{youtube} oZN6pcJKgfY
+:width: 600
+:height: 338
+:align: center
+```
+```
+

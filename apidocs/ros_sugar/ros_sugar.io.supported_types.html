@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="indigo" data-content_root="../../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ros_sugar.io.supported_types - Sugarcoat 0.5.0 documentation</title><link rel="shortcut icon" href="../../_static/favicon.png"/><link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" /><link rel="next" title="ros_sugar.io.publisher" href="ros_sugar.io.publisher.html" /><link rel="prev" title="ros_sugar.io.callbacks" href="ros_sugar.io.callbacks.html" />
+      <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/apidocs/ros_sugar/ros_sugar.io.supported_types.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d1c6635e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/shibuya.css?v=44020203" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link media="print" rel="stylesheet" type="text/css" href="../../_static/print.css?v=20ff2c19" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=cade9008" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://automatika-robotics.github.io/sugarcoat/apidocs/ros_sugar/ros_sugar.io.supported_types.html"/>
+  <meta property="og:title" content="ros_sugar.io.supported_types"/>
+    <meta name="twitter:card" content="summary"/>
+  </head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../../index.html">
+      <img class="light-logo" src="../../_static/SUGARCOAT_LIGHT.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <img class="dark-logo" src="../../_static/SUGARCOAT_DARK.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <strong>Sugarcoat</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul><li class="link">
+          <a href="https://automatikarobotics.com/">
+            <span>Automatika Robotics</span></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+  <a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+    <iconify-icon icon="simple-icons:discord"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Overview</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../overview.html">Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../install.html">Getting Started</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Design Concepts</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/component.html">Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/topics.html">Topics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/status.html">Health Status</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/events.html">Events</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/actions.html">Actions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/launcher.html">Recipes Launcher</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Out-of-the-Box Features</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../features/web_ui.html">Zero-Code Dynamic Web UI</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../features/robot_plugins.html">Universal Robot Plugins</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Using Sugarcoat</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/create_service.html">Converting a Sugarcoat Recipe into a systemd Service</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/config.html">Don&#8217;t Like YAML? We&#8217;ve Got You &#128526;</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">References</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../index.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3 current"><a class="reference internal" href="ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.actions</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#module-contents">Module Contents</a><ul>
+<li><a class="reference internal" href="#classes">Classes</a></li>
+<li><a class="reference internal" href="#functions">Functions</a></li>
+<li><a class="reference internal" href="#api">API</a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.add_additional_datatypes"><code class="docutils literal notranslate"><span class="pre">add_additional_datatypes()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.get_ros_msg_fields_dict"><code class="docutils literal notranslate"><span class="pre">get_ros_msg_fields_dict()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.set_ros_msg_from_dict"><code class="docutils literal notranslate"><span class="pre">set_ros_msg_from_dict()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Meta"><code class="docutils literal notranslate"><span class="pre">Meta</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType"><code class="docutils literal notranslate"><span class="pre">SupportedType</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.String"><code class="docutils literal notranslate"><span class="pre">String</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.String.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.String.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Bool"><code class="docutils literal notranslate"><span class="pre">Bool</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Bool.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Bool.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float32"><code class="docutils literal notranslate"><span class="pre">Float32</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float32.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float32.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float32MultiArray"><code class="docutils literal notranslate"><span class="pre">Float32MultiArray</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float32MultiArray.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float32MultiArray.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float64"><code class="docutils literal notranslate"><span class="pre">Float64</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float64.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float64.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float64MultiArray"><code class="docutils literal notranslate"><span class="pre">Float64MultiArray</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float64MultiArray.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Float64MultiArray.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Image"><code class="docutils literal notranslate"><span class="pre">Image</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Image.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Image.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.CompressedImage"><code class="docutils literal notranslate"><span class="pre">CompressedImage</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.CompressedImage.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.CompressedImage.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Audio"><code class="docutils literal notranslate"><span class="pre">Audio</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Audio.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Audio.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.MapMetaData"><code class="docutils literal notranslate"><span class="pre">MapMetaData</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.MapMetaData.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.MapMetaData.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Odometry"><code class="docutils literal notranslate"><span class="pre">Odometry</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Odometry.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Odometry.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.LaserScan"><code class="docutils literal notranslate"><span class="pre">LaserScan</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.LaserScan.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.LaserScan.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Path"><code class="docutils literal notranslate"><span class="pre">Path</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Path.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Path.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.OccupancyGrid"><code class="docutils literal notranslate"><span class="pre">OccupancyGrid</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.OccupancyGrid.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.OccupancyGrid.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Point"><code class="docutils literal notranslate"><span class="pre">Point</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Point.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Point.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.PointStamped"><code class="docutils literal notranslate"><span class="pre">PointStamped</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.PointStamped.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.PointStamped.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Pose"><code class="docutils literal notranslate"><span class="pre">Pose</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Pose.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Pose.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.PoseStamped"><code class="docutils literal notranslate"><span class="pre">PoseStamped</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.PoseStamped.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.PoseStamped.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.ComponentStatus"><code class="docutils literal notranslate"><span class="pre">ComponentStatus</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.ComponentStatus.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.ComponentStatus.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Twist"><code class="docutils literal notranslate"><span class="pre">Twist</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Twist.convert"><code class="docutils literal notranslate">convert()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.io.supported_types.Twist.get_ros_type"><code class="docutils literal notranslate">get_ros_type()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div><div id="ethical-ad-placement" data-ea-publisher="readthedocs"></div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../../index.html"><span itemprop="name">Sugarcoat</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">API Reference</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="2" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="ros_sugar.html"><span itemprop="name"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></span></a>
+        <span>/</span>
+        <meta itemprop="position" content="3" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="ros_sugar.io.html"><span itemprop="name"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></span></a>
+        <span>/</span>
+        <meta itemprop="position" content="4" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></strong>
+        <meta itemprop="position" content="5" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="https://automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.io.supported_types.md.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="https://automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.io.supported_types.md.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="https://automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.io.supported_types.md.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:markdown"></iconify-icon>
+            <span>View as Markdown</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.io.supported_types.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.io.supported_types.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue" role="main">
+          <section class="tex2jax_ignore mathjax_ignore" id="module-ros_sugar.io.supported_types">
+<span id="ros-sugar-io-supported-types"></span><h1><a class="reference internal" href="#module-ros_sugar.io.supported_types" title="ros_sugar.io.supported_types"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a><a class="headerlink" href="#module-ros_sugar.io.supported_types" title="Link to this heading">¶</a></h1>
+<p>ROS Topics Supported Message Types</p>
+<section id="module-contents">
+<h2>Module Contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
+<section id="classes">
+<h3>Classes<a class="headerlink" href="#classes" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-left">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Meta" title="ros_sugar.io.supported_types.Meta"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Meta</span></code></a></p></td>
+<td><p>Meta.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SupportedType</span></code></a></p></td>
+<td><p>Class used to define all supported data types (ROS messages)
+callback: Callback associated with specified type
+_publish: ROS message creation method associate with specified type</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.String" title="ros_sugar.io.supported_types.String"><code class="xref py py-obj docutils literal notranslate"><span class="pre">String</span></code></a></p></td>
+<td><p>String.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Bool" title="ros_sugar.io.supported_types.Bool"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Bool</span></code></a></p></td>
+<td><p>Bool.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Float32" title="ros_sugar.io.supported_types.Float32"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Float32</span></code></a></p></td>
+<td><p>Float32.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Float32MultiArray" title="ros_sugar.io.supported_types.Float32MultiArray"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Float32MultiArray</span></code></a></p></td>
+<td><p>Float32MultiArray.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Float64" title="ros_sugar.io.supported_types.Float64"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Float64</span></code></a></p></td>
+<td><p>Float64.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Float64MultiArray" title="ros_sugar.io.supported_types.Float64MultiArray"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Float64MultiArray</span></code></a></p></td>
+<td><p>Float64MultiArray.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Image" title="ros_sugar.io.supported_types.Image"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Image</span></code></a></p></td>
+<td><p>Image.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.CompressedImage" title="ros_sugar.io.supported_types.CompressedImage"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CompressedImage</span></code></a></p></td>
+<td><p>CompressedImage format usually provided by camera vendors</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Audio" title="ros_sugar.io.supported_types.Audio"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Audio</span></code></a></p></td>
+<td><p>Audio.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.MapMetaData" title="ros_sugar.io.supported_types.MapMetaData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MapMetaData</span></code></a></p></td>
+<td><p>MapMetaData.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Odometry" title="ros_sugar.io.supported_types.Odometry"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Odometry</span></code></a></p></td>
+<td><p>Odometry</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.LaserScan" title="ros_sugar.io.supported_types.LaserScan"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LaserScan</span></code></a></p></td>
+<td><p>LaserScan</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Path" title="ros_sugar.io.supported_types.Path"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Path</span></code></a></p></td>
+<td><p>Path</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.OccupancyGrid" title="ros_sugar.io.supported_types.OccupancyGrid"><code class="xref py py-obj docutils literal notranslate"><span class="pre">OccupancyGrid</span></code></a></p></td>
+<td><p>OccupancyGrid</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Point" title="ros_sugar.io.supported_types.Point"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Point</span></code></a></p></td>
+<td><p>Point</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.PointStamped" title="ros_sugar.io.supported_types.PointStamped"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PointStamped</span></code></a></p></td>
+<td><p>PointStamped</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Pose" title="ros_sugar.io.supported_types.Pose"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Pose</span></code></a></p></td>
+<td><p>Pose</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.PoseStamped" title="ros_sugar.io.supported_types.PoseStamped"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PoseStamped</span></code></a></p></td>
+<td><p>PoseStamped</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.ComponentStatus" title="ros_sugar.io.supported_types.ComponentStatus"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ComponentStatus</span></code></a></p></td>
+<td><p>Component Health Status</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.Twist" title="ros_sugar.io.supported_types.Twist"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Twist</span></code></a></p></td>
+<td><p>Twist for Control Commands</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="functions">
+<h3>Functions<a class="headerlink" href="#functions" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-left">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.add_additional_datatypes" title="ros_sugar.io.supported_types.add_additional_datatypes"><code class="xref py py-obj docutils literal notranslate"><span class="pre">add_additional_datatypes</span></code></a></p></td>
+<td><p>Add additional SupportedType classes to the list of supported ROS2 messages</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.get_ros_msg_fields_dict" title="ros_sugar.io.supported_types.get_ros_msg_fields_dict"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_ros_msg_fields_dict</span></code></a></p></td>
+<td><p>Parses the fields names and types from any ROS message into a dict.
+Handles nested messages and arrays.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.io.supported_types.set_ros_msg_from_dict" title="ros_sugar.io.supported_types.set_ros_msg_from_dict"><code class="xref py py-obj docutils literal notranslate"><span class="pre">set_ros_msg_from_dict</span></code></a></p></td>
+<td><p>Creates a ROS message object from a dictionary structure.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="api">
+<h3>API<a class="headerlink" href="#api" title="Link to this heading">¶</a></h3>
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.add_additional_datatypes">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">add_additional_datatypes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">types</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">type</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.add_additional_datatypes" title="Link to this definition">¶</a></dt>
+<dd><p>Add additional SupportedType classes to the list of supported ROS2 messages</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>types</strong> (<em>List</em><em>[</em><em>type</em><em>]</em>) – List of supported types</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.get_ros_msg_fields_dict">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">get_ros_msg_fields_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msg_class</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">type</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.get_ros_msg_fields_dict" title="Link to this definition">¶</a></dt>
+<dd><p>Parses the fields names and types from any ROS message into a dict.
+Handles nested messages and arrays.</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dict where value is type string, or nested dict (or list of dicts for arrays)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.set_ros_msg_from_dict">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">set_ros_msg_from_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msg_class</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.set_ros_msg_from_dict" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a ROS message object from a dictionary structure.</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>msg_class</strong> – The ROS message class to instantiate (e.g., geometry_msgs.msg.Point)</p></li>
+<li><p><strong>data_dict</strong> – Dictionary containing the values (keys must match message fields)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An instance of msg_class populated with data</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Meta">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Meta</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Meta" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-obj docutils literal notranslate"><span class="pre">type</span></code></p>
+<p>Meta.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.SupportedType">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">SupportedType</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.SupportedType" title="Link to this definition">¶</a></dt>
+<dd><p>Class used to define all supported data types (ROS messages)
+callback: Callback associated with specified type
+_publish: ROS message creation method associate with specified type</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.SupportedType.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">output</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.SupportedType.convert" title="Link to this definition">¶</a></dt>
+<dd><p>ROS message converter function for datatype</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>args</strong></p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Any</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.SupportedType.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.SupportedType.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd><p>Getter of the ROS2 message type</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ROS2 type</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>type</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.String">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">String</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.String" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>String.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.String.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">std_msgs.msg.String</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.String.convert" title="Link to this definition">¶</a></dt>
+<dd><p>Takes a string and returns a ROS message of type String</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>String</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.String.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.String.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Bool">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Bool</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Bool" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Bool.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Bool.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">std_msgs.msg.Bool</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Bool.convert" title="Link to this definition">¶</a></dt>
+<dd><p>Takes a bool and returns a ROS message of type Bool</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Bool.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Bool.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float32">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Float32</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float32" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Float32.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float32.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">std_msgs.msg.Float32</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float32.convert" title="Link to this definition">¶</a></dt>
+<dd><p>Takes a float and returns a ROS message of type Float32</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Float32</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float32.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float32.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float32MultiArray">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Float32MultiArray</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float32MultiArray" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Float32MultiArray.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float32MultiArray.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">std_msgs.msg.Float32MultiArray</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float32MultiArray.convert" title="Link to this definition">¶</a></dt>
+<dd><p>Takes a numpy array and returns a ROS message of type Float32MultiArray</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Float32</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float32MultiArray.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float32MultiArray.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float64">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Float64</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float64" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Float64.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float64.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">std_msgs.msg.Float64</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float64.convert" title="Link to this definition">¶</a></dt>
+<dd><p>Takes a float and returns a ROS message of type Float64</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Float64</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float64.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float64.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float64MultiArray">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Float64MultiArray</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float64MultiArray" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Float64MultiArray.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float64MultiArray.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">std_msgs.msg.Float64MultiArray</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float64MultiArray.convert" title="Link to this definition">¶</a></dt>
+<dd><p>Takes a numpy array and returns a ROS message of type Float64MultiArray</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Float32</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Float64MultiArray.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Float64MultiArray.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Image">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Image</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Image" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Image.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Image.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">sensor_msgs.msg.Image</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">sensor_msgs.msg.Image</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Image.convert" title="Link to this definition">¶</a></dt>
+<dd><p>Takes a ROS Image message or numpy array and returns a ROS Image message</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ROSImage</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Image.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Image.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.CompressedImage">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">CompressedImage</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.CompressedImage" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.Image" title="ros_sugar.io.supported_types.Image"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.Image</span></code></a></p>
+<p>CompressedImage format usually provided by camera vendors</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.CompressedImage.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">sensor_msgs.msg.CompressedImage</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">sensor_msgs.msg.CompressedImage</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.CompressedImage.convert" title="Link to this definition">¶</a></dt>
+<dd><p>Takes a ROS CompressedImage message or numpy array and returns
+a ROS CompressedImage message</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ROSCompressedImage</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.CompressedImage.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.CompressedImage.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Audio">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Audio</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Audio" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Audio.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Audio.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">bytes</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">std_msgs.msg.ByteMultiArray</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Audio.convert" title="Link to this definition">¶</a></dt>
+<dd><p>Takes an array of audio data and returns a ROS message
+of type AudioData</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>AudioData</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Audio.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Audio.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.MapMetaData">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">MapMetaData</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.MapMetaData" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>MapMetaData.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.MapMetaData.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">output</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.MapMetaData.convert" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.MapMetaData.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.MapMetaData.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Odometry">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Odometry</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Odometry" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Odometry</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Odometry.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">output</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Odometry.convert" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Odometry.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Odometry.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.LaserScan">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">LaserScan</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.LaserScan" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>LaserScan</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.LaserScan.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">output</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.LaserScan.convert" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.LaserScan.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.LaserScan.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Path">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Path</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Path" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Path</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Path.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Path.convert" title="Link to this definition">¶</a></dt>
+<dd><p>ROS message converter function for datatype</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>args</strong></p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Any</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Path.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Path.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.OccupancyGrid">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">OccupancyGrid</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.OccupancyGrid" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>OccupancyGrid</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.OccupancyGrid.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">nav_msgs.msg.OccupancyGrid</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">resolution</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">origin</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">geometry_msgs.msg.Pose</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">nav_msgs.msg.OccupancyGrid</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.OccupancyGrid.convert" title="Link to this definition">¶</a></dt>
+<dd><p>ROS message converter function for datatype OccupancyGrid.</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output</strong> (<em>np.ndarray</em>)</p></li>
+<li><p><strong>_</strong></p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>ROSOccupancyGrid</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.OccupancyGrid.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.OccupancyGrid.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Point">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Point</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Point" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Point</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Point.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">geometry_msgs.msg.Point</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Point.convert" title="Link to this definition">¶</a></dt>
+<dd><p>ROS message converter function for datatype Point.</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output</strong> (<em>np.ndarray</em>)</p></li>
+<li><p><strong>_</strong></p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>ROSPoint</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Point.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Point.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.PointStamped">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">PointStamped</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.PointStamped" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.Point" title="ros_sugar.io.supported_types.Point"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.Point</span></code></a></p>
+<p>PointStamped</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.PointStamped.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">geometry_msgs.msg.PointStamped</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.PointStamped.convert" title="Link to this definition">¶</a></dt>
+<dd><p>ROS message converter function for datatype Point.</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output</strong> (<em>np.ndarray</em>)</p></li>
+<li><p><strong>_</strong></p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>ROSPointStamped</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.PointStamped.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.PointStamped.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Pose">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Pose</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Pose" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Pose</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Pose.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">geometry_msgs.msg.Pose</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Pose.convert" title="Link to this definition">¶</a></dt>
+<dd><p>ROS message converter function for datatype Point.</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output</strong> (<em>np.ndarray</em>)</p></li>
+<li><p><strong>_</strong></p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>ROSPose</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Pose.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Pose.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.PoseStamped">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">PoseStamped</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.PoseStamped" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.Pose" title="ros_sugar.io.supported_types.Pose"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.Pose</span></code></a></p>
+<p>PoseStamped</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.PoseStamped.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">geometry_msgs.msg.PoseStamped</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.PoseStamped.convert" title="Link to this definition">¶</a></dt>
+<dd><p>ROS message converter function for datatype Point.</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output</strong> (<em>np.ndarray</em>)</p></li>
+<li><p><strong>_</strong></p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>ROSPoseStamped</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.PoseStamped.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.PoseStamped.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.ComponentStatus">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">ComponentStatus</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.ComponentStatus" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Component Health Status</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.ComponentStatus.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">output</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.ComponentStatus.convert" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.ComponentStatus.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.ComponentStatus.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Twist">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.io.supported_types.</span></span><span class="sig-name descname"><span class="pre">Twist</span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Twist" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#ros_sugar.io.supported_types.SupportedType" title="ros_sugar.io.supported_types.SupportedType"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types.SupportedType</span></code></a></p>
+<p>Twist for Control Commands</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Twist.convert">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">convert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">omega</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">geometry_msgs.msg.Twist</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Twist.convert" title="Link to this definition">¶</a></dt>
+<dd><p>ROS message converter function for datatype Point.</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output</strong> (<em>np.ndarray</em>)</p></li>
+<li><p><strong>_</strong></p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>ROSPoseStamped</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.io.supported_types.Twist.get_ros_type">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">get_ros_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">type</span></span></span><a class="headerlink" href="#ros_sugar.io.supported_types.Twist.get_ros_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="ros_sugar.io.callbacks.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="ros_sugar.io.publisher.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Automatika Robotics</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div>
+      <div class="sy-foot-socials">
+<a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+<a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+  <iconify-icon icon="simple-icons:discord"></iconify-icon>
+</a></div>
+    </div>
+  </div>
+</footer>
+      <script src="../../_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+      <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+      <script src="../../_static/shibuya.js?v=cac61aee"></script></body>
+</html>

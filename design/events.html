@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="indigo" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Events - Sugarcoat 0.5.0 documentation</title><link rel="shortcut icon" href="../_static/favicon.png"/><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Actions" href="actions.html" /><link rel="prev" title="Health Status" href="status.html" />
+      <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/design/events.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d1c6635e" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=44020203" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=cade9008" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://automatika-robotics.github.io/sugarcoat/design/events.html"/>
+  <meta property="og:title" content="Events"/>
+    <meta name="twitter:card" content="summary"/>
+  </head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      <img class="light-logo" src="../_static/SUGARCOAT_LIGHT.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <img class="dark-logo" src="../_static/SUGARCOAT_DARK.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <strong>Sugarcoat</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul><li class="link">
+          <a href="https://automatikarobotics.com/">
+            <span>Automatika Robotics</span></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+  <a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+    <iconify-icon icon="simple-icons:discord"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Overview</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../overview.html">Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../install.html">Getting Started</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Design Concepts</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="component.html">Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="topics.html">Topics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="status.html">Health Status</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Events</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="actions.html">Actions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="launcher.html">Recipes Launcher</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Out-of-the-Box Features</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/web_ui.html">Zero-Code Dynamic Web UI</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/robot_plugins.html">Universal Robot Plugins</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Using Sugarcoat</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/create_service.html">Converting a Sugarcoat Recipe into a systemd Service</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/config.html">Don&#8217;t Like YAML? We&#8217;ve Got You &#128526;</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">References</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../apidocs/index.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.actions</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#defining-events">Defining Events</a><ul>
+<li><a class="reference internal" href="#basic-single-topic-event">Basic Single-Topic Event</a></li>
+<li><a class="reference internal" href="#composed-conditions-logic-multi-topic">Composed Conditions (Logic &amp; Multi-Topic)</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#event-configuration">Event Configuration</a></li>
+<li><a class="reference internal" href="#supported-conditional-operators">Supported Conditional Operators</a></li>
+<li><a class="reference internal" href="#usage-examples">Usage Examples</a><ul>
+<li><a class="reference internal" href="#automatic-adaptation-terrain-switching">1. Automatic Adaptation (Terrain Switching)</a></li>
+<li><a class="reference internal" href="#an-autonomous-drone">2. An Autonomous Drone</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#next-steps">Next Steps</a></li>
+</ul>
+</div><div id="ethical-ad-placement" data-ea-publisher="readthedocs"></div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">Sugarcoat</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Events</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="https://automatika-robotics.github.io/sugarcoat/_sources/design/events.md.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="https://automatika-robotics.github.io/sugarcoat/_sources/design/events.md.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="https://automatika-robotics.github.io/sugarcoat/_sources/design/events.md.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:markdown"></iconify-icon>
+            <span>View as Markdown</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/design/events.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/design/events.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue" role="main">
+          <section class="tex2jax_ignore mathjax_ignore" id="events">
+<h1>Events<a class="headerlink" href="#events" title="Link to this heading">¶</a></h1>
+<p><strong>Dynamic behavior switching based on real-time environmental context.</strong></p>
+<p>Sugarcoat’s Event-Driven architecture enables dynamic behavior switching based on real-time environmental context. This allows robots to react instantly to changes in their internal state or external environment without complex, brittle if/else chains.</p>
+<p>An Event in Sugarcoat monitors a specific <strong>ROS2 Topic</strong>, and defines a triggering condition based on the incoming topic data. You can write natural Python expressions (e.g., topic.msg.data &gt; 5) to define exactly when an event should trigger the associated Action(s).</p>
+<ul class="simple">
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-hub sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><rect fill="none" height="24" width="24"></rect><path d="M8.4,18.2C8.78,18.7,9,19.32,9,20c0,1.66-1.34,3-3,3s-3-1.34-3-3s1.34-3,3-3c0.44,0,0.85,0.09,1.23,0.26l1.41-1.77 c-0.92-1.03-1.29-2.39-1.09-3.69l-2.03-0.68C4.98,11.95,4.06,12.5,3,12.5c-1.66,0-3-1.34-3-3s1.34-3,3-3s3,1.34,3,3 c0,0.07,0,0.14-0.01,0.21l2.03,0.68c0.64-1.21,1.82-2.09,3.22-2.32l0-2.16C9.96,5.57,9,4.4,9,3c0-1.66,1.34-3,3-3s3,1.34,3,3 c0,1.4-0.96,2.57-2.25,2.91v2.16c1.4,0.23,2.58,1.11,3.22,2.32l2.03-0.68C18,9.64,18,9.57,18,9.5c0-1.66,1.34-3,3-3s3,1.34,3,3 s-1.34,3-3,3c-1.06,0-1.98-0.55-2.52-1.37l-2.03,0.68c0.2,1.29-0.16,2.65-1.09,3.69l1.41,1.77C17.15,17.09,17.56,17,18,17 c1.66,0,3,1.34,3,3s-1.34,3-3,3s-3-1.34-3-3c0-0.68,0.22-1.3,0.6-1.8l-1.41-1.77c-1.35,0.75-3.01,0.76-4.37,0L8.4,18.2z"></path></svg> Compose Logic - </span> Combine triggers using simple Pythonic syntax (<code class="docutils literal notranslate"><span class="pre">(lidar_clear)</span> <span class="pre">&amp;</span> <span class="pre">(goal_seen)</span></code>).</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-sync sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"></path><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"></path></svg> Fuse Data - </span> Monitor multiple topics simultaneously via a synchronized <strong>Blackboard</strong> that ensures data freshness.</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-speed sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"></path><path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"></path></svg> Stay Fast - </span> All evaluation happens asynchronously in a dedicated worker pool. Your main component loop <strong>never blocks</strong>.</p></li>
+</ul>
+<div class="tip admonition">
+<p class="admonition-title">Think in Behaviors</p>
+<p>Events are designed to be read like a sentence:
+<em>“If the battery is low AND we are far from home, THEN navigate to the charging dock.”</em></p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Events can be paired with Sugarcoat <a class="reference internal" href="actions.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">Action</span></code></span></a>(s) or with any standard <a class="reference external" href="https://docs.ros.org/en/kilted/Tutorials/Intermediate/Launch/Using-Event-Handlers.html">ROS2 Launch Action</a></p>
+</div>
+<section id="defining-events">
+<h2>Defining Events<a class="headerlink" href="#defining-events" title="Link to this heading">¶</a></h2>
+<p>The Event API uses a fluent, expressive syntax that allows you to access ROS2 message attributes directly via <code class="docutils literal notranslate"><span class="pre">topic.msg</span></code>.</p>
+<section id="basic-single-topic-event">
+<h3>Basic Single-Topic Event<a class="headerlink" href="#basic-single-topic-event" title="Link to this heading">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">Event</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="c1"># 1. Define the Source</span>
+</span><span data-line="5"><span class="c1"># `data_timeout` parameter is optional. It ensures data is considered &quot;stale&quot; after 0.5s</span>
+</span><span data-line="6"><span class="n">battery</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/battery_level&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Float32&quot;</span><span class="p">,</span> <span class="n">data_timeout</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+</span><span data-line="7">
+</span><span data-line="8"><span class="c1"># 2. Define the Event</span>
+</span><span data-line="9"><span class="c1"># Triggers when percentage drops below 20%</span>
+</span><span data-line="10"><span class="n">low_batt_event</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span><span class="n">battery</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span> <span class="o">&lt;</span> <span class="mf">20.0</span><span class="p">)</span>
+</span></pre></div>
+</div>
+</section>
+<section id="composed-conditions-logic-multi-topic">
+<h3>Composed Conditions (Logic &amp; Multi-Topic)<a class="headerlink" href="#composed-conditions-logic-multi-topic" title="Link to this heading">¶</a></h3>
+<p>You can combine multiple conditions using standard Python bitwise operators (<code class="docutils literal notranslate"><span class="pre">&amp;</span></code>, <code class="docutils literal notranslate"><span class="pre">|</span></code>, <code class="docutils literal notranslate"><span class="pre">~</span></code>) to create complex behavioral triggers. Events can also span multiple different topics. Sugarcoat automatically manages a “Blackboard” of the latest messages from all involved topics, ensuring synchronization and data “freshness”.</p>
+<ul class="simple">
+<li><p><strong>Example</strong>: Trigger a “Stop” event only if an obstacle is detected AND the robot is currently in “Auto” mode.</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">Event</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="n">lidar_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/person_detected&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Bool&quot;</span><span class="p">,</span> <span class="n">data_timeout</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+</span><span data-line="5"><span class="n">status_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/robot_mode&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;String&quot;</span><span class="p">,</span> <span class="n">data_timeout</span><span class="o">=</span><span class="mf">60.0</span><span class="p">)</span>
+</span><span data-line="6">
+</span><span data-line="7"><span class="c1"># Complex Multi-Topic Condition</span>
+</span><span data-line="8"><span class="n">emergency_stop_event</span> <span class="o">=</span> <span class="n">Event</span><span class="p">((</span><span class="n">lidar_topic</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">is_true</span><span class="p">())</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">status_topic</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span> <span class="o">==</span> <span class="s2">&quot;AUTO&quot;</span><span class="p">))</span>
+</span></pre></div>
+</div>
+<div class="warning admonition">
+<p class="admonition-title">Handling Stale Data</p>
+<p>When combining multiple topics, data synchronization is critical. Use the <code class="docutils literal notranslate"><span class="pre">data_timeout</span></code> parameter on your <code class="docutils literal notranslate"><span class="pre">Topic</span></code> definition to ensure you never act on old sensor data.</p>
+</div>
+</section>
+</section>
+<section id="event-configuration">
+<h2>Event Configuration<a class="headerlink" href="#event-configuration" title="Link to this heading">¶</a></h2>
+<p>Refine <em>when</em> and <em>how</em> the event triggers using these parameters:</p>
+<ul class="simple">
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.0em" height="1.0em" class="sd-material-icon sd-material-icon-change_circle" viewBox="0 0 20 20" aria-hidden="true"><rect fill="none" height="20" width="20"></rect><path d="M10,2c-4.42,0-8,3.58-8,8s3.58,8,8,8s8-3.58,8-8S14.42,2,10,2z M9.88,15.62V14c-1.02-0.03-1.98-0.44-2.71-1.17 C6.42,12.07,6,11.07,6,10c0-0.7,0.18-1.38,0.52-1.98l0.74,0.74C7.09,9.15,7,9.57,7,10c0,0.8,0.31,1.55,0.88,2.12 c0.54,0.53,1.27,0.82,2,0.85v-1.59L12,13.5L9.88,15.62z M13.48,11.98l-0.74-0.74C12.91,10.85,13,10.43,13,10 c0-0.8-0.31-1.55-0.88-2.12c-0.54-0.54-1.24-0.85-2-0.88v1.62L8,6.5l2.12-2.12v1.66c1,0.03,1.98,0.41,2.71,1.13 C13.58,7.93,14,8.93,14,10C14,10.7,13.82,11.38,13.48,11.98z"></path></svg> On Change (<code class="docutils literal notranslate"><span class="pre">on_change=True</span></code>)</span> - Triggers <strong>only</strong> when the condition transitions from <code class="docutils literal notranslate"><span class="pre">False</span></code> to <code class="docutils literal notranslate"><span class="pre">True</span></code> (Edge Trigger). Useful for state transitions (e.g., “Goal Reached”) rather than continuous firing.</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.0em" height="1.0em" class="sd-material-icon sd-material-icon-all_inclusive" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0V0z" fill="none"></path><path d="M18.6 6.62c-1.44 0-2.8.56-3.77 1.53L12 10.66 10.48 12h.01L7.8 14.39c-.64.64-1.49.99-2.4.99-1.87 0-3.39-1.51-3.39-3.38S3.53 8.62 5.4 8.62c.91 0 1.76.35 2.44 1.03l1.13 1 1.51-1.34L9.22 8.2C8.2 7.18 6.84 6.62 5.4 6.62 2.42 6.62 0 9.04 0 12s2.42 5.38 5.4 5.38c1.44 0 2.8-.56 3.77-1.53l2.83-2.5.01.01L13.52 12h-.01l2.69-2.39c.64-.64 1.49-.99 2.4-.99 1.87 0 3.39 1.51 3.39 3.38s-1.52 3.38-3.39 3.38c-.9 0-1.76-.35-2.44-1.03l-1.14-1.01-1.51 1.34 1.27 1.12c1.02 1.01 2.37 1.57 3.82 1.57 2.98 0 5.4-2.41 5.4-5.38s-2.42-5.37-5.4-5.37z"></path></svg> On Any (<code class="docutils literal notranslate"><span class="pre">Topic</span></code>)</span> - If you pass the <code class="docutils literal notranslate"><span class="pre">Topic</span></code> object itself as the condition, the event triggers on <strong>every received message</strong>, regardless of content.</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.0em" height="1.0em" class="sd-material-icon sd-material-icon-looks_one" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"></path><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14h-2V9h-2V7h4v10z"></path></svg> Handle Once (<code class="docutils literal notranslate"><span class="pre">handle_once=True</span></code>)</span> - The event will fire exactly one time during the lifecycle of the system. Useful for initialization sequences.</p></li>
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.0em" height="1.0em" class="sd-material-icon sd-material-icon-timer" viewBox="0 0 20 20" aria-hidden="true"><g><rect fill="none" height="20" width="20"></rect></g><g><g><rect height="1.5" width="5" x="7.5" y="1.5"></rect><path d="M15.45,6.61l1.08-1.08l-1.06-1.06l-1.08,1.08C13.19,4.58,11.66,4,10,4c-3.87,0-7,3.13-7,7s3.13,7,7,7c3.87,0,7-3.13,7-7 C17,9.34,16.42,7.81,15.45,6.61z M10.75,12h-1.5V7h1.5V12z"></path></g></g></svg> Event Delay (<code class="docutils literal notranslate"><span class="pre">keep_event_delay=2.0</span></code>)</span> - Prevents rapid firing (debouncing). Ignores subsequent triggers for the specified duration (in seconds).</p></li>
+</ul>
+</section>
+<section id="supported-conditional-operators">
+<h2>Supported Conditional Operators<a class="headerlink" href="#supported-conditional-operators" title="Link to this heading">¶</a></h2>
+<p>You can use standard Python operators or specific helper methods on any topic attribute to define the <span class="text-blue"><strong>event triggering condition</strong></span></p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head text-left"><p>Operator / Method</p></th>
+<th class="head text-left"><p>Description</p></th>
+<th class="head text-left"><p>Example</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">==</span></code></strong>, <strong><code class="docutils literal notranslate"><span class="pre">!=</span></code></strong></p></td>
+<td class="text-left"><p>Equality checks.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.status</span> <span class="pre">==</span> <span class="pre">&quot;IDLE&quot;</span></code></p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">&gt;</span></code></strong>, <strong><code class="docutils literal notranslate"><span class="pre">&gt;=</span></code></strong>, <strong><code class="docutils literal notranslate"><span class="pre">&lt;</span></code></strong>, <strong><code class="docutils literal notranslate"><span class="pre">&lt;=</span></code></strong></p></td>
+<td class="text-left"><p>Numeric comparisons.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.temperature</span> <span class="pre">&gt;</span> <span class="pre">75.0</span></code></p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">.is_true()</span></code></strong></p></td>
+<td class="text-left"><p>Boolean True check.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.is_ready.is_true()</span></code></p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">.is_false()</span></code></strong>, <strong><code class="docutils literal notranslate"><span class="pre">~</span></code></strong></p></td>
+<td class="text-left"><p>Boolean False check.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.is_ready.is_false()</span></code> or <code class="docutils literal notranslate"><span class="pre">~topic.msg.is_ready</span></code></p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">.is_in(list)</span></code></strong></p></td>
+<td class="text-left"><p>Value exists in a list.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.mode.is_in([&quot;AUTO&quot;,</span> <span class="pre">&quot;TELEOP&quot;])</span></code></p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">.not_in(list)</span></code></strong></p></td>
+<td class="text-left"><p>Value is not in a list.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.id.not_in([0,</span> <span class="pre">1])</span></code></p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">.contains(val)</span></code></strong></p></td>
+<td class="text-left"><p>String/List contains a value.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.description.contains(&quot;error&quot;)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">.contains_any(list)</span></code></strong></p></td>
+<td class="text-left"><p>List contains <em>at least one</em> of the values.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.error_codes.contains_any([404,</span> <span class="pre">500])</span></code></p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">.contains_all(list)</span></code></strong></p></td>
+<td class="text-left"><p>List contains <em>all</em> of the values.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.detections.labels.contains_all([&quot;window&quot;,</span> <span class="pre">&quot;desk&quot;])</span></code></p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p><strong><code class="docutils literal notranslate"><span class="pre">.not_contains_any(list)</span></code></strong></p></td>
+<td class="text-left"><p>List contains <em>none</em> of the values.</p></td>
+<td class="text-left"><p><code class="docutils literal notranslate"><span class="pre">topic.msg.active_ids.not_contains_any([99,</span> <span class="pre">100])</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="usage-examples">
+<h2>Usage Examples<a class="headerlink" href="#usage-examples" title="Link to this heading">¶</a></h2>
+<section id="automatic-adaptation-terrain-switching">
+<h3>1. Automatic Adaptation (Terrain Switching)<a class="headerlink" href="#automatic-adaptation-terrain-switching" title="Link to this heading">¶</a></h3>
+<p>Scenario: A perception or ML node publishes a string to <code class="docutils literal notranslate"><span class="pre">/terrain_type</span></code>. We want to change the robot’s gait when the terrain changes.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">quadruped_controller.py</span><a class="headerlink" href="#id1" title="Link to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="linenos"> 1</span><span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Literal</span>
+</span><span data-line="2"><span class="linenos"> 2</span><span class="kn">from</span> <span class="nn">ros_sugar.component</span> <span class="kn">import</span> <span class="n">BaseComponent</span>
+</span><span data-line="3"><span class="linenos"> 3</span>
+</span><span data-line="4"><span class="linenos"> 4</span><span class="k">class</span> <span class="nc">QuadrupedController</span><span class="p">(</span><span class="n">BaseComponent</span><span class="p">):</span>
+</span><span data-line="5"><span class="linenos"> 5</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+</span><span data-line="6"><span class="linenos"> 6</span>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span data-line="7"><span class="linenos"> 7</span>        <span class="c1"># Some logic</span>
+</span><span data-line="8"><span class="linenos"> 8</span>
+</span><span data-line="9"><span class="linenos"> 9</span>    <span class="k">def</span> <span class="nf">switch_gait_controller</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">controller_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;stairs&#39;</span><span class="p">,</span> <span class="s1">&#39;sand&#39;</span><span class="p">,</span> <span class="s1">&#39;snow&#39;</span><span class="p">,</span> <span class="s1">&#39;gravel&#39;</span><span class="p">]):</span>
+</span><span data-line="10"><span class="linenos">10</span>        <span class="bp">self</span><span class="o">.</span><span class="n">get_logger</span><span class="p">()</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;New terrain detected! Switching gait.&quot;</span><span class="p">)</span>
+</span><span data-line="11"><span class="linenos">11</span>        <span class="c1"># Logic to change controller parameters...</span>
+</span></pre></div>
+</div>
+</div>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">quadruped_controller_recipe.py</span><a class="headerlink" href="#id2" title="Link to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="linenos"> 1</span><span class="kn">from</span> <span class="nn">my_pkg.components</span> <span class="kn">import</span> <span class="n">QuadrupedController</span>
+</span><span data-line="2"><span class="linenos"> 2</span><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">Event</span><span class="p">,</span> <span class="n">Action</span>
+</span><span data-line="3"><span class="linenos"> 3</span><span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+</span><span data-line="4"><span class="linenos"> 4</span><span class="kn">from</span> <span class="nn">ros_sugar</span> <span class="kn">import</span> <span class="n">Launcher</span>
+</span><span data-line="5"><span class="linenos"> 5</span>
+</span><span data-line="6"><span class="linenos"> 6</span><span class="n">quad_controller</span> <span class="o">=</span> <span class="n">QuadrupedController</span><span class="p">(</span><span class="n">component_name</span><span class="o">=</span><span class="s2">&quot;quadruped_controller&quot;</span><span class="p">)</span>
+</span><span data-line="7"><span class="linenos"> 7</span>
+</span><span data-line="8"><span class="linenos"> 8</span><span class="c1"># Define the Event Topic</span>
+</span><span data-line="9"><span class="linenos"> 9</span><span class="n">terrain_topic</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/terrain_type&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;String&quot;</span><span class="p">)</span>
+</span><span data-line="10"><span class="linenos">10</span>
+</span><span data-line="11"><span class="linenos">11</span><span class="c1"># Define the Event</span>
+</span><span data-line="12"><span class="linenos">12</span><span class="c1"># Logic: Trigger when the detected terrain changes</span>
+</span><span data-line="13"><span class="linenos">13</span><span class="c1"># on_change=True ensures we only trigger the switch the FIRST time stairs are seen.</span>
+</span><span data-line="14"><span class="linenos">14</span><span class="c1"># Add an optional delay to prevent rapid event triggering</span>
+</span><span data-line="15"><span class="linenos">15</span><span class="n">event_terrain_changed</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span><span class="n">terrain_topic</span><span class="p">,</span><span class="n">on_change</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">keep_event_delay</span><span class="o">=</span><span class="mf">60.0</span><span class="p">)</span>
+</span><span data-line="16"><span class="linenos">16</span>
+</span><span data-line="17"><span class="linenos">17</span><span class="c1"># Define the Action</span>
+</span><span data-line="18"><span class="linenos">18</span><span class="c1"># Call self.switch_gait_controller() when triggered and pass the detected terrain to the method</span>
+</span><span data-line="19"><span class="linenos">19</span><span class="n">change_gait_action</span> <span class="o">=</span> <span class="n">Action</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">activate_stairs_controller</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">terrain_topic</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span><span class="p">))</span>
+</span><span data-line="20"><span class="linenos">20</span>
+</span><span data-line="21"><span class="linenos">21</span><span class="c1"># Register</span>
+</span><span data-line="22"><span class="linenos">22</span><span class="n">my_launcher</span> <span class="o">=</span> <span class="n">Launcher</span><span class="p">()</span>
+</span><span data-line="23"><span class="linenos">23</span><span class="n">my_launcher</span><span class="o">.</span><span class="n">add_pkg</span><span class="p">(</span>
+</span><span data-line="24"><span class="linenos">24</span>            <span class="n">components</span><span class="o">=</span><span class="p">[</span><span class="n">quad_controller</span><span class="p">],</span>
+</span><span data-line="25"><span class="linenos">25</span>            <span class="n">events_actions</span><span class="o">=</span><span class="p">{</span><span class="n">stairs_event</span><span class="p">:</span> <span class="n">change_gait_action</span><span class="p">},</span>
+</span><span data-line="26"><span class="linenos">26</span>        <span class="p">)</span>
+</span></pre></div>
+</div>
+</div>
+</section>
+<section id="an-autonomous-drone">
+<h3>2. An Autonomous Drone<a class="headerlink" href="#an-autonomous-drone" title="Link to this heading">¶</a></h3>
+<p>Scenario: An autonomous drone <strong>stops</strong> if an obstacle is close OR the bumper is hit. It also sends a warning if the battery is low AND we are far from the land.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">Event</span><span class="p">,</span> <span class="n">Action</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.io</span> <span class="kn">import</span> <span class="n">Topic</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="c1"># --- Topics ---</span>
+</span><span data-line="5"><span class="n">proximity_sensor</span>   <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/radar_front&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Float32&quot;</span><span class="p">,</span> <span class="n">data_timeout</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+</span><span data-line="6"><span class="n">bumper</span>  <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/bumper&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Bool&quot;</span><span class="p">,</span> <span class="n">data_timeout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+</span><span data-line="7"><span class="n">battery</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/battery&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Float32&quot;</span><span class="p">)</span>
+</span><span data-line="8"><span class="n">location</span> <span class="o">=</span> <span class="n">Topic</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/pose&quot;</span><span class="p">,</span> <span class="n">msg_type</span><span class="o">=</span><span class="s2">&quot;Pose&quot;</span><span class="p">)</span>
+</span><span data-line="9">
+</span><span data-line="10"><span class="c1"># --- Conditions ---</span>
+</span><span data-line="11"><span class="c1"># 1. Safety Condition (Composite OR)</span>
+</span><span data-line="12"><span class="c1"># Stop if proximity_sensor &lt; 0.2m OR Bumper is Hit</span>
+</span><span data-line="13"><span class="n">is_danger</span> <span class="o">=</span> <span class="p">(</span><span class="n">proximity_sensor</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span> <span class="o">&lt;</span> <span class="mf">0.2</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">bumper</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">is_true</span><span class="p">())</span>
+</span><span data-line="14">
+</span><span data-line="15"><span class="c1"># 2. Return Home Condition (Composite AND)</span>
+</span><span data-line="16"><span class="c1"># Return if Battery &lt; 20% AND Distance &gt; 100m</span>
+</span><span data-line="17"><span class="n">needs_return</span> <span class="o">=</span> <span class="p">(</span><span class="n">battery</span><span class="o">.</span><span class="n">msg</span><span class="o">.</span><span class="n">data</span> <span class="o">&lt;</span> <span class="mf">20.0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">location</span><span class="o">.</span><span class="n">position</span><span class="o">.</span><span class="n">z</span> <span class="o">&gt;</span> <span class="mf">100.0</span><span class="p">)</span>
+</span><span data-line="18">
+</span><span data-line="19"><span class="c1"># --- Events ---</span>
+</span><span data-line="20"><span class="n">safety_event</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span><span class="n">is_danger</span><span class="p">)</span>
+</span><span data-line="21">
+</span><span data-line="22"><span class="n">return_event</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span><span class="n">needs_return</span><span class="p">,</span> <span class="n">on_change</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span></pre></div>
+</div>
+</section>
+</section>
+<section id="next-steps">
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">¶</a></h2>
+<p>Now that you understand Events, learn how to attach them to Actions, to execute context-aware methods when an Event triggers.</p>
+<p><a class="sd-sphinx-override sd-btn sd-text-wrap sd-btn-outline-primary reference external" href="actions.html"><span>Learn about Actions →</span></a></p>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="status.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Health Status</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="actions.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Actions</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Automatika Robotics</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div>
+      <div class="sy-foot-socials">
+<a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+<a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+  <iconify-icon icon="simple-icons:discord"></iconify-icon>
+</a></div>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script></body>
+</html>

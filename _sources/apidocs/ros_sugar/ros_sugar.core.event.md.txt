@@ -1,0 +1,237 @@
+# {py:mod}`ros_sugar.core.event`
+
+```{py:module} ros_sugar.core.event
+```
+
+```{autodoc2-docstring} ros_sugar.core.event
+:allowtitles:
+```
+
+## Module Contents
+
+### Classes
+
+````{list-table}
+:class: autosummary longtable
+:align: left
+
+* - {py:obj}`InternalEvent <ros_sugar.core.event.InternalEvent>`
+  - ```{autodoc2-docstring} ros_sugar.core.event.InternalEvent
+    :summary:
+    ```
+* - {py:obj}`OnInternalEvent <ros_sugar.core.event.OnInternalEvent>`
+  - ```{autodoc2-docstring} ros_sugar.core.event.OnInternalEvent
+    :summary:
+    ```
+* - {py:obj}`EventBlackboardEntry <ros_sugar.core.event.EventBlackboardEntry>`
+  - ```{autodoc2-docstring} ros_sugar.core.event.EventBlackboardEntry
+    :summary:
+    ```
+* - {py:obj}`Event <ros_sugar.core.event.Event>`
+  - ```{autodoc2-docstring} ros_sugar.core.event.Event
+    :summary:
+    ```
+````
+
+### API
+
+`````{py:class} InternalEvent(event_name: str, topics_value: typing.Dict)
+:canonical: ros_sugar.core.event.InternalEvent
+
+Bases: {py:obj}`launch.event.Event`
+
+```{autodoc2-docstring} ros_sugar.core.event.InternalEvent
+```
+
+````{py:property} event_name
+:canonical: ros_sugar.core.event.InternalEvent.event_name
+
+```{autodoc2-docstring} ros_sugar.core.event.InternalEvent.event_name
+```
+
+````
+
+````{py:property} topics_value
+:canonical: ros_sugar.core.event.InternalEvent.topics_value
+
+```{autodoc2-docstring} ros_sugar.core.event.InternalEvent.topics_value
+```
+
+````
+
+`````
+
+`````{py:class} OnInternalEvent(*, internal_event_name: str, entities: ros_sugar.utils.SomeEntitiesType, handle_once: bool = False)
+:canonical: ros_sugar.core.event.OnInternalEvent
+
+Bases: {py:obj}`launch.event_handler.EventHandler`
+
+```{autodoc2-docstring} ros_sugar.core.event.OnInternalEvent
+```
+
+````{py:method} handle(event: launch.event.Event, context) -> typing.Optional[ros_sugar.utils.SomeEntitiesType]
+:canonical: ros_sugar.core.event.OnInternalEvent.handle
+
+```{autodoc2-docstring} ros_sugar.core.event.OnInternalEvent.handle
+```
+
+````
+
+`````
+
+`````{py:class} EventBlackboardEntry
+:canonical: ros_sugar.core.event.EventBlackboardEntry
+
+```{autodoc2-docstring} ros_sugar.core.event.EventBlackboardEntry
+```
+
+````{py:method} validate(timeout: typing.Optional[float] = None, stale_id: typing.Optional[str] = None)
+:canonical: ros_sugar.core.event.EventBlackboardEntry.validate
+
+```{autodoc2-docstring} ros_sugar.core.event.EventBlackboardEntry.validate
+```
+
+````
+
+````{py:method} get(entries_dict: typing.Dict[str, ros_sugar.core.event.EventBlackboardEntry], topic_name: str, timeout: typing.Optional[float], stale_id: typing.Optional[str] = None) -> typing.Optional[typing.Any]
+:canonical: ros_sugar.core.event.EventBlackboardEntry.get
+:classmethod:
+
+```{autodoc2-docstring} ros_sugar.core.event.EventBlackboardEntry.get
+```
+
+````
+
+`````
+
+`````{py:class} Event(event_condition: typing.Union[ros_sugar.io.topic.Topic, ros_sugar.condition.Condition], on_change: bool = False, handle_once: bool = False, keep_event_delay: float = 0.0)
+:canonical: ros_sugar.core.event.Event
+
+```{autodoc2-docstring} ros_sugar.core.event.Event
+```
+
+````{py:property} under_processing
+:canonical: ros_sugar.core.event.Event.under_processing
+:type: bool
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.under_processing
+```
+
+````
+
+````{py:property} id
+:canonical: ros_sugar.core.event.Event.id
+:type: str
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.id
+```
+
+````
+
+````{py:method} reset()
+:canonical: ros_sugar.core.event.Event.reset
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.reset
+```
+
+````
+
+````{py:method} clear() -> None
+:canonical: ros_sugar.core.event.Event.clear
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.clear
+```
+
+````
+
+````{py:method} raise_event_trigger() -> None
+:canonical: ros_sugar.core.event.Event.raise_event_trigger
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.raise_event_trigger
+```
+
+````
+
+````{py:method} to_dict() -> typing.Dict
+:canonical: ros_sugar.core.event.Event.to_dict
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.to_dict
+```
+
+````
+
+````{py:method} from_dict(dict_obj: typing.Dict)
+:canonical: ros_sugar.core.event.Event.from_dict
+:classmethod:
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.from_dict
+```
+
+````
+
+````{py:method} to_json() -> str
+:canonical: ros_sugar.core.event.Event.to_json
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.to_json
+```
+
+````
+
+````{py:method} from_json(json_obj: typing.Union[str, bytes, bytearray])
+:canonical: ros_sugar.core.event.Event.from_json
+:classmethod:
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.from_json
+```
+
+````
+
+````{py:method} get_involved_topics() -> typing.List[ros_sugar.io.topic.Topic]
+:canonical: ros_sugar.core.event.Event.get_involved_topics
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.get_involved_topics
+```
+
+````
+
+````{py:method} get_last_processed_id(topic_name: str) -> typing.Optional[str]
+:canonical: ros_sugar.core.event.Event.get_last_processed_id
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.get_last_processed_id
+```
+
+````
+
+````{py:method} verify_required_action_topics(action: ros_sugar.core.action.Action) -> None
+:canonical: ros_sugar.core.event.Event.verify_required_action_topics
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.verify_required_action_topics
+```
+
+````
+
+````{py:method} register_actions(actions: typing.Union[ros_sugar.core.action.Action, typing.Callable, typing.List[typing.Union[ros_sugar.core.action.Action, typing.Callable]]]) -> None
+:canonical: ros_sugar.core.event.Event.register_actions
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.register_actions
+```
+
+````
+
+````{py:method} clear_actions() -> None
+:canonical: ros_sugar.core.event.Event.clear_actions
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.clear_actions
+```
+
+````
+
+````{py:method} check_condition(global_topic_cache: typing.Dict[str, ros_sugar.core.event.EventBlackboardEntry]) -> None
+:canonical: ros_sugar.core.event.Event.check_condition
+
+```{autodoc2-docstring} ros_sugar.core.event.Event.check_condition
+```
+
+````
+
+`````

@@ -1,0 +1,291 @@
+---
+orphan: true
+---
+
+# {py:mod}`ros_sugar.condition`
+
+```{py:module} ros_sugar.condition
+```
+
+```{autodoc2-docstring} ros_sugar.condition
+:allowtitles:
+```
+
+## Module Contents
+
+### Classes
+
+````{list-table}
+:class: autosummary longtable
+:align: left
+
+* - {py:obj}`ConditionLogicOp <ros_sugar.condition.ConditionLogicOp>`
+  -
+* - {py:obj}`Condition <ros_sugar.condition.Condition>`
+  - ```{autodoc2-docstring} ros_sugar.condition.Condition
+    :summary:
+    ```
+* - {py:obj}`ConditionOperators <ros_sugar.condition.ConditionOperators>`
+  - ```{autodoc2-docstring} ros_sugar.condition.ConditionOperators
+    :summary:
+    ```
+* - {py:obj}`MsgConditionBuilder <ros_sugar.condition.MsgConditionBuilder>`
+  - ```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder
+    :summary:
+    ```
+````
+
+### API
+
+`````{py:class} ConditionLogicOp(*args, **kwds)
+:canonical: ros_sugar.condition.ConditionLogicOp
+
+Bases: {py:obj}`enum.Enum`
+
+````{py:method} name()
+:canonical: ros_sugar.condition.ConditionLogicOp.name
+
+````
+
+````{py:method} value()
+:canonical: ros_sugar.condition.ConditionLogicOp.value
+
+````
+
+`````
+
+`````{py:class} Condition(sub_conditions: typing.Optional[typing.List[ros_sugar.condition.Condition]] = None, logic_operator: ros_sugar.condition.ConditionLogicOp = ConditionLogicOp.NONE, topic_name: typing.Optional[str] = None, topic_msg_type: typing.Optional[str] = None, topic_qos_config: typing.Optional[typing.Dict] = None, attribute_path: typing.Optional[typing.List[str]] = None, operator_func: typing.Optional[typing.Callable] = None, ref_value: typing.Any = None)
+:canonical: ros_sugar.condition.Condition
+
+```{autodoc2-docstring} ros_sugar.condition.Condition
+```
+
+````{py:method} to_dict() -> typing.Dict[str, typing.Any]
+:canonical: ros_sugar.condition.Condition.to_dict
+
+```{autodoc2-docstring} ros_sugar.condition.Condition.to_dict
+```
+
+````
+
+````{py:method} from_dict(data: typing.Dict[str, typing.Any]) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.Condition.from_dict
+:classmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.Condition.from_dict
+```
+
+````
+
+````{py:method} to_json() -> str
+:canonical: ros_sugar.condition.Condition.to_json
+
+```{autodoc2-docstring} ros_sugar.condition.Condition.to_json
+```
+
+````
+
+````{py:method} from_json(json_str: str) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.Condition.from_json
+:classmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.Condition.from_json
+```
+
+````
+
+````{py:method} evaluate(topic_data_cache: typing.Dict[str, typing.Any]) -> bool
+:canonical: ros_sugar.condition.Condition.evaluate
+
+```{autodoc2-docstring} ros_sugar.condition.Condition.evaluate
+```
+
+````
+
+`````
+
+`````{py:class} ConditionOperators
+:canonical: ros_sugar.condition.ConditionOperators
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators
+```
+
+````{py:method} get_operator(name: str) -> typing.Callable
+:canonical: ros_sugar.condition.ConditionOperators.get_operator
+:classmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.get_operator
+```
+
+````
+
+````{py:method} get_name(func: typing.Callable) -> str
+:canonical: ros_sugar.condition.ConditionOperators.get_name
+:classmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.get_name
+```
+
+````
+
+````{py:method} is_in(op_obj, ref_list)
+:canonical: ros_sugar.condition.ConditionOperators.is_in
+:staticmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.is_in
+```
+
+````
+
+````{py:method} not_in(op_obj, ref_list)
+:canonical: ros_sugar.condition.ConditionOperators.not_in
+:staticmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.not_in
+```
+
+````
+
+````{py:method} contains(op_obj, ref_val)
+:canonical: ros_sugar.condition.ConditionOperators.contains
+:staticmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.contains
+```
+
+````
+
+````{py:method} not_contains(op_obj, ref_val)
+:canonical: ros_sugar.condition.ConditionOperators.not_contains
+:staticmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.not_contains
+```
+
+````
+
+````{py:method} contains_any(op_obj, ref_list)
+:canonical: ros_sugar.condition.ConditionOperators.contains_any
+:staticmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.contains_any
+```
+
+````
+
+````{py:method} contains_all(op_obj, ref_list)
+:canonical: ros_sugar.condition.ConditionOperators.contains_all
+:staticmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.contains_all
+```
+
+````
+
+````{py:method} not_contains_any(op_obj, ref_list)
+:canonical: ros_sugar.condition.ConditionOperators.not_contains_any
+:staticmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.not_contains_any
+```
+
+````
+
+````{py:method} not_contains_all(op_obj, ref_list)
+:canonical: ros_sugar.condition.ConditionOperators.not_contains_all
+:staticmethod:
+
+```{autodoc2-docstring} ros_sugar.condition.ConditionOperators.not_contains_all
+```
+
+````
+
+`````
+
+`````{py:class} MsgConditionBuilder(topic, path=None)
+:canonical: ros_sugar.condition.MsgConditionBuilder
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder
+```
+
+````{py:method} is_in(other: typing.Union[typing.List, typing.Tuple, str]) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.is_in
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.is_in
+```
+
+````
+
+````{py:method} not_in(other: typing.Union[typing.List, typing.Tuple, str]) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.not_in
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.not_in
+```
+
+````
+
+````{py:method} contains_any(other: typing.Union[typing.List, typing.Tuple]) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.contains_any
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.contains_any
+```
+
+````
+
+````{py:method} contains_all(other: typing.Union[typing.List, typing.Tuple]) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.contains_all
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.contains_all
+```
+
+````
+
+````{py:method} contains(other: typing.Union[typing.List, typing.Tuple, str]) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.contains
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.contains
+```
+
+````
+
+````{py:method} not_contains_any(other: typing.Union[typing.List, typing.Tuple]) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.not_contains_any
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.not_contains_any
+```
+
+````
+
+````{py:method} not_contains_all(other: typing.Union[typing.List, typing.Tuple]) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.not_contains_all
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.not_contains_all
+```
+
+````
+
+````{py:method} not_contains(other: typing.Union[typing.List, typing.Tuple, str]) -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.not_contains
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.not_contains
+```
+
+````
+
+````{py:method} is_true() -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.is_true
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.is_true
+```
+
+````
+
+````{py:method} is_false() -> ros_sugar.condition.Condition
+:canonical: ros_sugar.condition.MsgConditionBuilder.is_false
+
+```{autodoc2-docstring} ros_sugar.condition.MsgConditionBuilder.is_false
+```
+
+````
+
+`````

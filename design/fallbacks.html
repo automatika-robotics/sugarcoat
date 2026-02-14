@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="indigo" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Fallbacks - Sugarcoat 0.5.0 documentation</title><link rel="shortcut icon" href="../_static/favicon.png"/><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Recipes Launcher" href="launcher.html" /><link rel="prev" title="Actions" href="actions.html" />
+      <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/design/fallbacks.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d1c6635e" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=44020203" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=cade9008" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://automatika-robotics.github.io/sugarcoat/design/fallbacks.html"/>
+  <meta property="og:title" content="Fallbacks"/>
+    <meta name="twitter:card" content="summary"/>
+  </head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      <img class="light-logo" src="../_static/SUGARCOAT_LIGHT.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <img class="dark-logo" src="../_static/SUGARCOAT_DARK.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <strong>Sugarcoat</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul><li class="link">
+          <a href="https://automatikarobotics.com/">
+            <span>Automatika Robotics</span></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+  <a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+    <iconify-icon icon="simple-icons:discord"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Overview</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../overview.html">Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../install.html">Getting Started</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Design Concepts</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="component.html">Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="topics.html">Topics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="status.html">Health Status</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="events.html">Events</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="actions.html">Actions</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Fallbacks</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="launcher.html">Recipes Launcher</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Out-of-the-Box Features</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/web_ui.html">Zero-Code Dynamic Web UI</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../features/robot_plugins.html">Universal Robot Plugins</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Using Sugarcoat</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/create_service.html">Converting a Sugarcoat Recipe into a systemd Service</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/config.html">Don&#8217;t Like YAML? We&#8217;ve Got You &#128526;</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">References</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../apidocs/index.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="../apidocs/ros_sugar/ros_sugar.actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.actions</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#the-recovery-hierarchy">The Recovery Hierarchy</a></li>
+<li><a class="reference internal" href="#recovery-strategies">Recovery Strategies</a><ul>
+<li><a class="reference internal" href="#the-persistent-retry-single-action">1. The Persistent Retry (Single Action)</a></li>
+<li><a class="reference internal" href="#the-escalation-ladder-list-of-actions">2. The Escalation Ladder (List of Actions)</a></li>
+<li><a class="reference internal" href="#the-give-up-state">3. The &#8220;Give Up&#8221; State</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#how-to-implement-fallbacks">How to Implement Fallbacks</a><ul>
+<li><a class="reference internal" href="#method-a-in-your-recipe-recommended">Method A: In Your Recipe (Recommended)</a></li>
+<li><a class="reference internal" href="#method-b-in-component-class-advanced">Method B: In Component Class (Advanced)</a></li>
+</ul>
+</li>
+</ul>
+</div><div id="ethical-ad-placement" data-ea-publisher="readthedocs"></div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">Sugarcoat</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Fallbacks</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="https://automatika-robotics.github.io/sugarcoat/_sources/design/fallbacks.md.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="https://automatika-robotics.github.io/sugarcoat/_sources/design/fallbacks.md.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="https://automatika-robotics.github.io/sugarcoat/_sources/design/fallbacks.md.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:markdown"></iconify-icon>
+            <span>View as Markdown</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/design/fallbacks.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/design/fallbacks.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue" role="main">
+          <section class="tex2jax_ignore mathjax_ignore" id="fallbacks">
+<h1>Fallbacks<a class="headerlink" href="#fallbacks" title="Link to this heading">¶</a></h1>
+<p><strong>All robots can fail, but smart robots recover.</strong></p>
+<p>Fallbacks are the <strong>Self-Healing Mechanism</strong> of a Sugarcoat component. They define the specific set of <a class="reference internal" href="actions.html"><span class="std std-doc">Actions</span></a> to execute automatically when a failure is detected in the component’s <a class="reference internal" href="status.html"><span class="std std-doc">Health Status</span></a>.</p>
+<p>Instead of crashing or freezing when an error occurs, a Component can be configured to attempt intelligent recovery strategies:</p>
+<ul class="simple">
+<li><p><em>Algorithm stuck?</em> <span class="math notranslate nohighlight">\(\rightarrow\)</span> <strong>Switch</strong> to a simpler backup.</p></li>
+<li><p><em>Driver disconnected?</em> <span class="math notranslate nohighlight">\(\rightarrow\)</span> <strong>Re-initialize</strong> the hardware.</p></li>
+<li><p><em>Sensor timeout?</em> <span class="math notranslate nohighlight">\(\rightarrow\)</span> <strong>Restart</strong> the node.</p></li>
+</ul>
+<figure class="align-center">
+<img alt="fig-fallbacks" class="dark-only" src="../_images/fallbacks_dark.png" />
+</figure>
+<figure class="align-center" id="id1">
+<img alt="fig-fallbacks" class="light-only" src="../_images/fallbacks_light.png" />
+<figcaption>
+<p><span class="caption-text">The Self-Healing Loop</span><a class="headerlink" href="#id1" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<section id="the-recovery-hierarchy">
+<h2>The Recovery Hierarchy<a class="headerlink" href="#the-recovery-hierarchy" title="Link to this heading">¶</a></h2>
+<p>When a component reports a failure, Sugarcoat doesn’t just panic. It checks for a registered fallback strategy in a specific order of priority.</p>
+<p>This allows you to define granular responses for different types of errors.</p>
+<ul class="simple">
+<li><p><span class="sd-text-primary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-link_off sd-text-primary" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0V0z" fill="none"></path><path d="M17 7h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1 0 1.43-.98 2.63-2.31 2.98l1.46 1.46C20.88 15.61 22 13.95 22 12c0-2.76-2.24-5-5-5zm-1 4h-2.19l2 2H16zM2 4.27l3.11 3.11C3.29 8.12 2 9.91 2 12c0 2.76 2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1 0-1.59 1.21-2.9 2.76-3.07L8.73 11H8v2h2.73L13 15.27V17h1.73l4.01 4L20 19.74 3.27 3 2 4.27z"></path><path d="M0 24V0" fill="none"></path></svg> 1. System Failure</span> <code class="docutils literal notranslate"><span class="pre">on_system_fail</span></code>
+<strong>The Context is Broken.</strong>
+External failures like missing input topics or disk full.
+<em>Example Strategy:</em> Wait for data, or restart the data pipeline.</p></li>
+<li><p><span class="sd-text-danger" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-error sd-text-danger" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"></path><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"></path></svg> 2. Component Failure</span> <code class="docutils literal notranslate"><span class="pre">on_component_fail</span></code>
+<strong>The Node is Broken.</strong>
+Internal crashes or hardware disconnects.
+<em>Example Strategy:</em> Restart the component lifecycle or re-initialize drivers.</p></li>
+<li><p><span class="sd-text-warning" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-warning sd-text-warning" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"></path><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"></path></svg> 3. Algorithm Failure</span> <code class="docutils literal notranslate"><span class="pre">on_algorithm_fail</span></code>
+<strong>The Logic is Broken.</strong>
+The code ran but couldn’t solve the problem (e.g., path not found).
+<em>Example Strategy:</em> Reconfigure parameters (looser tolerance) or switch algorithms.</p></li>
+<li><p><span class="sd-text-secondary" style="font-weight: bold; font-size: 1.1em;"><svg version="4.0.0.63c5cb3" width="1.5em" height="1.5em" class="sd-material-icon sd-material-icon-help_center sd-text-secondary" viewBox="0 0 24 24" aria-hidden="true"><g><rect fill="none" height="24" width="24"></rect><path d="M19,3H5C3.9,3,3,3.9,3,5v14c0,1.1,0.9,2,2,2h14c1.1,0,2-0.9,2-2V5C21,3.9,20.1,3,19,3z M12.01,18 c-0.7,0-1.26-0.56-1.26-1.26c0-0.71,0.56-1.25,1.26-1.25c0.71,0,1.25,0.54,1.25,1.25C13.25,17.43,12.72,18,12.01,18z M15.02,10.6 c-0.76,1.11-1.48,1.46-1.87,2.17c-0.16,0.29-0.22,0.48-0.22,1.41h-1.82c0-0.49-0.08-1.29,0.31-1.98c0.49-0.87,1.42-1.39,1.96-2.16 c0.57-0.81,0.25-2.33-1.37-2.33c-1.06,0-1.58,0.8-1.8,1.48L8.56,8.49C9.01,7.15,10.22,6,11.99,6c1.48,0,2.49,0.67,3.01,1.52 C15.44,8.24,15.7,9.59,15.02,10.6z"></path></g></svg> 4. Catch-All</span> <code class="docutils literal notranslate"><span class="pre">on_fail</span></code>
+<strong>Generic Safety Net.</strong>
+If no specific handler is found above, this fallback is executed.
+<em>Example Strategy:</em> Log an error or stop the robot.</p></li>
+</ul>
+</section>
+<section id="recovery-strategies">
+<h2>Recovery Strategies<a class="headerlink" href="#recovery-strategies" title="Link to this heading">¶</a></h2>
+<p>A Fallback isn’t just a single function call. It is a robust policy defined by <strong>Actions</strong> and <strong>Retries</strong>.</p>
+<section id="the-persistent-retry-single-action">
+<h3>1. The Persistent Retry (Single Action)<a class="headerlink" href="#the-persistent-retry-single-action" title="Link to this heading">¶</a></h3>
+<p><em>Try, try again.</em>
+The system executes the action repeatedly until it returns <code class="docutils literal notranslate"><span class="pre">True</span></code> (success) or <code class="docutils literal notranslate"><span class="pre">max_retries</span></code> is reached.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="c1"># Try to restart the driver up to 3 times</span>
+</span><span data-line="2"><span class="n">driver</span><span class="o">.</span><span class="n">on_component_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">restart</span><span class="p">(</span><span class="n">component</span><span class="o">=</span><span class="n">driver</span><span class="p">),</span> <span class="n">max_retries</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+</span><span data-line="3">
+</span></pre></div>
+</div>
+</section>
+<section id="the-escalation-ladder-list-of-actions">
+<h3>2. The Escalation Ladder (List of Actions)<a class="headerlink" href="#the-escalation-ladder-list-of-actions" title="Link to this heading">¶</a></h3>
+<p><em>If at first you don’t succeed, try something stronger.</em>
+You can define a sequence of actions. If the first one fails (after its retries), the system moves to the next one.</p>
+<ol class="arabic simple">
+<li><p><strong>Clear Costmaps</strong> (Low cost, fast)</p></li>
+<li><p><strong>Reconfigure Planner</strong> (Medium cost)</p></li>
+<li><p><strong>Restart Planner Node</strong> (High cost, slow)</p></li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="c1"># Tiered Recovery for a Navigation Planner</span>
+</span><span data-line="2"><span class="n">planner</span><span class="o">.</span><span class="n">on_algorithm_fail</span><span class="p">(</span>
+</span><span data-line="3">    <span class="n">fallback</span><span class="o">=</span><span class="p">[</span>
+</span><span data-line="4">        <span class="n">Action</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="n">planner</span><span class="o">.</span><span class="n">clear_costmaps</span><span class="p">),</span>      <span class="c1"># Step 1</span>
+</span><span data-line="5">        <span class="n">Action</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="n">planner</span><span class="o">.</span><span class="n">switch_to_fallback</span><span class="p">),</span>  <span class="c1"># Step 2</span>
+</span><span data-line="6">        <span class="n">restart</span><span class="p">(</span><span class="n">component</span><span class="o">=</span><span class="n">planner</span><span class="p">)</span>                  <span class="c1"># Step 3</span>
+</span><span data-line="7">    <span class="p">],</span>
+</span><span data-line="8">    <span class="n">max_retries</span><span class="o">=</span><span class="mi">1</span> <span class="c1"># Try each step once before escalating</span>
+</span><span data-line="9"><span class="p">)</span>
+</span><span data-line="10">
+</span></pre></div>
+</div>
+</section>
+<section id="the-give-up-state">
+<h3>3. The “Give Up” State<a class="headerlink" href="#the-give-up-state" title="Link to this heading">¶</a></h3>
+<p>If all strategies fail (all retries of all actions exhausted), the component enters the <strong>Give Up</strong> state and executes the <code class="docutils literal notranslate"><span class="pre">on_giveup</span></code> action. This is the “End of Line”, usually used to park the robot safely or alert a human.</p>
+</section>
+</section>
+<section id="how-to-implement-fallbacks">
+<h2>How to Implement Fallbacks<a class="headerlink" href="#how-to-implement-fallbacks" title="Link to this heading">¶</a></h2>
+<section id="method-a-in-your-recipe-recommended">
+<h3>Method A: In Your Recipe (Recommended)<a class="headerlink" href="#method-a-in-your-recipe-recommended" title="Link to this heading">¶</a></h3>
+<p>You can configure fallbacks externally without touching the component code. This makes your system modular and reusable.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.actions</span> <span class="kn">import</span> <span class="n">restart</span><span class="p">,</span> <span class="n">log</span>
+</span><span data-line="2">
+</span><span data-line="3"><span class="c1"># 1. Define component</span>
+</span><span data-line="4"><span class="n">lidar</span> <span class="o">=</span> <span class="n">BaseComponent</span><span class="p">(</span><span class="n">component_name</span><span class="o">=</span><span class="s1">&#39;lidar_driver&#39;</span><span class="p">)</span>
+</span><span data-line="5">
+</span><span data-line="6"><span class="c1"># 2. Attach Fallbacks</span>
+</span><span data-line="7"><span class="c1"># If it crashes, restart it (Unlimited retries)</span>
+</span><span data-line="8"><span class="n">lidar</span><span class="o">.</span><span class="n">on_component_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">restart</span><span class="p">(</span><span class="n">component</span><span class="o">=</span><span class="n">lidar</span><span class="p">))</span>
+</span><span data-line="9">
+</span><span data-line="10"><span class="c1"># If data is missing (System), just log it and wait</span>
+</span><span data-line="11"><span class="n">lidar</span><span class="o">.</span><span class="n">on_system_fail</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">log</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="s2">&quot;Waiting for Lidar data...&quot;</span><span class="p">))</span>
+</span><span data-line="12">
+</span><span data-line="13"><span class="c1"># If all else fails, scream</span>
+</span><span data-line="14"><span class="n">lidar</span><span class="o">.</span><span class="n">on_giveup</span><span class="p">(</span><span class="n">fallback</span><span class="o">=</span><span class="n">log</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="s2">&quot;LIDAR IS DEAD. STOPPING ROBOT.&quot;</span><span class="p">))</span>
+</span><span data-line="15">
+</span></pre></div>
+</div>
+</section>
+<section id="method-b-in-component-class-advanced">
+<h3>Method B: In Component Class (Advanced)<a class="headerlink" href="#method-b-in-component-class-advanced" title="Link to this heading">¶</a></h3>
+<p>For tightly coupled recovery logic (like re-handshaking a specific serial protocol), you can define custom fallback methods inside your class.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Use the <code class="docutils literal notranslate"><span class="pre">&#64;component_fallback</span></code> decorator. It ensures the method is only called when the component is in a valid state to handle it.</p>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">BaseComponent</span><span class="p">,</span> <span class="n">component_fallback</span>
+</span><span data-line="2"><span class="kn">from</span> <span class="nn">ros_sugar.core</span> <span class="kn">import</span> <span class="n">Action</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="k">class</span> <span class="nc">MyDriver</span><span class="p">(</span><span class="n">BaseComponent</span><span class="p">):</span>
+</span><span data-line="5">    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+</span><span data-line="6">        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span data-line="7">
+</span><span data-line="8">        <span class="c1"># Register the custom fallback internally</span>
+</span><span data-line="9">        <span class="bp">self</span><span class="o">.</span><span class="n">on_system_fail</span><span class="p">(</span>
+</span><span data-line="10">            <span class="n">fallback</span><span class="o">=</span><span class="n">Action</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">try_reconnect</span><span class="p">),</span>
+</span><span data-line="11">            <span class="n">max_retries</span><span class="o">=</span><span class="mi">3</span>
+</span><span data-line="12">        <span class="p">)</span>
+</span><span data-line="13">
+</span><span data-line="14">    <span class="k">def</span> <span class="nf">_execution_step</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+</span><span data-line="15">        <span class="k">try</span><span class="p">:</span>
+</span><span data-line="16">            <span class="bp">self</span><span class="o">.</span><span class="n">hw</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+</span><span data-line="17">            <span class="bp">self</span><span class="o">.</span><span class="n">health_status</span><span class="o">.</span><span class="n">set_healthy</span><span class="p">()</span>
+</span><span data-line="18">        <span class="k">except</span> <span class="ne">ConnectionError</span><span class="p">:</span>
+</span><span data-line="19">            <span class="c1"># This trigger starts the fallback loop!</span>
+</span><span data-line="20">            <span class="bp">self</span><span class="o">.</span><span class="n">health_status</span><span class="o">.</span><span class="n">set_fail_system</span><span class="p">()</span>
+</span><span data-line="21">
+</span><span data-line="22">    <span class="nd">@component_fallback</span>
+</span><span data-line="23">    <span class="k">def</span> <span class="nf">try_reconnect</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+</span><span data-line="24"><span class="w">        </span><span class="sd">&quot;&quot;&quot;Custom recovery logic&quot;&quot;&quot;</span>
+</span><span data-line="25">        <span class="bp">self</span><span class="o">.</span><span class="n">get_logger</span><span class="p">()</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Attempting handshake...&quot;</span><span class="p">)</span>
+</span><span data-line="26">        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">hw</span><span class="o">.</span><span class="n">connect</span><span class="p">():</span>
+</span><span data-line="27">            <span class="k">return</span> <span class="kc">True</span> <span class="c1"># Recovery Succeeded!</span>
+</span><span data-line="28">        <span class="k">return</span> <span class="kc">False</span>    <span class="c1"># Recovery Failed, will retry...</span>
+</span><span data-line="29">
+</span></pre></div>
+</div>
+</section>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="actions.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Actions</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="launcher.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Recipes Launcher</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Automatika Robotics</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div>
+      <div class="sy-foot-socials">
+<a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+<a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+  <iconify-icon icon="simple-icons:discord"></iconify-icon>
+</a></div>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script>
+      <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script></body>
+</html>

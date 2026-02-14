@@ -1,0 +1,175 @@
+# {py:mod}`ros_sugar.core.action`
+
+```{py:module} ros_sugar.core.action
+```
+
+```{autodoc2-docstring} ros_sugar.core.action
+:allowtitles:
+```
+
+## Module Contents
+
+### Classes
+
+````{list-table}
+:class: autosummary longtable
+:align: left
+
+* - {py:obj}`OpaqueFunction <ros_sugar.core.action.OpaqueFunction>`
+  - ```{autodoc2-docstring} ros_sugar.core.action.OpaqueFunction
+    :summary:
+    ```
+* - {py:obj}`OpaqueCoroutine <ros_sugar.core.action.OpaqueCoroutine>`
+  - ```{autodoc2-docstring} ros_sugar.core.action.OpaqueCoroutine
+    :summary:
+    ```
+* - {py:obj}`Action <ros_sugar.core.action.Action>`
+  - ```{autodoc2-docstring} ros_sugar.core.action.Action
+    :summary:
+    ```
+* - {py:obj}`LogInfo <ros_sugar.core.action.LogInfo>`
+  - ```{autodoc2-docstring} ros_sugar.core.action.LogInfo
+    :summary:
+    ```
+````
+
+### API
+
+````{py:class} OpaqueFunction(*, function: typing.Callable, args: typing.Optional[typing.Iterable[typing.Any]] = None, kwargs: typing.Optional[typing.Dict[typing.Text, typing.Any]] = None, **left_over_kwargs)
+:canonical: ros_sugar.core.action.OpaqueFunction
+
+Bases: {py:obj}`launch.actions.OpaqueFunction`
+
+```{autodoc2-docstring} ros_sugar.core.action.OpaqueFunction
+```
+
+````
+
+````{py:class} OpaqueCoroutine(*, coroutine: typing.Callable[..., typing.Awaitable[None]], args: typing.Optional[typing.Iterable[typing.Any]] = None, kwargs: typing.Optional[typing.Dict[typing.Text, typing.Any]] = None, ignore_context: bool = False, **left_over_kwargs)
+:canonical: ros_sugar.core.action.OpaqueCoroutine
+
+Bases: {py:obj}`launch.actions.OpaqueCoroutine`
+
+```{autodoc2-docstring} ros_sugar.core.action.OpaqueCoroutine
+```
+
+````
+
+`````{py:class} Action(method: typing.Callable, args: typing.Optional[typing.Union[typing.Tuple, typing.List, typing.Any]] = None, kwargs: typing.Optional[typing.Dict] = None)
+:canonical: ros_sugar.core.action.Action
+
+```{autodoc2-docstring} ros_sugar.core.action.Action
+```
+
+````{py:method} set_required_runtime_arguments(kwargs: typing.Dict[str, typing.Union[str, ros_sugar.io.supported_types.SupportedType, typing.Type]])
+:canonical: ros_sugar.core.action.Action.set_required_runtime_arguments
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.set_required_runtime_arguments
+```
+
+````
+
+````{py:method} get_required_topics() -> typing.List[ros_sugar.io.Topic]
+:canonical: ros_sugar.core.action.Action.get_required_topics
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.get_required_topics
+```
+
+````
+
+````{py:method} replace_input_topic(old_topic: ros_sugar.io.Topic, new_topic: ros_sugar.io.Topic)
+:canonical: ros_sugar.core.action.Action.replace_input_topic
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.replace_input_topic
+```
+
+````
+
+````{py:property} executable
+:canonical: ros_sugar.core.action.Action.executable
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.executable
+```
+
+````
+
+````{py:property} parent_component
+:canonical: ros_sugar.core.action.Action.parent_component
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.parent_component
+```
+
+````
+
+````{py:property} action_name
+:canonical: ros_sugar.core.action.Action.action_name
+:type: str
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.action_name
+```
+
+````
+
+````{py:property} component_action
+:canonical: ros_sugar.core.action.Action.component_action
+:type: bool
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.component_action
+```
+
+````
+
+````{py:property} dictionary
+:canonical: ros_sugar.core.action.Action.dictionary
+:type: typing.Dict
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.dictionary
+```
+
+````
+
+````{py:method} deserialize_action(serialized_action_dict: typing.Dict, deserialized_method: typing.Callable) -> ros_sugar.core.action.Action
+:canonical: ros_sugar.core.action.Action.deserialize_action
+:classmethod:
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.deserialize_action
+```
+
+````
+
+````{py:property} json
+:canonical: ros_sugar.core.action.Action.json
+:type: str
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.json
+```
+
+````
+
+````{py:method} launch_action(monitor_node=None) -> typing.Union[ros_sugar.core.action.OpaqueCoroutine, ros_sugar.core.action.OpaqueFunction]
+:canonical: ros_sugar.core.action.Action.launch_action
+
+```{autodoc2-docstring} ros_sugar.core.action.Action.launch_action
+```
+
+````
+
+`````
+
+`````{py:class} LogInfo(*, msg: str, logger_name: typing.Optional[str] = None, **kwargs)
+:canonical: ros_sugar.core.action.LogInfo
+
+Bases: {py:obj}`launch.actions.LogInfo`
+
+```{autodoc2-docstring} ros_sugar.core.action.LogInfo
+```
+
+````{py:method} execute(context: launch.LaunchContext) -> None
+:canonical: ros_sugar.core.action.LogInfo.execute
+
+```{autodoc2-docstring} ros_sugar.core.action.LogInfo.execute
+```
+
+````
+
+`````

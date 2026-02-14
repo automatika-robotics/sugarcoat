@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="indigo" data-content_root="../../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ros_sugar.ui_node.elements - Sugarcoat 0.5.0 documentation</title><link rel="shortcut icon" href="../../_static/favicon.png"/><link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" />
+      <link rel="canonical" href="https://automatika-robotics.github.io/sugarcoat/apidocs/ros_sugar/ros_sugar.ui_node.elements.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d1c6635e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/shibuya.css?v=44020203" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link media="print" rel="stylesheet" type="text/css" href="../../_static/print.css?v=20ff2c19" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=cade9008" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://automatika-robotics.github.io/sugarcoat/apidocs/ros_sugar/ros_sugar.ui_node.elements.html"/>
+  <meta property="og:title" content="ros_sugar.ui_node.elements"/>
+    <meta name="twitter:card" content="summary"/>
+  </head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../../index.html">
+      <img class="light-logo" src="../../_static/SUGARCOAT_LIGHT.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <img class="dark-logo" src="../../_static/SUGARCOAT_DARK.png" alt="Sugarcoat" height="28" loading="lazy" />
+      <strong>Sugarcoat</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul><li class="link">
+          <a href="https://automatikarobotics.com/">
+            <span>Automatika Robotics</span></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+  <a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+    <iconify-icon icon="simple-icons:discord"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Overview</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../overview.html">Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../install.html">Getting Started</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../why.html">Why Sugarcoat?</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Design Concepts</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/concepts_overview.html">Design Concepts Overview</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/component.html">Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/topics.html">Topics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/status.html">Health Status</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/events.html">Events</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/actions.html">Actions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/fallbacks.html">Fallbacks</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../design/launcher.html">Recipes Launcher</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Out-of-the-Box Features</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../features/web_ui.html">Zero-Code Dynamic Web UI</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../features/robot_plugins.html">Universal Robot Plugins</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Using Sugarcoat</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/use.html">Creating your ROS2 package using Sugarcoat</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/create_service.html">Converting a Sugarcoat Recipe into a systemd Service</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/srvs.html">Default Services In Sugarcoat Components</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/config.html">Don&#8217;t Like YAML? We&#8217;ve Got You &#128526;</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../../advanced/types.html">Supported ROS2 Messages</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">References</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../index.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="ros_sugar.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.config.base_config.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.config.base_config</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.io.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.io.topic.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.topic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.io.callbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.callbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.io.supported_types.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.supported_types</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.io.publisher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.io.publisher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.launch.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.launch.launcher.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.launch.launcher</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.core.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.monitor.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.monitor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.fallbacks.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.fallbacks</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.status.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.status</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.event.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.event</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.component.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.component</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ros_sugar.core.action.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.core.action</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.base_clients.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.base_clients</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.tf.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.tf</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ros_sugar.actions.html"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.actions</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#module-contents">Module Contents</a><ul>
+<li><a class="reference internal" href="#classes">Classes</a></li>
+<li><a class="reference internal" href="#functions">Functions</a></li>
+<li><a class="reference internal" href="#api">API</a><ul>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.Task"><code class="docutils literal notranslate"><span class="pre">Task</span></code></a><ul>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.Task.is_active"><code class="docutils literal notranslate">is_active()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.Task.update"><code class="docutils literal notranslate">update()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.Task.card"><code class="docutils literal notranslate">card</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.Task.feedback"><code class="docutils literal notranslate">feedback</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.filter_tag_button"><code class="docutils literal notranslate"><span class="pre">filter_tag_button()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.add_additional_ui_elements"><code class="docutils literal notranslate"><span class="pre">add_additional_ui_elements()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_main_service_clients_container"><code class="docutils literal notranslate"><span class="pre">styled_main_service_clients_container()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.input_topic_card"><code class="docutils literal notranslate"><span class="pre">input_topic_card()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_main_inputs_container"><code class="docutils literal notranslate"><span class="pre">styled_main_inputs_container()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_inputs_grid"><code class="docutils literal notranslate"><span class="pre">styled_inputs_grid()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.output_topic_card"><code class="docutils literal notranslate"><span class="pre">output_topic_card()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_main_outputs_container"><code class="docutils literal notranslate"><span class="pre">styled_main_outputs_container()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_outputs_grid"><code class="docutils literal notranslate"><span class="pre">styled_outputs_grid()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.output_logging_card"><code class="docutils literal notranslate"><span class="pre">output_logging_card()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.initial_logging_card"><code class="docutils literal notranslate"><span class="pre">initial_logging_card()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.remove_child_from_logging_card"><code class="docutils literal notranslate"><span class="pre">remove_child_from_logging_card()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.augment_text_in_logging_card"><code class="docutils literal notranslate"><span class="pre">augment_text_in_logging_card()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.update_logging_card"><code class="docutils literal notranslate"><span class="pre">update_logging_card()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.update_logging_card_with_loading"><code class="docutils literal notranslate"><span class="pre">update_logging_card_with_loading()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.settings_ui_element"><code class="docutils literal notranslate"><span class="pre">settings_ui_element()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.component_settings_div"><code class="docutils literal notranslate"><span class="pre">component_settings_div()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.nonvalidated_config"><code class="docutils literal notranslate"><span class="pre">nonvalidated_config()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.validated_config"><code class="docutils literal notranslate"><span class="pre">validated_config()</span></code></a></li>
+<li><a class="reference internal" href="#ros_sugar.ui_node.elements.parse_ui_elements_to_simple_and_nested"><code class="docutils literal notranslate"><span class="pre">parse_ui_elements_to_simple_and_nested()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div><div id="ethical-ad-placement" data-ea-publisher="readthedocs"></div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../../index.html"><span itemprop="name">Sugarcoat</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.ui_node.elements</span></code></strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="https://automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.ui_node.elements.md.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="https://automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.ui_node.elements.md.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="https://automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.ui_node.elements.md.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:markdown"></iconify-icon>
+            <span>View as Markdown</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.ui_node.elements.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20https%3A//automatika-robotics.github.io/sugarcoat/_sources/apidocs/ros_sugar/ros_sugar.ui_node.elements.md.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue" role="main">
+          <section class="tex2jax_ignore mathjax_ignore" id="module-ros_sugar.ui_node.elements">
+<span id="ros-sugar-ui-node-elements"></span><h1><a class="reference internal" href="#module-ros_sugar.ui_node.elements" title="ros_sugar.ui_node.elements"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ros_sugar.ui_node.elements</span></code></a><a class="headerlink" href="#module-ros_sugar.ui_node.elements" title="Link to this heading">¶</a></h1>
+<section id="module-contents">
+<h2>Module Contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
+<section id="classes">
+<h3>Classes<a class="headerlink" href="#classes" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-left">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.Task" title="ros_sugar.ui_node.elements.Task"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Task</span></code></a></p></td>
+<td><p>Task (ROS2 Action) Element Class</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="functions">
+<h3>Functions<a class="headerlink" href="#functions" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-left">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.filter_tag_button" title="ros_sugar.ui_node.elements.filter_tag_button"><code class="xref py py-obj docutils literal notranslate"><span class="pre">filter_tag_button</span></code></a></p></td>
+<td><p>UI arrow button to use for show/hide toggle of a Div with a given ID</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.add_additional_ui_elements" title="ros_sugar.ui_node.elements.add_additional_ui_elements"><code class="xref py py-obj docutils literal notranslate"><span class="pre">add_additional_ui_elements</span></code></a></p></td>
+<td><p>Deserialize additional elements and add them</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_main_service_clients_container" title="ros_sugar.ui_node.elements.styled_main_service_clients_container"><code class="xref py py-obj docutils literal notranslate"><span class="pre">styled_main_service_clients_container</span></code></a></p></td>
+<td><p>Creates a UI element for all service clients</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.input_topic_card" title="ros_sugar.ui_node.elements.input_topic_card"><code class="xref py py-obj docutils literal notranslate"><span class="pre">input_topic_card</span></code></a></p></td>
+<td><p>Creates a UI element for an input topic</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_main_inputs_container" title="ros_sugar.ui_node.elements.styled_main_inputs_container"><code class="xref py py-obj docutils literal notranslate"><span class="pre">styled_main_inputs_container</span></code></a></p></td>
+<td><p>Creates main section for all the UI inputs</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_inputs_grid" title="ros_sugar.ui_node.elements.styled_inputs_grid"><code class="xref py py-obj docutils literal notranslate"><span class="pre">styled_inputs_grid</span></code></a></p></td>
+<td><p>Creates a styled grid for the number of inputs</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.output_topic_card" title="ros_sugar.ui_node.elements.output_topic_card"><code class="xref py py-obj docutils literal notranslate"><span class="pre">output_topic_card</span></code></a></p></td>
+<td><p>Creates a UI element for an output topic</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_main_outputs_container" title="ros_sugar.ui_node.elements.styled_main_outputs_container"><code class="xref py py-obj docutils literal notranslate"><span class="pre">styled_main_outputs_container</span></code></a></p></td>
+<td><p>Creates main section for all the UI outputs</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.styled_outputs_grid" title="ros_sugar.ui_node.elements.styled_outputs_grid"><code class="xref py py-obj docutils literal notranslate"><span class="pre">styled_outputs_grid</span></code></a></p></td>
+<td><p>Creates a styled grid for the number of outputs</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.output_logging_card" title="ros_sugar.ui_node.elements.output_logging_card"><code class="xref py py-obj docutils literal notranslate"><span class="pre">output_logging_card</span></code></a></p></td>
+<td><p>Creates a main container for the logging card and adds current logging</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.initial_logging_card" title="ros_sugar.ui_node.elements.initial_logging_card"><code class="xref py py-obj docutils literal notranslate"><span class="pre">initial_logging_card</span></code></a></p></td>
+<td><p>Creates an empty logging card with ‘Log Started’ text</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.remove_child_from_logging_card" title="ros_sugar.ui_node.elements.remove_child_from_logging_card"><code class="xref py py-obj docutils literal notranslate"><span class="pre">remove_child_from_logging_card</span></code></a></p></td>
+<td><p>Remove the last child in logging_card.children with a matching id.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.augment_text_in_logging_card" title="ros_sugar.ui_node.elements.augment_text_in_logging_card"><code class="xref py py-obj docutils literal notranslate"><span class="pre">augment_text_in_logging_card</span></code></a></p></td>
+<td><p>Update the inner text of a child in logging_card.children with a matching id.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.update_logging_card" title="ros_sugar.ui_node.elements.update_logging_card"><code class="xref py py-obj docutils literal notranslate"><span class="pre">update_logging_card</span></code></a></p></td>
+<td><p>Updates the logging card with a response text</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.update_logging_card_with_loading" title="ros_sugar.ui_node.elements.update_logging_card_with_loading"><code class="xref py py-obj docutils literal notranslate"><span class="pre">update_logging_card_with_loading</span></code></a></p></td>
+<td><p>Adds a robot ‘loading’ element to the main logging card.
+Used to add loading to the card until a response is received</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.settings_ui_element" title="ros_sugar.ui_node.elements.settings_ui_element"><code class="xref py py-obj docutils literal notranslate"><span class="pre">settings_ui_element</span></code></a></p></td>
+<td><p>Creates a UI element based on the setting’s type and validators</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.component_settings_div" title="ros_sugar.ui_node.elements.component_settings_div"><code class="xref py py-obj docutils literal notranslate"><span class="pre">component_settings_div</span></code></a></p></td>
+<td><p>Creates a UI element for a component to show and update the config parameters</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.nonvalidated_config" title="ros_sugar.ui_node.elements.nonvalidated_config"><code class="xref py py-obj docutils literal notranslate"><span class="pre">nonvalidated_config</span></code></a></p></td>
+<td><p>Sets up a UI element for a component settings element WITHOUT validators</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.validated_config" title="ros_sugar.ui_node.elements.validated_config"><code class="xref py py-obj docutils literal notranslate"><span class="pre">validated_config</span></code></a></p></td>
+<td><p>Sets up UI element for a component settings element with validators</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ros_sugar.ui_node.elements.parse_ui_elements_to_simple_and_nested" title="ros_sugar.ui_node.elements.parse_ui_elements_to_simple_and_nested"><code class="xref py py-obj docutils literal notranslate"><span class="pre">parse_ui_elements_to_simple_and_nested</span></code></a></p></td>
+<td><p>Parses the component settings element to determine if it is a simple type (int, float, etc.) or  a nested type (for elements that are BaseAttrs classes themselves), then adds the element to the corresponding list</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="api">
+<h3>API<a class="headerlink" href="#api" title="Link to this heading">¶</a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.Task">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">Task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">client_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fields</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.Task" title="Link to this definition">¶</a></dt>
+<dd><p>Task (ROS2 Action) Element Class</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.Task.is_active">
+<span class="sig-name descname"><span class="pre">is_active</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.Task.is_active" title="Link to this definition">¶</a></dt>
+<dd><p>Check if the task is active (running/active/accepted)</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True if the task is active</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.Task.update">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">status</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">feedback</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.Task.update" title="Link to this definition">¶</a></dt>
+<dd><p>Update the task current status</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>status</strong> (<em>str</em>) – New status</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.Task.card">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">card</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">FT</span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.Task.card" title="Link to this definition">¶</a></dt>
+<dd><p>Get a UI card element for the task tracking and request</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>description</em></p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>FT</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.Task.feedback">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">feedback</span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.Task.feedback" title="Link to this definition">¶</a></dt>
+<dd><p>Get a UI element for the task feedback</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.filter_tag_button">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">filter_tag_button</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">div_to_hide</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.filter_tag_button" title="Link to this definition">¶</a></dt>
+<dd><p>UI arrow button to use for show/hide toggle of a Div with a given ID</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>div_to_toggle</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em><em>, </em><em>optional</em>) – Id of the Div to show/hide on button click, defaults to None</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>UI Button Element</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>FT</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.add_additional_ui_elements">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">add_additional_ui_elements</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_elements</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_elements</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.add_additional_ui_elements" title="Link to this definition">¶</a></dt>
+<dd><p>Deserialize additional elements and add them</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.styled_main_service_clients_container">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">styled_main_service_clients_container</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">srv_clients_config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">container_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column_class</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">FT</span></span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.styled_main_service_clients_container" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a UI element for all service clients</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>srv_clients_config</strong> (<em>Sequence</em><em>[</em><em>Dict</em><em>]</em>) – Set of service clients configs</p></li>
+<li><p><strong>column_class</strong> (<em>str</em><em>, </em><em>defaults to “”</em>) – UI columns class</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Input Service Clients UI element</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.input_topic_card">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">input_topic_card</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">topic_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">topic_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ros_msg_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column_class</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ft_has_map_element</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">FT</span></span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.input_topic_card" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a UI element for an input topic</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>topic_name</strong> (<em>str</em>) – Topic name</p></li>
+<li><p><strong>topic_type</strong> (<em>str</em>) – Topic message type</p></li>
+<li><p><strong>column_class</strong> (<em>str</em>) – CSS class for number of columns, if not set the Div will span over the whole parent width</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Input topic UI element</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.styled_main_inputs_container">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">styled_main_inputs_container</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">inputs_grid_div_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">FT</span></span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.styled_main_inputs_container" title="Link to this definition">¶</a></dt>
+<dd><p>Creates main section for all the UI inputs</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Main inputs card</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>FT Card</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.styled_inputs_grid">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">styled_inputs_grid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">number_of_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span></span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.styled_inputs_grid" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a styled grid for the number of inputs</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>number_of_inputs</strong> (<em>int</em>) – Number of input cards</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Styled Grid, Style class to use for each element in the grid</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.output_topic_card">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">output_topic_card</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">topic_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">topic_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column_class</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">map_output_markers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">FT</span></span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.output_topic_card" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a UI element for an output topic</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>topic_name</strong> (<em>str</em>) – Topic name</p></li>
+<li><p><strong>topic_type</strong> (<em>str</em>) – Topic message type</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Output topic UI element</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.styled_main_outputs_container">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">styled_main_outputs_container</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">outputs_grid_div_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">FT</span></span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.styled_main_outputs_container" title="Link to this definition">¶</a></dt>
+<dd><p>Creates main section for all the UI outputs</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Main outputs card</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>FT Card</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.styled_outputs_grid">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">styled_outputs_grid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">number_of_outputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span></span></span><a class="headerlink" href="#ros_sugar.ui_node.elements.styled_outputs_grid" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a styled grid for the number of outputs</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>number_of_outputs</strong> (<em>int</em>) – Number of output cards</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Styled Grid, Style class to use for each element in the grid</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.output_logging_card">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">output_logging_card</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">current_log</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.output_logging_card" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a main container for the logging card and adds current logging</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>current_log</strong> (<em>FT</em>) – Current logging card</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Logging card main container</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>FT</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.initial_logging_card">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">initial_logging_card</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.initial_logging_card" title="Link to this definition">¶</a></dt>
+<dd><p>Creates an empty logging card with ‘Log Started’ text</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Empty logging card</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>FT</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.remove_child_from_logging_card">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">remove_child_from_logging_card</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">logging_card</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'loading-dots'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.remove_child_from_logging_card" title="Link to this definition">¶</a></dt>
+<dd><p>Remove the last child in logging_card.children with a matching id.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.augment_text_in_logging_card">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">augment_text_in_logging_card</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">logging_card</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_txt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'text'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.augment_text_in_logging_card" title="Link to this definition">¶</a></dt>
+<dd><p>Update the inner text of a child in logging_card.children with a matching id.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.update_logging_card">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">update_logging_card</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">logging_card</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_src</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'info'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.update_logging_card" title="Link to this definition">¶</a></dt>
+<dd><p>Updates the logging card with a response text</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>logging_card</strong> (<em>FT</em>) – Main logging card to update</p></li>
+<li><p><strong>output</strong> (<em>str</em>) – Text to add to the card</p></li>
+<li><p><strong>data_type</strong> (<em>str</em>) – Type of the data (String/error)</p></li>
+<li><p><strong>data_src</strong> (<em>str</em><em>, </em><em>optional</em>) – Source of the data (info, error, robot, etc.), defaults to “info”</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Updated logging card</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>FT</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.update_logging_card_with_loading">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">update_logging_card_with_loading</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">logging_card</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.update_logging_card_with_loading" title="Link to this definition">¶</a></dt>
+<dd><p>Adds a robot ‘loading’ element to the main logging card.
+Used to add loading to the card until a response is received</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.settings_ui_element">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">settings_ui_element</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">setting_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">setting_details</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">field_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type_args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.settings_ui_element" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a UI element based on the setting’s type and validators</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>setting_name</strong> (<em>str</em>) – Config parameter name</p></li>
+<li><p><strong>setting_details</strong> (<em>dict</em>) – Details of the parsed config</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Setting parameter UI element</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.component_settings_div">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">component_settings_div</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">settings_col_cls</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ui_elements</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nested_ui_elements</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.component_settings_div" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a UI element for a component to show and update the config parameters</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component_name</strong> (<em>str</em>) – Name of the component (ROS2 node name)</p></li>
+<li><p><strong>settings_col_cls</strong> (<em>str</em>) – UI Div columns span in the display grid</p></li>
+<li><p><strong>ui_elements</strong> (<em>List</em>) – A set ot UI elements for each parameter in the component config</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Component config UI element</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.nonvalidated_config">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">nonvalidated_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">setting_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">field_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type_args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.nonvalidated_config" title="Link to this definition">¶</a></dt>
+<dd><p>Sets up a UI element for a component settings element WITHOUT validators</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>setting_name</strong> (<em>str</em>) – Name of the settings field</p></li>
+<li><p><strong>value</strong> (<em>Any</em>) – Value of the settings field</p></li>
+<li><p><strong>field_type</strong> (<em>type</em>) – Type of the settings field</p></li>
+<li><p><strong>type_args</strong> (<em>type</em>) – Type arguments (if any)</p></li>
+<li><p><strong>input_name</strong> (<em>type</em>) – Corresponding input name</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>UI input element</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>FT</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.validated_config">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">validated_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">setting_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">attrs_validators</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">field_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type_args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input_name</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.validated_config" title="Link to this definition">¶</a></dt>
+<dd><p>Sets up UI element for a component settings element with validators</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>setting_name</strong> (<em>str</em>) – Name of the settings field</p></li>
+<li><p><strong>value</strong> (<em>Any</em>) – Value of the settings field</p></li>
+<li><p><strong>attrs_validators</strong> (<em>List</em><em>[</em><em>Dict</em><em>]</em>) – Validators of the settings field</p></li>
+<li><p><strong>field_type</strong> (<em>type</em>) – Type of the settings field</p></li>
+<li><p><strong>type_args</strong> (<em>type</em>) – Type arguments (if any)</p></li>
+<li><p><strong>input_name</strong> (<em>type</em>) – Corresponding input name</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>UI input element</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>FT</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ros_sugar.ui_node.elements.parse_ui_elements_to_simple_and_nested">
+<span class="sig-prename descclassname"><span class="pre">ros_sugar.ui_node.elements.</span></span><span class="sig-name descname"><span class="pre">parse_ui_elements_to_simple_and_nested</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">setting_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">setting_details</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">simple_ui_elements</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nested_ui_elements</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ros_sugar.ui_node.elements.parse_ui_elements_to_simple_and_nested" title="Link to this definition">¶</a></dt>
+<dd><p>Parses the component settings element to determine if it is a simple type (int, float, etc.) or  a nested type (for elements that are BaseAttrs classes themselves), then adds the element to the corresponding list</p>
+<dl class="myst field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component_name</strong> (<em>str</em>) – Name of the component</p></li>
+<li><p><strong>setting_name</strong> (<em>str</em>) – Name of the settings field</p></li>
+<li><p><strong>setting_details</strong> (<em>Any</em>) – Value of the settings field</p></li>
+<li><p><strong>simple_ui_elements</strong> (<em>list</em>) – Set of component’s simple UI elements to populate</p></li>
+<li><p><strong>nested_ui_elements</strong> (<em>list</em>) – Set of component’s nested UI elements to populate</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Automatika Robotics</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div>
+      <div class="sy-foot-socials">
+<a href="https://github.com/automatika-robotics/sugarcoat" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a>
+<a href="https://x.com/__automatika__" aria-label="X (Twitter)">
+  <iconify-icon icon="prime:twitter"></iconify-icon>
+</a>
+<a href="https://discord.gg/B9ZU6qjzND" aria-label="Discord">
+  <iconify-icon icon="simple-icons:discord"></iconify-icon>
+</a></div>
+    </div>
+  </div>
+</footer>
+      <script src="../../_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+      <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+      <script src="../../_static/shibuya.js?v=cac61aee"></script></body>
+</html>
