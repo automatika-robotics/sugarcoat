@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --break-system-packages sphinx myst_parser sphinx-copybutton sphinx-autodoc2 sphinx-design linkify-it-py sphinx-sitemap shibuya
+          pip install --break-system-packages sphinx myst_parser sphinx-copybutton sphinx-autodoc2 sphinx-design linkify-it-py sphinx-sitemap shibuya sphinxcontrib-youtube
 
       - name: Sphinx build
         run: |
@@ -42,7 +42,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '_build'
+          path: "_build"
 
   # JOB 2: Deploy (Runs ONLY on Push to Main)
   deploy:
@@ -56,4 +56,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
