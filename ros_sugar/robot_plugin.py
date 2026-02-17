@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Optional, Callable
+from typing import Optional, Callable, Type
 import inspect
 from rclpy.node import Node
 from .io.publisher import Publisher
@@ -12,7 +12,7 @@ def create_supported_type(
     ros_msg_type: type,
     converter: Optional[Callable] = None,
     callback: Optional[Callable] = None,
-) -> type[SupportedType]:
+) -> Type[SupportedType]:
     """Add a new SupportedType derived class to the existing class"""
     if not hasattr(ros_msg_type, "SLOT_TYPES"):
         raise TypeError("ros_msg_type must be a valid ROS2 message type")
