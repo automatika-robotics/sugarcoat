@@ -218,10 +218,11 @@ class Event:
 
     def __init__(
         self,
-        event_condition: Union[Topic, Condition],
+        event_condition: Union[Topic, Condition, "Action"],
         on_change: bool = False,
         handle_once: bool = False,
         keep_event_delay: float = 0.0,
+        check_rate: Optional[float] = None,
     ) -> None:
         """Creates an event
 
@@ -255,8 +256,11 @@ class Event:
         # Case 1: Init from Condition Expression (topic.msg.data > 5)
         if isinstance(event_condition, Condition):
             self._condition = event_condition
+            self._action_condition: Optional[Action] = None
+            self._is_action_based: bool = False
+            self.check_rate: Optional[float] = None
 
-        # Topics are passed for on_any event
+        # Case 2: Topics are passed for on_any event
         elif isinstance(event_condition, Topic):
             self._condition = Condition(
                 topic_name=event_condition.name,
@@ -266,10 +270,22 @@ class Event:
                 operator_func=None,
                 ref_value=None,
             )
+            self._action_condition = None
+            self._is_action_based = False
+            self.check_rate = None
             self._on_any = True
+
+        # Case 3: Action-based polling: action return value is the boolean condition
+        elif isinstance(event_condition, Action):
+            self._condition = None
+            self._action_condition = event_condition
+            self._is_action_based = True
+            self.check_rate = check_rate
+
         else:
             raise AttributeError(
-                f"Cannot initialize Event class. Must provide 'event_source' as a Topic or a valid config from json or dictionary or a condition, got {type(event_condition)}"
+                f"Cannot initialize Event class. Must provide 'event_source' as a Topic, "
+                f"Condition, or Action, got {type(event_condition)}"
             )
 
         # Init trigger as False
@@ -280,9 +296,11 @@ class Event:
 
         # Required topics registry
         self.__required_topics: List[Topic] = []
-        required_topics_dict: Dict = self._condition._get_involved_topics()
-        for topic_name, topic_dict in required_topics_dict.items():
-            self.__required_topics.append(Topic(name=topic_name, **topic_dict))
+        # TODO: handle getting topics from action conditions as well (if any) and add to the required topics list
+        if not self._is_action_based:
+            required_topics_dict: Dict = self._condition._get_involved_topics()
+            for topic_name, topic_dict in required_topics_dict.items():
+                self.__required_topics.append(Topic(name=topic_name, **topic_dict))
 
         # Additional Action Topics
         self.__additional_action_topics: List[Topic] = []
@@ -343,32 +361,59 @@ class Event:
         :return: Event description dictionary
         :rtype: Dict
         """
-        event_dict = {
+        if self._is_action_based:
+            return {
+                "name": self.__id,
+                "action_condition": json.dumps(self._action_condition.dictionary),
+                "check_rate": self.check_rate,
+                "handle_once": self._handle_once,
+                "keep_event_delay": self._keep_event_delay,
+                "on_change": self._on_change,
+            }
+        return {
             "name": self.__id,
             "condition": self._condition.to_json(),
             "handle_once": self._handle_once,
             "keep_event_delay": self._keep_event_delay,
             "on_change": self._on_change,
         }
-        return event_dict
 
     @classmethod
-    def from_dict(cls, dict_obj: Dict):
+    def from_dict(cls, dict_obj: Dict, deserialized_method=None):
         """
         Setter of the event using a dictionary
 
         :param dict_obj: Event description dictionary
         :type dict_obj: Dict
+        :param deserialized_method: Required when the dict encodes an action-based event;
+            the callable to reconstruct the condition Action with.
+        :type deserialized_method: Optional[Callable]
         """
         try:
-            event_condition = Condition.from_dict(json.loads(dict_obj["condition"]))
-            event = cls(
-                event_condition=event_condition,
-                on_change=dict_obj["on_change"],
-                handle_once=dict_obj["handle_once"],
-                keep_event_delay=dict_obj["keep_event_delay"],
-            )
-            # Set the same ID to the event
+            if "action_condition" in dict_obj:
+                if deserialized_method is None:
+                    raise ValueError(
+                        "deserialized_method must be provided to reconstruct an action-based event."
+                    )
+                action_condition = Action.deserialize_action(
+                    json.loads(dict_obj["action_condition"]), deserialized_method
+                )
+                event = cls(
+                    event_condition=action_condition,
+                    on_change=dict_obj["on_change"],
+                    handle_once=dict_obj["handle_once"],
+                    keep_event_delay=dict_obj["keep_event_delay"],
+                    check_rate=dict_obj.get("check_rate"),
+                )
+            else:
+                event_condition = Condition.from_dict(json.loads(dict_obj["condition"]))
+                event = cls(
+                    event_condition=event_condition,
+                    on_change=dict_obj["on_change"],
+                    handle_once=dict_obj["handle_once"],
+                    keep_event_delay=dict_obj["keep_event_delay"],
+                )
+            # Restore the original ID
             event.__id = dict_obj["name"]
             return event
         except Exception as e:
@@ -385,15 +430,18 @@ class Event:
         return json.dumps(self.to_dict())
 
     @classmethod
-    def from_json(cls, json_obj: Union[str, bytes, bytearray]):
+    def from_json(cls, json_obj: Union[str, bytes, bytearray], deserialized_method=None):
         """
         Property to get/set the event using a json
 
         :param json_obj: Event description dictionary as json
         :type json_obj: Union[str, bytes, bytearray]
+        :param deserialized_method: Required when the JSON encodes an action-based event;
+            the callable to reconstruct the condition Action with.
+        :type deserialized_method: Optional[Callable]
         """
         dict_obj = json.loads(json_obj)
-        return cls.from_dict(dict_obj)
+        return cls.from_dict(dict_obj, deserialized_method=deserialized_method)
 
     def get_involved_topics(self) -> List[Topic]:
         """Get all the topics required for monitoring this event
@@ -457,6 +505,9 @@ class Event:
             for action in self._registered_on_trigger_actions:
                 action(topics=global_topic_cache)
 
+            if self._handle_once:
+                self._processed_once = True
+
             # Handle the blocking delay inside the thread (so main loop isn't blocked)
             if self._keep_event_delay > 0:
                 # If a delay is provided start a timer and
@@ -499,12 +550,12 @@ class Event:
         Evaluates the root Condition tree against the global cache.
         """
         topics_dict = {key: value.msg for key, value in global_topic_cache.items()}
-        self._previous_trigger = copy(self.trigger)
 
         if self._on_any:
             # Check that all involved topics has values
             topics_names = [topic.name for topic in self.get_involved_topics()]
             self.trigger = all(topics_dict.get(key, None) for key in topics_names)
+            self._previous_trigger = copy(self.trigger)
         else:
             # This assumes self.event_condition is now the root Condition object
             triggered = self._condition.evaluate(topics_dict)
@@ -528,6 +579,8 @@ class Event:
                 # then just directly update the trigger
                 self.trigger = triggered
 
+            self._previous_trigger = copy(triggered)
+
         if self.trigger:
             # If triggered update the last processed IDs
             # This prevents handling the same topic data twice in the period before its 'stale'
@@ -537,8 +590,27 @@ class Event:
             self._execute_actions(topics_dict)
         return
 
+    def check_action_condition(self) -> None:
+        """Evaluate the action-based condition and execute registered actions if triggered.
+        Called periodically by a component timer; should only be used on action-based events.
+        """
+        triggered = bool(self._action_condition())
+
+        if self._on_change and self._previous_trigger is not None:
+            self.trigger = triggered and not self._previous_trigger
+        else:
+            self.trigger = triggered
+
+        if self.trigger:
+            # TODO: handle dynamic arguments
+            self._execute_actions({})
+
+        self._previous_trigger = copy(triggered)
+
     def __str__(self) -> str:
         """
         str for Event object
         """
+        if self._is_action_based:
+            return f"Action({self._action_condition.action_name}) (ID {self.__id})"
         return f"{self._condition._readable()} (ID {self.__id})"
