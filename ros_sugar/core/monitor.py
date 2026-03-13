@@ -1,5 +1,6 @@
 """Monitor"""
 
+import json
 import os
 from functools import partial
 import time
@@ -555,46 +556,39 @@ class Monitor(Node):
             # Pass the clean subset to the event
             event.check_condition(clean_cache_subset)
 
-    def _activate_event_monitoring(self) -> None:
-        """
-        Turn on all events
-        """
-        self.__events = []
-        if self._events_actions:
-            for serialized_event, actions in self._events_actions.items():
-                event = Event.from_json(serialized_event)
-                for action in actions:
-                    method = getattr(self, action.action_name)
-                    # register action to the event
-                    action.executable = partial(method, *action._args, **action._kwargs)
-                    event.register_actions(action)
-                self.__events.append(event)
+    def __build_events_from_actions(self) -> None:
+        """Deserialize and register events from _events_actions, skipping action-based ones."""
+        if not self._events_actions:
+            return
+        for serialized_event, actions in self._events_actions.items():
+            if "action_condition" in json.loads(serialized_event):
+                # Action-based events are polled by the owning component via timers.
+                # Condition methods live in the script, not on the Monitor, so the Monitor
+                # cannot deserialize them. Any launcher-side consequences will be triggered
+                # via InternalEvents emitted from the script.
+                continue
+            event = Event.from_json(serialized_event)
+            for action in actions:
+                method = getattr(self, action.action_name)
+                action.executable = partial(method, *action._args, **action._kwargs)
+                event.register_actions(action)
+            self.__events.append(event)
 
-        if self._internal_events:
-            # Add internal events (to emit back to launcher)
-            self.__events.extend(self._internal_events)
-
-        # TURN ON EVENTS MANAGEMENT
-        # Blackboard to store latest messages for all topics required for all event:
-        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
-        self._events_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
-
-        # Identify all unique topics required across ALL events
+    def __build_topic_subscriptions(self) -> None:
+        """Create one subscription per unique topic required by all topic-based events."""
         unique_topics: Dict[str, Topic] = {}
         self.__events_per_topic: Dict[str, List[Event]] = {}
         for event in self.__events:
-            required_topics = event.get_involved_topics()
-            # Ensure topic is not already there, then add to unique topics
-            for topic in required_topics:
+            if event._is_action_based:
+                continue
+            for topic in event.get_involved_topics():
                 if topic.name not in unique_topics:
                     unique_topics[topic.name] = topic
-                # update to keep a record of the events to check for each topic
                 if topic.name not in self.__events_per_topic:
                     self.__events_per_topic[topic.name] = [event]
                 else:
                     self.__events_per_topic[topic.name].append(event)
 
-        # Create ONE subscription per Topic
         self.__event_listeners = []
         for name, topic_obj in unique_topics.items():
             listener = self.create_subscription(
@@ -605,6 +599,43 @@ class Monitor(Node):
                 callback_group=MutuallyExclusiveCallbackGroup(),
             )
             self.__event_listeners.append(listener)
+
+    def __start_action_based_event_timers(self) -> None:
+        """Create one periodic timer per action-based event sourced from _internal_events.
+
+        Recipe-level action-based events are passed as live Event objects (with the
+        condition callable intact) via _internal_events. The Monitor polls them here.
+        """
+        self.__action_event_timers = []
+        for event in self.__events:
+            if event._is_action_based:
+                rate = event.check_rate or self.config.loop_rate
+                self.__action_event_timers.append(
+                    self.create_timer(
+                        timer_period_sec=1.0 / rate,
+                        callback=event.check_action_condition,
+                        callback_group=MutuallyExclusiveCallbackGroup(),
+                    )
+                )
+
+    def _activate_event_monitoring(self) -> None:
+        """
+        Turn on all events
+        """
+        self.__events = []
+
+        self.__build_events_from_actions()
+
+        if self._internal_events:
+            # Add internal events (to emit back to launcher)
+            self.__events.extend(self._internal_events)
+
+        # Blackboard to store latest messages for all topics required for all events:
+        # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
+        self._events_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
+
+        self.__build_topic_subscriptions()
+        self.__start_action_based_event_timers()
 
     def _create_status_subscribers(self) -> None:
         """
