@@ -155,6 +155,7 @@ class BaseComponent(lifecycle.Node):
         self.__events: Optional[List[Event]] = None
         self.__actions: Optional[List[List[Action]]] = None
         self.__event_listeners: List[Subscription] = []
+        self.__bridge_publishers: Dict[str, ROSPublisher] = {}
 
         # To manage algorithms config
         self._algorithms_config: Dict[
@@ -761,6 +762,8 @@ class BaseComponent(lifecycle.Node):
         if hasattr(self, "_execution_timer"):
             self.get_logger().info("DESTROYING MAIN TIMER")
             self.destroy_timer(self._execution_timer)
+        for timer in getattr(self, "__action_event_timers", []):
+            self.destroy_timer(timer)
 
     def destroy_all_subscribers(self):
         """
@@ -788,6 +791,12 @@ class BaseComponent(lifecycle.Node):
         for publisher in self.publishers_dict.values():
             if publisher._publisher:
                 self.destroy_publisher(publisher._publisher)
+
+        # Destroy all publishers created for event bridging
+        if hasattr(self, "_bridge_publishers"):
+            for bridge_pub in self.__bridge_publishers.values():
+                self.destroy_publisher(bridge_pub)
+            self.__bridge_publishers = {}
 
     def destroy_all_services(self):
         """
@@ -893,6 +902,38 @@ class BaseComponent(lifecycle.Node):
         return _new_client
 
     # EVENT MANAGEMENT
+    def _publish_event_signal(self, bridge_topic_name: str, **_) -> None:
+        """Publish a Bool signal on a bridge topic to notify a cross-process consequence.
+        Used internally by the Launcher for action-based events whose consequence actions
+        belong to a different component. Publishers are created lazily and cached.
+
+        :param bridge_topic_name: Name of the bridge topic to publish on
+        :type bridge_topic_name: str
+        """
+        from std_msgs.msg import Bool
+
+        if bridge_topic_name not in self.__bridge_publishers:
+            self.__bridge_publishers[bridge_topic_name] = self.create_publisher(
+                Bool, bridge_topic_name, qos_profile=1
+            )
+        msg = Bool()
+        msg.data = True
+        self.__bridge_publishers[bridge_topic_name].publish(msg)
+
+    def __start_action_based_event_timers(self) -> None:
+        """Create one periodic timer per action-based event."""
+        self.__action_event_timers = []
+        for event in self.__events:
+            if event._is_action_based:
+                rate = event.check_rate or self.config.loop_rate
+                self.__action_event_timers.append(
+                    self.create_timer(
+                        timer_period_sec=1.0 / rate,
+                        callback=event.check_action_condition,
+                        callback_group=MutuallyExclusiveCallbackGroup(),
+                    )
+                )
+
     def _turn_on_events_management(self) -> None:
         """
         Turn on event by starting a listener to the event topic
@@ -913,6 +954,9 @@ class BaseComponent(lifecycle.Node):
         unique_topics = {}
         self.__events_per_topic: Dict[str, List[Event]] = {}
         for event in self.__events:
+            # Action-based events have no monitored topics, they are polled by a timer
+            if event._is_action_based:
+                continue
             required_topics = event.get_involved_topics()
             # Ensure topic is not already there, then add to unique topics
             for topic in required_topics:
@@ -940,6 +984,8 @@ class BaseComponent(lifecycle.Node):
                 callback_group=MutuallyExclusiveCallbackGroup(),
             )
             self.__event_listeners.append(listener)
+
+        self.__start_action_based_event_timers()
 
     def _turn_on_fallbacks_subscribers(self):
         # Create ONE subscription per Topic
@@ -1188,7 +1234,19 @@ class BaseComponent(lifecycle.Node):
                     raise ValueError(
                         f"Component '{self.node_name}' does not support action '{action.action_name}'"
                     )
-            self.__events.append(Event.from_json(event_serialized))
+            event_dict = json.loads(event_serialized)
+            if "action_condition" in event_dict:
+                action_name = json.loads(event_dict["action_condition"])["action_name"]
+                if not hasattr(self, action_name):
+                    raise AttributeError(
+                        f"Component '{self.node_name}' does not contain action condition method '{action_name}'"
+                    )
+                condition_method = getattr(self, action_name)
+                self.__events.append(
+                    Event.from_json(event_serialized, deserialized_method=condition_method)
+                )
+            else:
+                self.__events.append(Event.from_json(event_serialized))
             self.__actions.append(action_set)
 
     # SERIALIZATION AND DESERIALIZATION
