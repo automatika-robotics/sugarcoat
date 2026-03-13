@@ -48,6 +48,7 @@ from ..io.supported_types import _additional_types
 from ..core.action import LogInfo
 from ..config.base_config import ComponentRunType
 from ..core.action import Action
+from ..actions import publish_message
 from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
@@ -516,10 +517,17 @@ class Launcher:
         """
         self.__events_names.extend(event.id for event in events_actions_dict)
         for event, action_set in events_actions_dict.items():
+            bridge_events_per_target: Dict[str, Event] = {}
             for action in action_set:
                 # Verify that the action inputs are available from the event topic(s)
                 if isinstance(action, Action):
                     event.verify_required_action_topics(action)
+                # Action-based events have their own routing logic
+                if event._is_action_based and isinstance(action, Action) and not action._is_lifecycle_action:
+                    self.__route_action_based_event(
+                        event, action, components_list, bridge_events_per_target
+                    )
+                    continue
                 # Check if it is a component action:
                 if isinstance(action, Action) and action.component_action:
                     action_object = action.executable.__self__
@@ -550,6 +558,122 @@ class Launcher:
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
                     self._update_ros_events_actions(event, action)
+
+    def __route_action_based_event(
+        self,
+        event: Event,
+        action: Action,
+        components_list: List[BaseComponent],
+        bridge_events_per_target: Dict[str, Event],
+    ) -> None:
+        """Route an action-based event to the appropriate owner(s).
+
+        Four cases based on who owns the condition Action and who owns the consequence Action:
+
+        1. Monitor-condition + Monitor-action: route both directly to _monitor_events_actions.
+        2. Monitor-condition + Component-action: Monitor publishes a Bool bridge topic when the
+           condition fires; the consequence component monitors that bridge topic.
+        3. Component-condition + same-component-action: route both directly to
+           _components_events_actions.
+        4. Component-condition + different-component-action: condition owner publishes a Bool
+           bridge topic; consequence owner monitors that bridge topic.
+
+        :param event: The action-based event
+        :type event: Event
+        :param action: The consequence action
+        :type action: Action
+        :param components_list: All components registered in the launcher
+        :type components_list: List[BaseComponent]
+        :param bridge_events_per_target: Cache of already-created bridge events keyed by
+            consequence owner name, shared across actions of the same event
+        :type bridge_events_per_target: Dict[str, Event]
+        """
+        from std_msgs.msg import Bool
+
+        condition_owner: Optional[str] = event._action_condition.parent_component
+        consequence_owner: Optional[str] = action.parent_component
+        serialized_event: str = event.to_json()
+
+        # Case 1: Recipe-level condition + non-component consequence.
+        # The condition callable lives in the launch process; route the event via
+        # _internal_events so ComponentLaunchAction registers _on_internal_event on it
+        # and the Monitor creates a polling timer for it.
+        if not condition_owner and not action.component_action:
+            logger.debug(
+                f"Action-based event '{event}': recipe-level condition + launch-level"
+                f" action, routing via internal event"
+            )
+            self._update_ros_events_actions(event, action)
+            return
+
+        # Case 3: Same component owns condition and action
+        if condition_owner and condition_owner == consequence_owner:
+            logger.debug(
+                f"Action-based event '{event}': Component-condition + same-component-action,"
+                f" routing to '{condition_owner}'"
+            )
+            self.__update_dict_list(
+                self._components_events_actions, serialized_event, action
+            )
+            return
+
+        # Cases 2 and 4 require a Bool bridge topic so the condition owner can signal
+        # the consequence owner across process boundaries.
+        event_id_safe = event.id.replace("-", "_")
+        bridge_topic_name = (
+            f"/_event_bridge/e_{event_id_safe}_{consequence_owner or 'monitor'}"
+        )
+
+        # Reuse an already-created bridge event for this (event, consequence_owner) pair
+        bridge_event = bridge_events_per_target.get(consequence_owner)
+        if bridge_event is None:
+            bridge_topic = Topic(name=bridge_topic_name, msg_type="Bool")
+            bridge_event = Event(event_condition=bridge_topic)
+            bridge_events_per_target[consequence_owner] = bridge_event
+        bridge_serialized: str = bridge_event.to_json()
+
+        # Case 2: Recipe-level condition + component-owned consequence.
+        # The Monitor polls the condition via a timer and, when it fires, publishes
+        # Bool(True) on the bridge topic (via the _on_internal_event → OnInternalEvent
+        # → publish_message path). The consequence component subscribes to the bridge.
+        if not condition_owner:
+            logger.debug(
+                f"Action-based event '{event}': recipe-level condition + component-action"
+                f" '{consequence_owner}', bridge topic '{bridge_topic_name}'"
+            )
+            bridge_publish_action = publish_message(
+                topic=Topic(name=bridge_topic_name, msg_type="Bool"),
+                msg=Bool(data=True),
+            )
+            self._update_ros_events_actions(event, bridge_publish_action)
+            self.__update_dict_list(
+                self._components_events_actions, bridge_serialized, action
+            )
+            return
+
+        # Case 4: Different components own condition and action
+        logger.debug(
+            f"Action-based event '{event}': Component-condition '{condition_owner}'"
+            f" + Component-action '{consequence_owner}', bridge topic '{bridge_topic_name}'"
+        )
+        condition_component = next(
+            (c for c in components_list if c.node_name == condition_owner), None
+        )
+        if condition_component is None:
+            raise InvalidAction(
+                f"Action-based event '{event}': condition owner '{condition_owner}'"
+                f" is unknown or not added to Launcher"
+            )
+        bridge_publish_action = Action(
+            method=condition_component._publish_event_signal,
+            kwargs={"bridge_topic_name": bridge_topic_name},
+        )
+        self.__update_dict_list(
+            self._components_events_actions, serialized_event, bridge_publish_action
+        )
+        self.__update_dict_list(
+            self._components_events_actions, bridge_serialized, action
+        )
 
     def _activate_components_action(self) -> SomeEntitiesType:
         """
