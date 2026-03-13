@@ -1,6 +1,5 @@
 """Monitor"""
 
-import json
 import os
 from functools import partial
 import time

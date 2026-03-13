@@ -800,6 +800,12 @@ class BaseComponent(lifecycle.Node):
                 self.destroy_publisher(bridge_pub)
             self.__bridge_publishers = {}
 
+        # Destroy all publishers created for event bridging
+        if hasattr(self, "_bridge_publishers"):
+            for bridge_pub in self.__bridge_publishers.values():
+                self.destroy_publisher(bridge_pub)
+            self.__bridge_publishers = {}
+
     def destroy_all_services(self):
         """
         Destroys all node services
