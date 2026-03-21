@@ -25,7 +25,7 @@ Part of the [EMOS](https://github.com/automatika-robotics/emos) ecosystem
 
 ## What is Sugarcoat?
 
-**Sugarcoat** is the orchestration layer of the [EMOS](https://github.com/automatika-robotics/emos) (Embodied Operating System) ecosystem by [Automatika Robotics](https://automatikarobotics.com/). It is a meta-framework that replaces fragmented ROS 2 development with a unified workflow, providing a high-level Python API to build robust lifecycle-managed components and orchestrate them into cohesive, self-healing systems using an event-driven architecture.
+**Sugarcoat** is the orchestration layer of the [EMOS](https://github.com/automatika-robotics/emos) (Embodied Operating System) ecosystem by [Automatika Robotics](https://automatikarobotics.com/). It is a meta-framework that replaces fragmented ROS2 development with a unified workflow, providing a high-level Python API to build robust lifecycle-managed components and orchestrate them into cohesive, self-healing systems using an event-driven architecture.
 
 For full documentation, tutorials, and recipes, visit [emos.automatikarobotics.com](https://emos.automatikarobotics.com).
 
@@ -94,13 +94,6 @@ Sugarcoat is available for ROS versions **Humble**.
 On Ubuntu, for example:
 
 `sudo apt install ros-$ROS_DISTRO-automatika-ros-sugar`
-
-Alternatively, you can install a specific deb package from the [release page](https://github.com/automatika-robotics/sugarcoat/releases):
-
-`sudo dpkg -i ros-$ROS_DISTRO-automatica-ros-sugar_$version$DISTRO_$ARCHITECTURE.deb`
-
-> **Note:** If your package manager's version of `attrs` is older than 23.2, you may need to update it via pip:
-> `pip install 'attrs>=23.2.0'`
 
 ### Building from Source
 
