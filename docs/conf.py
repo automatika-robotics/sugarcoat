@@ -21,7 +21,6 @@ extensions = [
     "sphinx_copybutton",  # install with `pip install sphinx-copybutton`
     "autodoc2",  # install with `pip install sphinx-autodoc2`
     "myst_parser",  # install with `pip install myst-parser`
-    "sphinx_sitemap",  # install with `pip install sphinx-sitemap`
     "sphinxcontrib.youtube",
     "sphinx_design",
 ]
@@ -61,12 +60,8 @@ myst_enable_extensions = [
     "substitution",
     "tasklist",
 ]
-myst_html_meta = {
-    "google-site-verification": "cQVj-BaADcGVOGB7GOvfbkgJjxni10C2fYWCZ03jOeo"
-}
 myst_heading_anchors = 7  # to remove cross reference errors with md
 
-html_baseurl = "https://sugarcoat.automatikarobotics.com/"
 language = "en"
 html_theme = "shibuya"  # install with `pip install shibuya`
 html_static_path = ["_static"]
@@ -74,9 +69,9 @@ html_css_files = [
     "custom.css",
 ]
 html_favicon = "_static/favicon.png"
-sitemap_url_scheme = "{link}"
 
 html_theme_options = {
+    "announcement": 'Usage docs have moved to <a href="https://emos.automatikarobotics.com">EMOS Documentation</a>. This site only contains developer docs.',
     "light_logo": "_static/SUGARCOAT_LIGHT.png",
     "dark_logo": "_static/SUGARCOAT_DARK.png",
     "accent_color": "indigo",
@@ -88,35 +83,18 @@ html_theme_options = {
     "open_in_claude": True,
     # Navigation Links (Top bar)
     "nav_links": [
+        {"title": "EMOS Docs", "url": "https://emos.automatikarobotics.com/"},
         {"title": "Automatika Robotics", "url": "https://automatikarobotics.com/"},
     ],
 }
 
 LLMS_TXT_SELECTION = [
-    # 1. Introduction & Philosophy
-    "overview.md",
-    "why.md",
-    # 2. Core Architecture (The Graph)
-    "design/concepts_overview.md",
-    "design/component.md",
-    "design/topics.md",
-    "design/launcher.md",
-    # 3. Event-Driven Mechanics (The Logic)
-    "design/events.md",
-    "design/actions.md",
-    # 4. Resilience & Observability
-    "design/fallbacks.md",
-    "design/monitor.md",
-    "design/status.md",
-    # 5. Advanced Configuration & Usage
-    "advanced/use.md",
-    "advanced/config.md",
-    "advanced/types.md",
-    "features/web_ui.md",
-    # 6. Extensibility
+    "development/architecture.md",
+    "development/custom_types.md",
+    "development/event_system.md",
+    "development/testing.md",
     "advanced/create_service.md",
     "advanced/srvs.md",
-    "features/robot_plugins.md",
 ]
 
 
@@ -143,8 +121,8 @@ def generate_llms_txt(app, exception):
 
     # Add Preamble
     preamble = (
-        "# Sugarcoat Documentation\n\n"
-        "The following text contains the documentation for the Sugarcoat framework "
+        "# Sugarcoat Developer Documentation\n\n"
+        "The following text contains the developer documentation for the Sugarcoat framework "
         "by Automatika Robotics. It is optimized for context ingestion.\n\n"
     )
     full_text.append(preamble)
@@ -168,20 +146,6 @@ def generate_llms_txt(app, exception):
         print(f"[llms.txt] Error writing file: {e}")
 
 
-def create_robots_txt(app, exception):
-    """Create robots.txt file to take advantage of sitemap crawl"""
-    if exception is None:
-        dst_dir = app.outdir  # Typically 'build/html/'
-        robots_path = os.path.join(dst_dir, "robots.txt")
-        content = f"""User-agent: *
-
-Sitemap: {html_baseurl}sitemap.xml
-"""
-        with open(robots_path, "w") as f:
-            f.write(content)
-
-
 def setup(app):
     """Plugin to post build and copy markdowns as well"""
-    app.connect("build-finished", create_robots_txt)
     app.connect("build-finished", generate_llms_txt)

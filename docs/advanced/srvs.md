@@ -2,6 +2,8 @@
 
 In addition to the standard [ROS2 Lifecycle Node](https://github.com/ros2/demos/blob/rolling/lifecycle/README.rst) services, Sugarcoat Components provide a powerful set of built-in services for live reconfiguration. These services allow you to dynamically adjust inputs, outputs, and parameters on-the-fly, making it easier to respond to changing runtime conditions or trigger intelligent behavior in response to events. Like any ROS2 services, they can be called from other Nodes or with the ROS2 CLI, and can also be called programmatically as part of an action sequence or event-driven workflow in the launch script.
 
+The examples below assume a component named `awesome_component` with an output topic `/voice` of type `Audio`.
+
 ## Replacing an Input or Output with a different Topic
 You can swap an existing topic connection (input or output) with a different topic online without restarting your script. The service will stop the running lifecycle node, replace the connection and restart it again.
 
@@ -11,7 +13,7 @@ You can swap an existing topic connection (input or output) with a different top
 
 ### Example
 
-To replace the output topic name of the `AwesomeComponent` created in the [previous example](use.md), we can send the following service e call to the node:
+To replace the output topic name of `awesome_component`, we can send the following service call to the node:
 
 ```shell
 ros2 service call /awesome_component/change_topic automatika_ros_sugar/srv/ReplaceTopic "{direction: 1, old_name: '/voice', new_name: '/audio_device_0', new_msg_type: 'Audio'}"
@@ -25,7 +27,7 @@ This `ChangeParameter` service allows updating a single configuration parameter 
 
 ### Example
 
-Lets change the `loop_rate` for our `AwesomeComponent` to `1Hz` with restarting the node:
+Let's change the `loop_rate` for `awesome_component` to `1Hz` without restarting the node:
 
 ```shell
 ros2 service call /awesome_component/update_config_parameter automatika_ros_sugar/srv/ChangeParameter "{name: 'loop_rate', value: '1', keep_alive: false}"
@@ -40,7 +42,7 @@ The `ChangeParameters` service allows updating multiple parameters at once, maki
 
 ### Example
 
-Lets change multiple parameters at once for our `AwesomeComponent` with restarting the node:
+Let's change multiple parameters at once for `awesome_component` without restarting the node:
 
 ```shell
 ros2 service call /awesome_component/update_config_parameters automatika_ros_sugar/srv/ChangeParameters "{names: ['loop_rate', 'fallback_rate'], values: ['1', '10'], keep_alive: false}"
@@ -55,7 +57,7 @@ The `ConfigureFromFile` service lets you reconfigure an entire component from a 
 
 ### Example
 
-Example YAML configuration file for our `AwesomeComponent`:
+Example YAML configuration file for `awesome_component`:
 
 ```yaml
 /**: # Common parameters for all components
