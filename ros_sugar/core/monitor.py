@@ -24,7 +24,7 @@ from .action import Action
 from ..launch import logger
 
 
-class Monitor(Node):
+class Monitor(BaseComponent):
     """
     Monitor is a ROS2 Node (not Lifecycle) responsible of monitoring the status of the stack (rest of the running nodes) and managing requests/responses from the Orchestrator.
 
@@ -76,13 +76,14 @@ class Monitor(Node):
         :param callback_group: Callback group, defaults to None
         :type callback_group:  Optional[Union[MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup]], optional
         """
-        self._events_actions = events_actions
+        self.node_name = f"{component_name}_{os.getpid()}"
+        super().__init__(component_name=self.node_name, config=config)
+
+        self._monitor_events_actions = events_actions
         self._internal_events = events_to_emit
         self._components_to_monitor = components_names
         self._service_components = services_components
         self._action_components = action_servers_components
-        self.node_name = f"{component_name}_{os.getpid()}"
-        self.config = config or BaseConfig()
 
         # Server nodes handlers
         self._update_parameter_srv_client: Dict[
@@ -108,13 +109,6 @@ class Monitor(Node):
 
         # Emit exit all to the launcher
         self._emit_exit_to_launcher: Optional[Callable] = None
-
-    def rclpy_init_node(self, *args, **kwargs):
-        """
-        To init the node with rclpy and activate default services
-        """
-        Node.__init__(self, self.node_name, *args, **kwargs)
-        self.get_logger().info(f"NODE {self.get_name()} STARTED")
 
     def add_components_activation_event(self, method) -> None:
         """
@@ -560,8 +554,8 @@ class Monitor(Node):
         Turn on all events
         """
         self.__events = []
-        if self._events_actions:
-            for serialized_event, actions in self._events_actions.items():
+        if self._monitor_events_actions:
+            for serialized_event, actions in self._monitor_events_actions.items():
                 event = Event.from_json(serialized_event)
                 for action in actions:
                     method = getattr(self, action.action_name)
@@ -635,3 +629,6 @@ class Monitor(Node):
         """
         # TODO: handle status
         self.get_logger().debug(f"Form {component_name} got status {msg}")
+
+    def _execution_step(self):
+        pass
