@@ -516,6 +516,15 @@ class Action:
         return self.__parent_component is not None
 
     @property
+    def description(self) -> Optional[str]:
+        """Get the description of the action, used for openai function calling
+
+        :return: _description_
+        :rtype: Optional[str]
+        """
+        return self._description
+
+    @property
     def dictionary(self) -> Dict:
         """
         Property to get/set the event using a dictionary
