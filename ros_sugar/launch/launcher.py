@@ -1025,6 +1025,8 @@ class Launcher:
 
         self._setup_events_actions()
 
+        self._setup_monitor_node()
+
         for component in self._components:
             self._setup_component_events_handlers(component)
 
@@ -1039,8 +1041,6 @@ class Launcher:
         # Create UI node if enabled
         if self._enable_ui:
             self._setup_ui_node()
-
-        self._setup_monitor_node()
 
         group_action = GroupAction(self._launch_group)
 

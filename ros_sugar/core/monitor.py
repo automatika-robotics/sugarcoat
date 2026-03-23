@@ -17,14 +17,14 @@ from automatika_ros_sugar.srv import (
 
 from .. import base_clients
 from .component import BaseComponent
-from ..config import BaseComponentConfig
+from ..config import BaseConfig
 from ..io.topic import Topic
 from .event import Event, EventBlackboardEntry
 from .action import Action
 from ..launch import logger
 
 
-class Monitor(BaseComponent):
+class Monitor(Node):
     """
     Monitor is a ROS2 Node (not Lifecycle) responsible of monitoring the status of the stack (rest of the running nodes) and managing requests/responses from the Orchestrator.
 
@@ -43,7 +43,7 @@ class Monitor(BaseComponent):
         components_names: List[str],
         events_actions: Optional[Dict[str, List[Action]]] = None,
         events_to_emit: Optional[List[Event]] = None,
-        config: Optional[BaseComponentConfig] = None,
+        config: Optional[BaseConfig] = None,
         services_components: Optional[List[BaseComponent]] = None,
         action_servers_components: Optional[List[BaseComponent]] = None,
         activate_on_start: Optional[List[str]] = None,
@@ -76,14 +76,13 @@ class Monitor(BaseComponent):
         :param callback_group: Callback group, defaults to None
         :type callback_group:  Optional[Union[MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup]], optional
         """
-        self.node_name = f"{component_name}_{os.getpid()}"
-        super().__init__(component_name=self.node_name, config=config)
-
         self._monitor_events_actions = events_actions
         self._internal_events = events_to_emit
         self._components_to_monitor = components_names
         self._service_components = services_components
         self._action_components = action_servers_components
+        self.node_name = f"{component_name}_{os.getpid()}"
+        self.config = config or BaseConfig()
 
         # Server nodes handlers
         self._update_parameter_srv_client: Dict[
@@ -110,6 +109,13 @@ class Monitor(BaseComponent):
         # Emit exit all to the launcher
         self._emit_exit_to_launcher: Optional[Callable] = None
 
+    def rclpy_init_node(self, *args, **kwargs):
+        """
+        To init the node with rclpy and activate default services
+        """
+        Node.__init__(self, self.node_name, *args, **kwargs)
+        self.get_logger().info(f"NODE {self.get_name()} STARTED")
+
     def add_components_activation_event(self, method) -> None:
         """
         Adds a method to be executed when components are activated
@@ -118,6 +124,9 @@ class Monitor(BaseComponent):
         :type method: Callable
         """
         self.__components_activation_event = method
+
+    def start(self):
+        return self.activate()
 
     def activate(self):
         """Activate all subscribers/publishers/etc..."""
@@ -607,7 +616,7 @@ class Monitor(BaseComponent):
         # Reentrant group for multi threaded monitoring
         callback_group = ReentrantCallbackGroup()
         for component_name in self._components_to_monitor:
-            logger.debug(f"Creating health status subscriber for: {component_name}")
+            logger.info(f"Creating health status subscriber for: {component_name}")
             self.create_subscription(
                 ComponentStatus,
                 topic=f"{component_name}/status",
@@ -629,6 +638,3 @@ class Monitor(BaseComponent):
         """
         # TODO: handle status
         self.get_logger().debug(f"Form {component_name} got status {msg}")
-
-    def _execution_step(self):
-        pass
