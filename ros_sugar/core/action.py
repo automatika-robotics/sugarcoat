@@ -259,6 +259,7 @@ class Action:
         method: Callable,
         args: Optional[Union[Tuple, List, Any]] = None,
         kwargs: Optional[Dict] = None,
+        description: Optional[str] = None,
     ) -> None:
         """
         Action
@@ -269,6 +270,8 @@ class Action:
         :type args: tuple, optional
         :param kwargs: function keyword arguments, defaults to {}
         :type kwargs: dict, optional
+        :param description: Openai compatible function signature for use with tool calling models, defaults to None
+        :type description: Optional[str], optional
         """
         self.__parent_component: Optional[str] = None
         self.__action_keyname: Optional[str] = (
@@ -277,6 +280,7 @@ class Action:
         self._function = method
         self._is_monitor_action = False
         self._is_lifecycle_action = False
+        self._description = description
 
         # List of registered conversions to execute before the main method
         # keeps track of mapping (argument_name -> output_type)

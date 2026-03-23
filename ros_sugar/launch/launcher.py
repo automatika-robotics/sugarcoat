@@ -16,7 +16,7 @@ from typing import (
     Union,
     Any,
     Tuple,
-    Mapping
+    Mapping,
 )
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
@@ -145,7 +145,7 @@ class Launcher:
         ] = []  # List of threaded component names to activate on start
 
         # Timeout for activating components on start
-        self.__components_activation_timeout = activation_timeout
+        self._components_activation_timeout = activation_timeout
 
         # Events/Actions dictionaries
         self._internal_events: Optional[List[Event]] = None
@@ -380,9 +380,7 @@ class Launcher:
                 component.clear_events_actions()
 
         # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
-        self.__rewrite_actions_for_components(
-            self._components, self._events_actions
-        )
+        self.__rewrite_actions_for_components(self._components, self._events_actions)
 
     def _update_ros_events_actions(
         self, event: Event, action: Union[Action, ROSLaunchAction]
@@ -657,6 +655,30 @@ class Launcher:
             )
             self._description.add_action(internal_events_handler)
 
+    def _init_monitor_node(
+        self,
+        components_names: List[str],
+        services_components: List[BaseComponent],
+        action_components: List[BaseComponent],
+        all_components_to_activate_on_start: List[str],
+    ) -> None:
+        self.monitor_node = Monitor(
+            components_names=components_names,
+            events_actions=self._monitor_events_actions,
+            events_to_emit=self._internal_events,
+            services_components=services_components,
+            action_servers_components=action_components,
+            activate_on_start=all_components_to_activate_on_start,
+            activation_timeout=self._components_activation_timeout,
+        )
+
+        monitor_action = ComponentLaunchAction(
+            node=self.monitor_node,
+            namespace=self._namespace,
+            name=self.monitor_node.node_name,
+        )
+        self._description.add_action(monitor_action)
+
     def _setup_monitor_node(self) -> None:
         """Adds a node to monitor all the launched components and their events"""
         # Update internal events
@@ -697,22 +719,12 @@ class Launcher:
             ]
         )
 
-        self.monitor_node = Monitor(
+        self._init_monitor_node(
             components_names=components_names,
-            events_actions=self._monitor_events_actions,
-            events_to_emit=self._internal_events,
             services_components=services_components,
-            action_servers_components=action_components,
-            activate_on_start=all_components_to_activate_on_start,
-            activation_timeout=self.__components_activation_timeout,
+            action_components=action_components,
+            all_components_to_activate_on_start=all_components_to_activate_on_start,
         )
-
-        monitor_action = ComponentLaunchAction(
-            node=self.monitor_node,
-            namespace=self._namespace,
-            name=self.monitor_node.node_name,
-        )
-        self._description.add_action(monitor_action)
 
         # Register a activation event
         internal_events_handler_activate = launch.actions.RegisterEventHandler(

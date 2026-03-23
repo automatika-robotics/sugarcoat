@@ -17,7 +17,7 @@ from automatika_ros_sugar.srv import (
 
 from .. import base_clients
 from .component import BaseComponent
-from ..config import BaseConfig
+from ..config import BaseComponentConfig
 from ..io.topic import Topic
 from .event import Event, EventBlackboardEntry
 from .action import Action
@@ -43,7 +43,7 @@ class Monitor(BaseComponent):
         components_names: List[str],
         events_actions: Optional[Dict[str, List[Action]]] = None,
         events_to_emit: Optional[List[Event]] = None,
-        config: Optional[BaseConfig] = None,
+        config: Optional[BaseComponentConfig] = None,
         services_components: Optional[List[BaseComponent]] = None,
         action_servers_components: Optional[List[BaseComponent]] = None,
         activate_on_start: Optional[List[str]] = None,
