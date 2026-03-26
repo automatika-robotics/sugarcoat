@@ -169,6 +169,10 @@ def component_fallback(function: Optional[Callable] = None, description: Optiona
     Decorator for components fallback methods
     Verifies that rcply is initialized and component is configured or active
 
+    Can be used as:
+        @component_fallback
+        @component_fallback(description="...")
+
     :param function:
     :type function: Callable
     """
@@ -210,6 +214,8 @@ def component_fallback(function: Optional[Callable] = None, description: Optiona
         _wrapper._action_description = (
             json.dumps(description) or (func.__doc__ or "").strip()
         )
+
+        return _wrapper
 
     # Handle both @component_fallback and @component_fallback(...)
     if function is not None:
