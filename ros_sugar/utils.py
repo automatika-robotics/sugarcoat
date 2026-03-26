@@ -1,7 +1,8 @@
 import inspect
 from enum import IntEnum as BaseIntEnum
 from functools import wraps
-from typing import Callable, List, Union, TypeVar, Optional
+import json
+from typing import Callable, List, Union, TypeVar, Optional, Dict
 
 from rclpy.utilities import ok as rclpy_is_ok
 from rclpy.lifecycle import Node as LifecycleNode
@@ -100,7 +101,7 @@ def action_handler(function: Callable):
     return _wrapper
 
 
-def component_action(function: Optional[Callable] = None, description: str = "", active: bool = False):
+def component_action(function: Optional[Callable] = None, description: Optional[Dict] = None, active: bool = False):
     """
     Decorator for components actions
     Verifies that the function is a valid Component method, returns a boolean or None, and that the Component is active
@@ -152,7 +153,7 @@ def component_action(function: Optional[Callable] = None, description: str = "",
         _wrapper.__name__ = func.__name__
         # Use the provided description or the function's docstring as the action description
         _wrapper._action_description = (
-            description or (func.__doc__ or "").strip()
+            json.dumps(description) or (func.__doc__ or "").strip()
         )
 
         return _wrapper
@@ -163,7 +164,7 @@ def component_action(function: Optional[Callable] = None, description: str = "",
     return _decorator
 
 
-def component_fallback(function: Optional[Callable] = None, description: str = ""):
+def component_fallback(function: Optional[Callable] = None, description: Optional[Dict] = None):
     """
     Decorator for components fallback methods
     Verifies that rcply is initialized and component is configured or active
@@ -207,7 +208,7 @@ def component_fallback(function: Optional[Callable] = None, description: str = "
         _wrapper.__name__ = func.__name__
         # Use the provided description or the function's docstring as the action description
         _wrapper._action_description = (
-            description or (func.__doc__ or "").strip()
+            json.dumps(description) or (func.__doc__ or "").strip()
         )
 
     # Handle both @component_fallback and @component_fallback(...)
