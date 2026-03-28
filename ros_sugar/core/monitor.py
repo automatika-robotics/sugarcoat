@@ -3,6 +3,7 @@
 import os
 from functools import partial
 import time
+import json
 from typing import Any, Callable, Dict, List, Optional, Union
 from rclpy.node import Node
 from rclpy.publisher import Publisher
@@ -13,6 +14,7 @@ from automatika_ros_sugar.srv import (
     ChangeParameters,
     ConfigureFromFile,
     ReplaceTopic,
+    ExecuteMethod,
 )
 
 from .. import base_clients
@@ -93,6 +95,9 @@ class Monitor(Node):
         ] = {}
         self._topic_change_srv_client: Dict[str, base_clients.ServiceClientHandler] = {}
         self._configure_from_file_srv_client: Dict[
+            str, base_clients.ServiceClientHandler
+        ] = {}
+        self._execute_component_method_srv_client: Dict[
             str, base_clients.ServiceClientHandler
         ] = {}
         self._main_srv_clients: Dict[str, base_clients.ServiceClientHandler] = {}
@@ -252,12 +257,35 @@ class Monitor(Node):
             )
         )
 
+        # Execute component method services
+        self._execute_component_method_srv_client[component_name] = (
+            base_clients.ServiceClientHandler(
+                client_node=self,
+                srv_type=ExecuteMethod,
+                srv_name=f"{component_name}/execute_method",
+            )
+        )
+
+    def execute_component_method(
+        self,
+        component_name: str,
+        method_name: str,
+        kwargs: Dict,
+    ) -> Any:
+        srv_client: base_clients.ServiceClientHandler = (
+            self._update_parameter_srv_client[component_name]
+        )
+        srv_request = ExecuteMethod.Request()
+        srv_request.name = method_name
+        srv_request.kwargs_json = json.dumps(kwargs)
+        return srv_client.send_request(req_msg=srv_request, executor=self.executor)
+
     def configure_component(
         self,
         component: BaseComponent,
         new_config: Union[object, str],
         keep_alive: bool,
-    ) -> None:
+    ) -> Any:
         """
         Configure a given component from config instance or config file
         Creates and send the request to the component service
@@ -278,14 +306,14 @@ class Monitor(Node):
                     component.get_change_parameters_msg_from_config(new_config)
                 )
                 request_msg.keep_alive = keep_alive
-                self._update_parameters_srv_client[component.node_name].send_request(
+                return self._update_parameters_srv_client[component.node_name].send_request(
                     request_msg, executor=self.executor
                 )
             else:
                 # For string send a configure from file request
                 request_msg_file = ConfigureFromFile.Request()
                 request_msg_file.path_to_file = new_config
-                self._configure_from_file_srv_client[component.node_name].send_request(
+                return self._configure_from_file_srv_client[component.node_name].send_request(
                     request_msg_file, executor=self.executor
                 )
         except Exception as e:
@@ -318,7 +346,7 @@ class Monitor(Node):
         srv_request.name = param_name
         srv_request.value = str(new_value)
         srv_request.keep_alive = keep_alive
-        srv_client.send_request(req_msg=srv_request, executor=self.executor)
+        return srv_client.send_request(req_msg=srv_request, executor=self.executor)
 
     def update_parameters(
         self,
@@ -327,7 +355,7 @@ class Monitor(Node):
         new_values: List,
         keep_alive: bool = True,
         **_,
-    ) -> None:
+    ) -> Any:
         """Sends a ChangeParameters service request to given component
 
         :param component: _description_
@@ -346,7 +374,7 @@ class Monitor(Node):
         srv_request.names = params_names
         srv_request.values = str(new_values)
         srv_request.keep_alive = keep_alive
-        srv_client.send_request(req_msg=srv_request, executor=self.executor)
+        return srv_client.send_request(req_msg=srv_request, executor=self.executor)
 
     def __get_srv_client(
         self, srv_name: str, srv_type: type
