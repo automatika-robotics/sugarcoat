@@ -327,7 +327,7 @@ class Monitor(Node):
         param_name: str,
         new_value: Any,
         keep_alive: bool = True,
-    ) -> None:
+    ) -> Any:
         """Sends a ChangeParameter service request to given component
 
         :param component: _description_
