@@ -170,6 +170,8 @@ class BaseComponent(lifecycle.Node):
         # TODO: add config parameter (one goal vs goal queue)
         self._main_goal_handle = None
         self._main_goal_lock = threading.Lock()
+        self._main_action_name : Optional[str] = None
+        self._main_srv_name: Optional[str] = None
 
         # Additional types from derived packages
         self._additional_types: List[Type[SupportedType]] = []
@@ -1555,9 +1557,21 @@ class BaseComponent(lifecycle.Node):
         :return: ActionServer name
         :rtype: str
         """
+        if self._main_action_name:
+            return self._main_action_name
         if self.action_type and hasattr(self.action_type, "__name__"):
             return f"{self.node_name}/{camel_to_snake_case(self.action_type.__name__)}"
         return None
+
+    @main_action_name.setter
+    def main_action_name(self, value: str):
+        """
+        Setter for the main action name, allowing to set a custom name instead of the default one based on the action type
+
+        :param value: Custom name for the main action server
+        :type value: str
+        """
+        self._main_action_name = value
 
     # MAIN SERVER HELPER METHODS AND CALLBACK
     @property
@@ -1568,9 +1582,21 @@ class BaseComponent(lifecycle.Node):
         :return: Server name
         :rtype: str
         """
+        if self._main_srv_name:
+            return self._main_srv_name
         if self.service_type and hasattr(self.service_type, "__name__"):
             return f"{self.node_name}/{camel_to_snake_case(self.service_type.__name__)}"
         return None
+
+    @main_srv_name.setter
+    def main_srv_name(self, value: str):
+        """
+        Setter for the main service name, allowing to set a custom name instead of the default one based on the service type
+
+        :param value: Custom name for the main service
+        :type value: str
+        """
+        self._main_srv_name = value
 
     @abstractmethod
     def main_service_callback(self, request, response):
