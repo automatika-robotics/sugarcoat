@@ -4,7 +4,7 @@ import os
 from functools import partial
 import time
 import json
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from rclpy.node import Node
 from rclpy.publisher import Publisher
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
@@ -306,16 +306,16 @@ class Monitor(Node):
                     component.get_change_parameters_msg_from_config(new_config)
                 )
                 request_msg.keep_alive = keep_alive
-                return self._update_parameters_srv_client[component.node_name].send_request(
-                    request_msg, executor=self.executor
-                )
+                return self._update_parameters_srv_client[
+                    component.node_name
+                ].send_request(request_msg, executor=self.executor)
             else:
                 # For string send a configure from file request
                 request_msg_file = ConfigureFromFile.Request()
                 request_msg_file.path_to_file = new_config
-                return self._configure_from_file_srv_client[component.node_name].send_request(
-                    request_msg_file, executor=self.executor
-                )
+                return self._configure_from_file_srv_client[
+                    component.node_name
+                ].send_request(request_msg_file, executor=self.executor)
         except Exception as e:
             self.get_logger().error(
                 f"Unable to configure component {component.node_name}: {e}"
@@ -323,7 +323,7 @@ class Monitor(Node):
 
     def update_parameter(
         self,
-        component: BaseComponent,
+        component: Union[BaseComponent, str],
         param_name: str,
         new_value: Any,
         keep_alive: bool = True,
@@ -331,7 +331,7 @@ class Monitor(Node):
         """Sends a ChangeParameter service request to given component
 
         :param component: _description_
-        :type component: BaseComponent
+        :type component: Union[BaseComponent, str]
         :param param_name: _description_
         :type param_name: str
         :param new_value: _description_
@@ -339,8 +339,12 @@ class Monitor(Node):
         :param keep_alive: _description_, defaults to True
         :type keep_alive: bool, optional
         """
+        if isinstance(component, BaseComponent):
+            node_name = component.node_name
+        else:
+            node_name = component
         srv_client: base_clients.ServiceClientHandler = (
-            self._update_parameter_srv_client[component.node_name]
+            self._update_parameter_srv_client[node_name]
         )
         srv_request = ChangeParameter.Request()
         srv_request.name = param_name
@@ -350,7 +354,7 @@ class Monitor(Node):
 
     def update_parameters(
         self,
-        component: BaseComponent,
+        component: Union[BaseComponent, str],
         params_names: List[str],
         new_values: List,
         keep_alive: bool = True,
@@ -367,8 +371,12 @@ class Monitor(Node):
         :param keep_alive: _description_, defaults to True
         :type keep_alive: bool, optional
         """
+        if isinstance(component, BaseComponent):
+            node_name = component.node_name
+        else:
+            node_name = component
         srv_client: base_clients.ServiceClientHandler = (
-            self._update_parameters_srv_client[component.node_name]
+            self._update_parameters_srv_client[node_name]
         )
         srv_request = ChangeParameters.Request()
         srv_request.names = params_names
@@ -479,6 +487,67 @@ class Monitor(Node):
             action_request_msg = action_type.Goal()
         action_client = self.__get_action_client(action_name, action_type)
         action_client.send_request(action_request_msg)
+
+    def _get_component_action_request_message_type(
+        self, component_name: str
+    ) -> Any:
+        """Helper method to prepare the action request message for a given component action
+
+        :param component_name: Name of the component
+        :type component_name: str
+
+        :return: Action request message type
+        :rtype: Any
+        """
+        if component_name not in self._main_action_clients:
+            return None
+        action_client = self._main_action_clients[component_name]
+        # If request is not provided create an empty one
+        action_type = action_client.config.action_type
+        return action_type.Goal
+
+    def send_component_action_goal(
+        self,
+        component_name: str,
+        action_request_msg: Any = None,
+        **_,
+    ) -> Tuple[bool, str]:
+        """Action to send a ROS2 action goal during runtime
+
+        :param action_name: ROS2 action name
+        :type action_name: str
+        :param action_type: ROS2 action type
+        :type action_type: type
+        :param action_request_msg: ROS2 action goal message
+        :type action_request_msg: Any
+        """
+        if component_name not in self._main_action_clients:
+            self.get_logger().error(
+                f"Cannot send action goal to unknown ROS2 component with name: {component_name}"
+            )
+            return (
+                False,
+                f"Cannot send action goal to unknown ROS2 component with name: {component_name}",
+            )
+        action_client = self._main_action_clients[component_name]
+        if not action_request_msg:
+            # If request is not provided create an empty one
+            action_type = action_client.config.action_type
+            action_request_msg = action_type.Goal()
+        sent_successfully: bool = action_client.send_request(action_request_msg)
+        if not sent_successfully:
+            error_msg = f"Failed to send action goal to component {component_name} with action type {action_client.config.action_type} and request message {action_request_msg}"
+            self.get_logger().error(error_msg)
+            return (
+                False,
+                error_msg,
+            )
+        return (
+            (
+                True,
+                f"Action goal sent successfully to component {component_name} with request message {action_request_msg}",
+            ),
+        )
 
     def get_secs_time(self) -> float:
         ros_time = self.get_clock().now().to_msg()
