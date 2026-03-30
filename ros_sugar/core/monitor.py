@@ -273,7 +273,7 @@ class Monitor(Node):
         kwargs: Dict,
     ) -> Any:
         srv_client: base_clients.ServiceClientHandler = (
-            self._update_parameter_srv_client[component_name]
+            self._execute_component_method_srv_client[component_name]
         )
         srv_request = ExecuteMethod.Request()
         srv_request.name = method_name
