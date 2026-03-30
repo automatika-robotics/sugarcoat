@@ -1739,6 +1739,47 @@ class BaseComponent(lifecycle.Node):
 
         return request_msg
 
+    def _update_param(self, param_name: str, param_str_value: str, keep_alive: bool = False) -> Tuple[bool, str]:
+        if not keep_alive:
+            # Set the flag so the default services are not destroyed or re-created
+            self._maintain_default_services = True
+            # Stop the component
+            self.stop()
+            self.trigger_cleanup()
+            self.trigger_configure()
+
+        error_msg = self._update_config_param_from_str_value(
+            param_name, param_str_value
+        )
+
+        if not keep_alive:
+            # start again
+            self.start()
+
+        if not error_msg:
+            success = True
+            error_msg = ''
+        else:
+            success = False
+            error_msg = error_msg
+
+        timeout_counter = 0  # Add timeout to avoid an infinite loop
+        while self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE and (
+            timeout_counter < self.config.wait_for_restart_time
+        ):
+            self.get_logger().warn(
+                f"Component {self.node_name} is not in ACTIVE state. Waiting for it to become active again.",
+                once=True,
+            )
+            time.sleep(1 / self.config.loop_rate)
+            timeout_counter += 1 / self.config.loop_rate
+
+        if self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
+            success = False
+            error_msg = "Error restarting the component"
+            self.health_status.set_fail_component()
+        return success, error_msg
+
     @log_srv
     def _update_config_parameter_srv_callback(
         self, request: ChangeParameter.Request, response: ChangeParameter.Response
@@ -1759,43 +1800,9 @@ class BaseComponent(lifecycle.Node):
         # To keep the component alive while reconfiguring
         keep_alive = request.keep_alive
 
-        if not keep_alive:
-            # Set the flag so the default services are not destroyed or re-created
-            self._maintain_default_services = True
-            # Stop the component
-            self.stop()
-            self.trigger_cleanup()
-            self.trigger_configure()
-
-        error_msg = self._update_config_param_from_str_value(
-            param_name, param_str_value
-        )
-
-        if not keep_alive:
-            # start again
-            self.start()
-
-        if not error_msg:
-            response.success = True
-        else:
-            response.success = False
-            response.error_msg = error_msg
-
-        timeout_counter = 0  # Add timeout to avoid an infinite loop
-        while self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE and (
-            timeout_counter < self.config.wait_for_restart_time
-        ):
-            self.get_logger().warn(
-                f"Component {self.node_name} is not in ACTIVE state. Waiting for it to become active again.",
-                once=True,
-            )
-            time.sleep(1 / self.config.loop_rate)
-            timeout_counter += 1 / self.config.loop_rate
-
-        if self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
-            response.success = False
-            response.error_msg = "Error restarting the component"
-            self.health_status.set_fail_component()
+        success, error_msg = self._update_param(param_name, param_str_value, keep_alive)
+        response.success = success
+        response.error_msg = error_msg
 
         return response
 
