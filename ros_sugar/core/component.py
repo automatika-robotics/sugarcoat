@@ -170,7 +170,7 @@ class BaseComponent(lifecycle.Node):
         # TODO: add config parameter (one goal vs goal queue)
         self._main_goal_handle = None
         self._main_goal_lock = threading.Lock()
-        self._main_action_name : Optional[str] = None
+        self._main_action_name: Optional[str] = None
         self._main_srv_name: Optional[str] = None
 
         # Additional types from derived packages
@@ -1739,7 +1739,9 @@ class BaseComponent(lifecycle.Node):
 
         return request_msg
 
-    def _update_param(self, param_name: str, param_str_value: str, keep_alive: bool = False) -> Tuple[bool, str]:
+    def _update_param(
+        self, param_name: str, param_str_value: str, keep_alive: bool = False
+    ) -> Tuple[bool, str]:
         if not keep_alive:
             # Set the flag so the default services are not destroyed or re-created
             self._maintain_default_services = True
@@ -1758,7 +1760,7 @@ class BaseComponent(lifecycle.Node):
 
         if not error_msg:
             success = True
-            error_msg = ''
+            error_msg = ""
         else:
             success = False
             error_msg = error_msg
@@ -2083,8 +2085,16 @@ class BaseComponent(lifecycle.Node):
                 return response
         try:
             method = getattr(self, request.name)
-            method(**kwargs)
-            response.success = True
+            result = method(**kwargs)
+            if result is not None and isinstance(result, bool):
+                response.success = result
+                if not result:
+                    response.error_msg = f"The method '{request.name}' executed but returned False, indicating failure without an exception."
+            elif result is not None and isinstance(result, str):
+                response.success = True
+                response.error_msg = f"The method '{request.name}' executed and returned the following string: {result}"
+            else:
+                response.success = True
         except Exception as e:
             response.success = False
             response.error_msg = f"Component {self.node_name} has a method with requested name '{request.name}' but the following error raised while running: {e}"
