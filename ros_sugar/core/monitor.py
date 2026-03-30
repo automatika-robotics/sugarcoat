@@ -278,7 +278,7 @@ class Monitor(Node):
         srv_request = ExecuteMethod.Request()
         srv_request.name = method_name
         srv_request.kwargs_json = json.dumps(kwargs)
-        return srv_client.send_request(req_msg=srv_request, executor=self.executor)
+        return srv_client.send_request(req_msg=srv_request)
 
     def configure_component(
         self,
@@ -308,14 +308,14 @@ class Monitor(Node):
                 request_msg.keep_alive = keep_alive
                 return self._update_parameters_srv_client[
                     component.node_name
-                ].send_request(request_msg, executor=self.executor)
+                ].send_request(request_msg)
             else:
                 # For string send a configure from file request
                 request_msg_file = ConfigureFromFile.Request()
                 request_msg_file.path_to_file = new_config
                 return self._configure_from_file_srv_client[
                     component.node_name
-                ].send_request(request_msg_file, executor=self.executor)
+                ].send_request(request_msg_file)
         except Exception as e:
             self.get_logger().error(
                 f"Unable to configure component {component.node_name}: {e}"
@@ -350,7 +350,7 @@ class Monitor(Node):
         srv_request.name = param_name
         srv_request.value = str(new_value)
         srv_request.keep_alive = keep_alive
-        return srv_client.send_request(req_msg=srv_request, executor=self.executor)
+        return srv_client.send_request(req_msg=srv_request)
 
     def update_parameters(
         self,
@@ -382,7 +382,7 @@ class Monitor(Node):
         srv_request.names = params_names
         srv_request.values = str(new_values)
         srv_request.keep_alive = keep_alive
-        return srv_client.send_request(req_msg=srv_request, executor=self.executor)
+        return srv_client.send_request(req_msg=srv_request)
 
     def __get_srv_client(
         self, srv_name: str, srv_type: type
@@ -459,7 +459,7 @@ class Monitor(Node):
             # If request is not provided create an empty one
             srv_request_msg = srv_type.Request()
         srv_client = self.__get_srv_client(srv_name, srv_type)
-        srv_client.send_request(srv_request_msg, executor=self.executor)
+        srv_client.send_request(srv_request_msg)
 
     def send_action_goal(
         self,

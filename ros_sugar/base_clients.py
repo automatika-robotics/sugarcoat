@@ -1,12 +1,11 @@
 """ROS Service/Action Client Wrapper"""
 
-import time as rostime
+import time
 from typing import Any, Optional, Dict, Union, Tuple
 from attrs import Factory, define, field
 
 from rclpy.action.client import ActionClient
 from rclpy.action.server import GoalStatus
-from rclpy import spin_once
 from rclpy.node import Node
 from rclpy.callback_groups import CallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import Executor
@@ -101,14 +100,11 @@ class ServiceClientHandler:
     def send_request_from_dict(
         self,
         request_fields: Dict[str, Union[str, Dict]],
-        executor: Optional[Executor] = None,
     ):
         """Send a service request using a serialized Dict request data
 
         :param request_fields: Request data [key, value]
         :type request_fields: Dict[str, str]
-        :param executor: Optional ros executor, defaults to None
-        :type executor: Optional[Executor], optional
         :return: Service result
         :rtype: Any
         """
@@ -123,9 +119,9 @@ class ServiceClientHandler:
             )
             return None
 
-        return self.send_request(updated_message, executor)
+        return self.send_request(updated_message)
 
-    def send_request(self, req_msg, executor: Optional[Executor] = None):
+    def send_request(self, req_msg):
         """
         Sends a request to the service returns the response
         In case of failure, the method attempts sending the request again multiple time according to the given config
@@ -170,11 +166,9 @@ class ServiceClientHandler:
         self.request = req_msg
         self.future = self.client.call_async(self.request)
 
-        # Spin until response
+        # Wait for service response
         while not self.future.result():
-            spin_once(
-                self.node, executor=executor, timeout_sec=self.config.timeout_secs
-            )
+            time.sleep(0.01)
 
         # return response
         return self.future.result()
@@ -428,7 +422,7 @@ class ActionClientHandler:
                 self.old_feedback_count = self.feedback_count
                 return True
             _check_counter += self.config.feedback_check_period
-            rostime.sleep(self.config.feedback_check_period)
+            time.sleep(self.config.feedback_check_period)
         return False
 
     def cancel_request(self) -> Tuple[bool, str]:
@@ -447,7 +441,7 @@ class ActionClientHandler:
                 and _check_counter < self.config.feedback_check_timeout
             ):
                 _check_counter += self.config.feedback_check_period
-                rostime.sleep(self.config.feedback_check_period)
+                time.sleep(self.config.feedback_check_period)
             if _check_counter >= self.config.feedback_check_timeout:
                 return (False, "Failed to cancel goal")
             self.reset()
