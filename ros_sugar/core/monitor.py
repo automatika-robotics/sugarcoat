@@ -137,11 +137,6 @@ class Monitor(Node):
         self._pure_internal_events.append(event_id)
         self._additional_internal_actions[event_id] = action
 
-    def empty_internal_events_actions_pairs(self):
-        """Initialize pure internal events and action paris. To be called by a child component"""
-        self._pure_internal_events = []
-        self._additional_internal_actions = {}
-
     def rclpy_init_node(self, *args, **kwargs):
         """
         To init the node with rclpy and activate default services
