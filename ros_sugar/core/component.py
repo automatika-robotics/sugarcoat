@@ -385,7 +385,7 @@ class BaseComponent(lifecycle.Node):
         return algo_config
 
     @property
-    def ui_main_action_input(self) -> Optional[ActionClientConfig]:
+    def ui_main_action_input(self) -> ActionClientConfig:
         """Get a UI input for the the component's main action server (if present)
 
         :return: Client config for the component's main action
@@ -395,7 +395,7 @@ class BaseComponent(lifecycle.Node):
             return ActionClientConfig(
                 action_type=self.action_type, name=self.main_action_name
             )
-        return None
+        raise TypeError(f"Component {self.node_name} is not of an ACTION_SERVER type or does not have a main_action_server implemented.")
 
     @property
     def status_topic(self) -> Topic:
