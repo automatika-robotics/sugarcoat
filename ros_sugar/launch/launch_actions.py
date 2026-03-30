@@ -119,9 +119,16 @@ class ComponentLaunchAction(NodeLaunchAction):
         if issubclass(self.__ros_node.__class__, Monitor):
             if self.__ros_node._internal_events:
                 for event in self.__ros_node._internal_events:
-                    self.__logger.debug(f"Registering internal event '{event}'")
                     # Register a method to emit the event to the launch context on trigger
                     event.register_actions(partial(self._on_internal_event, event.id))
+            if self.__ros_node._pure_internal_events:
+                for event_id in self.__ros_node._pure_internal_events:
+                    self.__logger.debug(f"Registering pure internal event '{event_id}'")
+                    # Register a method to emit the event to the launch context on trigger
+                    self.__ros_node._register_pure_internal_event_emit_method(
+                        event_id, partial(self._on_internal_event, event_id)
+                    )
+
             if hasattr(self.__ros_node, "_emit_exit_to_launcher"):
                 self.__ros_node._emit_exit_to_launcher = partial(
                     self._on_internal_event, "exit_all"

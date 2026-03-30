@@ -86,6 +86,9 @@ class Monitor(Node):
         self.node_name = f"{component_name}_{os.getpid()}"
         self.config = config or BaseConfig()
 
+        # Method to emit pure internal events to the launcher context
+        self.emit_internal_event_methods: Dict[str, Callable] = {}
+
         # Server nodes handlers
         self._update_parameter_srv_client: Dict[
             str, base_clients.ServiceClientHandler
@@ -113,6 +116,27 @@ class Monitor(Node):
 
         # Emit exit all to the launcher
         self._emit_exit_to_launcher: Optional[Callable] = None
+
+    def _register_pure_internal_event_emit_method(self, event_name: str, emit_method: Callable) -> None:
+        """
+        Registers a method to emit an InternalEvent with the provided name to the launch context. This is used to emit pure events that are not triggered by a topic message but by an internal condition in the monitor. This will be called internally from the Monitor launch_action
+        """
+        self.emit_internal_event_methods[event_name] = emit_method
+
+    def add_internal_event_action_pair(self, event_id: str, action: Action) -> None:
+        """
+        Adds an internal event action pair to the monitor configuration.
+
+        :param event_id: ID of the event to be monitored
+        :type event_id: str
+        :param action: Action to be executed on event trigger
+        :type action: Action
+        """
+        if not hasattr(self, "_pure_internal_events") or not hasattr(self, "_additional_internal_actions"):
+            self._pure_internal_events = []
+            self._additional_internal_actions = {}
+        self._pure_internal_events.append(event_id)
+        self._additional_internal_actions[event_id] = action
 
     def rclpy_init_node(self, *args, **kwargs):
         """
