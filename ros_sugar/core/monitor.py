@@ -117,13 +117,6 @@ class Monitor(Node):
         # Emit exit all to the launcher
         self._emit_exit_to_launcher: Optional[Callable] = None
 
-        # Initialize internal/actions events if they are not defined already by the child
-        if not hasattr(self, "_pure_internal_events") or not hasattr(
-            self, "_additional_internal_actions"
-        ):
-            self._pure_internal_events = []
-            self._additional_internal_actions = {}
-
     def _register_pure_internal_event_emit_method(self, event_name: str, emit_method: Callable) -> None:
         """
         Registers a method to emit an InternalEvent with the provided name to the launch context. This is used to emit pure events that are not triggered by a topic message but by an internal condition in the monitor. This will be called internally from the Monitor launch_action
@@ -140,10 +133,14 @@ class Monitor(Node):
         :type action: Action
         """
         if not hasattr(self, "_pure_internal_events") or not hasattr(self, "_additional_internal_actions"):
-            self._pure_internal_events = []
-            self._additional_internal_actions = {}
+            self.empty_internal_events_actions_pairs()
         self._pure_internal_events.append(event_id)
         self._additional_internal_actions[event_id] = action
+
+    def empty_internal_events_actions_pairs(self):
+        """Initialize pure internal events and action paris. To be called by a child component"""
+        self._pure_internal_events = []
+        self._additional_internal_actions = {}
 
     def rclpy_init_node(self, *args, **kwargs):
         """
