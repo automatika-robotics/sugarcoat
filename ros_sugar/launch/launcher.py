@@ -131,7 +131,7 @@ class Launcher:
             Event,
             List[Union[Action, ROSLaunchAction]],
         ] = defaultdict(list)
-        self._pkg_executable: List[Tuple[Optional[str], Optional[str]]] = []
+        self._pkg_executable: Dict[str, Tuple[str, str]] = {}  # Dictionary {component.node_name: (package_name, executable_name)}
 
         # To track each package log level when the pkg is added
         self._rclpy_log_level: Dict[str, str] = {}
@@ -208,9 +208,12 @@ class Launcher:
 
         # Extend existing components
         self._components.extend(components)
-        self._pkg_executable.extend(
-            [(package_name, executable_entry_point)] * len(components)
-        )
+        if package_name:
+            for component in components:
+                self._pkg_executable[component.node_name] = (
+                    package_name,
+                    executable_entry_point,
+                )
 
         # Register which components to activate on start
         if components_to_activate_on_start:
@@ -1028,20 +1031,20 @@ class Launcher:
         for component in self._components:
             self._setup_component_events_handlers(component)
 
-        # Add configured components to launcher
-        for idx, component in enumerate(self._components):
-            pkg_name, executable_name = self._pkg_executable[idx]
-            if pkg_name and executable_name:
-                self._setup_component_in_process(component, pkg_name, executable_name)
-            else:
-                self._setup_component_in_thread(component)
-
         # Create UI node if enabled
         if self._enable_ui:
             self._setup_ui_node()
 
-        # NOTE: Monitor setup step should ALWAYS be called after all components, events and UI node are setup, to ensure that the monitor has the full visibility of the system and all the components that require activation at start.
+        # NOTE: Monitor setup step should ALWAYS be called after UI node is setup, to ensure that its added to the components that require activation at start.
         self._setup_monitor_node()
+
+        # Add configured components to launcher
+        for component in self._components:
+            pkg_name, executable_name = self._pkg_executable.get(component.node_name, (None, None))
+            if pkg_name and executable_name:
+                self._setup_component_in_process(component, pkg_name, executable_name)
+            else:
+                self._setup_component_in_thread(component)
 
         group_action = GroupAction(self._launch_group)
 
