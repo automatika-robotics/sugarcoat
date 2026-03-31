@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, List, Union, Callable
+from typing import Any, List, Union, Callable, Optional
 
 import numpy as np
 
@@ -18,6 +18,27 @@ def gt(value: Union[int, float]) -> Validator:
     :rtype: func
     """
     return partial(__gt, ref_value=value)
+
+def array_shape(shape: tuple, dtype: Optional[type] = None) -> Validator:
+    """
+    Validates that a numpy array has a specific shape and dtype
+
+    :param shape: Expected shape of the array
+    :type shape: tuple
+    :param dtype: Expected data type of the array elements (optional)
+    :type dtype: type, optional
+
+    :return: Attrs validator function
+    :rtype: func
+    """
+    def validator(instance: Any, attribute: Any, value: np.ndarray):
+        if not isinstance(value, np.ndarray):
+            raise ValueError(f"Expected a numpy array for {attribute.name}, got {type(value)}")
+        if value.shape != shape:
+            raise ValueError(f"Expected shape {shape} for {attribute.name}, got {value.shape}")
+        if dtype is not None and value.dtype != dtype:
+            raise ValueError(f"Expected dtype {dtype} for {attribute.name}, got {value.dtype}")
+    return validator
 
 
 def lt(value: Union[int, float]) -> Validator:
