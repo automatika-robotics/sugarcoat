@@ -395,7 +395,9 @@ class BaseComponent(lifecycle.Node):
             return ActionClientConfig(
                 action_type=self.action_type, name=self.main_action_name
             )
-        raise TypeError(f"Component {self.node_name} is not of an ACTION_SERVER type or does not have a main_action_server implemented.")
+        raise TypeError(
+            f"Component {self.node_name} is not of an ACTION_SERVER type or does not have a main_action_server implemented."
+        )
 
     @property
     def status_topic(self) -> Topic:
@@ -405,6 +407,52 @@ class BaseComponent(lifecycle.Node):
         :rtype: Topic
         """
         return self.__health_status_topic
+
+    def inspect_component(self) -> str:
+        """Returns a string representation of the component's configuration, including its inputs, outputs, and other relevant details.
+
+        :return: A string representation of the component's configuration
+        :rtype: str
+        """
+        lines = [f"Component: {self.node_name}", f"Type: {type(self).__name__}"]
+
+        # Input topics
+        if hasattr(self, "in_topics") and self.in_topics:
+            lines.append("Input topics:")
+            for t in self.in_topics:
+                msg_name = (
+                    t.msg_type.__name__
+                    if hasattr(t.msg_type, "__name__")
+                    else t.msg_type
+                )
+                lines.append(f"  - {t.name} ({msg_name})")
+        else:
+            lines.append("Input topics: none")
+
+        # Output topics
+        if hasattr(self, "out_topics") and self.out_topics:
+            lines.append("Output topics:")
+            for t in self.out_topics:
+                msg_name = (
+                    t.msg_type.__name__
+                    if hasattr(t.msg_type, "__name__")
+                    else t.msg_type
+                )
+                lines.append(f"  - {t.name} ({msg_name})")
+        else:
+            lines.append("Output topics: none")
+
+        # Configuration parameters
+        lines.extend(self.config._summarize())
+        return "\n".join(lines)
+
+    def get_ros_entrypoints(self) -> Dict[str, Dict[str, Any]]:
+        """Get the component ROS entry points (additional services and actions) as a dictionary.
+
+        :return: Component ROS entry points: services and actions
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        return {"services": {}, "actions": {}}
 
     # Managing Inputs/Outputs
     def _add_ros_subscriber(self, callback: GenericCallback):
