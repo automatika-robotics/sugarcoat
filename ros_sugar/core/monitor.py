@@ -51,7 +51,7 @@ class Monitor(Node):
         activate_on_start: Optional[List[str]] = None,
         activation_timeout: Optional[float] = None,
         activation_attempt_time: float = 1.0,
-        component_name: str = "monitor",
+        component_name: Optional[str] = None,
         **_,
     ):
         """
@@ -83,7 +83,7 @@ class Monitor(Node):
         self._components_to_monitor = components_names
         self._service_components = services_components
         self._action_components = action_servers_components
-        self.node_name = f"{component_name}_{os.getpid()}"
+        self.node_name = component_name if component_name else f"monitor_{os.getpid()}"
         self.config = config or BaseConfig()
 
         # Method to emit pure internal events to the launcher context
@@ -133,7 +133,8 @@ class Monitor(Node):
         :type action: Action
         """
         if not hasattr(self, "_pure_internal_events") or not hasattr(self, "_additional_internal_actions"):
-            self.empty_internal_events_actions_pairs()
+            self._pure_internal_events = []
+            self._additional_internal_actions = {}
         self._pure_internal_events.append(event_id)
         self._additional_internal_actions[event_id] = action
 
