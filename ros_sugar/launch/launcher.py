@@ -1025,8 +1025,6 @@ class Launcher:
 
         self._setup_events_actions()
 
-        self._setup_monitor_node()
-
         for component in self._components:
             self._setup_component_events_handlers(component)
 
@@ -1041,6 +1039,9 @@ class Launcher:
         # Create UI node if enabled
         if self._enable_ui:
             self._setup_ui_node()
+
+        # NOTE: Monitor setup step should ALWAYS be called after all components, events and UI node are setup, to ensure that the monitor has the full visibility of the system and all the components that require activation at start.
+        self._setup_monitor_node()
 
         group_action = GroupAction(self._launch_group)
 
