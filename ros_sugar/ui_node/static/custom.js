@@ -84,6 +84,17 @@ document.addEventListener("DOMContentLoaded", () => {
         observer.observe(log_parent, { childList: true, subtree: true });
     }
 
+    // 1b. Generic auto-scroll for any element with class 'auto-scroll-bottom'
+    const autoScrollObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            const target = mutation.target.closest('.auto-scroll-bottom') || mutation.target;
+            if (target && target.classList.contains('auto-scroll-bottom')) {
+                target.scrollTop = target.scrollHeight;
+            }
+        });
+    });
+    autoScrollObserver.observe(document.body, { childList: true, subtree: true });
+
     // 2. Actions WebSocket (Frontend <-> Backend general comms)
     const actions = document.getElementById("actions-frontend");
     if (actions) {

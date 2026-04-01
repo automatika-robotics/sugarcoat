@@ -119,18 +119,18 @@ class Task:
             feedback_content = Div(
                 self.feedback,
                 id=f"task_{self._name}_feedback",
-                cls="m-2",
+                cls="m-2 auto-scroll-bottom",
             )
-            feedback_header = DivHStacked(
+            feedback_header = Div(
                 H6(
                     "Feedback Log",
                     cls="tomorrow-night-green",
                 ),
+                cls="flex flex-row justify-between items-start"
             )
             if self._status not in ["running", "active", "accepted", "inactive"]:
                 feedback_header(
                     Button(
-                        "clear",
                         cls="clear-btn",
                         type="button",
                         onclick=f"const feedbackDiv = document.getElementById('task_{self._name}_feedback_log'); feedbackDiv.remove();",
@@ -246,7 +246,8 @@ class Task:
             self._status, cls=f"status-badge {self._status}", id="status-badge-div"
         )
 
-    def reset(self):
+    def cleanup(self):
+        self._feedback = []
         self._feedback_timestamp = -1
 
 
@@ -1121,6 +1122,8 @@ def _in_action_client_element(
                     hx_post="/action/goal",
                     hx_target="#main",
                     hx_on__before_request=f"""
+                        let feedbackResultDiv = document.getElementById('task_{action_name}_feedback_log');
+                        feedbackResultDiv.remove();
                         this.innerHTML = `{_loading_content_send}`;
                         this.disabled = true;
                         """,
@@ -1129,6 +1132,7 @@ def _in_action_client_element(
                     "Cancel",
                     cls="secondary-button",
                     type="button",
+                    onclick="this.closest('.custom-overlay').style.display='none'",
                 ),
                 cls="space-x-2 justify-center mt-4",
             ),

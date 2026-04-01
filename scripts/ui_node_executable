@@ -316,8 +316,8 @@ def main():
                 await send(fh.action_clients_ft[_name].card)
 
                 if data["status"] in ["aborted", "completed", "canceled"]:
-                    fh.action_clients_ft[_name].reset()
                     ros_node.cleanup_action(action_name=_name)
+                    fh.action_clients_ft[_name].cleanup()
 
             ros_node.attach_client_feedback_callback(feedback_callback, _action_name)
 
@@ -486,7 +486,7 @@ def main():
     )
     uvicorn.run(
         app,
-        host="localhost",
+        host="0.0.0.0",
         port=ros_node_config.port,
         ssl_keyfile=key_file,
         ssl_certfile=certificate_file,
