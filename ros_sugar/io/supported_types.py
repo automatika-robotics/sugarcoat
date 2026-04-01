@@ -168,6 +168,36 @@ def get_ros_msg_fields_dict(msg_class: type) -> Dict[str, Any]:
     return parsed_dict
 
 
+def ros_msg_to_str(msg_object: Any) -> str:
+    """
+    Helper function to print the fields and values of a ROS message object.
+    Handles nested messages and arrays.
+
+    :param msg_object: The ROS message object to print
+    :param indent: Current indentation level (used for nested messages)
+    """
+    lines = ""
+    for field_name in msg_object.__slots__:
+        if field_name == "_check_fields":
+            continue  # Skip internal ROS message type attribute
+        field_value = getattr(msg_object, field_name)
+        if hasattr(field_value, "__slots__"):
+            lines += f"{field_name}:"
+            lines += ros_msg_to_str(field_value)
+        elif isinstance(field_value, list):
+            # Remove the extra _ added by ROS for arrays (e.g., '_data' -> 'data')
+            lines += f"{field_name.removeprefix('_')}: ["
+            for item in field_value:
+                if hasattr(item, "__slots__"):
+                    lines += ros_msg_to_str(item)
+                else:
+                    lines += f"{item}, "
+            lines += "]"
+        else:
+            lines += f"{field_name.removeprefix('_')}: {field_value} | "
+    return lines
+
+
 def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
     """
     Creates a ROS message object from a dictionary structure.
