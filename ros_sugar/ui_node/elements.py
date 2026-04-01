@@ -119,7 +119,7 @@ class Task:
             feedback_content = Div(
                 self.feedback,
                 id=f"task_{self._name}_feedback",
-                cls="m-2 auto-scroll-bottom",
+                cls="m-2",
             )
             feedback_header = Div(
                 H6(
@@ -139,7 +139,7 @@ class Task:
             feedback_card = Card(
                 feedback_content,
                 header=feedback_header,
-                cls="terminal-container ml-2 mr-2 mt-0 overflow-y-auto max-h-[30vh]",
+                cls="terminal-container ml-2 mr-2 mt-0 overflow-y-auto max-h-[30vh] auto-scroll-bottom",
                 id=f"task_{self._name}_feedback_log",
             )
             inside(feedback_card)

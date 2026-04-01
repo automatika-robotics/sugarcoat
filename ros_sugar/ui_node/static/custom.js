@@ -85,12 +85,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // 1b. Generic auto-scroll for any element with class 'auto-scroll-bottom'
-    const autoScrollObserver = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-            const target = mutation.target.closest('.auto-scroll-bottom') || mutation.target;
-            if (target && target.classList.contains('auto-scroll-bottom')) {
-                target.scrollTop = target.scrollHeight;
-            }
+    const autoScrollObserver = new MutationObserver(() => {
+        const els = document.getElementsByClassName('auto-scroll-bottom');
+        Array.from(els).forEach(el => {
+            el.scrollTop = el.scrollHeight;
         });
     });
     autoScrollObserver.observe(document.body, { childList: true, subtree: true });
