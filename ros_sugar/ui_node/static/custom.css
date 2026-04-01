@@ -76,6 +76,7 @@
     --border-subtle: rgba(255, 255, 255, 0.2);
     --border-input: #888;
 
+    --btn-text: #ffffff;
     --shadow-card: none;
 
     /* --- TERMINAL (LOG) COLORS--- */
@@ -132,6 +133,8 @@ html.light {
     --bg-glass-btn: rgba(255, 255, 255, 0.8);
     --shadow-glass-btn: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 
+    /* Keep button text white in light mode */
+    --btn-text: #ffffff;
 }
 
 /* Shared styling for the logo */
@@ -394,7 +397,7 @@ body {
    ========================================= */
 .primary-button {
     background-color: var(--primary-color);
-    color: var(--text-main);
+    color: var(--btn-text);
     font-family: var(--font-body);
     font-weight: 500;
     font-size: 1.1rem;
@@ -414,7 +417,7 @@ body {
 
 .primary-button:hover {
     background-color: var(--primary-color);
-    color: var(--bg-hover);
+    color: var(--btn-text);
     transform: translateY(-2px);
     box-shadow: 0 0 0 5px rgba(232, 63, 63, 0.2);
 }
@@ -720,19 +723,30 @@ body {
 
 .status-badge.inactive,
 .status-badge.unknown {
-    background-color: rgba(238, 242, 243, 0.05);
+    background-color: rgba(136, 136, 136, 0.15);
     color: var(--text-muted);
 }
 
 .status-badge.accepted {
-    background-color: #1951a0;
-    color: #5f7da6;
+    background-color: #1951a033;
+    color: #5f8dc6;
+}
+
+html.light .status-badge.accepted {
+    background-color: #1951a025;
+    color: #1951a0;
 }
 
 .status-badge.active,
 .status-badge.running {
-    background-color: #043d40;
+    background-color: #219da433;
     color: #219da4;
+}
+
+html.light .status-badge.active,
+html.light .status-badge.running {
+    background-color: #0e7a8033;
+    color: #0e7a80;
 }
 
 .status-badge.completed {
@@ -746,9 +760,20 @@ body {
     color: #e74c3c;
 }
 
-.status-badge.cancelled {
+html.light .status-badge.failed,
+html.light .status-badge.aborted {
+    background-color: #c0392b20;
+    color: #c0392b;
+}
+
+.status-badge.canceled {
     background-color: #f1c40f33;
     color: #f1c40f;
+}
+
+html.light .status-badge.canceled {
+    background-color: #b8860b25;
+    color: #b8860b;
 }
 
 /* TASK TIMER */
@@ -840,8 +865,9 @@ dialog {
 
 /* 2. The Modal Content Box */
 .modal-box {
-    background: var(--text-inverse);
+    background: var(--bg-card);
     color: var(--text-main);
+    border: 1px solid var(--border-subtle);
     padding: 2rem;
     border-radius: 12px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
