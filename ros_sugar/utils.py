@@ -101,7 +101,11 @@ def action_handler(function: Callable):
     return _wrapper
 
 
-def component_action(function: Optional[Callable] = None, description: Optional[Dict] = None, active: bool = False):
+def component_action(
+    function: Optional[Callable] = None,
+    description: Optional[Dict] = None,
+    active: bool = False,
+):
     """
     Decorator for components actions
     Verifies that the function is a valid Component method, returns a boolean or None, and that the Component is active
@@ -153,7 +157,9 @@ def component_action(function: Optional[Callable] = None, description: Optional[
         _wrapper.__name__ = func.__name__
         # Use the provided description or the function's docstring as the action description
         _wrapper._action_description = (
-            json.dumps(description) or (func.__doc__ or "").strip()
+            json.dumps(description)
+            if description is not None
+            else (func.__doc__ or "").strip()
         )
 
         return _wrapper
@@ -164,7 +170,9 @@ def component_action(function: Optional[Callable] = None, description: Optional[
     return _decorator
 
 
-def component_fallback(function: Optional[Callable] = None, description: Optional[Dict] = None):
+def component_fallback(
+    function: Optional[Callable] = None, description: Optional[Dict] = None
+):
     """
     Decorator for components fallback methods
     Verifies that rcply is initialized and component is configured or active
@@ -212,7 +220,9 @@ def component_fallback(function: Optional[Callable] = None, description: Optiona
         _wrapper.__name__ = func.__name__
         # Use the provided description or the function's docstring as the action description
         _wrapper._action_description = (
-            json.dumps(description) or (func.__doc__ or "").strip()
+            json.dumps(description)
+            if description is not None
+            else (func.__doc__ or "").strip()
         )
 
         return _wrapper
