@@ -114,7 +114,7 @@ class Task:
             id=self._name,
             ws_send=True,
         )
-        inside = Grid(cls="gap-2 ml-1 mr-1", cols=1)
+        inside = Grid(cls="gap-2 ml-1 mr-1 place-items-center", cols=1)
         if self.feedback:
             feedback_content = Div(
                 self.feedback,
@@ -139,7 +139,7 @@ class Task:
             feedback_card = Card(
                 feedback_content,
                 header=feedback_header,
-                cls="terminal-container ml-2 mr-2 mt-0 overflow-y-auto max-h-[30vh] auto-scroll-bottom",
+                cls="terminal-container feedback-container ml-2 mr-2 mt-0 overflow-y-auto max-h-[30vh] auto-scroll-bottom",
                 id=f"task_{self._name}_feedback_log",
             )
             inside(feedback_card)
@@ -154,9 +154,11 @@ class Task:
         else:
             if not self._feedback:
                 return None
-            p_stack = DivVStacked(cls="space-y-1")
+            p_stack = Grid(cols=1, cls="gap-0 flex justify-start")
             for feed_message in self._feedback:
-                p_stack(P("- ", feed_message))
+                p_stack(
+                    P(Span("- ", cls="tomorrow-night-green font-bold"), feed_message)
+                )
             return p_stack
 
     @property

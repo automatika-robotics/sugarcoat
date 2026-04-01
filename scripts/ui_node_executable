@@ -12,6 +12,7 @@ from ros_sugar.ui_node import UINode, UINodeConfig
 from ros_sugar.ui_node.frontend import FHApp
 import ros_sugar.ui_node.elements as elements
 from ros_sugar.utils import logger
+from ros_sugar.supported_types import ros_msg_to_str
 
 import base64
 import array
@@ -307,9 +308,14 @@ def main():
                 :param data: UI data dict (status, feedback, etc.)
                 :type data: Dict
                 """
+                feedback = (
+                    ros_msg_to_str(data["feedback"])
+                    if data["feedback"]
+                    else None
+                )
                 fh.action_clients_ft[_name].update(
                     status=data["status"],
-                    feedback=data["feedback"],
+                    feedback=feedback,
                     duration=data["duration_secs"],
                     timestep=data["timestep"],
                 )

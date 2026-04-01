@@ -673,6 +673,12 @@ body {
     transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
 }
 
+.feedback-container{
+    width: 70vw;
+    box-sizing: border-box;
+    margin: 0 auto;
+}
+
 /* =========================================
    SYNTAX HIGHLIGHTING CLASSES
    ========================================= */
