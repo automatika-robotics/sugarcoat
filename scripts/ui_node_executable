@@ -457,22 +457,22 @@ def main():
         Path(ros_node_config.ssl_keyfile).exists()
         and Path(ros_node_config.ssl_certificate).exists()
     ):
-        logger.info("\n" + "=" * 80)
-        logger.info("WARNING: SSL certificates (key.pem, cert.pem) not found.")
-        logger.info(
+        logger.warning("\n" + "=" * 80)
+        logger.warning("WARNING: SSL certificates (key.pem, cert.pem) not found.")
+        logger.warning(
             "Microphone access will not work when accessing from another machine."
         )
-        logger.info(
+        logger.warning(
             "To enable microphone over the network, generate certificates by running"
         )
-        logger.info("the following command:")
-        logger.info(
+        logger.warning("the following command:")
+        logger.warning(
             '\nopenssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes -subj "/CN=localhost"\n'
         )
-        logger.info(
+        logger.warning(
             "And give the path to the certificates to the launcher.enable_ui method"
         )
-        logger.info("=" * 80 + "\n")
+        logger.warning("=" * 80 + "\n")
         key_file = None
         certificate_file = None
         protocol = "http"
