@@ -2,7 +2,6 @@ from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List, 
 import threading
 import asyncio
 import os
-import time
 from attr import define, field, Factory
 import json
 import importlib
@@ -458,12 +457,15 @@ class UINode(BaseComponent):
                 True,
                 f"Action cancellation is not possible: '{action_name}' is not found",
             )
-        (result, info) = self._ros_action_clients[action_name].cancel_request()
-        if result:
-            time.sleep(2 * self._update_rate)  # wait a bit to make sure the UI is updated before killing the feedback timer
-            # destroy the feedback timer if action is cancelled
-            self.destroy_timer(self._ros_action_clients_feedback_timers[action_name])
-        return (result, info)
+        return self._ros_action_clients[action_name].cancel_request()
+
+    def cleanup_action(self, action_name: str) -> None:
+        """Destroy the action feedback timer. Called when the action has completed or aborted
+
+        :param action_name: _description_
+        :type action_name: str
+        """
+        self.destroy_timer(self._ros_action_clients_feedback_timers[action_name])
 
     def publish_data(self, data: Any):
         """

@@ -307,8 +307,6 @@ def main():
                 :param data: UI data dict (status, feedback, etc.)
                 :type data: Dict
                 """
-                if data["status"] in ["aborted", "completed", "canceled"]:
-                    fh.action_clients_ft[_name].reset()
                 fh.action_clients_ft[_name].update(
                     status=data["status"],
                     feedback=data["feedback"],
@@ -316,6 +314,10 @@ def main():
                     timestep=data["timestep"],
                 )
                 await send(fh.action_clients_ft[_name].card)
+
+                if data["status"] in ["aborted", "completed", "canceled"]:
+                    fh.action_clients_ft[_name].reset()
+                    ros_node.cleanup_action(action_name=_name)
 
             ros_node.attach_client_feedback_callback(feedback_callback, _action_name)
 

@@ -159,10 +159,6 @@ class Task:
                 p_stack(P("- ", feed_message))
             return p_stack
 
-    def _clear_feedback(self):
-        """Clear the feedback log"""
-        self._feedback = []
-
     @property
     def _info(self):
         """Gets the action server info"""
