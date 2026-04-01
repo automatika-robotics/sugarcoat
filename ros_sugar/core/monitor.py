@@ -117,7 +117,9 @@ class Monitor(Node):
         # Emit exit all to the launcher
         self._emit_exit_to_launcher: Optional[Callable] = None
 
-    def _register_pure_internal_event_emit_method(self, event_name: str, emit_method: Callable) -> None:
+    def _register_pure_internal_event_emit_method(
+        self, event_name: str, emit_method: Callable
+    ) -> None:
         """
         Registers a method to emit an InternalEvent with the provided name to the launch context. This is used to emit pure events that are not triggered by a topic message but by an internal condition in the monitor. This will be called internally from the Monitor launch_action
         """
@@ -132,7 +134,9 @@ class Monitor(Node):
         :param action: Action to be executed on event trigger
         :type action: Action
         """
-        if not hasattr(self, "_pure_internal_events") or not hasattr(self, "_additional_internal_actions"):
+        if not hasattr(self, "_pure_internal_events") or not hasattr(
+            self, "_additional_internal_actions"
+        ):
             self._pure_internal_events = []
             self._additional_internal_actions = {}
         self._pure_internal_events.append(event_id)
@@ -512,9 +516,7 @@ class Monitor(Node):
         action_client = self.__get_action_client(action_name, action_type)
         action_client.send_request(action_request_msg)
 
-    def _get_component_action_request_message_type(
-        self, component_name: str
-    ) -> Any:
+    def _get_component_action_request_message_type(self, component_name: str) -> Any:
         """Helper method to prepare the action request message for a given component action
 
         :param component_name: Name of the component
@@ -567,10 +569,8 @@ class Monitor(Node):
                 error_msg,
             )
         return (
-            (
-                True,
-                f"Action goal sent successfully to component {component_name} with request message {action_request_msg}",
-            ),
+            True,
+            f"Action goal sent successfully to component {component_name} with request message {action_request_msg}",
         )
 
     def get_secs_time(self) -> float:
