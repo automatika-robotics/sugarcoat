@@ -1101,6 +1101,7 @@ def _in_action_client_element(
     action_form = Form(
         cls="space-x-2 space-y-2 m-2",
         id=f"{action_name}-form",
+        # The following is added to fix the page reload on form start error
         onsubmit="event.preventDefault(); return false;",
     )
     if ui_element := _INPUT_ELEMENTS.get(action_type, None):
@@ -1132,7 +1133,6 @@ def _in_action_client_element(
                     "Cancel",
                     cls="secondary-button",
                     type="button",
-                    onclick="this.closest('.custom-overlay').style.display='none'",
                 ),
                 cls="space-x-2 justify-center mt-4",
             ),
@@ -1151,6 +1151,7 @@ def _in_action_client_element(
                 Button(
                     "Start",
                     cls="primary-button",
+                    type="button",
                     id=f"{action_name}-form-btn",
                     onclick=f"document.getElementById('{action_name}-request-from').style.display='grid'",
                 ),
