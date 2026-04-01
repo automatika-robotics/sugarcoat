@@ -2,6 +2,7 @@ from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List, 
 import threading
 import asyncio
 import os
+import time
 from attr import define, field, Factory
 import json
 import importlib
@@ -102,6 +103,7 @@ class UINode(BaseComponent):
         self._ros_action_clients_feedback_timers: Dict = {}
 
         self.config: UINodeConfig
+        self._update_rate = 1.0  # 1 second ui feedback update rate
 
     def srv_clients_inputs_dicts(self) -> List[Dict]:
         """Get a list of all given service clients inputs as dictionaries
@@ -413,7 +415,7 @@ class UINode(BaseComponent):
         if sent_done:
             # If goal is sent, start a timer to send the feedback to the websocket
             self._ros_action_clients_feedback_timers[action_name] = self.create_timer(
-                timer_period_sec=1.0,
+                timer_period_sec=self._update_rate,
                 callback=partial(
                     self._action_feedback_callback, action_name=action_name
                 ),
@@ -456,7 +458,12 @@ class UINode(BaseComponent):
                 True,
                 f"Action cancellation is not possible: '{action_name}' is not found",
             )
-        return self._ros_action_clients[action_name].cancel_request()
+        (result, info) = self._ros_action_clients[action_name].cancel_request()
+        if result:
+            time.sleep(2 * self._update_rate)  # wait a bit to make sure the UI is updated before killing the feedback timer
+            # destroy the feedback timer if action is cancelled
+            self.destroy_timer(self._ros_action_clients_feedback_timers[action_name])
+        return (result, info)
 
     def publish_data(self, data: Any):
         """
