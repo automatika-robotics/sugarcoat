@@ -307,17 +307,15 @@ def main():
                 :param data: UI data dict (status, feedback, etc.)
                 :type data: Dict
                 """
-                if data["status"] not in ["aborted", "completed", "canceled"]:
-                    fh.action_clients_ft[_name].update(
-                        status=data["status"],
-                        feedback=data["feedback"],
-                        duration=data["duration_secs"],
-                        timestep=data["timestep"],
-                    )
-                    await send(fh.action_clients_ft[_name].card)
-                else:
+                if data["status"] in ["aborted", "completed", "canceled"]:
                     fh.action_clients_ft[_name].reset()
-                    await send(fh.action_clients_ft[_name].card)
+                fh.action_clients_ft[_name].update(
+                    status=data["status"],
+                    feedback=data["feedback"],
+                    duration=data["duration_secs"],
+                    timestep=data["timestep"],
+                )
+                await send(fh.action_clients_ft[_name].card)
 
             ros_node.attach_client_feedback_callback(feedback_callback, _action_name)
 
@@ -486,7 +484,7 @@ def main():
     )
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host="localhost",
         port=ros_node_config.port,
         ssl_keyfile=key_file,
         ssl_certfile=certificate_file,
