@@ -30,7 +30,11 @@ class FHApp:
         # --- Application Setup ---
         static_src = Path(__file__).resolve().parent / "static"
 
-        hdrs = (
+        has_audio = any(
+            t.msg_type.__name__ == "Audio"
+            for t in (in_topics or []) + (out_topics or [])
+        )
+        hdrs = [
             Theme.red.headers(),  # Get theme from MonsterUI
             # --- 1. Add ROS Dependencies (CDN) ---
             Script(src="https://code.createjs.com/1.0.0/easeljs.min.js"),
@@ -43,16 +47,15 @@ class FHApp:
                 src="custom.js",
             ),
             Script(
-                src="audio_manager.js",
-            ),
-            Script(
                 src="ros_maps.js",
             ),
             Script(
                 src="video_manager.js",
             ),
             Link(rel="stylesheet", href="custom.css", type="text/css"),
-        )
+        ]
+        if has_audio:
+            hdrs.append(Script(src="audio_manager.js"))
         self.app, self.rt = fast_app(
             hdrs=hdrs, exts=["ws"], static_path=str(static_src)
         )
