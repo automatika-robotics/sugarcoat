@@ -1101,6 +1101,7 @@ def _in_action_client_element(
     action_form = Form(
         cls="space-x-2 space-y-2 m-2",
         id=f"{action_name}-form",
+        onsubmit="event.preventDefault(); return false;",
     )
     if ui_element := _INPUT_ELEMENTS.get(action_type, None):
         ui_fields = ui_element(action_name, action_type)
