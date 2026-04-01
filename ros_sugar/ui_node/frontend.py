@@ -109,7 +109,13 @@ class FHApp:
             return None
         all_clients_cards = Div(id="all_actions")
         for value in self.action_clients_ft.values():
-            all_clients_cards(value.card)
+            all_clients_cards(
+                Card(
+                    value.card_static,
+                    value.card,
+                    cls="m-2 max-h-[40vh] overflow-y-auto inner-main-card",
+                )
+            )
         actions_main_card = Card(
             DivHStacked(
                 H4("Tasks", cls="cool-subtitle-mini"),

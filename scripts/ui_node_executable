@@ -295,25 +295,31 @@ def main():
         for _, topic_type in fh.get_all_map_overlay_outputs():
             ros_node.attach_websocket_callback(map_callback, topic_type)
 
-    async def on_conn_action(_, send, action_name: str):
-        """When a client connects, register its callback."""
+    async def on_conn_action(_, send):
+        """When a client connects, register feedback callbacks for all action clients."""
 
-        # Callback function for ROS node
-        async def feedback_callback(data: Dict, **_):
-            """Updates an action client with new feedback from the server
+        for clients_config in ros_node.action_clients_inputs_dicts():
+            _action_name = clients_config["name"]
 
-            :param data: UI data dict (status, feedback, etc.)
-            :type data: Dict
-            """
-            if data["is_new_feedback"]:
-                fh.action_clients_ft[action_name].update(
-                    status=data["status"],
-                    feedback=data["feedback"],
-                    duration=data["duration_secs"],
-                )
-                await send(fh.action_clients)
+            async def feedback_callback(data: Dict, *, _name=_action_name, **_):
+                """Updates an action client with new feedback from the server
 
-        ros_node.attach_client_feedback_callback(feedback_callback, action_name)
+                :param data: UI data dict (status, feedback, etc.)
+                :type data: Dict
+                """
+                if data["status"] not in ["aborted", "completed", "canceled"]:
+                    fh.action_clients_ft[_name].update(
+                        status=data["status"],
+                        feedback=data["feedback"],
+                        duration=data["duration_secs"],
+                        timestep=data["timestep"],
+                    )
+                    await send(fh.action_clients_ft[_name].card)
+                else:
+                    fh.action_clients_ft[_name].reset()
+                    await send(fh.action_clients_ft[_name].card)
+
+            ros_node.attach_client_feedback_callback(feedback_callback, _action_name)
 
     # Create websockets for streaming output topics
     for topic_name, topic_type in fh.get_all_stream_outputs():
@@ -342,14 +348,11 @@ def main():
                 data.update(message)
                 ros_node.publish_data(data)
 
-    for clients_configs_dict in ros_node.action_clients_inputs_dicts():
-        logger.debug(
-            f"Starting action clients ws for {clients_configs_dict['name']}..."
-        )
+    if ros_node.action_clients_inputs_dicts():
 
         @app.ws(
             "/ws_actions",
-            conn=partial(on_conn_action, action_name=clients_configs_dict["name"]),
+            conn=on_conn_action,
             disconn=on_disconn,
         )
         async def _():

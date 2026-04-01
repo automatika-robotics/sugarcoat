@@ -413,7 +413,7 @@ class UINode(BaseComponent):
         if sent_done:
             # If goal is sent, start a timer to send the feedback to the websocket
             self._ros_action_clients_feedback_timers[action_name] = self.create_timer(
-                timer_period_sec=1 / self.config.loop_rate,
+                timer_period_sec=1.0,
                 callback=partial(
                     self._action_feedback_callback, action_name=action_name
                 ),
@@ -424,7 +424,7 @@ class UINode(BaseComponent):
             f'Server Error - Was not able to send goal for action "{action_name}"',
         )
 
-    async def _action_feedback_callback(self, action_name: str):
+    def _action_feedback_callback(self, action_name: str):
         """Get feedback message from action (if available)
 
         :param action_name: Action name
@@ -438,7 +438,10 @@ class UINode(BaseComponent):
         if feedback_func := self._ros_action_clients_feedback_callbacks.get(
             action_name, None
         ):
-            await feedback_func(feedback_data)
+            # await feedback_func(feedback_data)
+            asyncio.run_coroutine_threadsafe(
+                feedback_func(feedback_data), self.loop
+            )
 
     def cancel_action(self, action_name: str) -> Tuple[bool, str]:
         """Cancel ongoing action goal

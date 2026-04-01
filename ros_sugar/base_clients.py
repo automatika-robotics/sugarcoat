@@ -8,7 +8,6 @@ from rclpy.action.client import ActionClient
 from rclpy.action.server import GoalStatus
 from rclpy.node import Node
 from rclpy.callback_groups import CallbackGroup, ReentrantCallbackGroup
-from rclpy.executors import Executor
 
 from .config import BaseAttrs, base_validators
 from .supported_types import set_ros_msg_from_dict
@@ -393,10 +392,6 @@ class ActionClientHandler:
         # Increase the feedback counter
         self.feedback_count += 1
         self.feedback_msg = feedback_msg
-        # Reset counters
-        if self.feedback_count > 1000:
-            self.feedback_count = 0
-            self.old_feedback_count = 0
 
     def _check_alive_callback(self):
         """Timed callback to check if server is sending a feedback"""
@@ -459,16 +454,12 @@ class ActionClientHandler:
         current_time = self.node.get_clock().now().seconds_nanoseconds()[0]
         ui_dict = {
             "status": self._status,
-            "feedback": self.feedback_msg,
-            "is_new_feedback": (
-                (self.feedback_count > self.old_feedback_count)
-                or (self._old_status != self._status)
-            ),
+            "feedback": self.feedback_msg.feedback if self.feedback_msg and hasattr(self.feedback_msg, "feedback") else None,
+            "timestep": self.feedback_count,
             "feedback_timeout": self._feedback_timeout,
             "duration_secs": (current_time - self._start_time_secs)
             if self._start_time_secs is not None
             else 0.0,
         }
         self._old_status = self._status
-        self.old_feedback_count = self.feedback_count
         return ui_dict
