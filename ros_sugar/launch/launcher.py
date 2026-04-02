@@ -570,7 +570,9 @@ class Launcher:
                 method = getattr(component, action_name)
                 method_params = inspect.signature(method).parameters
                 if any(
-                    x.default is inspect.Parameter.empty for x in method_params.values()
+                    x.default is inspect.Parameter.empty
+                    and x.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+                    for x in method_params.values()
                 ):
                     raise ValueError(
                         f"{method} takes {method_params} as arguments. Only actions without any arguments or with keyword only arguments can be set as on_fail actions from the launcher. Use component.on_fail to pass specific arguments."

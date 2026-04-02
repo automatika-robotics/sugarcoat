@@ -2438,7 +2438,7 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def restart(self, wait_time: Optional[float] = None, **_) -> bool:
+    def restart(self, *, wait_time: Optional[float] = None, **_) -> bool:
         """
         Restart the component - stop->start
 
