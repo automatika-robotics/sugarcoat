@@ -807,15 +807,19 @@ class Launcher:
         while True:
             # TODO: Make the buffer size a parameter
             # Block to receive data
-            data = conn.recv(1024)
-            if not data:
-                continue
-            # TODO: Retrieve errors
-            data = msgpack.unpackb(data)
-            result = func(*data["output"])
-            logger.debug(f"Got result from external processor: {result}")
-            result = msgpack.packb(result)
-            conn.sendall(result)
+
+            try:
+                data = conn.recv(1024)
+                if not data:
+                    continue
+                # TODO: Retrieve errors
+                data = msgpack.unpackb(data)
+                result = func(**data)
+                logger.debug(f"Got result from external processor: {result}")
+                result = msgpack.packb(result)
+                conn.sendall(result)
+            except Exception as e:
+                logger.error(f"Error while running external processor: {e}")
 
     def _setup_external_processors(self, component: BaseComponent) -> None:
         if not component._external_processors:
