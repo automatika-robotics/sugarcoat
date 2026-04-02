@@ -109,6 +109,18 @@ document.addEventListener("DOMContentLoaded", () => {
     makeResizable("draggable");
 });
 
+// Fix null header values in HTMX WebSocket messages that crash FastHTML
+document.addEventListener("htmx:wsConfigSend", function (event) {
+    const headers = event.detail.headers;
+    if (headers) {
+        Object.keys(headers).forEach(function (key) {
+            if (headers[key] == null) {
+                headers[key] = '';
+            }
+        });
+    }
+});
+
 // Fix parsing boolean values from UI Switch elements for HTMX
 document.addEventListener("htmx:configRequest", function (event) {
     const form = event.detail.elt.closest("form");
