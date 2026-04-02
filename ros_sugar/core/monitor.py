@@ -412,7 +412,7 @@ class Monitor(Node):
         srv_request.keep_alive = keep_alive
         return srv_client.send_request(req_msg=srv_request)
 
-    def __get_srv_client(
+    def _get_srv_client(
         self, srv_name: str, srv_type: type
     ) -> base_clients.ServiceClientHandler:
         """Helper method to get a service client handler for the provided service name/type
@@ -437,7 +437,7 @@ class Monitor(Node):
             client_node=self, srv_name=srv_name, srv_type=srv_type
         )
 
-    def __get_action_client(
+    def _get_action_client(
         self, action_name: str, action_type: type
     ) -> base_clients.ActionClientHandler:
         """Helper method to get a ros action client handler for the provided service name/type
@@ -486,7 +486,7 @@ class Monitor(Node):
         if not srv_request_msg:
             # If request is not provided create an empty one
             srv_request_msg = srv_type.Request()
-        srv_client = self.__get_srv_client(srv_name, srv_type)
+        srv_client = self._get_srv_client(srv_name, srv_type)
         srv_client.send_request(srv_request_msg)
 
     def send_action_goal(
@@ -513,7 +513,7 @@ class Monitor(Node):
         if not action_request_msg:
             # If request is not provided create an empty one
             action_request_msg = action_type.Goal()
-        action_client = self.__get_action_client(action_name, action_type)
+        action_client = self._get_action_client(action_name, action_type)
         action_client.send_request(action_request_msg)
 
     def _get_component_action_request_message_type(self, component_name: str) -> Any:
