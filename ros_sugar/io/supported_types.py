@@ -720,7 +720,7 @@ class Twist(SupportedType):
     _ros_type = ROSTwist
 
     @classmethod
-    def convert(cls, vx: float, vy: float, omega: float, **_) -> ROSTwist:
+    def convert(cls, output: Union[np.ndarray, List], **_) -> ROSTwist:
         """ROS message converter function for datatype Point.
 
         :param output:
@@ -729,7 +729,7 @@ class Twist(SupportedType):
         :rtype: ROSPoseStamped
         """
         msg = ROSTwist()
-        msg.linear.x = vx
-        msg.linear.y = vy
-        msg.angular.z = omega
+        msg.linear.x = output[0]
+        msg.linear.y = output[1]
+        msg.angular.z = output[2]
         return msg
