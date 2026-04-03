@@ -335,13 +335,6 @@ class ActionClientHandler:
             request_msg, feedback_callback=self.action_feedback_callback
         )
 
-        # Wait until the action returns the first feedback
-        while wait_until_first_feedback and self.feedback_count <= 0:
-            self.node.get_logger().warn("Waiting for action feedback", once=True)
-            if not self.got_new_feedback():
-                self.cancel_request()
-                return False
-
         self._start_time_secs = self.node.get_clock().now().seconds_nanoseconds()[0]
 
         # Add method when action is done
@@ -352,7 +345,12 @@ class ActionClientHandler:
             callback=self._check_alive_callback,
         )
 
-        return True
+        _timeout_counter = 0
+        while not self.goal_accepted and _timeout_counter < self.config.feedback_check_timeout:
+            _timeout_counter += self.config.feedback_check_period
+            time.sleep(self.config.feedback_check_period)
+
+        return self.goal_accepted
 
     # METHOD WHEN ACTION IS DONE
     def action_response_callback(self, future):
@@ -390,6 +388,7 @@ class ActionClientHandler:
         :type feedback_msg: Any
         """
         # Increase the feedback counter
+        self.goal_accepted = True
         self.feedback_count += 1
         self.feedback_msg = feedback_msg
 
