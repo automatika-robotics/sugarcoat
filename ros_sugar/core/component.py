@@ -909,7 +909,7 @@ class BaseComponent(lifecycle.Node):
                     self.__events_per_topic[topic.name].append(event)
 
         # Register the actions
-        for event, actions in zip(self.__events, self.__actions, strict=True):
+        for event, actions in zip(self.__events, self.__actions):
             # Register action to event to get executed on trigger when calling event.check_condition
             event.register_actions(actions)
 
@@ -1126,7 +1126,7 @@ class BaseComponent(lifecycle.Node):
         """
         if not self.__events or not self.__actions:
             return {}
-        return dict(zip(self.__events, self.__actions, strict=True))
+        return dict(zip(self.__events, self.__actions))
 
     def clear_events_actions(self) -> None:
         """Clear all Events/Actions registered to the component
@@ -1148,7 +1148,7 @@ class BaseComponent(lifecycle.Node):
             return {}
         return {
             event.id: action
-            for event, action in zip(self.__events, self.__actions, strict=True)
+            for event, action in zip(self.__events, self.__actions)
         }
 
     @_events_actions.setter
@@ -1887,7 +1887,7 @@ class BaseComponent(lifecycle.Node):
         response.success = []
         response.error_msg = []
 
-        for name, val in zip(param_names, param_str_values, strict=True):
+        for name, val in zip(param_names, param_str_values):
             error_msg = self._update_config_param_from_str_value(name, val)
 
             if not error_msg:
@@ -2519,11 +2519,11 @@ class BaseComponent(lifecycle.Node):
         """
         try:
             if keep_alive:
-                for param_name, new_value in zip(params_names, new_values, strict=True):
+                for param_name, new_value in zip(params_names, new_values):
                     self.config.update_value(param_name, new_value)
             else:
                 self.stop()
-                for param_name, new_value in zip(params_names, new_values, strict=True):
+                for param_name, new_value in zip(params_names, new_values):
                     self.config.update_value(param_name, new_value)
                 self.start()
         except Exception:

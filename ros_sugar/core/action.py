@@ -357,10 +357,14 @@ class Action:
                     # Related message is not sent -> skip
                     continue
                 if key.startswith("arg_"):
-                    idx = int(key.removeprefix("arg_"))
+                    # Python3.8 compatibility (instead of removeprefix())
+                    key = key[len("arg_"):]
+                    idx = int(key)
                     call_args.insert(idx, output)
                 elif key.startswith("kwarg_"):
-                    call_kwargs[key.removeprefix("kwarg_")] = output
+                    # Python3.8 compatibility (instead of removeprefix())
+                    key = key[len("kwarg_"):]
+                    call_kwargs[key] = output
 
         for key, (name, conv_func) in self.__prepared_events_conversions.items():
             if msg := topics.get(name, None):

@@ -539,7 +539,7 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
 
     # Set up the layout
     msg.layout.dim = []
-    for size, stride, label in zip(arr.shape, strides, labels, strict=True):
+    for size, stride, label in zip(arr.shape, strides, labels):
         dim = std_msg.MultiArrayDimension()
         dim.label = label
         dim.size = size
