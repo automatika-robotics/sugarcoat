@@ -454,6 +454,22 @@ class BaseComponent(lifecycle.Node):
         """
         return {"services": {}, "actions": {}}
 
+    def set_input(self, **_) -> bool:
+        """Method to be implemented in child packages
+
+        :return: If input is successfully updates
+        :rtype: bool
+        """
+        return False
+
+    def set_output(self, **_) -> bool:
+        """Method to be implemented in child packages
+
+        :return: If output is successfully updates
+        :rtype: bool
+        """
+        return False
+
     # Managing Inputs/Outputs
     def _add_ros_subscriber(self, callback: GenericCallback):
         """Creates a subscriber to be attached to an input message.

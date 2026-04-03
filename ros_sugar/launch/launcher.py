@@ -131,7 +131,9 @@ class Launcher:
             Event,
             List[Union[Action, ROSLaunchAction]],
         ] = defaultdict(list)
-        self._pkg_executable: Dict[str, Tuple[str, str]] = {}  # Dictionary {component.node_name: (package_name, executable_name)}
+        self._pkg_executable: Dict[
+            str, Tuple[str, str]
+        ] = {}  # Dictionary {component.node_name: (package_name, executable_name)}
 
         # To track each package log level when the pkg is added
         self._rclpy_log_level: Dict[str, str] = {}
@@ -331,6 +333,99 @@ class Launcher:
             ssl_certificate=ssl_certificate_path,
             hide_settings=hide_settings_panel,
         )
+
+    @property
+    def robot(self) -> Dict[str, Any]:
+        """
+        Getter of robot config for all components
+
+        :return: Robot configuration
+        :rtype: RobotConfig
+        """
+        robot_config_dict = {}
+        for component in self._components:
+            if hasattr(component.config, "robot"):
+                robot_config_dict[component.node_name] = component.config.robot
+        return robot_config_dict
+
+    @robot.setter
+    def robot(self, robot_config) -> None:
+        """
+        Setter of robot configuration for all components
+
+        :param config: Robot configuration
+        :type config: RobotConfig
+        """
+        for component in self._components:
+            if hasattr(component.config, "robot"):
+                try:
+                    component.config.robot = robot_config
+                except TypeError:
+                    logger.error(
+                        f"Cannot set component {component.node_name} 'robot' configuration parameter of type '{type(component.config.robot)}' to provided value of type '{type(robot_config)}'. Skipping setting robot configuration for '{component.node_name}'"
+                    )
+
+    @property
+    def frames(self) -> Dict[str, Any]:
+        """
+        Getter of robot frames for all components
+
+        :return: Robot frames configuration
+        :rtype: RobotFrames
+        """
+        robot_config_dict = {}
+        for component in self._components:
+            if hasattr(component.config, "frames"):
+                robot_config_dict[component.node_name] = component.config.frames
+        return robot_config_dict
+
+    @frames.setter
+    def frames(self, frames_config) -> None:
+        """
+        Setter of robot frames for all components
+
+        :param frames_config: Robot frames configuration
+        :type frames_config: RobotFrames
+        """
+        for component in self._components:
+            if hasattr(component.config, "frames"):
+                try:
+                    component.config.frames = frames_config
+                except TypeError:
+                    logger.error(
+                        f"Cannot set component {component.node_name} 'frames' configuration parameter of type '{type(component.config.frames)}' to provided value of type '{type(frames_config)}' Skipping setting frames configuration for '{component.node_name}'"
+                    )
+
+    def inputs(self, **kwargs):
+        """
+        Update input in all components if exists
+        """
+        components_keys_updated = {}
+        for key, value in kwargs.items():
+            components_updated_for_key = []
+            # Check if any component has this key in their inputs keys
+            for component in self._components:
+                if component.set_input(**{key: value}):
+                    components_updated_for_key.append(component.node_name)
+            components_keys_updated[key] = components_updated_for_key
+
+        for key, items in components_keys_updated.items():
+            logger.info(f"Input '{key}' updated for components: {items}")
+
+    def outputs(self, **kwargs):
+        """
+        Update output in all components if exists
+        """
+        components_keys_updated = {}
+        for key, value in kwargs.items():
+            components_updated_for_key = []
+            # Check if any component has this key in their output keys
+            for component in self._components:
+                if component.set_output(**{key: value}):
+                    components_updated_for_key.append(component.node_name)
+            components_keys_updated[key] = components_updated_for_key
+        for key, items in components_keys_updated.items():
+            logger.info(f"Output '{key}' updated for components: {items}")
 
     def _setup_component_events_handlers(self, comp: BaseComponent):
         """Parse a component events/actions from the overall components actions
@@ -571,7 +666,11 @@ class Launcher:
                 method_params = inspect.signature(method).parameters
                 if any(
                     x.default is inspect.Parameter.empty
-                    and x.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+                    and x.kind
+                    not in (
+                        inspect.Parameter.VAR_POSITIONAL,
+                        inspect.Parameter.VAR_KEYWORD,
+                    )
                     for x in method_params.values()
                 ):
                     raise ValueError(
@@ -1046,7 +1145,9 @@ class Launcher:
 
         # Add configured components to launcher
         for component in self._components:
-            pkg_name, executable_name = self._pkg_executable.get(component.node_name, (None, None))
+            pkg_name, executable_name = self._pkg_executable.get(
+                component.node_name, (None, None)
+            )
             if pkg_name and executable_name:
                 self._setup_component_in_process(component, pkg_name, executable_name)
             else:
