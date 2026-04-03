@@ -496,6 +496,7 @@ def main():
         port=ros_node_config.port,
         ssl_keyfile=key_file,
         ssl_certfile=certificate_file,
+        loop="asyncio",
     )
 
 
