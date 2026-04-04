@@ -271,7 +271,7 @@ class ActionClientHandler:
     def send_request_from_dict(
         self,
         request_fields: Dict[str, Union[str, Dict]],
-        wait_until_first_feedback: bool = True,
+        wait_until_first_feedback: bool = False,
     ):
         """Send an action request using a serialized Dict request data
 
@@ -289,7 +289,7 @@ class ActionClientHandler:
         return self.send_request(updated_message, wait_until_first_feedback)
 
     def send_request(
-        self, request_msg: Any, wait_until_first_feedback: bool = True
+        self, request_msg: Any, wait_until_first_feedback: bool = False
     ) -> bool:
         """
         Sends a request to an action server
@@ -321,7 +321,7 @@ class ActionClientHandler:
                 )
                 return False
 
-        self.node.get_logger().info(f"Sending request to {self.config.name}")
+        self.node.get_logger().debug(f"Sending request to {self.config.name}")
 
         # Check request type
         if not isinstance(request_msg, self.config.action_type.Goal):
@@ -349,6 +349,19 @@ class ActionClientHandler:
         while not self.goal_accepted and _timeout_counter < self.config.feedback_check_timeout:
             _timeout_counter += self.config.feedback_check_period
             time.sleep(self.config.feedback_check_period)
+
+        if wait_until_first_feedback:
+            # Wait until the server sent the first feedback message
+            _timeout_counter = 0
+            while (
+                not self.feedback_msg
+                and _timeout_counter < self.config.feedback_check_timeout
+            ):
+                _timeout_counter += self.config.feedback_check_period
+                time.sleep(self.config.feedback_check_period)
+            if not self.feedback_msg:
+                self.cancel_request()
+                return False
 
         return self.goal_accepted
 
