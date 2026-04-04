@@ -81,22 +81,25 @@ output = Topic(name="command", msg_type=Float64)
 
 component = MyComponent(inputs=[...], outputs=[output])
 
-def scale_output(value):
+def scale_output(output):
     """Scale command output to motor range."""
-    if value is None:
+    if output is None:
         return None
-    return value * 0.01
+    return output * 0.01
 
 component.add_publisher_preprocessor(output, scale_output)
 ```
 
 ### Pre-Processor Signature
 
+Pre-processors are called with `output` as a **keyword argument**:
+
 ```python
 def pre_processor(output: T) -> T:
     """
     Receives the component's output data before ROS conversion.
     Must return the same type, or None to skip publishing.
+    The parameter must be named ``output``.
     """
     return transformed_output
 ```
@@ -175,11 +178,12 @@ def camera_to_base(pose):
 planner.add_callback_postprocessor(goal, camera_to_base)
 
 # Scale commands for a specific robot's actuator range
-def scale_for_robot(cmd):
-    if cmd is None:
+# Note: pre-processors receive `output` as a keyword argument
+def scale_for_robot(output):
+    if output is None:
         return None
-    cmd["position"]["x"] *= 0.001  # mm to m
-    return cmd
+    output["position"]["x"] *= 0.001  # mm to m
+    return output
 
 planner.add_publisher_preprocessor(command, scale_for_robot)
 

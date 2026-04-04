@@ -60,12 +60,15 @@ RobotOdometry = create_supported_type(CustomOdom, callback=_odom_callback)
 
 # --- Action: Python types → custom ROS message ---
 
-def _twist_converter(vx: float, vy: float, omega: float, **_) -> CustomTwist:
-    """Convert velocity command to robot's custom twist."""
+def _twist_converter(output, **_) -> CustomTwist:
+    """Convert velocity command to robot's custom twist.
+
+    The publisher passes a single output value (e.g. a list or numpy array).
+    """
     msg = CustomTwist()
-    msg.vx = vx
-    msg.vy = vy
-    msg.vyaw = omega
+    msg.vx = output[0]
+    msg.vy = output[1]
+    msg.vyaw = output[2]
     return msg
 
 RobotTwist = create_supported_type(CustomTwist, converter=_twist_converter)
@@ -100,12 +103,15 @@ class TwistServiceClient(RobotPluginServiceClient):
             client_node=client_node,
         )
 
-    def _publish(self, vx, vy, omega, **_) -> bool:
-        """Create and send the service request."""
+    def _publish(self, output, **_) -> bool:
+        """Create and send the service request.
+
+        Receives a single output value (e.g. a list or numpy array).
+        """
         req = RobotCommand.Request()
-        req.vx = vx
-        req.vy = vy
-        req.omega = omega
+        req.vx = output[0]
+        req.vy = output[1]
+        req.omega = output[2]
         response = self.send_request(req_msg=req)
         return response is not None
 
@@ -128,7 +134,7 @@ class TwistServiceClient(RobotPluginServiceClient):
 
 | Method | Required | Description |
 |:-------|:---------|:------------|
-| `_publish(*args, **kwargs) -> bool` | Yes | Send the actual command. Receives the same arguments the original publisher would. |
+| `_publish(output, **kwargs) -> bool` | Yes | Send the actual command. Receives the same single `output` argument the original publisher would. |
 | `start() -> bool` | Yes | Lifecycle hook — runs when the component activates. |
 | `end() -> bool` | Yes | Lifecycle hook — runs when the component deactivates. |
 

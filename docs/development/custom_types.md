@@ -15,7 +15,7 @@ class SupportedType:
     callback = callbacks.GenericCallback
 
     @classmethod
-    def convert(cls, *output, **_) -> Any:
+    def convert(cls, output, **_) -> Any:
         """Convert Python data into a ROS message instance."""
         return output
 
@@ -35,7 +35,7 @@ A callback class (typically a subclass of `GenericCallback`) that handles deseri
 
 ### convert
 
-A classmethod that takes Python-native data and returns a ROS message instance. This is called by `Publisher` when a component publishes output. For example, `Image.convert()` accepts either a `numpy.ndarray` or an existing `ROSImage` and returns a `ROSImage`.
+A classmethod that takes Python-native data and returns a ROS message instance. The first positional argument should be named `output`. This is called by `Publisher` when a component publishes output. For example, `Image.convert()` accepts either a `numpy.ndarray` or an existing `ROSImage` and returns a `ROSImage`.
 
 ## Built-in Types
 
@@ -95,9 +95,9 @@ class Range(SupportedType):
     callback = GenericCallback
 
     @classmethod
-    def convert(cls, range_value: float, **_) -> ROSRange:
+    def convert(cls, output: float, **_) -> ROSRange:
         msg = ROSRange()
-        msg.range = range_value
+        msg.range = output
         return msg
 ```
 

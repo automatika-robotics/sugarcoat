@@ -145,15 +145,38 @@ The `component_action` decorator (in `ros_sugar.utils`) validates action methods
 2. **Return type**: Verifies the return annotation is `bool` or `None`.
 3. **Lifecycle state**: If `active=True`, the component must be in the Active state.
 
+The decorator can be used bare or with parameters:
+
 ```python
 from ros_sugar.utils import component_action
 
 class Navigator(BaseComponent):
+    # Basic usage
     @component_action
     def stop(self) -> bool:
         self.cmd_vel_publisher.publish(Twist())
         return True
+
+    # With an OpenAI-compatible tool description (for LLM orchestration)
+    @component_action(description={
+        "type": "function",
+        "function": {
+            "name": "navigate_to",
+            "description": "Navigate the robot to the specified coordinates.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                },
+            },
+        },
+    })
+    def navigate_to(self, *, x: float, y: float) -> bool:
+        ...
 ```
+
+When `description` is provided, it is stored on the wrapper as `_action_description` and can be used by orchestrating LLM agents to discover available tools. When omitted, the method's docstring is used instead.
 
 ## Fallback System
 

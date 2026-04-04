@@ -273,6 +273,42 @@ class MyComponent(BaseComponent):
 - `@component_action`: Validates lifecycle state before execution. Return type should be `bool` or `None`.
 - `@component_fallback`: Validates the component is in a valid state (active, inactive, or activating).
 
+### Tool Descriptions for LLM Orchestration
+
+Both decorators accept an optional `description` parameter for providing an OpenAI-compatible tool/function description. This is used when component actions are exposed as tools to an orchestrating LLM (e.g. via EmbodiedAgents):
+
+```python
+class MyComponent(BaseComponent):
+    @component_action(description={
+        "type": "function",
+        "function": {
+            "name": "reset_buffer",
+            "description": "Clears the internal data buffer and resets processing state.",
+        },
+    })
+    def reset_buffer(self) -> bool:
+        self.buffer = []
+        return True
+
+    @component_fallback(description={
+        "type": "function",
+        "function": {
+            "name": "emergency_stop",
+            "description": "Immediately stops all motor output.",
+        },
+    })
+    def emergency_stop(self):
+        self.publishers_dict["velocity"].publish(0.0)
+```
+
+When `description` is omitted, the method's docstring is used as the description. The `active` parameter is also supported on `@component_action` to require the Active lifecycle state:
+
+```python
+@component_action(description={...}, active=True)
+def move_forward(self) -> bool:
+    ...
+```
+
 ### Built-in Actions
 
 Every component inherits these actions that can be used directly in fallbacks or events:
@@ -281,11 +317,37 @@ Every component inherits these actions that can be used directly in fallbacks or
 |:-------|:------------|
 | `start()` | Lifecycle activate |
 | `stop()` | Lifecycle deactivate |
-| `restart(wait_time=None)` | Stop then start |
+| `restart(*, wait_time=None)` | Stop then start (`wait_time` is keyword-only) |
 | `reconfigure(new_config, keep_alive=False)` | Apply new config |
 | `set_param(name, value, keep_alive=True)` | Change one parameter |
 | `set_params(names, values, keep_alive=True)` | Change multiple parameters |
 | `broadcast_status()` | Publish current health status |
+| `inspect_component()` | Return a string summary of the component's config, inputs, and outputs |
+
+### Custom Action/Service Names
+
+By default, the main action server and service names are derived from the type name (e.g. `component_name/my_action_type`). You can override them with the `main_action_name` and `main_srv_name` setters:
+
+```python
+component = MyComponent(
+    main_action_type=MyAction,
+    config=BaseComponentConfig(_run_type=ComponentRunType.ACTION_SERVER),
+)
+component.main_action_name = "custom/action_name"
+component.main_srv_name = "custom/service_name"
+```
+
+### Extension Points for Derived Packages
+
+Subclasses can override these methods to support dynamic I/O reconfiguration at the Launcher level:
+
+| Method | Description |
+|:-------|:------------|
+| `set_input(**kwargs) -> bool` | Update an input topic by keyword. Return `True` if the input was found and updated. |
+| `set_output(**kwargs) -> bool` | Update an output topic by keyword. Return `True` if the output was found and updated. |
+| `get_ros_entrypoints() -> Dict` | Return a dict of additional ROS services and actions the component exposes. |
+
+These are called by the `Launcher.inputs()` and `Launcher.outputs()` methods to propagate settings across all components.
 
 ## Complete Skeleton
 
