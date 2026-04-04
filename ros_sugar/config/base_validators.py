@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, List, Union, Callable
+from typing import Any, List, Union, Callable, Optional
 
 import numpy as np
 
@@ -18,6 +18,20 @@ def gt(value: Union[int, float]) -> Validator:
     :rtype: func
     """
     return partial(__gt, ref_value=value)
+
+def array_shape(shape: tuple, dtype: Optional[type] = None) -> Validator:
+    """
+    Validates that a numpy array has a specific shape and dtype
+
+    :param shape: Expected shape of the array
+    :type shape: tuple
+    :param dtype: Expected data type of the array elements (optional)
+    :type dtype: type, optional
+
+    :return: Attrs validator function
+    :rtype: func
+    """
+    return partial(__array_shape, shape=shape, dtype=dtype)
 
 
 def lt(value: Union[int, float]) -> Validator:
@@ -133,6 +147,21 @@ def __lt(_: Any, attribute: Any, value: Any, ref_value: Union[int, float]):
     if value >= ref_value:
         raise ValueError(
             f"Got value of '{attribute.name}': '{value}', not less than: '{ref_value}'"
+        )
+
+
+def __array_shape(_: Any, attribute: Any, value: Any, shape: tuple, dtype: Optional[type] = None):
+    if not isinstance(value, np.ndarray):
+        raise ValueError(
+            f"Expected a numpy array for {attribute.name}, got {type(value)}"
+        )
+    if value.shape != shape:
+        raise ValueError(
+            f"Expected shape {shape} for {attribute.name}, got {value.shape}"
+        )
+    if dtype is not None and value.dtype != dtype:
+        raise ValueError(
+            f"Expected dtype {dtype} for {attribute.name}, got {value.dtype} with value {value}"
         )
 
 

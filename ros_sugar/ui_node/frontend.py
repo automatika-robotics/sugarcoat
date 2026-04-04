@@ -30,7 +30,11 @@ class FHApp:
         # --- Application Setup ---
         static_src = Path(__file__).resolve().parent / "static"
 
-        hdrs = (
+        has_audio = any(
+            t.msg_type.__name__ == "Audio"
+            for t in (in_topics or []) + (out_topics or [])
+        )
+        hdrs = [
             Theme.red.headers(),  # Get theme from MonsterUI
             # --- 1. Add ROS Dependencies (CDN) ---
             Script(src="https://code.createjs.com/1.0.0/easeljs.min.js"),
@@ -43,16 +47,15 @@ class FHApp:
                 src="custom.js",
             ),
             Script(
-                src="audio_manager.js",
-            ),
-            Script(
                 src="ros_maps.js",
             ),
             Script(
                 src="video_manager.js",
             ),
             Link(rel="stylesheet", href="custom.css", type="text/css"),
-        )
+        ]
+        if has_audio:
+            hdrs.append(Script(src="audio_manager.js"))
         self.app, self.rt = fast_app(
             hdrs=hdrs, exts=["ws"], static_path=str(static_src)
         )
@@ -109,7 +112,13 @@ class FHApp:
             return None
         all_clients_cards = Div(id="all_actions")
         for value in self.action_clients_ft.values():
-            all_clients_cards(value.card)
+            all_clients_cards(
+                Card(
+                    value.card_static,
+                    value.card,
+                    cls="m-2 max-h-[40vh] overflow-y-auto inner-main-card",
+                )
+            )
         actions_main_card = Card(
             DivHStacked(
                 H4("Tasks", cls="cool-subtitle-mini"),
@@ -377,8 +386,8 @@ class FHApp:
             # HTMX fires "htmx:afterSwap" after content is swapped into the DOM,
             # and "htmx:afterOnLoad" / "htmx:afterRequest" for other lifecycle stages
             # Respond to afterSwap and afterOnLoad to be safe.
-            hx_on__after_on_load="ensureConnectionsForPresentFrames",
-            hx_on__after_swap="ensureConnectionsForPresentFrames",
+            hx_on__after_on_load="ensureConnectionsForPresentFrames(); if(typeof ensureMapConnections==='function') ensureMapConnections()",
+            hx_on__after_swap="ensureConnectionsForPresentFrames(); if(typeof ensureMapConnections==='function') ensureMapConnections()",
         )
 
     @property

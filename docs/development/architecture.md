@@ -41,6 +41,7 @@ BaseComponent(
 - Subscribing to all registered `Event` topics and evaluating conditions via an event blackboard (`EventBlackboardEntry` cache).
 - Subscribing to `ComponentStatus` topics for every managed component.
 - Creating service clients for component reconfiguration and lifecycle transitions.
+- Invoking component methods at runtime via `ExecuteMethod` service clients.
 - Emitting `InternalEvent` instances back to the `Launcher` so the corresponding `Action` can be dispatched via the ROS launch event system.
 
 When using the `Launcher`, the `Monitor` is created and configured automatically; users do not need to instantiate it directly.
@@ -122,6 +123,8 @@ Defined in `ros_sugar.utils.component_action`. Marks a method as an action that 
 2. The return type annotation is `bool` or `None`.
 3. If `active=True`, the component must be in the **Active** lifecycle state.
 
+Can be used bare (`@component_action`) or with parameters (`@component_action(description={...}, active=True)`). The optional `description` parameter accepts an OpenAI-compatible tool/function description dict, used when actions are exposed as tools to an orchestrating LLM.
+
 ```python
 from ros_sugar.utils import component_action
 
@@ -130,11 +133,23 @@ class MyComponent(BaseComponent):
     def stop_motors(self) -> bool:
         # ... stop logic ...
         return True
+
+    @component_action(description={
+        "type": "function",
+        "function": {
+            "name": "stop_motors",
+            "description": "Immediately stop all motors.",
+        },
+    })
+    def stop_motors_with_desc(self) -> bool:
+        ...
 ```
 
 ### @component_fallback
 
 Defined in `ros_sugar.utils.component_fallback`. Marks a method as a fallback handler. The decorator verifies that rclpy is initialized and the component is at least in the **Inactive** state (i.e., configured or active). This allows fallbacks to fire even when the component has been deactivated due to an error.
+
+Like `@component_action`, it can be used bare or with a `description` parameter for LLM tool descriptions.
 
 ```python
 from ros_sugar.utils import component_fallback

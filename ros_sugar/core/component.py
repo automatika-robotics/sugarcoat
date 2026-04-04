@@ -170,6 +170,8 @@ class BaseComponent(lifecycle.Node):
         # TODO: add config parameter (one goal vs goal queue)
         self._main_goal_handle = None
         self._main_goal_lock = threading.Lock()
+        self._main_action_name: Optional[str] = None
+        self._main_srv_name: Optional[str] = None
 
         # Additional types from derived packages
         self._additional_types: List[Type[SupportedType]] = []
@@ -383,7 +385,7 @@ class BaseComponent(lifecycle.Node):
         return algo_config
 
     @property
-    def ui_main_action_input(self) -> Optional[ActionClientConfig]:
+    def ui_main_action_input(self) -> ActionClientConfig:
         """Get a UI input for the the component's main action server (if present)
 
         :return: Client config for the component's main action
@@ -393,7 +395,9 @@ class BaseComponent(lifecycle.Node):
             return ActionClientConfig(
                 action_type=self.action_type, name=self.main_action_name
             )
-        return None
+        raise TypeError(
+            f"Component {self.node_name} is not of an ACTION_SERVER type or does not have a main_action_server implemented."
+        )
 
     @property
     def status_topic(self) -> Topic:
@@ -403,6 +407,68 @@ class BaseComponent(lifecycle.Node):
         :rtype: Topic
         """
         return self.__health_status_topic
+
+    def inspect_component(self) -> str:
+        """Returns a string representation of the component's configuration, including its inputs, outputs, and other relevant details.
+
+        :return: A string representation of the component's configuration
+        :rtype: str
+        """
+        lines = [f"Component: {self.node_name}", f"Type: {type(self).__name__}"]
+
+        # Input topics
+        if hasattr(self, "in_topics") and self.in_topics:
+            lines.append("Input topics:")
+            for t in self.in_topics:
+                msg_name = (
+                    t.msg_type.__name__
+                    if hasattr(t.msg_type, "__name__")
+                    else t.msg_type
+                )
+                lines.append(f"  - {t.name} ({msg_name})")
+        else:
+            lines.append("Input topics: none")
+
+        # Output topics
+        if hasattr(self, "out_topics") and self.out_topics:
+            lines.append("Output topics:")
+            for t in self.out_topics:
+                msg_name = (
+                    t.msg_type.__name__
+                    if hasattr(t.msg_type, "__name__")
+                    else t.msg_type
+                )
+                lines.append(f"  - {t.name} ({msg_name})")
+        else:
+            lines.append("Output topics: none")
+
+        # Configuration parameters
+        lines.extend(self.config._summarize())
+        return "\n".join(lines)
+
+    def get_ros_entrypoints(self) -> Dict[str, Dict[str, Any]]:
+        """Get the component ROS entry points (additional services and actions) as a dictionary.
+
+        :return: Component ROS entry points: services and actions
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        return {"services": {}, "actions": {}}
+
+    def set_input(self, **_) -> bool:
+        """Method to be implemented in child packages
+
+        :return: If input is successfully updates
+        :rtype: bool
+        """
+        return False
+
+    def set_output(self, **_) -> bool:
+        """Method to be implemented in child packages
+
+        :return: If output is successfully updates
+        :rtype: bool
+        """
+        return False
 
     # Managing Inputs/Outputs
     def _add_ros_subscriber(self, callback: GenericCallback):
@@ -859,7 +925,7 @@ class BaseComponent(lifecycle.Node):
                     self.__events_per_topic[topic.name].append(event)
 
         # Register the actions
-        for event, actions in zip(self.__events, self.__actions, strict=True):
+        for event, actions in zip(self.__events, self.__actions):
             # Register action to event to get executed on trigger when calling event.check_condition
             event.register_actions(actions)
 
@@ -1076,7 +1142,7 @@ class BaseComponent(lifecycle.Node):
         """
         if not self.__events or not self.__actions:
             return {}
-        return dict(zip(self.__events, self.__actions, strict=True))
+        return dict(zip(self.__events, self.__actions))
 
     def clear_events_actions(self) -> None:
         """Clear all Events/Actions registered to the component
@@ -1098,7 +1164,7 @@ class BaseComponent(lifecycle.Node):
             return {}
         return {
             event.id: action
-            for event, action in zip(self.__events, self.__actions, strict=True)
+            for event, action in zip(self.__events, self.__actions)
         }
 
     @_events_actions.setter
@@ -1555,9 +1621,21 @@ class BaseComponent(lifecycle.Node):
         :return: ActionServer name
         :rtype: str
         """
+        if self._main_action_name:
+            return self._main_action_name
         if self.action_type and hasattr(self.action_type, "__name__"):
             return f"{self.node_name}/{camel_to_snake_case(self.action_type.__name__)}"
         return None
+
+    @main_action_name.setter
+    def main_action_name(self, value: str):
+        """
+        Setter for the main action name, allowing to set a custom name instead of the default one based on the action type
+
+        :param value: Custom name for the main action server
+        :type value: str
+        """
+        self._main_action_name = value
 
     # MAIN SERVER HELPER METHODS AND CALLBACK
     @property
@@ -1568,9 +1646,21 @@ class BaseComponent(lifecycle.Node):
         :return: Server name
         :rtype: str
         """
+        if self._main_srv_name:
+            return self._main_srv_name
         if self.service_type and hasattr(self.service_type, "__name__"):
             return f"{self.node_name}/{camel_to_snake_case(self.service_type.__name__)}"
         return None
+
+    @main_srv_name.setter
+    def main_srv_name(self, value: str):
+        """
+        Setter for the main service name, allowing to set a custom name instead of the default one based on the service type
+
+        :param value: Custom name for the main service
+        :type value: str
+        """
+        self._main_srv_name = value
 
     @abstractmethod
     def main_service_callback(self, request, response):
@@ -1713,6 +1803,48 @@ class BaseComponent(lifecycle.Node):
 
         return request_msg
 
+    def _update_param(
+        self, param_name: str, param_str_value: str, keep_alive: bool = False
+    ) -> Tuple[bool, str]:
+        if not keep_alive:
+            # Set the flag so the default services are not destroyed or re-created
+            self._maintain_default_services = True
+            # Stop the component
+            self.stop()
+            self.trigger_cleanup()
+            self.trigger_configure()
+
+        error_msg = self._update_config_param_from_str_value(
+            param_name, param_str_value
+        )
+
+        if not keep_alive:
+            # start again
+            self.start()
+
+        if not error_msg:
+            success = True
+            error_msg = ""
+        else:
+            success = False
+
+        timeout_counter = 0  # Add timeout to avoid an infinite loop
+        while self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE and (
+            timeout_counter < self.config.wait_for_restart_time
+        ):
+            self.get_logger().warn(
+                f"Component {self.node_name} is not in ACTIVE state. Waiting for it to become active again.",
+                once=True,
+            )
+            time.sleep(1 / self.config.loop_rate)
+            timeout_counter += 1 / self.config.loop_rate
+
+        if self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
+            success = False
+            error_msg = "Error restarting the component"
+            self.health_status.set_fail_component()
+        return success, error_msg
+
     @log_srv
     def _update_config_parameter_srv_callback(
         self, request: ChangeParameter.Request, response: ChangeParameter.Response
@@ -1733,43 +1865,9 @@ class BaseComponent(lifecycle.Node):
         # To keep the component alive while reconfiguring
         keep_alive = request.keep_alive
 
-        if not keep_alive:
-            # Set the flag so the default services are not destroyed or re-created
-            self._maintain_default_services = True
-            # Stop the component
-            self.stop()
-            self.trigger_cleanup()
-            self.trigger_configure()
-
-        error_msg = self._update_config_param_from_str_value(
-            param_name, param_str_value
-        )
-
-        if not keep_alive:
-            # start again
-            self.start()
-
-        if not error_msg:
-            response.success = True
-        else:
-            response.success = False
-            response.error_msg = error_msg
-
-        timeout_counter = 0  # Add timeout to avoid an infinite loop
-        while self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE and (
-            timeout_counter < self.config.wait_for_restart_time
-        ):
-            self.get_logger().warn(
-                f"Component {self.node_name} is not in ACTIVE state. Waiting for it to become active again.",
-                once=True,
-            )
-            time.sleep(1 / self.config.loop_rate)
-            timeout_counter += 1 / self.config.loop_rate
-
-        if self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
-            response.success = False
-            response.error_msg = "Error restarting the component"
-            self.health_status.set_fail_component()
+        success, error_msg = self._update_param(param_name, param_str_value, keep_alive)
+        response.success = success
+        response.error_msg = error_msg
 
         return response
 
@@ -1804,7 +1902,7 @@ class BaseComponent(lifecycle.Node):
         response.success = []
         response.error_msg = []
 
-        for name, val in zip(param_names, param_str_values, strict=True):
+        for name, val in zip(param_names, param_str_values):
             error_msg = self._update_config_param_from_str_value(name, val)
 
             if not error_msg:
@@ -2050,8 +2148,16 @@ class BaseComponent(lifecycle.Node):
                 return response
         try:
             method = getattr(self, request.name)
-            method(**kwargs)
-            response.success = True
+            result = method(**kwargs)
+            if result is not None and isinstance(result, bool):
+                response.success = result
+                if not result:
+                    response.error_msg = f"The method '{request.name}' executed but returned False, indicating failure without an exception."
+            elif result is not None and isinstance(result, str):
+                response.success = True
+                response.error_msg = f"The method '{request.name}' executed and returned the following string: {result}"
+            else:
+                response.success = True
         except Exception as e:
             response.success = False
             response.error_msg = f"Component {self.node_name} has a method with requested name '{request.name}' but the following error raised while running: {e}"
@@ -2347,7 +2453,7 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def restart(self, wait_time: Optional[float] = None, **_) -> bool:
+    def restart(self, *, wait_time: Optional[float] = None, **_) -> bool:
         """
         Restart the component - stop->start
 
@@ -2428,11 +2534,11 @@ class BaseComponent(lifecycle.Node):
         """
         try:
             if keep_alive:
-                for param_name, new_value in zip(params_names, new_values, strict=True):
+                for param_name, new_value in zip(params_names, new_values):
                     self.config.update_value(param_name, new_value)
             else:
                 self.stop()
-                for param_name, new_value in zip(params_names, new_values, strict=True):
+                for param_name, new_value in zip(params_names, new_values):
                     self.config.update_value(param_name, new_value)
                 self.start()
         except Exception:

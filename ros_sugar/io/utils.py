@@ -539,7 +539,7 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
 
     # Set up the layout
     msg.layout.dim = []
-    for size, stride, label in zip(arr.shape, strides, labels, strict=True):
+    for size, stride, label in zip(arr.shape, strides, labels):
         dim = std_msg.MultiArrayDimension()
         dim.label = label
         dim.size = size
@@ -553,7 +553,7 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
 
 
 def run_external_processor(
-    logger_name: str, topic_name: str, processor: Union[Callable, socket], *output
+    logger_name: str, topic_name: str, processor: Union[Callable, socket], output
 ) -> Any:
     """
     Execute external processing using a callable or a Unix socket.
@@ -585,7 +585,7 @@ def run_external_processor(
                        an exception is logged with an appropriate error message.
     """
     if isinstance(processor, Callable):
-        return processor(*output)
+        return processor(output=output)
 
     try:
         out_dict = {"output": output}

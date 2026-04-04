@@ -116,12 +116,22 @@ class ComponentLaunchAction(NodeLaunchAction):
 
         # FOR MONITOR NODE
         # Adds event emit method to all internal events if this is the Monitor Node
-        if isinstance(self.__ros_node, Monitor):
+        if issubclass(self.__ros_node.__class__, Monitor):
             if self.__ros_node._internal_events:
                 for event in self.__ros_node._internal_events:
-                    self.__logger.debug(f"Registering internal event '{event}'")
                     # Register a method to emit the event to the launch context on trigger
                     event.register_actions(partial(self._on_internal_event, event.id))
+            if (
+                hasattr(self.__ros_node, "_pure_internal_events")
+                and self.__ros_node._pure_internal_events
+            ):
+                for event_id in self.__ros_node._pure_internal_events:
+                    self.__logger.debug(f"Registering pure internal event '{event_id}'")
+                    # Register a method to emit the event to the launch context on trigger
+                    self.__ros_node._register_pure_internal_event_emit_method(
+                        event_id, partial(self._on_internal_event, event_id)
+                    )
+
             if hasattr(self.__ros_node, "_emit_exit_to_launcher"):
                 self.__ros_node._emit_exit_to_launcher = partial(
                     self._on_internal_event, "exit_all"
@@ -140,9 +150,9 @@ class ComponentLaunchAction(NodeLaunchAction):
 
         self.__ros_node.rclpy_init_node(context=self.__ros_context)
 
-        if not issubclass(self.__ros_node.__class__, ManagedEntity):
-            # Activate Non lifecycle nodes
-            self.__ros_node.activate()
+        if issubclass(self.__ros_node.__class__, Monitor):
+            # Activate Monitor Node
+            self.__ros_node.start()
 
         # Get a multi-threaded executor
         self.__ros_executor = MultiThreadedExecutor(context=self.__ros_context)

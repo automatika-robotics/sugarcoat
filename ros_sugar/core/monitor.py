@@ -3,7 +3,8 @@
 import os
 from functools import partial
 import time
-from typing import Any, Callable, Dict, List, Optional, Union
+import json
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from rclpy.node import Node
 from rclpy.publisher import Publisher
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
@@ -13,6 +14,7 @@ from automatika_ros_sugar.srv import (
     ChangeParameters,
     ConfigureFromFile,
     ReplaceTopic,
+    ExecuteMethod,
 )
 
 from .. import base_clients
@@ -49,7 +51,7 @@ class Monitor(Node):
         activate_on_start: Optional[List[str]] = None,
         activation_timeout: Optional[float] = None,
         activation_attempt_time: float = 1.0,
-        component_name: str = "monitor",
+        component_name: Optional[str] = None,
         **_,
     ):
         """
@@ -76,13 +78,16 @@ class Monitor(Node):
         :param callback_group: Callback group, defaults to None
         :type callback_group:  Optional[Union[MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup]], optional
         """
-        self._events_actions = events_actions
+        self._monitor_events_actions = events_actions
         self._internal_events = events_to_emit
         self._components_to_monitor = components_names
         self._service_components = services_components
         self._action_components = action_servers_components
-        self.node_name = f"{component_name}_{os.getpid()}"
+        self.node_name = component_name if component_name else f"monitor_{os.getpid()}"
         self.config = config or BaseConfig()
+
+        # Method to emit pure internal events to the launcher context
+        self.emit_internal_event_methods: Dict[str, Callable] = {}
 
         # Server nodes handlers
         self._update_parameter_srv_client: Dict[
@@ -93,6 +98,9 @@ class Monitor(Node):
         ] = {}
         self._topic_change_srv_client: Dict[str, base_clients.ServiceClientHandler] = {}
         self._configure_from_file_srv_client: Dict[
+            str, base_clients.ServiceClientHandler
+        ] = {}
+        self._execute_component_method_srv_client: Dict[
             str, base_clients.ServiceClientHandler
         ] = {}
         self._main_srv_clients: Dict[str, base_clients.ServiceClientHandler] = {}
@@ -109,6 +117,31 @@ class Monitor(Node):
         # Emit exit all to the launcher
         self._emit_exit_to_launcher: Optional[Callable] = None
 
+    def _register_pure_internal_event_emit_method(
+        self, event_name: str, emit_method: Callable
+    ) -> None:
+        """
+        Registers a method to emit an InternalEvent with the provided name to the launch context. This is used to emit pure events that are not triggered by a topic message but by an internal condition in the monitor. This will be called internally from the Monitor launch_action
+        """
+        self.emit_internal_event_methods[event_name] = emit_method
+
+    def add_internal_event_action_pair(self, event_id: str, action: Action) -> None:
+        """
+        Adds an internal event action pair to the monitor configuration.
+
+        :param event_id: ID of the event to be monitored
+        :type event_id: str
+        :param action: Action to be executed on event trigger
+        :type action: Action
+        """
+        if not hasattr(self, "_pure_internal_events") or not hasattr(
+            self, "_additional_internal_actions"
+        ):
+            self._pure_internal_events = []
+            self._additional_internal_actions = {}
+        self._pure_internal_events.append(event_id)
+        self._additional_internal_actions[event_id] = action
+
     def rclpy_init_node(self, *args, **kwargs):
         """
         To init the node with rclpy and activate default services
@@ -124,6 +157,9 @@ class Monitor(Node):
         :type method: Callable
         """
         self.__components_activation_event = method
+
+    def start(self):
+        return self.activate()
 
     def activate(self):
         """Activate all subscribers/publishers/etc..."""
@@ -249,12 +285,35 @@ class Monitor(Node):
             )
         )
 
+        # Execute component method services
+        self._execute_component_method_srv_client[component_name] = (
+            base_clients.ServiceClientHandler(
+                client_node=self,
+                srv_type=ExecuteMethod,
+                srv_name=f"{component_name}/execute_method",
+            )
+        )
+
+    def execute_component_method(
+        self,
+        component_name: str,
+        method_name: str,
+        kwargs: Dict,
+    ) -> Any:
+        srv_client: base_clients.ServiceClientHandler = (
+            self._execute_component_method_srv_client[component_name]
+        )
+        srv_request = ExecuteMethod.Request()
+        srv_request.name = method_name
+        srv_request.kwargs_json = json.dumps(kwargs)
+        return srv_client.send_request(req_msg=srv_request)
+
     def configure_component(
         self,
         component: BaseComponent,
         new_config: Union[object, str],
         keep_alive: bool,
-    ) -> None:
+    ) -> Any:
         """
         Configure a given component from config instance or config file
         Creates and send the request to the component service
@@ -275,16 +334,16 @@ class Monitor(Node):
                     component.get_change_parameters_msg_from_config(new_config)
                 )
                 request_msg.keep_alive = keep_alive
-                self._update_parameters_srv_client[component.node_name].send_request(
-                    request_msg, executor=self.executor
-                )
+                return self._update_parameters_srv_client[
+                    component.node_name
+                ].send_request(request_msg)
             else:
                 # For string send a configure from file request
                 request_msg_file = ConfigureFromFile.Request()
                 request_msg_file.path_to_file = new_config
-                self._configure_from_file_srv_client[component.node_name].send_request(
-                    request_msg_file, executor=self.executor
-                )
+                return self._configure_from_file_srv_client[
+                    component.node_name
+                ].send_request(request_msg_file)
         except Exception as e:
             self.get_logger().error(
                 f"Unable to configure component {component.node_name}: {e}"
@@ -292,15 +351,15 @@ class Monitor(Node):
 
     def update_parameter(
         self,
-        component: BaseComponent,
+        component: Union[BaseComponent, str],
         param_name: str,
         new_value: Any,
         keep_alive: bool = True,
-    ) -> None:
+    ) -> Any:
         """Sends a ChangeParameter service request to given component
 
         :param component: _description_
-        :type component: BaseComponent
+        :type component: Union[BaseComponent, str]
         :param param_name: _description_
         :type param_name: str
         :param new_value: _description_
@@ -308,23 +367,27 @@ class Monitor(Node):
         :param keep_alive: _description_, defaults to True
         :type keep_alive: bool, optional
         """
+        if isinstance(component, BaseComponent):
+            node_name = component.node_name
+        else:
+            node_name = component
         srv_client: base_clients.ServiceClientHandler = (
-            self._update_parameter_srv_client[component.node_name]
+            self._update_parameter_srv_client[node_name]
         )
         srv_request = ChangeParameter.Request()
         srv_request.name = param_name
         srv_request.value = str(new_value)
         srv_request.keep_alive = keep_alive
-        srv_client.send_request(req_msg=srv_request, executor=self.executor)
+        return srv_client.send_request(req_msg=srv_request)
 
     def update_parameters(
         self,
-        component: BaseComponent,
+        component: Union[BaseComponent, str],
         params_names: List[str],
         new_values: List,
         keep_alive: bool = True,
         **_,
-    ) -> None:
+    ) -> Any:
         """Sends a ChangeParameters service request to given component
 
         :param component: _description_
@@ -336,16 +399,20 @@ class Monitor(Node):
         :param keep_alive: _description_, defaults to True
         :type keep_alive: bool, optional
         """
+        if isinstance(component, BaseComponent):
+            node_name = component.node_name
+        else:
+            node_name = component
         srv_client: base_clients.ServiceClientHandler = (
-            self._update_parameters_srv_client[component.node_name]
+            self._update_parameters_srv_client[node_name]
         )
         srv_request = ChangeParameters.Request()
         srv_request.names = params_names
         srv_request.values = str(new_values)
         srv_request.keep_alive = keep_alive
-        srv_client.send_request(req_msg=srv_request, executor=self.executor)
+        return srv_client.send_request(req_msg=srv_request)
 
-    def __get_srv_client(
+    def _get_srv_client(
         self, srv_name: str, srv_type: type
     ) -> base_clients.ServiceClientHandler:
         """Helper method to get a service client handler for the provided service name/type
@@ -370,7 +437,7 @@ class Monitor(Node):
             client_node=self, srv_name=srv_name, srv_type=srv_type
         )
 
-    def __get_action_client(
+    def _get_action_client(
         self, action_name: str, action_type: type
     ) -> base_clients.ActionClientHandler:
         """Helper method to get a ros action client handler for the provided service name/type
@@ -419,8 +486,8 @@ class Monitor(Node):
         if not srv_request_msg:
             # If request is not provided create an empty one
             srv_request_msg = srv_type.Request()
-        srv_client = self.__get_srv_client(srv_name, srv_type)
-        srv_client.send_request(srv_request_msg, executor=self.executor)
+        srv_client = self._get_srv_client(srv_name, srv_type)
+        srv_client.send_request(srv_request_msg)
 
     def send_action_goal(
         self,
@@ -446,8 +513,65 @@ class Monitor(Node):
         if not action_request_msg:
             # If request is not provided create an empty one
             action_request_msg = action_type.Goal()
-        action_client = self.__get_action_client(action_name, action_type)
+        action_client = self._get_action_client(action_name, action_type)
         action_client.send_request(action_request_msg)
+
+    def _get_component_action_request_message_type(self, component_name: str) -> Any:
+        """Helper method to prepare the action request message for a given component action
+
+        :param component_name: Name of the component
+        :type component_name: str
+
+        :return: Action request message type
+        :rtype: Any
+        """
+        if component_name not in self._main_action_clients:
+            return None
+        action_client = self._main_action_clients[component_name]
+        # If request is not provided create an empty one
+        action_type = action_client.config.action_type
+        return action_type.Goal
+
+    def send_component_action_goal(
+        self,
+        component_name: str,
+        action_request_msg: Any = None,
+        **_,
+    ) -> Tuple[bool, str]:
+        """Action to send a ROS2 action goal during runtime
+
+        :param action_name: ROS2 action name
+        :type action_name: str
+        :param action_type: ROS2 action type
+        :type action_type: type
+        :param action_request_msg: ROS2 action goal message
+        :type action_request_msg: Any
+        """
+        if component_name not in self._main_action_clients:
+            self.get_logger().error(
+                f"Cannot send action goal to unknown ROS2 component with name: {component_name}"
+            )
+            return (
+                False,
+                f"Cannot send action goal to unknown ROS2 component with name: {component_name}",
+            )
+        action_client = self._main_action_clients[component_name]
+        if not action_request_msg:
+            # If request is not provided create an empty one
+            action_type = action_client.config.action_type
+            action_request_msg = action_type.Goal()
+        sent_successfully: bool = action_client.send_request(action_request_msg)
+        if not sent_successfully:
+            error_msg = f"Failed to send action goal to component {component_name} with action type {action_client.config.action_type} and request message {action_request_msg}"
+            self.get_logger().error(error_msg)
+            return (
+                False,
+                error_msg,
+            )
+        return (
+            True,
+            f"Action goal sent successfully to component {component_name} with request message {action_request_msg}",
+        )
 
     def get_secs_time(self) -> float:
         ros_time = self.get_clock().now().to_msg()
@@ -560,8 +684,8 @@ class Monitor(Node):
         Turn on all events
         """
         self.__events = []
-        if self._events_actions:
-            for serialized_event, actions in self._events_actions.items():
+        if self._monitor_events_actions:
+            for serialized_event, actions in self._monitor_events_actions.items():
                 event = Event.from_json(serialized_event)
                 for action in actions:
                     method = getattr(self, action.action_name)
@@ -613,7 +737,7 @@ class Monitor(Node):
         # Reentrant group for multi threaded monitoring
         callback_group = ReentrantCallbackGroup()
         for component_name in self._components_to_monitor:
-            logger.debug(f"Creating health status subscriber for: {component_name}")
+            logger.info(f"Creating health status subscriber for: {component_name}")
             self.create_subscription(
                 ComponentStatus,
                 topic=f"{component_name}/status",

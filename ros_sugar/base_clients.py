@@ -1,15 +1,13 @@
 """ROS Service/Action Client Wrapper"""
 
-import time as rostime
+import time
 from typing import Any, Optional, Dict, Union, Tuple
 from attrs import Factory, define, field
 
 from rclpy.action.client import ActionClient
 from rclpy.action.server import GoalStatus
-from rclpy import spin_once
 from rclpy.node import Node
 from rclpy.callback_groups import CallbackGroup, ReentrantCallbackGroup
-from rclpy.executors import Executor
 
 from .config import BaseAttrs, base_validators
 from .supported_types import set_ros_msg_from_dict
@@ -101,14 +99,11 @@ class ServiceClientHandler:
     def send_request_from_dict(
         self,
         request_fields: Dict[str, Union[str, Dict]],
-        executor: Optional[Executor] = None,
     ):
         """Send a service request using a serialized Dict request data
 
         :param request_fields: Request data [key, value]
         :type request_fields: Dict[str, str]
-        :param executor: Optional ros executor, defaults to None
-        :type executor: Optional[Executor], optional
         :return: Service result
         :rtype: Any
         """
@@ -123,9 +118,9 @@ class ServiceClientHandler:
             )
             return None
 
-        return self.send_request(updated_message, executor)
+        return self.send_request(updated_message)
 
-    def send_request(self, req_msg, executor: Optional[Executor] = None):
+    def send_request(self, req_msg):
         """
         Sends a request to the service returns the response
         In case of failure, the method attempts sending the request again multiple time according to the given config
@@ -170,11 +165,9 @@ class ServiceClientHandler:
         self.request = req_msg
         self.future = self.client.call_async(self.request)
 
-        # Spin until response
+        # Wait for service response
         while not self.future.result():
-            spin_once(
-                self.node, executor=executor, timeout_sec=self.config.timeout_secs
-            )
+            time.sleep(0.01)
 
         # return response
         return self.future.result()
@@ -278,7 +271,7 @@ class ActionClientHandler:
     def send_request_from_dict(
         self,
         request_fields: Dict[str, Union[str, Dict]],
-        wait_until_first_feedback: bool = True,
+        wait_until_first_feedback: bool = False,
     ):
         """Send an action request using a serialized Dict request data
 
@@ -296,7 +289,7 @@ class ActionClientHandler:
         return self.send_request(updated_message, wait_until_first_feedback)
 
     def send_request(
-        self, request_msg: Any, wait_until_first_feedback: bool = True
+        self, request_msg: Any, wait_until_first_feedback: bool = False
     ) -> bool:
         """
         Sends a request to an action server
@@ -328,7 +321,7 @@ class ActionClientHandler:
                 )
                 return False
 
-        self.node.get_logger().info(f"Sending request to {self.config.name}")
+        self.node.get_logger().debug(f"Sending request to {self.config.name}")
 
         # Check request type
         if not isinstance(request_msg, self.config.action_type.Goal):
@@ -342,13 +335,6 @@ class ActionClientHandler:
             request_msg, feedback_callback=self.action_feedback_callback
         )
 
-        # Wait until the action returns the first feedback
-        while wait_until_first_feedback and self.feedback_count <= 0:
-            self.node.get_logger().warn("Waiting for action feedback", once=True)
-            if not self.got_new_feedback():
-                self.cancel_request()
-                return False
-
         self._start_time_secs = self.node.get_clock().now().seconds_nanoseconds()[0]
 
         # Add method when action is done
@@ -359,7 +345,25 @@ class ActionClientHandler:
             callback=self._check_alive_callback,
         )
 
-        return True
+        _timeout_counter = 0
+        while not self.goal_accepted and _timeout_counter < self.config.feedback_check_timeout:
+            _timeout_counter += self.config.feedback_check_period
+            time.sleep(self.config.feedback_check_period)
+
+        if wait_until_first_feedback:
+            # Wait until the server sent the first feedback message
+            _timeout_counter = 0
+            while (
+                not self.feedback_msg
+                and _timeout_counter < self.config.feedback_check_timeout
+            ):
+                _timeout_counter += self.config.feedback_check_period
+                time.sleep(self.config.feedback_check_period)
+            if not self.feedback_msg:
+                self.cancel_request()
+                return False
+
+        return self.goal_accepted
 
     # METHOD WHEN ACTION IS DONE
     def action_response_callback(self, future):
@@ -397,12 +401,9 @@ class ActionClientHandler:
         :type feedback_msg: Any
         """
         # Increase the feedback counter
+        self.goal_accepted = True
         self.feedback_count += 1
         self.feedback_msg = feedback_msg
-        # Reset counters
-        if self.feedback_count > 1000:
-            self.feedback_count = 0
-            self.old_feedback_count = 0
 
     def _check_alive_callback(self):
         """Timed callback to check if server is sending a feedback"""
@@ -428,7 +429,7 @@ class ActionClientHandler:
                 self.old_feedback_count = self.feedback_count
                 return True
             _check_counter += self.config.feedback_check_period
-            rostime.sleep(self.config.feedback_check_period)
+            time.sleep(self.config.feedback_check_period)
         return False
 
     def cancel_request(self) -> Tuple[bool, str]:
@@ -447,7 +448,7 @@ class ActionClientHandler:
                 and _check_counter < self.config.feedback_check_timeout
             ):
                 _check_counter += self.config.feedback_check_period
-                rostime.sleep(self.config.feedback_check_period)
+                time.sleep(self.config.feedback_check_period)
             if _check_counter >= self.config.feedback_check_timeout:
                 return (False, "Failed to cancel goal")
             self.reset()
@@ -465,16 +466,12 @@ class ActionClientHandler:
         current_time = self.node.get_clock().now().seconds_nanoseconds()[0]
         ui_dict = {
             "status": self._status,
-            "feedback": self.feedback_msg,
-            "is_new_feedback": (
-                (self.feedback_count > self.old_feedback_count)
-                or (self._old_status != self._status)
-            ),
+            "feedback": self.feedback_msg.feedback if self.feedback_msg and hasattr(self.feedback_msg, "feedback") else None,
+            "timestep": self.feedback_count,
             "feedback_timeout": self._feedback_timeout,
             "duration_secs": (current_time - self._start_time_secs)
             if self._start_time_secs is not None
             else 0.0,
         }
         self._old_status = self._status
-        self.old_feedback_count = self.feedback_count
         return ui_dict

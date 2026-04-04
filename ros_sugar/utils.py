@@ -1,7 +1,8 @@
 import inspect
 from enum import IntEnum as BaseIntEnum
 from functools import wraps
-from typing import Callable, List, Union, TypeVar
+import json
+from typing import Callable, List, Union, TypeVar, Optional, Dict
 
 from rclpy.utilities import ok as rclpy_is_ok
 from rclpy.lifecycle import Node as LifecycleNode
@@ -100,98 +101,136 @@ def action_handler(function: Callable):
     return _wrapper
 
 
-def component_action(function: Callable, active: bool = False):
+def component_action(
+    function: Optional[Callable] = None,
+    description: Optional[Dict] = None,
+    active: bool = False,
+):
     """
     Decorator for components actions
     Verifies that the function is a valid Component method, returns a boolean or None, and that the Component is active
 
+    Can be used as:
+        @component_action
+        @component_action(description="...", active=True)
+
     :param function:
     :type function: Callable
+    :param description:
+    :type description: str
+    :param active:
+    :type active: bool
     """
 
-    @wraps(function)
-    def _wrapper(*args, **kwargs):
-        """_wrapper.
-        :param a:
-        :param kw:
-        """
-        if not args:
-            raise TypeError(f"'{function.__name__}' is not a valid Component method")
+    def _decorator(func: Callable):
+        @wraps(func)
+        def _wrapper(*args, **kwargs):
+            if not args:
+                raise TypeError(f"'{func.__name__}' is not a valid Component method")
 
-        self = args[0]
-        if not isinstance(self, LifecycleNode):
-            raise TypeError(f"'{function.__name__}' is not a valid Component method")
+            self = args[0]
+            if not isinstance(self, LifecycleNode):
+                raise TypeError(f"'{func.__name__}' is not a valid Component method")
 
-        # Check return type
-        return_type = inspect.signature(function).return_annotation
-        if return_type is not bool and return_type:
-            raise TypeError(
-                f"Action methods must return boolean or None. Method '{function.__name__}' cannot have '@component_action' decorator"
-            )
+            # Check return type
+            return_type = inspect.signature(func).return_annotation
+            if return_type is not bool and return_type:
+                raise TypeError(
+                    f"Action methods must return boolean or None. Method '{func.__name__}' cannot have '@component_action' decorator"
+                )
 
-        # Check Component is active
-        if rclpy_is_ok() and hasattr(self, "_state_machine"):
-            # check for active flag and if the flag is True, check lifecycle_state is 3 i.e. active
-            if not active or self._state_machine.current_state[1] == "active":
-                return function(*args, **kwargs)
+            # Check Component is active
+            if rclpy_is_ok() and hasattr(self, "_state_machine"):
+                # check for active flag and if the flag is True, check lifecycle_state is 3 i.e. active
+                if not active or self._state_machine.current_state[1] == "active":
+                    return func(*args, **kwargs)
+                else:
+                    logger.error(
+                        f"Cannot use component action method '{func.__name__}' without activating the Component"
+                    )
+                    return None
             else:
                 logger.error(
-                    f"Cannot use component action method '{function.__name__}' without activating the Component"
+                    f"Cannot use component action method '{func.__name__}' without initializing rclpy and the Component"
                 )
-                return None
-        else:
-            logger.error(
-                f"Cannot use component action method '{function.__name__}' without initializing rclpy and the Component"
-            )
 
-    _wrapper.__name__ = function.__name__
+        _wrapper.__name__ = func.__name__
+        # Use the provided description or the function's docstring as the action description
+        _wrapper._action_description = (
+            json.dumps(description)
+            if description is not None
+            else (func.__doc__ or "").strip()
+        )
 
-    return _wrapper
+        return _wrapper
+
+    # Handle both @component_action and @component_action(...)
+    if function is not None:
+        return _decorator(function)
+    return _decorator
 
 
-def component_fallback(function: Callable):
+def component_fallback(
+    function: Optional[Callable] = None, description: Optional[Dict] = None
+):
     """
     Decorator for components fallback methods
     Verifies that rcply is initialized and component is configured or active
 
+    Can be used as:
+        @component_fallback
+        @component_fallback(description="...")
+
     :param function:
     :type function: Callable
     """
 
-    @wraps(function)
-    def _wrapper(*args, **kwargs):
-        """_wrapper.
-        :param a:
-        :param kw:
-        """
-        if not args:
-            raise TypeError(f"'{function.__name__}' is not a valid Component method")
+    def _decorator(func: Callable):
+        @wraps(func)
+        def _wrapper(*args, **kwargs):
+            """_wrapper.
+            :param a:
+            :param kw:
+            """
+            if not args:
+                raise TypeError(f"'{func.__name__}' is not a valid Component method")
 
-        self = args[0]
-        if not isinstance(self, LifecycleNode):
-            raise TypeError(f"'{function.__name__}' is not a valid Component method")
+            self = args[0]
+            if not isinstance(self, LifecycleNode):
+                raise TypeError(f"'{func.__name__}' is not a valid Component method")
 
-        # Check Component is active
-        if rclpy_is_ok() and hasattr(self, "_state_machine"):
-            if self._state_machine.current_state[1] in [
-                "active",
-                "inactive",
-                "activating",
-            ]:
-                return function(*args, **kwargs)
+            # Check Component is active
+            if rclpy_is_ok() and hasattr(self, "_state_machine"):
+                if self._state_machine.current_state[1] in [
+                    "active",
+                    "inactive",
+                    "activating",
+                ]:
+                    return func(*args, **kwargs)
+                else:
+                    logger.error(
+                        f"{self._state_machine.current_state[1]} Cannot use component fallback method '{func.__name__}' without activating or configuring the Component"
+                    )
+                    return None
             else:
                 logger.error(
-                    f"{self._state_machine.current_state[1]} Cannot use component fallback method '{function.__name__}' without activating or configuring the Component"
+                    f"Cannot use component action method '{func.__name__}' without initializing rclpy and the Component"
                 )
-                return None
-        else:
-            logger.error(
-                f"Cannot use component action method '{function.__name__}' without initializing rclpy and the Component"
-            )
 
-    _wrapper.__name__ = function.__name__
+        _wrapper.__name__ = func.__name__
+        # Use the provided description or the function's docstring as the action description
+        _wrapper._action_description = (
+            json.dumps(description)
+            if description is not None
+            else (func.__doc__ or "").strip()
+        )
 
-    return _wrapper
+        return _wrapper
+
+    # Handle both @component_fallback and @component_fallback(...)
+    if function is not None:
+        return _decorator(function)
+    return _decorator
 
 
 def launch_action(function: Callable):

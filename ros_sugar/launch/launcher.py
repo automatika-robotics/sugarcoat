@@ -16,7 +16,7 @@ from typing import (
     Union,
     Any,
     Tuple,
-    Mapping
+    Mapping,
 )
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
@@ -131,7 +131,9 @@ class Launcher:
             Event,
             List[Union[Action, ROSLaunchAction]],
         ] = defaultdict(list)
-        self._pkg_executable: List[Tuple[Optional[str], Optional[str]]] = []
+        self._pkg_executable: Dict[
+            str, Tuple[str, str]
+        ] = {}  # Dictionary {component.node_name: (package_name, executable_name)}
 
         # To track each package log level when the pkg is added
         self._rclpy_log_level: Dict[str, str] = {}
@@ -145,7 +147,7 @@ class Launcher:
         ] = []  # List of threaded component names to activate on start
 
         # Timeout for activating components on start
-        self.__components_activation_timeout = activation_timeout
+        self._components_activation_timeout = activation_timeout
 
         # Events/Actions dictionaries
         self._internal_events: Optional[List[Event]] = None
@@ -208,9 +210,12 @@ class Launcher:
 
         # Extend existing components
         self._components.extend(components)
-        self._pkg_executable.extend(
-            [(package_name, executable_entry_point)] * len(components)
-        )
+        if package_name:
+            for component in components:
+                self._pkg_executable[component.node_name] = (
+                    package_name,
+                    executable_entry_point,
+                )
 
         # Register which components to activate on start
         if components_to_activate_on_start:
@@ -329,6 +334,99 @@ class Launcher:
             hide_settings=hide_settings_panel,
         )
 
+    @property
+    def robot(self) -> Dict[str, Any]:
+        """
+        Getter of robot config for all components
+
+        :return: Robot configuration
+        :rtype: RobotConfig
+        """
+        robot_config_dict = {}
+        for component in self._components:
+            if hasattr(component.config, "robot"):
+                robot_config_dict[component.node_name] = component.config.robot
+        return robot_config_dict
+
+    @robot.setter
+    def robot(self, robot_config) -> None:
+        """
+        Setter of robot configuration for all components
+
+        :param config: Robot configuration
+        :type config: RobotConfig
+        """
+        for component in self._components:
+            if hasattr(component.config, "robot"):
+                try:
+                    component.config.robot = robot_config
+                except TypeError:
+                    logger.error(
+                        f"Cannot set component {component.node_name} 'robot' configuration parameter of type '{type(component.config.robot)}' to provided value of type '{type(robot_config)}'. Skipping setting robot configuration for '{component.node_name}'"
+                    )
+
+    @property
+    def frames(self) -> Dict[str, Any]:
+        """
+        Getter of robot frames for all components
+
+        :return: Robot frames configuration
+        :rtype: RobotFrames
+        """
+        robot_config_dict = {}
+        for component in self._components:
+            if hasattr(component.config, "frames"):
+                robot_config_dict[component.node_name] = component.config.frames
+        return robot_config_dict
+
+    @frames.setter
+    def frames(self, frames_config) -> None:
+        """
+        Setter of robot frames for all components
+
+        :param frames_config: Robot frames configuration
+        :type frames_config: RobotFrames
+        """
+        for component in self._components:
+            if hasattr(component.config, "frames"):
+                try:
+                    component.config.frames = frames_config
+                except TypeError:
+                    logger.error(
+                        f"Cannot set component {component.node_name} 'frames' configuration parameter of type '{type(component.config.frames)}' to provided value of type '{type(frames_config)}' Skipping setting frames configuration for '{component.node_name}'"
+                    )
+
+    def inputs(self, **kwargs):
+        """
+        Update input in all components if exists
+        """
+        components_keys_updated = {}
+        for key, value in kwargs.items():
+            components_updated_for_key = []
+            # Check if any component has this key in their inputs keys
+            for component in self._components:
+                if component.set_input(**{key: value}):
+                    components_updated_for_key.append(component.node_name)
+            components_keys_updated[key] = components_updated_for_key
+
+        for key, items in components_keys_updated.items():
+            logger.info(f"Input '{key}' updated for components: {items}")
+
+    def outputs(self, **kwargs):
+        """
+        Update output in all components if exists
+        """
+        components_keys_updated = {}
+        for key, value in kwargs.items():
+            components_updated_for_key = []
+            # Check if any component has this key in their output keys
+            for component in self._components:
+                if component.set_output(**{key: value}):
+                    components_updated_for_key.append(component.node_name)
+            components_keys_updated[key] = components_updated_for_key
+        for key, items in components_keys_updated.items():
+            logger.info(f"Output '{key}' updated for components: {items}")
+
     def _setup_component_events_handlers(self, comp: BaseComponent):
         """Parse a component events/actions from the overall components actions
 
@@ -380,9 +478,7 @@ class Launcher:
                 component.clear_events_actions()
 
         # Rewrite the actions dictionary and updates actions to be passed to the monitor and to the components
-        self.__rewrite_actions_for_components(
-            self._components, self._events_actions
-        )
+        self.__rewrite_actions_for_components(self._components, self._events_actions)
 
     def _update_ros_events_actions(
         self, event: Event, action: Union[Action, ROSLaunchAction]
@@ -569,7 +665,13 @@ class Launcher:
                 method = getattr(component, action_name)
                 method_params = inspect.signature(method).parameters
                 if any(
-                    x.default is inspect.Parameter.empty for x in method_params.values()
+                    x.default is inspect.Parameter.empty
+                    and x.kind
+                    not in (
+                        inspect.Parameter.VAR_POSITIONAL,
+                        inspect.Parameter.VAR_KEYWORD,
+                    )
+                    for x in method_params.values()
                 ):
                     raise ValueError(
                         f"{method} takes {method_params} as arguments. Only actions without any arguments or with keyword only arguments can be set as on_fail actions from the launcher. Use component.on_fail to pass specific arguments."
@@ -657,6 +759,30 @@ class Launcher:
             )
             self._description.add_action(internal_events_handler)
 
+    def _init_monitor_node(
+        self,
+        components_names: List[str],
+        services_components: List[BaseComponent],
+        action_components: List[BaseComponent],
+        all_components_to_activate_on_start: List[str],
+    ) -> None:
+        self.monitor_node = Monitor(
+            components_names=components_names,
+            events_actions=self._monitor_events_actions,
+            events_to_emit=self._internal_events,
+            services_components=services_components,
+            action_servers_components=action_components,
+            activate_on_start=all_components_to_activate_on_start,
+            activation_timeout=self._components_activation_timeout,
+        )
+
+        monitor_action = ComponentLaunchAction(
+            node=self.monitor_node,
+            namespace=self._namespace,
+            name=self.monitor_node.node_name,
+        )
+        self._description.add_action(monitor_action)
+
     def _setup_monitor_node(self) -> None:
         """Adds a node to monitor all the launched components and their events"""
         # Update internal events
@@ -697,22 +823,12 @@ class Launcher:
             ]
         )
 
-        self.monitor_node = Monitor(
+        self._init_monitor_node(
             components_names=components_names,
-            events_actions=self._monitor_events_actions,
-            events_to_emit=self._internal_events,
             services_components=services_components,
-            action_servers_components=action_components,
-            activate_on_start=all_components_to_activate_on_start,
-            activation_timeout=self.__components_activation_timeout,
+            action_components=action_components,
+            all_components_to_activate_on_start=all_components_to_activate_on_start,
         )
-
-        monitor_action = ComponentLaunchAction(
-            node=self.monitor_node,
-            namespace=self._namespace,
-            name=self.monitor_node.node_name,
-        )
-        self._description.add_action(monitor_action)
 
         # Register a activation event
         internal_events_handler_activate = launch.actions.RegisterEventHandler(
@@ -790,15 +906,19 @@ class Launcher:
         while True:
             # TODO: Make the buffer size a parameter
             # Block to receive data
-            data = conn.recv(1024)
-            if not data:
-                continue
-            # TODO: Retrieve errors
-            data = msgpack.unpackb(data)
-            result = func(*data["output"])
-            logger.debug(f"Got result from external processor: {result}")
-            result = msgpack.packb(result)
-            conn.sendall(result)
+
+            try:
+                data = conn.recv(1024)
+                if not data:
+                    continue
+                # TODO: Retrieve errors
+                data = msgpack.unpackb(data)
+                result = func(**data)
+                logger.debug(f"Got result from external processor: {result}")
+                result = msgpack.packb(result)
+                conn.sendall(result)
+            except Exception as e:
+                logger.error(f"Error while running external processor: {e}")
 
     def _setup_external_processors(self, component: BaseComponent) -> None:
         if not component._external_processors:
@@ -1016,19 +1136,22 @@ class Launcher:
         for component in self._components:
             self._setup_component_events_handlers(component)
 
-        # Add configured components to launcher
-        for idx, component in enumerate(self._components):
-            pkg_name, executable_name = self._pkg_executable[idx]
-            if pkg_name and executable_name:
-                self._setup_component_in_process(component, pkg_name, executable_name)
-            else:
-                self._setup_component_in_thread(component)
-
         # Create UI node if enabled
         if self._enable_ui:
             self._setup_ui_node()
 
+        # NOTE: Monitor setup step should ALWAYS be called after UI node is setup, to ensure that its added to the components that require activation at start.
         self._setup_monitor_node()
+
+        # Add configured components to launcher
+        for component in self._components:
+            pkg_name, executable_name = self._pkg_executable.get(
+                component.node_name, (None, None)
+            )
+            if pkg_name and executable_name:
+                self._setup_component_in_process(component, pkg_name, executable_name)
+            else:
+                self._setup_component_in_thread(component)
 
         group_action = GroupAction(self._launch_group)
 

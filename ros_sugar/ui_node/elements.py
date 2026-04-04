@@ -38,16 +38,12 @@ class Task:
         :type fields: _type_
         """
         self._status = "inactive"
-        self._feedback = None
+        self._feedback = []
+        self._feedback_timestamp = -1
         self._duration = None
         self._name = name
         self._type = client_type
         self._fields = fields
-        self._feedback_card = Card(
-            header=H6(">> Feedback Log", cls="tomorrow-night-green"),
-            cls="terminal-container ml-2 mr-2 mt-0 overflow-y-auto ",
-            id="feedback-log",
-        )
         self._serving_component: Optional[str] = self.__get_server_node()
         self.total_calls = 0
 
@@ -65,6 +61,7 @@ class Task:
         status: Optional[str] = None,
         feedback: Any = None,
         duration: Optional[float] = None,
+        timestep: Optional[int] = None,
     ):
         """Update the task current status
 
@@ -74,9 +71,35 @@ class Task:
         if status:
             self._status = status
         if feedback:
-            self._feedback = feedback
+            if timestep is not None:
+                # Apply timestep check for new feedback if timestep is sent
+                if self._feedback_timestamp < timestep:
+                    self._feedback.append(feedback)
+                    self._feedback_timestamp = timestep
+            else:
+                self._feedback.append(feedback)
         if duration is not None:
             self._duration = duration
+
+    @property
+    def card_static(self) -> FT:
+        """Get a static version of the UI card element for the task (without feedback or request tracking)
+
+        :return: _description_
+        """
+        return (
+            DivHStacked(
+                H4(self._name),
+                Button(
+                    "?",
+                    cls="info-btn",
+                    id=f"{self._name}-info-btn",
+                    onclick=f"openAtButton('{self._name}-info-btn', '{self._name}-modal')",  # Method openAtButton implemented in custom.js
+                ),
+                self._info,
+                cls="mb-0 gap-2",
+            ),
+        )
 
     @property
     def card(self) -> FT:
@@ -85,38 +108,58 @@ class Task:
         :return: _description_
         :rtype: FT
         """
-        client_card = Card(
-            header=DivHStacked(
-                H4(self._name),
-                self._badge,
-                Button(
-                    "?",
-                    cls="info-btn",
-                    id=f"{self._name}-info-btn",
-                    onclick=f"openAtButton('{self._name}-info-btn', '{self._name}-modal')",  # Method openAtButton implemented in custom.js
-                ),
-                self._info,
-            ),
-            header_cls="mb-0",
-            cls="m-2 max-h-[40vh] overflow-y-auto inner-main-card",
+        client_card = DivVStacked(
+            self._badge,
+            cls="mt-0 gap-2",
             id=self._name,
             ws_send=True,
         )
-        # TODO: Format the feedback message and add a display card
-        inside = Grid(cls="gap-2 ml-1 mr-1", cols=1)
+        inside = Grid(cls="gap-2 ml-1 mr-1 place-items-center", cols=1)
         if self.feedback:
-            self._feedback_card(self.feedback)
-            inside(self._feedback_card)
+            feedback_content = Div(
+                self.feedback,
+                id=f"task_{self._name}_feedback",
+                cls="m-2",
+            )
+            feedback_header = Div(
+                H6(
+                    "Feedback Log",
+                    cls="tomorrow-night-green",
+                ),
+                cls="flex flex-row justify-between items-start"
+            )
+            if self._status not in ["running", "active", "accepted", "inactive"]:
+                feedback_header(
+                    Button(
+                        cls="clear-btn",
+                        type="button",
+                        onclick=f"const feedbackDiv = document.getElementById('task_{self._name}_feedback_log'); if (feedbackDiv) feedbackDiv.remove();",
+                    )
+                )  # Clear the feedback log on click
+            feedback_card = Card(
+                feedback_content,
+                header=feedback_header,
+                cls="terminal-container feedback-container ml-2 mr-2 mt-0 overflow-y-auto max-h-[30vh] auto-scroll-bottom",
+                id=f"task_{self._name}_feedback_log",
+            )
+            inside(feedback_card)
         inside(_in_action_client_element(self._name, self._type, self._fields))
         return client_card(inside)
 
     @property
     def feedback(self):
         """Get a UI element for the task feedback"""
-        if self._status not in ["active", "running"]:
+        if self._status == "inactive":
             return None
         else:
-            return P(self._feedback)
+            if not self._feedback:
+                return None
+            p_stack = Grid(cols=1, cls="gap-0 flex justify-start")
+            for feed_message in self._feedback:
+                p_stack(
+                    P(Span("- ", cls="tomorrow-night-green font-bold"), feed_message)
+                )
+            return p_stack
 
     @property
     def _info(self):
@@ -204,6 +247,10 @@ class Task:
         return Span(
             self._status, cls=f"status-badge {self._status}", id="status-badge-div"
         )
+
+    def cleanup(self):
+        self._feedback = []
+        self._feedback_timestamp = -1
 
 
 # ---- UTILITY ELEMENTS ----
@@ -1053,6 +1100,8 @@ def _in_action_client_element(
     action_form = Form(
         cls="space-x-2 space-y-2 m-2",
         id=f"{action_name}-form",
+        # The following is added to fix the page reload on form start error
+        onsubmit="event.preventDefault(); return false;",
     )
     if ui_element := _INPUT_ELEMENTS.get(action_type, None):
         ui_fields = ui_element(action_name, action_type)
@@ -1075,6 +1124,8 @@ def _in_action_client_element(
                     hx_post="/action/goal",
                     hx_target="#main",
                     hx_on__before_request=f"""
+                        let feedbackResultDiv = document.getElementById('task_{action_name}_feedback_log');
+                        if (feedbackResultDiv) feedbackResultDiv.remove();
                         this.innerHTML = `{_loading_content_send}`;
                         this.disabled = true;
                         """,
@@ -1102,6 +1153,7 @@ def _in_action_client_element(
                 Button(
                     "Start",
                     cls="primary-button",
+                    type="button",
                     id=f"{action_name}-form-btn",
                     onclick=f"document.getElementById('{action_name}-request-from').style.display='grid'",
                 ),
@@ -1234,7 +1286,12 @@ def styled_inputs_grid(number_of_inputs: int) -> tuple:
 
 
 # ---- OUTPUTS CARD ELEMENTS ----
-def output_topic_card(topic_name: str, topic_type: str, column_class: str = "", map_output_markers: Optional[Dict] = None) -> FT:
+def output_topic_card(
+    topic_name: str,
+    topic_type: str,
+    column_class: str = "",
+    map_output_markers: Optional[Dict] = None,
+) -> FT:
     """Creates a UI element for an output topic
 
     :param topic_name: Topic name

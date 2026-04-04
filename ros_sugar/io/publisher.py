@@ -15,7 +15,7 @@ from . import utils
 class Publisher:
     """Publisher."""
 
-    def __init__(self, output_topic, node_name: str = '') -> None:
+    def __init__(self, output_topic, node_name: str = "") -> None:
         """__init__.
 
         :param input_topic:
@@ -57,31 +57,26 @@ class Publisher:
         """
         self._pre_processors = processors
 
-    def _prepare_for_publish(self, *output) -> Any:
+    def _prepare_for_publish(self, output) -> Any:
         """Prepare the output for publishing by applying the pre-processors
 
         :return: Pre-processed output rerady for converting and publishing
         :rtype: Any
         """
-        output_types = [type(arg) for arg in output]
+        out_type = type(output)
         if self._pre_processors:
             for processor in self._pre_processors:
                 pre_output = utils.run_external_processor(
-                    self.node_name, self.output_topic.name, processor, *output
+                    self.node_name, self.output_topic.name, processor, output
                 )
                 # if any processor output is None, then dont publish
                 if pre_output is None:
                     return None
-                pre_output_types = [type(arg) for arg in pre_output]
                 # type check processor output if incorrect, raise an error
-                if not all(
-                    out_type == pre_output_type
-                    for out_type, pre_output_type in zip(
-                        output_types, pre_output_types, strict=True
-                    )
-                ):
+                pre_output_type = type(pre_output)
+                if out_type is not type(pre_output):
                     get_logger(self.node_name).warn(
-                        f"The output produced by the component for topic {self.output_topic.name} is of type {output}. Got pre_processor output of type {pre_output_types}"
+                        f"The output produced by the component for topic {self.output_topic.name} is of type {out_type}. Got pre_processor output of type {pre_output_type}"
                     )
                 # if all good, set output equal to post output
                 output = pre_output
@@ -89,7 +84,7 @@ class Publisher:
 
     def publish(
         self,
-        *output,
+        output,
         frame_id: Optional[str] = None,
         **kwargs,
     ) -> None:
@@ -105,13 +100,13 @@ class Publisher:
                 f"No valid ROS2 publisher is available for topic {self.output_topic.name}.. Skipping message publishing"
             )
             return
-        output = self._prepare_for_publish(*output)
+        output = self._prepare_for_publish(output)
         if output is None:
             get_logger(self.node_name).error(
                 f"No valid output found for topic {self.output_topic.name}.. Skipping message publishing"
             )
             return
-        msg = self.output_topic.msg_type.convert(*output, **kwargs)
+        msg = self.output_topic.msg_type.convert(output, **kwargs)
         if msg:
             if frame_id and not hasattr(msg, "header"):
                 get_logger(self.node_name).debug(

@@ -259,6 +259,7 @@ class Action:
         method: Callable,
         args: Optional[Union[Tuple, List, Any]] = None,
         kwargs: Optional[Dict] = None,
+        description: Optional[str] = None,
     ) -> None:
         """
         Action
@@ -269,6 +270,8 @@ class Action:
         :type args: tuple, optional
         :param kwargs: function keyword arguments, defaults to {}
         :type kwargs: dict, optional
+        :param description: Openai compatible function signature for use with tool calling models, defaults to None
+        :type description: Optional[str], optional
         """
         self.__parent_component: Optional[str] = None
         self.__action_keyname: Optional[str] = (
@@ -277,6 +280,7 @@ class Action:
         self._function = method
         self._is_monitor_action = False
         self._is_lifecycle_action = False
+        self._description = description
 
         # List of registered conversions to execute before the main method
         # keeps track of mapping (argument_name -> output_type)
@@ -353,10 +357,14 @@ class Action:
                     # Related message is not sent -> skip
                     continue
                 if key.startswith("arg_"):
-                    idx = int(key.removeprefix("arg_"))
+                    # Python3.8 compatibility (instead of removeprefix())
+                    key = key[len("arg_"):]
+                    idx = int(key)
                     call_args.insert(idx, output)
                 elif key.startswith("kwarg_"):
-                    call_kwargs[key.removeprefix("kwarg_")] = output
+                    # Python3.8 compatibility (instead of removeprefix())
+                    key = key[len("kwarg_"):]
+                    call_kwargs[key] = output
 
         for key, (name, conv_func) in self.__prepared_events_conversions.items():
             if msg := topics.get(name, None):
@@ -510,6 +518,15 @@ class Action:
         :rtype: bool
         """
         return self.__parent_component is not None
+
+    @property
+    def description(self) -> Optional[str]:
+        """Get the description of the action, used for openai function calling
+
+        :return: _description_
+        :rtype: Optional[str]
+        """
+        return self._description
 
     @property
     def dictionary(self) -> Dict:

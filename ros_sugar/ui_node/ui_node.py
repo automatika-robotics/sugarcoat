@@ -8,6 +8,7 @@ import importlib
 from functools import partial
 
 from ..config.base_attrs import BaseAttrs
+from ..config.base_validators import in_range
 from ..core.component import BaseComponent, BaseComponentConfig, Publisher
 from .. import base_clients
 from ..io.callbacks import GenericCallback
@@ -32,6 +33,9 @@ class UINodeConfig(BaseComponentConfig):
     ssl_keyfile: str = field(default="key.pem")
     ssl_certificate: str = field(default="cert.pem")
     hide_settings: bool = field(default=False)
+    feedback_update_period: float = field(
+        default=1.0, validator=in_range(min_value=1e-3, max_value=1e3)
+    )  # 1 second ui feedback update rate
 
 
 class UINode(BaseComponent):
@@ -413,7 +417,7 @@ class UINode(BaseComponent):
         if sent_done:
             # If goal is sent, start a timer to send the feedback to the websocket
             self._ros_action_clients_feedback_timers[action_name] = self.create_timer(
-                timer_period_sec=1 / self.config.loop_rate,
+                timer_period_sec=self.config.feedback_update_period,
                 callback=partial(
                     self._action_feedback_callback, action_name=action_name
                 ),
@@ -424,7 +428,7 @@ class UINode(BaseComponent):
             f'Server Error - Was not able to send goal for action "{action_name}"',
         )
 
-    async def _action_feedback_callback(self, action_name: str):
+    def _action_feedback_callback(self, action_name: str):
         """Get feedback message from action (if available)
 
         :param action_name: Action name
@@ -438,7 +442,10 @@ class UINode(BaseComponent):
         if feedback_func := self._ros_action_clients_feedback_callbacks.get(
             action_name, None
         ):
-            await feedback_func(feedback_data)
+            # await feedback_func(feedback_data)
+            asyncio.run_coroutine_threadsafe(
+                feedback_func(feedback_data), self.loop
+            )
 
     def cancel_action(self, action_name: str) -> Tuple[bool, str]:
         """Cancel ongoing action goal
@@ -454,6 +461,14 @@ class UINode(BaseComponent):
                 f"Action cancellation is not possible: '{action_name}' is not found",
             )
         return self._ros_action_clients[action_name].cancel_request()
+
+    def cleanup_action(self, action_name: str) -> None:
+        """Destroy the action feedback timer. Called when the action has completed or aborted
+
+        :param action_name: _description_
+        :type action_name: str
+        """
+        self.destroy_timer(self._ros_action_clients_feedback_timers[action_name])
 
     def publish_data(self, data: Any):
         """

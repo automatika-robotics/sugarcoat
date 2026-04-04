@@ -84,6 +84,15 @@ document.addEventListener("DOMContentLoaded", () => {
         observer.observe(log_parent, { childList: true, subtree: true });
     }
 
+    // 1b. Generic auto-scroll for any element with class 'auto-scroll-bottom'
+    const autoScrollObserver = new MutationObserver(() => {
+        const els = document.getElementsByClassName('auto-scroll-bottom');
+        Array.from(els).forEach(el => {
+            el.scrollTop = el.scrollHeight;
+        });
+    });
+    autoScrollObserver.observe(document.body, { childList: true, subtree: true });
+
     // 2. Actions WebSocket (Frontend <-> Backend general comms)
     const actions = document.getElementById("actions-frontend");
     if (actions) {
@@ -98,6 +107,18 @@ document.addEventListener("DOMContentLoaded", () => {
     // 3. Initialize Draggable and Resizable cards
     makeDraggable("draggable");
     makeResizable("draggable");
+});
+
+// Fix null header values in HTMX WebSocket messages that crash FastHTML
+document.addEventListener("htmx:wsConfigSend", function (event) {
+    const headers = event.detail.headers;
+    if (headers) {
+        Object.keys(headers).forEach(function (key) {
+            if (headers[key] == null) {
+                headers[key] = '';
+            }
+        });
+    }
 });
 
 // Fix parsing boolean values from UI Switch elements for HTMX

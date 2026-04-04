@@ -1,7 +1,7 @@
 """Config Classes for Components and Topics"""
 
 from enum import Enum
-from typing import Union, Optional
+from typing import List, Union, Optional
 from attrs import define, field
 from rclpy import qos
 import rclpy.callback_groups as ros_callback_groups
@@ -340,3 +340,23 @@ class BaseComponentConfig(BaseConfig):
         default=6000.0,
         validator=base_validators.in_range(min_value=10.0, max_value=1e9),
     )  # Component wait time for node to come back online after restart (used to avoid infinite loops). Recommended to use a high value
+
+    def _summarize(self) -> List[str]:
+        """Return a list of text lines summarizing the class config parameters.
+
+        Skips private (underscore-prefixed) fields.
+
+        :returns: Lines suitable for appending to an inspect report
+        """
+        lines = ["Configuration Parameters:"]
+        for attr_field in self.__attrs_attrs__:
+            if attr_field.name.startswith("_"):
+                continue
+            value = getattr(self, attr_field.name, None)
+            type_name = (
+                attr_field.type.__name__
+                if hasattr(attr_field.type, "__name__")
+                else str(attr_field.type)
+            )
+            lines.append(f"  - {attr_field.name} ({type_name}): {value}")
+        return lines
