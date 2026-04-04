@@ -386,8 +386,8 @@ class FHApp:
             # HTMX fires "htmx:afterSwap" after content is swapped into the DOM,
             # and "htmx:afterOnLoad" / "htmx:afterRequest" for other lifecycle stages
             # Respond to afterSwap and afterOnLoad to be safe.
-            hx_on__after_on_load="ensureConnectionsForPresentFrames",
-            hx_on__after_swap="ensureConnectionsForPresentFrames",
+            hx_on__after_on_load="ensureConnectionsForPresentFrames(); if(typeof ensureMapConnections==='function') ensureMapConnections()",
+            hx_on__after_swap="ensureConnectionsForPresentFrames(); if(typeof ensureMapConnections==='function') ensureMapConnections()",
         )
 
     @property

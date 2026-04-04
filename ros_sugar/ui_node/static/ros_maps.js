@@ -1,20 +1,112 @@
 /**
  * ros_maps.js
  * - Handles Map Visualization with ROS2DJS.
+ * - Automatically reconnects maps after HTMX DOM swaps.
  */
 
 // State to track if we are in "Publish Point" mode
 const mapInteractionState = {}; // { topicName: { isPublishing: boolean, btn: HTMLElement } }
 
+// Registry of active map connections: topicName -> { ws, resizeObserver, viewer, mapInfo, mapHeader }
+// Persists across DOM swaps so we can clean up old resources and restore state to new elements.
+const mapConnections = new Map();
+
+const MAX_MAP_RETRIES = 10;
+
 
 document.addEventListener("DOMContentLoaded", () => {
-    const mapElements = document.getElementsByName('map-canvas');
-    if (mapElements.length === 0) return;
+    ensureMapConnections();
 
-    mapElements.forEach((container) => {
-        initSingleMap(container);
+    // MutationObserver: re-check whenever the DOM changes (e.g. HTMX swap)
+    let mapMoTimer = null;
+    const mapMo = new MutationObserver(() => {
+        if (mapMoTimer) clearTimeout(mapMoTimer);
+        mapMoTimer = setTimeout(() => {
+            ensureMapConnections();
+        }, 150);
+    });
+    mapMo.observe(document.body, { childList: true, subtree: true, attributes: false });
+
+    // Visibility handling: close on hide, reconnect on show
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            ensureMapConnections();
+        } else {
+            closeAllMapConnections();
+        }
+    });
+
+    window.addEventListener("pageshow", (event) => {
+        if (event.persisted) ensureMapConnections();
+    });
+
+    window.addEventListener("pagehide", () => {
+        closeAllMapConnections();
     });
 });
+
+
+/**
+ * Ensures every map-canvas element in the DOM has an active, initialized connection.
+ * Initializes new elements and cleans up connections whose elements have been removed.
+ */
+function ensureMapConnections() {
+    const mapElements = Array.from(document.getElementsByName('map-canvas'));
+    const presentIds = new Set(mapElements.map(el => el.id).filter(Boolean));
+
+    // Initialize maps that are present in DOM but not yet connected
+    mapElements.forEach((container) => {
+        if (!container.id) return;
+        // Skip if this exact DOM element already has a viewer (no swap happened)
+        if (container.mapViewer) return;
+
+        // A swap happened: the old element was replaced. Clean up old connection and re-init.
+        const oldConn = mapConnections.get(container.id);
+        if (oldConn) {
+            cleanupMapConnection(container.id, oldConn);
+        }
+        initSingleMap(container);
+    });
+
+    // Remove connections whose elements are no longer in the DOM
+    for (const [id, conn] of mapConnections) {
+        if (!presentIds.has(id)) {
+            cleanupMapConnection(id, conn);
+            mapConnections.delete(id);
+        }
+    }
+}
+
+
+/**
+ * Cleans up resources for a single map connection.
+ */
+function cleanupMapConnection(id, conn) {
+    try {
+        if (conn.ws) {
+            conn.ws.onclose = null;
+            conn.ws.onmessage = null;
+            conn.ws.close();
+        }
+    } catch (e) { /* ignore */ }
+    try {
+        if (conn.resizeObserver) conn.resizeObserver.disconnect();
+    } catch (e) { /* ignore */ }
+    try {
+        if (conn.reconnectTimer) clearTimeout(conn.reconnectTimer);
+    } catch (e) { /* ignore */ }
+}
+
+
+/**
+ * Closes all map connections (used on page hide/unload).
+ */
+function closeAllMapConnections() {
+    for (const [id, conn] of mapConnections) {
+        cleanupMapConnection(id, conn);
+    }
+    mapConnections.clear();
+}
 
 // --- EXPORTED FUNCTIONS (Called by Python Buttons) ---
 window.zoomMap = function (topicName, zoomFactor) {
@@ -314,9 +406,14 @@ window.initVisualSettingsObserver = function (mapId) {
     selector._hasObserver = true;
 };
 
-function initSingleMap(container) {
+function initSingleMap(container, attempt = 0) {
     const topicName = container.id;
     if (!topicName) return;
+
+    // Restore cached map metadata from a previous connection (survives DOM swaps)
+    const oldConn = mapConnections.get(topicName);
+    const cachedMapInfo = oldConn ? oldConn.mapInfo : null;
+    const cachedMapHeader = oldConn ? oldConn.mapHeader : null;
 
     // --- Setup Viewer ---
     const viewer = new ROS2D.Viewer({
@@ -371,12 +468,44 @@ function initSingleMap(container) {
         requestAnimationFrame(() => resizeMap(container));
     });
 
+    // Restore cached metadata so overlays/paths render immediately on reconnect
+    if (cachedMapInfo) container.mapInfo = cachedMapInfo;
+    if (cachedMapHeader) container.mapHeader = cachedMapHeader;
+
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws_${topicName}`;
+    const ws = connectMapWebSocket(container, wsUrl, mockRos, topicName, 0);
+
+    setupInteractions(viewer, container);
+    const resizeObserver = new ResizeObserver(() => resizeMap(container));
+    resizeObserver.observe(container);
+
+    // Register in the connection registry
+    mapConnections.set(topicName, {
+        ws: ws,
+        resizeObserver: resizeObserver,
+        viewer: viewer,
+        mapInfo: cachedMapInfo,
+        mapHeader: cachedMapHeader,
+        reconnectTimer: null,
+    });
+}
+
+
+/**
+ * Creates (or reconnects) the WebSocket for a map and wires up message handling.
+ * On close, automatically retries with exponential backoff.
+ */
+function connectMapWebSocket(container, wsUrl, mockRos, topicName, attempt) {
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     container.mapWs = ws;
     container.topicName = topicName;
+
+    ws.onopen = () => {
+        console.log(`[map:${topicName}] WebSocket connected`);
+        attempt = 0;
+    };
 
     ws.onmessage = (event) => {
         try {
@@ -392,6 +521,12 @@ function initSingleMap(container) {
             if (mapMessage.info && mapMessage.header) {
                 container.mapInfo = mapMessage.info;
                 container.mapHeader = mapMessage.header;
+                // Persist in registry so it survives DOM swaps
+                const conn = mapConnections.get(topicName);
+                if (conn) {
+                    conn.mapInfo = mapMessage.info;
+                    conn.mapHeader = mapMessage.header;
+                }
             }
 
             if (mapMessage.data && typeof mapMessage.data === 'string') {
@@ -436,9 +571,37 @@ function initSingleMap(container) {
         } catch (e) { console.error(e); }
     };
 
-    setupInteractions(viewer, container);
-    const resizeObserver = new ResizeObserver(() => resizeMap(container));
-    resizeObserver.observe(container);
+    ws.onerror = (err) => {
+        console.error(`[map:${topicName}] WebSocket error:`, err);
+    };
+
+    ws.onclose = () => {
+        console.warn(`[map:${topicName}] WebSocket closed`);
+
+        // Only reconnect if the element is still in the DOM
+        if (attempt < MAX_MAP_RETRIES) {
+            const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+            console.log(`[map:${topicName}] Reconnecting in ${delay / 1000}s...`);
+
+            const timer = setTimeout(() => {
+                const el = document.getElementById(topicName);
+                if (el && el.getAttribute("name") === "map-canvas" && el.mapViewer) {
+                    const newWs = connectMapWebSocket(container, wsUrl, mockRos, topicName, attempt + 1);
+                    const conn = mapConnections.get(topicName);
+                    if (conn) conn.ws = newWs;
+                } else {
+                    console.log(`[map:${topicName}] Element gone or re-initialized; aborting reconnect.`);
+                }
+            }, delay);
+
+            const conn = mapConnections.get(topicName);
+            if (conn) conn.reconnectTimer = timer;
+        } else {
+            console.error(`[map:${topicName}] Max reconnect attempts reached`);
+        }
+    };
+
+    return ws;
 }
 
 
