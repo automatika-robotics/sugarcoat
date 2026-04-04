@@ -8,6 +8,7 @@ import importlib
 from functools import partial
 
 from ..config.base_attrs import BaseAttrs
+from ..config.base_validators import in_range
 from ..core.component import BaseComponent, BaseComponentConfig, Publisher
 from .. import base_clients
 from ..io.callbacks import GenericCallback
@@ -32,6 +33,9 @@ class UINodeConfig(BaseComponentConfig):
     ssl_keyfile: str = field(default="key.pem")
     ssl_certificate: str = field(default="cert.pem")
     hide_settings: bool = field(default=False)
+    feedback_update_period: float = field(
+        default=1.0, validator=in_range(min_value=1e-3, max_value=1e3)
+    )  # 1 second ui feedback update rate
 
 
 class UINode(BaseComponent):
@@ -102,7 +106,6 @@ class UINode(BaseComponent):
         self._ros_action_clients_feedback_timers: Dict = {}
 
         self.config: UINodeConfig
-        self._update_rate = 1.0  # 1 second ui feedback update rate
 
     def srv_clients_inputs_dicts(self) -> List[Dict]:
         """Get a list of all given service clients inputs as dictionaries
@@ -414,7 +417,7 @@ class UINode(BaseComponent):
         if sent_done:
             # If goal is sent, start a timer to send the feedback to the websocket
             self._ros_action_clients_feedback_timers[action_name] = self.create_timer(
-                timer_period_sec=self._update_rate,
+                timer_period_sec=self.config.feedback_update_period,
                 callback=partial(
                     self._action_feedback_callback, action_name=action_name
                 ),
