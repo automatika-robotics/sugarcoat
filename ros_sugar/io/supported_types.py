@@ -186,7 +186,7 @@ def ros_msg_to_str(msg_object: Any) -> str:
             lines += ros_msg_to_str(field_value)
         elif isinstance(field_value, list):
             # Remove the extra _ added by ROS for arrays (e.g., '_data' -> 'data')
-            lines += f"{field_name.removeprefix('_')}: ["
+            lines += f"{field_name.lstrip('_')}: ["
             for item in field_value:
                 if hasattr(item, "__slots__"):
                     lines += ros_msg_to_str(item)

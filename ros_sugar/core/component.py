@@ -1827,7 +1827,6 @@ class BaseComponent(lifecycle.Node):
             error_msg = ""
         else:
             success = False
-            error_msg = error_msg
 
         timeout_counter = 0  # Add timeout to avoid an infinite loop
         while self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE and (
