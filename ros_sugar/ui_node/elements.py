@@ -133,7 +133,7 @@ class Task:
                     Button(
                         cls="clear-btn",
                         type="button",
-                        onclick=f"const feedbackDiv = document.getElementById('task_{self._name}_feedback_log'); feedbackDiv.remove();",
+                        onclick=f"const feedbackDiv = document.getElementById('task_{self._name}_feedback_log'); if (feedbackDiv) feedbackDiv.remove();",
                     )
                 )  # Clear the feedback log on click
             feedback_card = Card(
@@ -1125,7 +1125,7 @@ def _in_action_client_element(
                     hx_target="#main",
                     hx_on__before_request=f"""
                         let feedbackResultDiv = document.getElementById('task_{action_name}_feedback_log');
-                        feedbackResultDiv.remove();
+                        if (feedbackResultDiv) feedbackResultDiv.remove();
                         this.innerHTML = `{_loading_content_send}`;
                         this.disabled = true;
                         """,
