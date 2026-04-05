@@ -2,6 +2,59 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (docs) Updates docs for the publishing pre-processor consistency and action decorators with description
+* (fix) Moves feedback update period to UI node config
+* (fix) Uses wait_until_first_feedback in action client send_request
+* (fix) Minor fix in onclick button behavior
+* (feature) Adds persistent connection handling for map topics in UI
+* (fix) Updates Twist converter to use a single argument
+* (fix) Fixes base action client goal acceptance check
+* (feature) Extends the launcher to use robot, frames, inputs and outputs settings implemented in child packages
+* (fix) Adds fix for uvloop ssl protocol bug by passing it asynio event loop
+* (fix) Adds fixes for python3.8 compatibility
+* (fix) Fixes null header values in HTMX websocket messages that crashes FastHTML
+* (fix) Fixes running external processors on output
+* (fix) Fix on_fail action validation in Launcher
+* (chore) Fixes feedback messages logging in Task UI
+* (feature) Adds helper method to format ros messages for logging
+* (chore) Improves UI light theme colors
+* (fix) Fixes feedback cleanup and scroll to bottom
+* (fix) Fixes action client cleanup in UI node after task completed
+* (fix) Fixes UI Task feedback ws sending in callback
+* (fix) Fixes UI page reload on form start error
+* (fix) Adds audio manager to UI only if an audio element is added
+* (fix) Kills the feedback timer after a task is cancelled
+* (fix) Changes certificate missing logging in ui node to warning
+* (feature) Adds method to inspect component and to get available ros entrypoints
+* (feature) Adds summarize method to component base config
+* (fix) Tracks each component package and executable names in a dictionary by the Launcher
+* (feature) Adds array_shape validator to base validators
+* (fix) Fixes elements setup order in launcher
+* (fix) Makes ui main action input return an error if called on a component not an action server
+* (chore) Adds check for additional internal events in Monitor launch_action
+* (fix) Moves initializing empty internal events/actions paris to helper method
+* (fix) Fixes pure internal events init in Monitor
+* (fix) Adds more expressive response in execute_method service
+* (feature) Adds registration of pure internal events in Monitor
+* (refactor) Moves parameter update code to a helper method to be used by childern components
+* (fix) Removes node spin fro service send_request
+* (fix) Fixes calling execute method client in monitor
+* (feature) Adds setter methods for custom action/server names
+* (feature) Adds methods to execute action goals based on a component name
+* (feature) Adds execute method service client to monitor and makes all service calls return results
+* (fix) Fixes error in component fallback decorator
+* (feature) Makes tool description a mapping thats stored as a json string
+* (feature) Adds optional tool description to fallback decorators as well
+* (feature) Adds action description to component action decorator
+* (feature) Adds description property to Action
+* (docs) Moves all docs to developer style
+* (docs) Fixes base url and sitemap
+* (chore) Splits docs action to build and deploy
+* (chore) Changes CI to official github pages deployment
+* Contributors: ahr, mkabtoul
+
 0.5.0 (2026-02-14)
 ------------------
 * (refactor) Removes callback_group from component config
