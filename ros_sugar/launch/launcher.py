@@ -606,7 +606,7 @@ class Launcher:
             self._update_ros_events_actions(event, action)
             return
 
-        # Case 3: Same component owns condition and action
+        # Case 2: Same component owns condition and action
         if condition_owner and condition_owner == consequence_owner:
             logger.debug(
                 f"Action-based event '{event}': Component-condition + same-component-action,"
@@ -617,7 +617,7 @@ class Launcher:
             )
             return
 
-        # Cases 2 and 4 require a Bool bridge topic so the condition owner can signal
+        # Cases 3: Different owners -> Add a Bool bridge topic so the condition owner can signal
         # the consequence owner across process boundaries.
         event_id_safe = event.id.replace("-", "_")
         bridge_topic_name = (
@@ -632,7 +632,7 @@ class Launcher:
             bridge_events_per_target[consequence_owner] = bridge_event
         bridge_serialized: str = bridge_event.to_json()
 
-        # Case 2: Recipe-level condition + component-owned consequence.
+        # Case 3.a: Recipe-level condition + component-owned consequence.
         # The Monitor polls the condition via a timer and, when it fires, publishes
         # Bool(True) on the bridge topic (via the _on_internal_event → OnInternalEvent
         # → publish_message path). The consequence component subscribes to the bridge.
@@ -651,7 +651,7 @@ class Launcher:
             )
             return
 
-        # Case 4: Different components own condition and action
+        # Case 3.b: Different components own condition and action
         logger.debug(
             f"Action-based event '{event}': Component-condition '{condition_owner}'"
             f" + Component-action '{consequence_owner}', bridge topic '{bridge_topic_name}'"
