@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.6.0 (2026-04-05)
+------------------
 * (docs) Updates docs for the publishing pre-processor consistency and action decorators with description
 * (fix) Moves feedback update period to UI node config
 * (fix) Uses wait_until_first_feedback in action client send_request
