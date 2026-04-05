@@ -1,6 +1,5 @@
 """Monitor"""
 
-import json
 import os
 from functools import partial
 import time
@@ -680,23 +679,20 @@ class Monitor(Node):
             # Pass the clean subset to the event
             event.check_condition(clean_cache_subset)
 
-    def __build_events_from_actions(self) -> None:
-        """Deserialize and register events from _events_actions, skipping action-based ones."""
-        if not self._monitor_events_actions:
-            return
-        for serialized_event, actions in self._monitor_events_actions.items():
-            if "action_condition" in json.loads(serialized_event):
-                # Action-based events are polled by the owning component via timers.
-                # Condition methods live in the script, not on the Monitor, so the Monitor
-                # cannot deserialize them. Any launcher-side consequences will be triggered
-                # via InternalEvents emitted from the script.
-                continue
-            event = Event.from_json(serialized_event)
-            for action in actions:
-                method = getattr(self, action.action_name)
-                action.executable = partial(method, *action._args, **action._kwargs)
-                event.register_actions(action)
-            self.__events.append(event)
+    def _activate_event_monitoring(self) -> None:
+        """
+        Turn on all events
+        """
+        self.__events = []
+        if self._events_actions:
+            for serialized_event, actions in self._events_actions.items():
+                event = Event.from_json(serialized_event)
+                for action in actions:
+                    method = getattr(self, action.action_name)
+                    # register action to the event
+                    action.executable = partial(method, *action._args, **action._kwargs)
+                    event.register_actions(action)
+                self.__events.append(event)
 
     def __build_topic_subscriptions(self) -> None:
         """Create one subscription per unique topic required by all topic-based events."""
