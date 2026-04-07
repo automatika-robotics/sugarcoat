@@ -784,10 +784,12 @@ class BaseComponent(lifecycle.Node):
         self.get_logger().info("DESTROYING ALL PUBLISHERS")
         # Destroy health status publisher
         self.destroy_publisher(self.health_status_publisher)
+        self.health_status_publisher = None
 
         for publisher in self.publishers_dict.values():
             if publisher._publisher:
                 self.destroy_publisher(publisher._publisher)
+                publisher._publisher = None
 
     def destroy_all_services(self):
         """
