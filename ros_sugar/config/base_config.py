@@ -4,7 +4,6 @@ from enum import Enum
 from typing import List, Union, Optional
 from attrs import define, field
 from rclpy import qos
-import rclpy.callback_groups as ros_callback_groups
 from rclpy.logging import LoggingSeverity
 
 from . import base_validators
