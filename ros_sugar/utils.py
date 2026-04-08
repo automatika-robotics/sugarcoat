@@ -9,7 +9,7 @@ from rclpy.lifecycle import Node as LifecycleNode
 from launch import LaunchContext
 from launch.actions import OpaqueFunction
 import os
-import logging
+from rclpy.logging import get_logger
 
 
 # Get ROS distro
@@ -28,7 +28,7 @@ except ModuleNotFoundError as e:
 
 
 # logger for utils
-logger = logging.getLogger("Sugarcoat")
+logger = get_logger("Sugarcoat")
 
 
 # Define a generic type variable for topic message types
