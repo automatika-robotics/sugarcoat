@@ -78,6 +78,7 @@ def main():
     parser.add_argument("--ui_input_elements", type=str)
     parser.add_argument("--ui_output_elements", type=str)
     parser.add_argument("--ui_service_clients", type=str)
+    parser.add_argument("--system_info", type=str)
     args, _ = parser.parse_known_args()  # type: ignore
     additional_input_elements = (
         json.loads(args.ui_input_elements) if args.ui_input_elements else None
@@ -88,6 +89,8 @@ def main():
     if args.ui_service_clients:
         ros_node._client_inputs_json = args.ui_service_clients
 
+    system_info = json.loads(args.system_info) if args.system_info else None
+
     fh = FHApp(
         ros_node_config.components,
         ros_node.out_topics,  # Inputs from the client to the ros node
@@ -97,6 +100,7 @@ def main():
         additional_input_elements=additional_input_elements,  # Additional UI input elements from derived packages
         additional_output_elements=additional_output_elements,  # Additional UI output elements from derived packages
         hide_settings_panel=ros_node_config.hide_settings,
+        system_info=system_info,
     )  # inputs and outputs are reversed
     app, _ = fh.get_app()
 
@@ -112,13 +116,33 @@ def main():
     def _():
         """Serves the main application page."""
         fh.toggle_settings = False
+        fh.toggle_system = False
         return fh.get_main_page()
 
     @app.get("/settings/show")
     def _():
         """Show the settings tabs"""
+        fh.toggle_system = False
         fh.toggle_settings = not fh.toggle_settings
         return fh.get_main_page()
+
+    @app.get("/system/show")
+    def _():
+        """Show the system visualization"""
+        fh.toggle_settings = False
+        fh.toggle_system = not fh.toggle_system
+        return fh.get_main_page()
+
+    @app.get("/system/component/{name}")
+    def _(name: str):
+        """Return detail panel for a specific component"""
+        comp_meta = fh.system_info.get("components", {}).get(name, {}) if fh.system_info else {}
+        return elements.system_component_detail(
+            name,
+            comp_meta,
+            fh.configs.get(name, {}),
+            fh.system_info,
+        )
 
     @app.post("/settings/submit")
     async def _(request, session):
