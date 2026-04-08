@@ -106,14 +106,14 @@ def generate_test_description():
     # --- Case 3a: same-component, basic trigger ---
     # Condition starts False, becomes True after execution counter exceeds 5
     event_basic = Event(
-        Action(method=component_a.becomes_true_condition),
+        component_a.becomes_true_condition,
         check_rate=10.0,
     )
 
     # --- Case 3b: same-component, on_change ---
     # Toggling condition with on_change=True fires only on False-to-True transition
     event_on_change = Event(
-        Action(method=component_a.toggling_condition),
+        component_a.toggling_condition,
         check_rate=10.0,
         on_change=True,
     )
@@ -121,7 +121,7 @@ def generate_test_description():
     # --- Case 3c: same-component, handle_once ---
     # Always-True condition fires exactly once
     event_handle_once = Event(
-        Action(method=component_a.always_true_condition),
+        component_a.always_true_condition,
         check_rate=10.0,
         handle_once=True,
     )
@@ -131,7 +131,7 @@ def generate_test_description():
     # The Launcher creates a Bool bridge topic: ComponentA publishes True when
     # the condition fires, ComponentB monitors the bridge topic and runs the action.
     event_cross = Event(
-        Action(method=component_a.cross_condition),
+        component_a.cross_condition,
         check_rate=10.0,
     )
 

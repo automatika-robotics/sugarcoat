@@ -1,5 +1,6 @@
 """Event"""
 
+import inspect
 import json
 import time
 import uuid
@@ -218,7 +219,7 @@ class Event:
 
     def __init__(
         self,
-        event_condition: Union[Topic, Condition, "Action"],
+        event_condition: Union[Topic, Condition, Callable],
         on_change: bool = False,
         handle_once: bool = False,
         keep_event_delay: float = 0.0,
@@ -276,11 +277,21 @@ class Event:
             self._on_any = True
 
         # Case 3: Action-based polling: action return value is the boolean condition
-        elif isinstance(event_condition, Action):
+        elif isinstance(event_condition, Callable):
             self._condition = None
-            self._action_condition = event_condition
+            # Verify that the method returns boolean
+            return_annotation = inspect.signature(event_condition).return_annotation
+            if return_annotation is not inspect.Parameter.empty and return_annotation is not bool:
+                raise TypeError(
+                    f"Action-based event condition must return bool, "
+                    f"but '{event_condition.__name__}' has return type '{return_annotation}'"
+                )
+
+            self._action_condition = Action(method=event_condition)
             self._is_action_based = True
             self.check_rate = check_rate
+            if not check_rate:
+                logger.warning("No 'check_rate' is provided to pool the event condition method, the default component 'loop_rate' will be used instead")
 
         else:
             raise AttributeError(
