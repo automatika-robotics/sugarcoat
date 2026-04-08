@@ -26,6 +26,7 @@ class FHApp:
         additional_input_elements: Optional[List[Tuple]] = None,
         additional_output_elements: Optional[List[Tuple]] = None,
         hide_settings_panel: bool = False,
+        system_info: Optional[Dict] = None,
     ):
         # --- Application Setup ---
         static_src = Path(__file__).resolve().parent / "static"
@@ -56,6 +57,8 @@ class FHApp:
         ]
         if has_audio:
             hdrs.append(Script(src="audio_manager.js"))
+        if system_info is not None:
+            hdrs.append(Script(src="system_graph.js"))
         self.app, self.rt = fast_app(
             hdrs=hdrs, exts=["ws"], static_path=str(static_src)
         )
@@ -75,6 +78,10 @@ class FHApp:
         self.configs = configs
         self.hide_settings_panel: bool = hide_settings_panel
         self.toggle_settings = False
+
+        # System visualization
+        self.system_info: Optional[Dict] = system_info
+        self.toggle_system = False
 
         # Inputs and Outputs
         self.in_topics = in_topics
@@ -107,7 +114,7 @@ class FHApp:
         self.outputs_log = elements.initial_logging_card()
 
     @property
-    def action_clients(self) -> FT:
+    def action_clients(self) -> Optional[FT]:
         if not self.action_clients_ft:
             return None
         all_clients_cards = Div(id="all_actions")
@@ -325,8 +332,84 @@ class FHApp:
         )
 
     @property
+    def _system_content(self):
+        """Build the system visualization page from system info"""
+        system_grid = Grid(cols=1, id="system-view", cls="gap-4 p-2")
+
+        # Component Graph
+        # The graph container uses absolute positioning — layout is computed by system_graph.js
+        graph_container = Div(
+            id="system-graph-container",
+            cls="system-graph-container",
+        )
+
+        # SVG layer for connection edges (drawn by system_graph.js)
+        svg_overlay = NotStr(
+            '<svg id="topic-connections-svg"></svg>'
+        )
+        graph_container(svg_overlay)
+
+        # Component node cards — positioned by JS
+        components_row = Div(id="components-row")
+        components_data = self.system_info.get("components", {})
+        for node_name, comp_meta in components_data.items():
+            is_managed = node_name in self.configs
+            is_monitor = "monitor" in node_name
+            components_row(
+                elements.system_component_card(
+                    node_name, comp_meta, is_managed, is_monitor,
+                )
+            )
+
+        graph_container(components_row)
+
+        # Detail panel (populated on component click)
+        detail_panel = Div(id="component-detail-panel", cls="p-2")
+
+        architecture_card = Card(
+            DivHStacked(
+                H4("System Architecture", cls="cool-subtitle-mini"),
+                cls="space-x-0",
+            ),
+            graph_container,
+            detail_panel,
+            cls="main-card",
+            # Trigger SVG drawing after this content is swapped in
+            hx_on__after_swap="if(typeof drawTopicConnections==='function') drawTopicConnections()",
+        )
+        system_grid(architecture_card)
+
+        # Events & Actions
+        events = self.system_info.get("events", [])
+        if events:
+            events_content = Div(id="events-list")
+            for event_data in events:
+                events_content(elements.system_event_row(event_data))
+
+            events_card = Card(
+                DivHStacked(
+                    H4("Events & Actions", cls="cool-subtitle-mini"),
+                    elements._toggle_button(div_to_toggle="events-list"),
+                    cls="space-x-0",
+                ),
+                events_content,
+                cls="main-card",
+            )
+            system_grid(events_card)
+
+        return Main(
+            system_grid,
+            id="main",
+            cls="pt-2 pb-2",
+        )
+
+    @property
     def _main_content(self):
         """Get the current main page content"""
+        # Return the system visualization if toggle is active
+        if self.toggle_system and self.system_info is not None:
+            return self._system_content
+
         # Return the settings page if toggle button is pressed and settings display is allowed
         if self.toggle_settings and not self.hide_settings_panel:
             return self.settings
@@ -391,6 +474,12 @@ class FHApp:
         )
 
     @property
+    def _system_button(self):
+        if self.toggle_system:
+            return UkIcon("x")
+        return "Visualize"
+
+    @property
     def _nav_bar(self) -> FT:
         # Case 1: Settings page is displayed
         if self.toggle_settings and not self.hide_settings_panel:
@@ -404,7 +493,42 @@ class FHApp:
                     cls="primary-button",
                 ),
             ]
-        # Case 2: Main page
+            if self.system_info is not None:
+                nav_bar_items.append(
+                    Button(
+                        self._system_button,
+                        id="system-button",
+                        hx_get="/system/show",
+                        hx_target="#main",
+                        hx_swap="outerHTML",
+                        cls="glass-icon-btn" if self.toggle_system else "secondary-button",
+                        uk_tooltip="title: Close View; pos: bottom" if self.toggle_system else None,
+                    ),
+                )
+        # Case 2: System page is displayed
+        elif self.toggle_system:
+            nav_bar_items = [
+                Button(
+                    self._system_button,
+                    id="system-button",
+                    hx_get="/system/show",
+                    hx_target="#main",
+                    hx_swap="outerHTML",
+                    cls="secondary-button",
+                ),
+            ]
+            if not self.hide_settings_panel:
+                nav_bar_items.append(
+                    Button(
+                        self._settings_button,
+                        id="settings-button",
+                        hx_get="/settings/show",
+                        hx_target="#main",
+                        hx_swap="outerHTML",
+                        cls="primary-button",
+                    ),
+                )
+        # Case 3: Main page
         else:
             nav_bar_items = [
                 elements.filter_tag_button(name="log", div_to_hide="log-frontend")
@@ -433,7 +557,6 @@ class FHApp:
                         name="tasks", div_to_hide="actions-frontend"
                     ),
                 )
-            # If user is allowed to access the settings panel -> add the toggle button
             if not self.hide_settings_panel:
                 nav_bar_items.append(
                     Button(
@@ -443,6 +566,18 @@ class FHApp:
                         hx_target="#main",
                         hx_swap="outerHTML",
                         cls="primary-button",
+                    ),
+                )
+            if self.system_info is not None:
+                nav_bar_items.append(
+                    Button(
+                        self._system_button,
+                        id="system-button",
+                        hx_get="/system/show",
+                        hx_target="#main",
+                        hx_swap="outerHTML",
+                        cls="glass-icon-btn" if self.toggle_system else "secondary-button",
+                        uk_tooltip="title: Close View; pos: bottom" if self.toggle_system else None,
                     ),
                 )
         nav_bar = NavBar(

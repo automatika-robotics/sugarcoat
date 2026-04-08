@@ -893,3 +893,256 @@ dialog {
         opacity: 1;
     }
 }
+
+
+/* =========================================
+   SYSTEM VISUALIZATION
+   ========================================= */
+
+/* Run type badges */
+.run-type-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.run-type-badge.timed {
+    background-color: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+}
+
+.run-type-badge.server {
+    background-color: rgba(68, 122, 229, 0.15);
+    color: #447ae5;
+}
+
+.run-type-badge.action-server {
+    background-color: rgba(155, 89, 182, 0.15);
+    color: #9b59b6;
+}
+
+.run-type-badge.triggered {
+    background-color: rgba(230, 126, 34, 0.15);
+    color: #e67e22;
+}
+
+.run-type-badge.monitor {
+    background-color: rgba(241, 196, 15, 0.15);
+    color: #f1c40f;
+}
+
+html.light .run-type-badge.timed {
+    background-color: rgba(39, 174, 96, 0.15);
+    color: #1e8449;
+}
+
+html.light .run-type-badge.server {
+    background-color: rgba(41, 98, 199, 0.15);
+    color: #2962c7;
+}
+
+html.light .run-type-badge.action-server {
+    background-color: rgba(128, 57, 153, 0.15);
+    color: #803999;
+}
+
+html.light .run-type-badge.triggered {
+    background-color: rgba(200, 100, 20, 0.15);
+    color: #b35b13;
+}
+
+html.light .run-type-badge.monitor {
+    background-color: rgba(200, 160, 10, 0.15);
+    color: #9a7d0a;
+}
+
+/* System graph container — nodes are absolutely positioned by JS */
+.system-graph-container {
+    position: relative;
+    width: 100%;
+    min-height: 300px;
+    overflow: visible;
+}
+
+/* Component node cards — positioned absolutely by JS */
+.component-node {
+    position: absolute;
+    border: 1.5px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 0.4rem 0.7rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    background: var(--bg-card);
+    z-index: 2;
+    white-space: nowrap;
+}
+
+.component-node:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(232, 63, 63, 0.12);
+}
+
+.component-node.dimmed {
+    opacity: 0.3;
+}
+
+.component-node.external {
+    border-style: dashed;
+    opacity: 0.7;
+}
+
+.component-node.monitor-node {
+    border-color: rgba(241, 196, 15, 0.4);
+}
+
+.component-node.monitor-node:hover {
+    border-color: #f1c40f;
+    box-shadow: 0 0 0 3px rgba(241, 196, 15, 0.12);
+}
+
+/* SVG edge layer — fills the graph container */
+#topic-connections-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    overflow: visible;
+}
+
+.topic-line {
+    stroke: var(--text-muted);
+    stroke-width: 1.5;
+    fill: none;
+    opacity: 0.5;
+    transition: opacity 0.2s ease, stroke-width 0.2s ease;
+}
+
+.topic-line.highlighted {
+    opacity: 1;
+    stroke-width: 2.5;
+}
+
+.topic-arrow {
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+}
+
+.topic-arrow.highlighted {
+    opacity: 1;
+}
+
+.topic-label {
+    font-size: 0.65rem;
+    font-family: var(--font-body);
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+/* External topic stubs (unconnected inputs/outputs) */
+.topic-stub {
+    stroke-width: 1.5;
+    opacity: 0.5;
+    stroke-dasharray: 4 3;
+    transition: opacity 0.2s ease;
+}
+
+.topic-stub-arrow {
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+}
+
+.topic-stub-label {
+    font-size: 0.6rem;
+    font-family: var(--font-body);
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+/* Component detail panel */
+#component-detail-panel:not(:empty) {
+    border-top: 1px solid var(--border-subtle);
+    margin-top: 0.5rem;
+    animation: slideUp 0.3s ease-out;
+}
+
+/* Event rows */
+.event-row {
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 0.5rem 0;
+    transition: background-color 0.15s ease;
+}
+
+.event-row:hover {
+    background-color: var(--bg-hover);
+}
+
+.event-row:last-child {
+    border-bottom: none;
+}
+
+.event-condition {
+    font-family: var(--font-mono, monospace);
+    color: var(--term-green);
+    font-size: 0.85rem;
+}
+
+/* Fallback tiers */
+.fallback-tier {
+    padding: 0.2rem 0;
+    padding-left: 0.8rem;
+    border-left: 3px solid transparent;
+    margin-bottom: 0.15rem;
+}
+
+.fallback-tier.on_algorithm_fail {
+    border-left-color: #f1c40f;
+}
+
+.fallback-tier.on_component_fail {
+    border-left-color: #e67e22;
+}
+
+.fallback-tier.on_system_fail {
+    border-left-color: #e74c3c;
+}
+
+.fallback-tier.on_any_fail {
+    border-left-color: var(--secondary-color);
+}
+
+.fallback-tier.on_giveup {
+    border-left-color: var(--text-muted);
+}
+
+.fallback-tier.unconfigured {
+    opacity: 0.35;
+    border-left-color: var(--border-subtle);
+}
+
+/* Secondary button (for System nav button) */
+.secondary-button {
+    background-color: var(--secondary-color);
+    color: var(--btn-text);
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 1.1rem;
+    border: none;
+    padding: 0.5rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.3s ease;
+}
+
+.secondary-button:hover {
+    background-color: var(--secondary-color);
+    color: var(--btn-text);
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 5px rgba(68, 122, 229, 0.2);
+}

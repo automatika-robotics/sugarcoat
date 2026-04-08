@@ -126,7 +126,7 @@ class Task:
                     "Feedback Log",
                     cls="tomorrow-night-green",
                 ),
-                cls="flex flex-row justify-between items-start"
+                cls="flex flex-row justify-between items-start",
             )
             if self._status not in ["running", "active", "accepted", "inactive"]:
                 feedback_header(
@@ -1504,6 +1504,351 @@ def update_logging_card_with_loading(logging_card):
             name="loading-dots",
         )
     )
+
+
+# ---------------------------------------------------------
+
+
+# ------------- SYSTEM VISUALIZATION ELEMENTS -------------------
+
+
+def system_component_card(
+    node_name: str,
+    component_meta: Dict,
+    is_managed: bool,
+    is_monitor: bool,
+) -> FT:
+    """Create a compact card for a component in the system visualization.
+
+    :param node_name: ROS node name
+    :param component_meta: Component metadata from system info (run_type, component_type, in_topics, out_topics, etc.)
+    :param is_managed: Whether this is a Sugarcoat-managed component
+    :param is_monitor: Whether this is the Monitor node
+    :return: Component card UI element
+    """
+    import json as _json
+
+    # Run type from system info
+    if is_monitor:
+        run_type = "monitor"
+    elif "run_type" in component_meta:
+        raw = component_meta["run_type"].lower()
+        raw = raw.replace("actionserver", "action-server")
+        if raw == "event":
+            raw = "triggered"
+        run_type = raw
+    else:
+        run_type = "timed"
+
+    # Topics from Launcher's component metadata
+    pub_names = [t["name"] for t in component_meta.get("out_topics", [])]
+    sub_names = [t["name"] for t in component_meta.get("in_topics", [])]
+
+    # Component type label (class name like "SpeechToText")
+    comp_type_label = component_meta.get("component_type", "")
+
+    # Run type badge
+    badge_cls = f"run-type-badge {run_type}"
+    run_type_label = run_type.replace("-", " ").title()
+    if is_monitor:
+        run_type_label = "Monitor"
+
+    # Card style
+    card_cls = "component-node"
+    if is_monitor:
+        card_cls += " monitor-node"
+    elif not is_managed:
+        card_cls += " external"
+
+    body_items = [
+        H4(node_name, cls="text-sm font-bold"),
+        Span(run_type_label, cls=badge_cls),
+    ]
+    if comp_type_label:
+        body_items.append(
+            P(comp_type_label, cls="text-xs opacity-50"),
+        )
+
+    return Card(
+        DivVStacked(*body_items, cls="gap-1 items-center text-center"),
+        cls=card_cls,
+        id=f"node-{node_name}",
+        hx_get=f"/system/component/{node_name}",
+        hx_target="#component-detail-panel",
+        hx_swap="innerHTML",
+        # Data attributes for JS SVG drawing
+        data_node_name=node_name,
+        data_publishers=_json.dumps(pub_names),
+        data_subscribers=_json.dumps(sub_names),
+        data_action_name=component_meta.get("main_action_name", "") or "",
+        data_srv_name=component_meta.get("main_srv_name", "") or "",
+    )
+
+
+def system_component_detail(
+    node_name: str,
+    graph_data: Dict,
+    config_data: Dict,
+    system_info: Optional[Dict],
+) -> FT:
+    """Build a detail panel for a specific component.
+
+    :param node_name: Component node name
+    :param graph_data: Live graph data for this component
+    :param config_data: Config field metadata (if managed component)
+    :param system_info: System info with events and fallbacks
+    :return: Detail panel UI element
+    """
+    detail = Card(
+        cls="inner-main-card p-4 mt-2",
+        id="component-detail-content",
+    )
+
+    # Header with close button
+    header = DivHStacked(
+        H3(node_name, cls="cool-subtitle-mini-blue"),
+        Button(
+            UkIcon("x"),
+            cls="glass-icon-btn",
+            type="button",
+            onclick="document.getElementById('component-detail-panel').innerHTML = ''",
+        ),
+        cls="justify-between items-center mb-4",
+    )
+    detail(header)
+
+    content_grid = Grid(cols=2, cls="gap-4")
+
+    # --- Inputs ---
+    in_topics = graph_data.get("in_topics", [])
+    if in_topics:
+        in_list = Div(H5("Inputs", cls="cool-subtitle-mini-blue mb-2"))
+        for t in in_topics:
+            in_list(
+                P(
+                    Span(t["name"], cls="font-mono text-sm"),
+                    Span(f" ({t.get('msg_type', '')})", cls="text-xs opacity-60"),
+                    cls="ml-2",
+                )
+            )
+        content_grid(in_list)
+
+    # --- Outputs ---
+    out_topics = graph_data.get("out_topics", [])
+    if out_topics:
+        out_list = Div(H5("Outputs", cls="cool-subtitle-mini-blue mb-2"))
+        for t in out_topics:
+            out_list(
+                P(
+                    Span(t["name"], cls="font-mono text-sm"),
+                    Span(f" ({t.get('msg_type', '')})", cls="text-xs opacity-60"),
+                    cls="ml-2",
+                )
+            )
+        content_grid(out_list)
+
+    detail(content_grid)
+
+    # --- Config summary (for managed components) ---
+    if config_data:
+        config_section = Div(
+            H5("Configuration", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+        )
+        config_grid = Grid(cols=4, cls="gap-2")
+        for param_name, param_details in config_data.items():
+            if param_name.startswith("_"):
+                continue
+            value = param_details.get("value", "")
+            config_grid(
+                DivLAligned(
+                    P(
+                        Span(param_name, cls="font-bold text-sm"),
+                        Span(f": {value}", cls="text-sm opacity-80"),
+                    ),
+                )
+            )
+        config_section(config_grid)
+        detail(config_section)
+
+    # --- Related events ---
+    if system_info:
+        events = system_info.get("events", [])
+        related_events = [
+            e
+            for e in events
+            if any(a.get("component") == node_name for a in e.get("actions", []))
+        ]
+        if related_events:
+            events_section = Div(
+                H5("Related Events", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+            )
+            for ev in related_events:
+                events_section(
+                    P(
+                        Span("Event: ", cls="font-bold"),
+                        Span(ev.get("readable", ""), cls="event-condition"),
+                        cls="ml-2 text-sm",
+                    )
+                )
+            detail(events_section)
+
+        # --- Fallbacks ---
+        fallbacks = system_info.get("fallbacks", {}).get(node_name)
+        if fallbacks:
+            fb_section = Div(
+                H5("Fallbacks", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+            )
+            for tier, fb_config in fallbacks.items():
+                tier_label = tier.replace("_", " ").title()
+                if fb_config:
+                    actions_str = ", ".join(fb_config.get("actions", []))
+                    retries = fb_config.get("max_retries")
+                    retries_str = (
+                        f" (max {retries} retries)"
+                        if retries
+                        else " (unlimited retries)"
+                    )
+                    fb_section(
+                        P(
+                            Span(f"{tier_label}: ", cls="font-bold"),
+                            Span(actions_str, cls="font-mono text-sm"),
+                            Span(retries_str, cls="text-xs opacity-60"),
+                            cls=f"ml-2 text-sm fallback-tier {tier}",
+                        )
+                    )
+                else:
+                    fb_section(
+                        P(
+                            Span(f"{tier_label}: ", cls="font-bold"),
+                            Span("not configured", cls="text-xs opacity-40"),
+                            cls=f"ml-2 text-sm fallback-tier unconfigured",
+                        )
+                    )
+            detail(fb_section)
+
+    return detail
+
+
+def system_event_row(event_data: Dict) -> FT:
+    """Create a collapsible row for an event in the system visualization.
+
+    :param event_data: Event data from system info
+    :return: Event row UI element
+    """
+    event_id = event_data.get("id", "")
+    readable = event_data.get("readable", "Unknown condition")
+    actions = event_data.get("actions", [])
+    involved_topics = event_data.get("involved_topics", [])
+    handle_once = event_data.get("handle_once", False)
+    on_change = event_data.get("on_change", False)
+    detail_id = f"event-detail-{event_id[:8]}"
+
+    # Collapsed header
+    header = DivHStacked(
+        Span(readable, cls="event-condition text-sm"),
+        DivHStacked(
+            Span(
+                f"{len(actions)} action{'s' if len(actions) != 1 else ''}",
+                cls="status-badge active",
+            ),
+            _toggle_button(div_to_toggle=detail_id),
+            cls="gap-2",
+        ),
+        cls="justify-between items-center event-row p-2",
+    )
+
+    # Expanded details
+    detail = Div(
+        id=detail_id,
+        hidden=True,
+        style="display: none;",
+        cls="p-3 ml-4",
+    )
+
+    # Flags
+    flags = DivHStacked(cls="gap-2 mb-2")
+    if handle_once:
+        flags(Span("handle once", cls="status-badge inactive text-xs"))
+    if on_change:
+        flags(Span("on change", cls="status-badge inactive text-xs"))
+    if involved_topics:
+        flags(
+            Span(
+                f"topics: {', '.join(involved_topics)}",
+                cls="text-xs opacity-60",
+            )
+        )
+    detail(flags)
+
+    # Actions list
+    for action in actions:
+        action_name = action.get("name", "")
+        component = action.get("component", None)
+        action_type = action.get("type", "")
+        target = f" → {component}" if component else ""
+        detail(
+            P(
+                Span(action_name, cls="font-mono font-bold text-sm"),
+                Span(target, cls="text-sm"),
+                Span(f" [{action_type}]", cls="text-xs opacity-60"),
+                cls="ml-2",
+            )
+        )
+
+    return Div(header, detail)
+
+
+def system_fallback_card(component_name: str, fallback_config: Dict) -> FT:
+    """Create a card showing fallback strategy for a component.
+
+    :param component_name: Component node name
+    :param fallback_config: Fallback configuration dict
+    :return: Fallback card UI element
+    """
+    # Check if any tier is configured
+    has_any = any(v is not None for v in fallback_config.values())
+
+    card = Card(
+        H4(component_name, cls="text-sm font-bold mb-2"),
+        cls="inner-main-card p-3 m-1",
+    )
+
+    if not has_any:
+        card(P("No fallbacks configured", cls="text-xs opacity-40 ml-2"))
+        return card
+
+    tier_order = [
+        ("on_algorithm_fail", "Algorithm Fail"),
+        ("on_component_fail", "Component Fail"),
+        ("on_system_fail", "System Fail"),
+        ("on_any_fail", "Any Fail"),
+        ("on_giveup", "Give Up"),
+    ]
+
+    for tier_key, tier_label in tier_order:
+        fb = fallback_config.get(tier_key)
+        if fb:
+            actions_str = ", ".join(fb.get("actions", []))
+            retries = fb.get("max_retries")
+            retries_str = f"max {retries}" if retries is not None else "unlimited"
+            card(
+                P(
+                    Span(f"{tier_label}: ", cls="font-bold text-sm"),
+                    Span(actions_str, cls="font-mono text-sm"),
+                    Span(f" ({retries_str})", cls="text-xs opacity-60"),
+                    cls=f"ml-2 fallback-tier {tier_key}",
+                )
+            )
+        else:
+            card(
+                P(
+                    Span(f"{tier_label}: ", cls="font-bold text-sm"),
+                    Span("—", cls="opacity-30"),
+                    cls="ml-2 fallback-tier unconfigured",
+                )
+            )
+
+    return card
 
 
 # ---------------------------------------------------------
