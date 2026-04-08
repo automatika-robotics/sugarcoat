@@ -854,6 +854,133 @@ class Launcher:
 
         self._setup_internal_events_handlers()
 
+    def _build_system_info(self) -> str:
+        """Build a compact JSON string with events/actions/fallbacks for the UI system visualization.
+
+        Contains only data that cannot be discovered at runtime via rclpy APIs.
+        Called after _setup_events_actions() has resolved all event/action mappings.
+
+        :return: JSON string with events, actions, and fallback configurations
+        :rtype: str
+        """
+        # --- Build events ---
+        events_list = []
+        for event, actions_list in self._events_actions.items():
+            event_info = {
+                "id": event.id,
+                "readable": event._condition._readable(),
+                "handle_once": event._handle_once,
+                "on_change": event._on_change,
+                "keep_event_delay": event._keep_event_delay,
+                "involved_topics": [
+                    t.name for t in event.get_involved_topics()
+                ],
+                "actions": [],
+            }
+            for action in actions_list:
+                if isinstance(action, ROSLaunchAction) and not isinstance(
+                    action, Action
+                ):
+                    event_info["actions"].append(
+                        {"name": type(action).__name__, "component": None, "type": "launch"}
+                    )
+                elif isinstance(action, Action):
+                    if action._is_lifecycle_action:
+                        a_type = "lifecycle"
+                    elif action._is_monitor_action:
+                        a_type = "monitor"
+                    elif action.component_action:
+                        a_type = "component"
+                    else:
+                        a_type = "launch"
+                    event_info["actions"].append(
+                        {
+                            "name": action.action_name,
+                            "component": action.parent_component,
+                            "type": a_type,
+                        }
+                    )
+            events_list.append(event_info)
+
+        # --- Build fallbacks ---
+        fallbacks_dict = {}
+        for component in self._components:
+            comp_fallbacks = component._BaseComponent__fallbacks
+            comp_fb = {}
+            for tier in [
+                "on_any_fail",
+                "on_component_fail",
+                "on_algorithm_fail",
+                "on_system_fail",
+                "on_giveup",
+            ]:
+                fallback = getattr(comp_fallbacks, tier, None)
+                if fallback is None:
+                    comp_fb[tier] = None
+                else:
+                    try:
+                        actions = fallback.action
+                        if isinstance(actions, list):
+                            action_names = [a.action_name for a in actions]
+                        else:
+                            action_names = [actions.action_name]
+                    except Exception:
+                        action_names = ["unknown"]
+                    comp_fb[tier] = {
+                        "actions": action_names,
+                        "max_retries": fallback.max_retries,
+                    }
+            fallbacks_dict[component.node_name] = comp_fb
+
+        # --- Build component metadata (run types, class names) ---
+        # Internal topic suffixes to filter out
+        _internal_suffixes = (
+            "/status", "/transition_event",
+            "/describe_parameters", "/get_parameters", "/get_parameter_types",
+            "/list_parameters", "/set_parameters", "/set_parameters_atomically",
+        )
+        _internal_names = ("parameter_events", "rosout", "clock")
+
+        def _is_internal_topic(name: str) -> bool:
+            stripped = name.lstrip("/")
+            if stripped in _internal_names:
+                return True
+            return any(stripped.endswith(s.lstrip("/")) for s in _internal_suffixes)
+
+        components_meta = {}
+        for component in self._components:
+            in_topics = []
+            if hasattr(component, "in_topics") and component.in_topics:
+                for t in component.in_topics:
+                    if _is_internal_topic(t.name):
+                        continue
+                    msg_name = t.msg_type.__name__ if hasattr(t.msg_type, "__name__") else str(t.msg_type)
+                    in_topics.append({"name": t.name, "msg_type": msg_name})
+
+            out_topics = []
+            if hasattr(component, "out_topics") and component.out_topics:
+                for t in component.out_topics:
+                    if _is_internal_topic(t.name):
+                        continue
+                    msg_name = t.msg_type.__name__ if hasattr(t.msg_type, "__name__") else str(t.msg_type)
+                    out_topics.append({"name": t.name, "msg_type": msg_name})
+
+            components_meta[component.node_name] = {
+                "run_type": str(component.run_type),
+                "component_type": type(component).__name__,
+                "main_action_name": component.main_action_name,
+                "main_srv_name": component.main_srv_name,
+                "in_topics": in_topics,
+                "out_topics": out_topics,
+            }
+
+        system_info = {
+            "components": components_meta,
+            "events": events_list,
+            "fallbacks": fallbacks_dict,
+        }
+        return json.dumps(system_info)
+
     def _setup_ui_node(self) -> None:
         """Adds a node to communicate between launched components and web client
 
@@ -882,6 +1009,8 @@ class Launcher:
             json.dumps(self._ui_output_elements),
             "--ui_service_clients",
             ui_node._client_inputs_json,
+            "--system_info",
+            self._build_system_info(),
             "--ros-args",
             "--log-level",
             "info",
