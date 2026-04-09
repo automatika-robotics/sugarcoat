@@ -126,7 +126,7 @@ class Task:
                     "Feedback Log",
                     cls="tomorrow-night-green",
                 ),
-                cls="flex flex-row justify-between items-start"
+                cls="flex flex-row justify-between items-start",
             )
             if self._status not in ["running", "active", "accepted", "inactive"]:
                 feedback_header(
@@ -1504,6 +1504,533 @@ def update_logging_card_with_loading(logging_card):
             name="loading-dots",
         )
     )
+
+
+# ---------------------------------------------------------
+
+
+# ------------- SYSTEM VISUALIZATION ELEMENTS -------------------
+
+
+def system_event_node(event_data: Dict) -> FT:
+    """Create a diamond-shaped node for an event in the system graph.
+
+    :param event_data: Event data from system info
+    :return: Event node UI element
+    """
+    import json as _json
+
+    event_id = event_data.get("id", "")
+    condition_parts = event_data.get("condition_parts", [])
+    involved_topics = event_data.get("involved_topics", [])
+    actions = event_data.get("actions", [])
+
+    # Classify actions into component-targeted and recipe-level
+    component_actions = []
+    recipe_actions = []
+    for a in actions:
+        if a.get("component"):
+            component_actions.append(a)
+        else:
+            recipe_actions.append(a)
+
+    # Determine the main symbol to show in the diamond
+    # For composed conditions: show the logic operator symbol
+    # For simple conditions: show the comparison operator symbol
+    display_parts = []
+
+    has_logic = any(p["type"] == "logic" for p in condition_parts)
+    if has_logic:
+        seen = set()
+        for part in condition_parts:
+            if part["type"] == "logic" and part["value"] not in seen:
+                seen.add(part["value"])
+                display_parts.append(Span(part["value"], cls="cond-logic-symbol"))
+    else:
+        # Simple condition — show operator symbol
+        for part in condition_parts:
+            if part["type"] == "operator":
+                display_parts.append(Span(part["value"], cls="cond-operator"))
+
+    if not display_parts:
+        display_parts = [Span("?", cls="cond-operator")]
+
+    # Indicators
+    indicators = []
+    if event_data.get("on_change"):
+        rising_edge_svg = NotStr(
+            '<svg class="event-indicator-icon" viewBox="0 0 20 14" width="16" height="11">'
+            '<polyline points="0,12 8,12 8,2 20,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter"/>'
+            "</svg>"
+        )
+        indicators.append(rising_edge_svg)
+
+    if event_data.get("handle_once"):
+        indicators.append(Span("1×", cls="event-once-label"))
+
+    keep_delay = event_data.get("keep_event_delay", 0.0)
+    if keep_delay and keep_delay > 0:
+        delay_str = (
+            f"{keep_delay}s" if keep_delay == int(keep_delay) else f"{keep_delay:.1f}s"
+        )
+        indicators.append(Span(f"⏱ {delay_str}", cls="event-delay-label"))
+
+    content_children = list(display_parts)
+    if indicators:
+        content_children.append(Div(*indicators, cls="event-indicators"))
+
+    return Div(
+        Div(
+            *content_children,
+            cls="event-diamond-content",
+        ),
+        cls="event-diamond",
+        id=f"event-{event_id[:8]}",
+        # Clickable — loads detail into panel
+        hx_get=f"/system/event/{event_id[:8]}",
+        hx_target="#component-detail-panel",
+        hx_swap="innerHTML",
+        # Data attributes for JS
+        data_node_type="event",
+        data_event_id=event_id,
+        data_involved_topics=_json.dumps(involved_topics),
+        data_component_actions=_json.dumps(component_actions),
+        data_recipe_actions=_json.dumps(recipe_actions),
+    )
+
+
+def system_recipe_action_node(action_data: Dict, event_id: str) -> FT:
+    """Create an oval-shaped node for a recipe-level action in the system graph.
+
+    :param action_data: Action data dict with name and type
+    :param event_id: Parent event ID
+    :return: Action node UI element
+    """
+    action_name = action_data.get("name", "?")
+
+    return Div(
+        P(action_name, cls="text-xs font-mono"),
+        cls="recipe-action-oval",
+        id=f"action-{event_id[:8]}-{action_name}",
+        data_node_type="recipe_action",
+        data_parent_event=event_id,
+    )
+
+
+def system_component_card(
+    node_name: str,
+    component_meta: Dict,
+    is_managed: bool,
+    is_monitor: bool,
+) -> FT:
+    """Create a compact card for a component in the system visualization.
+
+    :param node_name: ROS node name
+    :param component_meta: Component metadata from system info (run_type, component_type, in_topics, out_topics, etc.)
+    :param is_managed: Whether this is a Sugarcoat-managed component
+    :param is_monitor: Whether this is the Monitor node
+    :return: Component card UI element
+    """
+    import json as _json
+
+    # Run type from system info
+    if is_monitor:
+        run_type = "monitor"
+    elif "run_type" in component_meta:
+        raw = component_meta["run_type"].lower()
+        raw = raw.replace("actionserver", "action-server")
+        if raw == "event":
+            raw = "triggered"
+        run_type = raw
+    else:
+        run_type = "timed"
+
+    # Topics from Launcher's component metadata
+    pub_names = [t["name"] for t in component_meta.get("out_topics", [])]
+    sub_names = [t["name"] for t in component_meta.get("in_topics", [])]
+
+    # Component type label (class name like "SpeechToText")
+    comp_type_label = component_meta.get("component_type", "")
+
+    # Run type badge
+    badge_cls = f"run-type-badge {run_type}"
+    run_type_label = run_type.replace("-", " ").title()
+    if is_monitor:
+        run_type_label = "Monitor"
+
+    # Card style
+    card_cls = "component-node"
+    if is_monitor:
+        card_cls += " monitor-node"
+    elif not is_managed:
+        card_cls += " external"
+
+    body_items = [
+        H4(node_name, cls="text-sm font-bold"),
+        Span(run_type_label, cls=badge_cls),
+    ]
+    if comp_type_label:
+        body_items.append(
+            P(comp_type_label, cls="text-xs opacity-50"),
+        )
+
+    return Card(
+        DivVStacked(*body_items, cls="gap-1 items-center text-center"),
+        cls=card_cls,
+        id=f"node-{node_name}",
+        hx_get=f"/system/component/{node_name}",
+        hx_target="#component-detail-panel",
+        hx_swap="innerHTML",
+        # Data attributes for JS SVG drawing
+        data_node_name=node_name,
+        data_publishers=_json.dumps(pub_names),
+        data_subscribers=_json.dumps(sub_names),
+        data_action_name=component_meta.get("main_action_name", "") or "",
+        data_srv_name=component_meta.get("main_srv_name", "") or "",
+    )
+
+
+def _render_config_summary(config_data: Dict, indent: int = 0) -> FT:
+    """Render a read-only config summary, handling nested BaseAttrs recursively.
+
+    :param config_data: Config field metadata dict
+    :param indent: Nesting level for visual indentation
+    :return: Grid of config parameters
+    """
+    grid = Grid(cols=4, cls=f"gap-2 {'ml-4' if indent > 0 else ''}")
+    for param_name, param_details in config_data.items():
+        if param_name.startswith("_"):
+            continue
+        field_type, _ = parse_type(param_details.get("type", ""))
+        value = param_details.get("value", "")
+
+        if field_type == "BaseAttrs" and isinstance(value, dict):
+            # Nested config — render as collapsible section
+            section_id = f"detail-config-{param_name}-{indent}"
+            nested_header = DivLAligned(
+                Span(param_name, cls="font-bold text-sm"),
+                _toggle_button(div_to_toggle=section_id),
+                cls="gap-1",
+            )
+            nested_content = Div(
+                _render_config_summary(value, indent + 1),
+                id=section_id,
+                hidden=True,
+                style="display: none;",
+            )
+            grid(Div(nested_header, nested_content, cls="col-span-full"))
+        else:
+            grid(
+                DivLAligned(
+                    P(
+                        Span(param_name, cls="font-bold text-sm"),
+                        Span(f": {value}", cls="text-sm opacity-80"),
+                    ),
+                )
+            )
+    return grid
+
+
+def system_component_detail(
+    node_name: str,
+    graph_data: Dict,
+    config_data: Dict,
+    system_info: Optional[Dict],
+) -> FT:
+    """Build a detail panel for a specific component.
+
+    :param node_name: Component node name
+    :param graph_data: Live graph data for this component
+    :param config_data: Config field metadata (if managed component)
+    :param system_info: System info with events and fallbacks
+    :return: Detail panel UI element
+    """
+    detail = Card(
+        cls="inner-main-card p-4 mt-2",
+        id="component-detail-content",
+    )
+
+    # Header with close button
+    header = DivHStacked(
+        H3(node_name, cls="cool-subtitle-mini-blue"),
+        Button(
+            UkIcon("x"),
+            cls="glass-icon-btn",
+            type="button",
+            onclick="document.getElementById('component-detail-panel').innerHTML = ''",
+        ),
+        cls="justify-between items-center mb-4",
+    )
+    detail(header)
+
+    content_grid = Grid(cols=2, cls="gap-4")
+
+    # --- Inputs ---
+    in_topics = graph_data.get("in_topics", [])
+    if in_topics:
+        in_list = Div(H5("Inputs", cls="cool-subtitle-mini-blue mb-2"))
+        for t in in_topics:
+            in_list(
+                P(
+                    Span(t["name"], cls="font-mono text-sm"),
+                    Span(f" ({t.get('msg_type', '')})", cls="text-xs opacity-60"),
+                    cls="ml-2",
+                )
+            )
+        content_grid(in_list)
+
+    # --- Outputs ---
+    out_topics = graph_data.get("out_topics", [])
+    if out_topics:
+        out_list = Div(H5("Outputs", cls="cool-subtitle-mini-blue mb-2"))
+        for t in out_topics:
+            out_list(
+                P(
+                    Span(t["name"], cls="font-mono text-sm"),
+                    Span(f" ({t.get('msg_type', '')})", cls="text-xs opacity-60"),
+                    cls="ml-2",
+                )
+            )
+        content_grid(out_list)
+
+    detail(content_grid)
+
+    # --- Config summary (for managed components, handles nested attrs) ---
+    if config_data:
+        config_section = Div(
+            H5("Configuration", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+        )
+        config_section(_render_config_summary(config_data))
+        detail(config_section)
+
+    # --- Related events ---
+    if system_info:
+        events = system_info.get("events", [])
+        related_events = [
+            e
+            for e in events
+            if any(a.get("component") == node_name for a in e.get("actions", []))
+        ]
+        if related_events:
+            events_section = Div(
+                H5("Related Events", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+            )
+            for ev in related_events:
+                events_section(
+                    P(
+                        Span("Event: ", cls="font-bold"),
+                        Span(ev.get("readable", ""), cls="event-condition"),
+                        cls="ml-2 text-sm",
+                    )
+                )
+            detail(events_section)
+
+        # --- Fallbacks ---
+        fallbacks = system_info.get("fallbacks", {}).get(node_name)
+        if fallbacks:
+            fb_section = Div(
+                H5("Fallbacks", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+            )
+            for tier, fb_config in fallbacks.items():
+                tier_label = tier.replace("_", " ").title()
+                if fb_config:
+                    actions_str = ", ".join(fb_config.get("actions", []))
+                    retries = fb_config.get("max_retries")
+                    retries_str = (
+                        f" (max {retries} retries)"
+                        if retries
+                        else " (unlimited retries)"
+                    )
+                    fb_section(
+                        P(
+                            Span(f"{tier_label}: ", cls="font-bold"),
+                            Span(actions_str, cls="font-mono text-sm"),
+                            Span(retries_str, cls="text-xs opacity-60"),
+                            cls=f"ml-2 text-sm fallback-tier {tier}",
+                        )
+                    )
+                else:
+                    fb_section(
+                        P(
+                            Span(f"{tier_label}: ", cls="font-bold"),
+                            Span("not configured", cls="text-xs opacity-40"),
+                            cls="ml-2 text-sm fallback-tier unconfigured",
+                        )
+                    )
+            detail(fb_section)
+
+    return detail
+
+
+def system_event_detail(event_data: Dict) -> FT:
+    """Build a detail panel for a specific event.
+
+    :param event_data: Event data from system info
+    :return: Detail panel UI element
+    """
+    event_id = event_data.get("id", "")
+    readable = event_data.get("readable", "?")
+    condition_parts = event_data.get("condition_parts", [])
+    involved_topics = event_data.get("involved_topics", [])
+    actions = event_data.get("actions", [])
+
+    detail = Card(
+        cls="inner-main-card p-4 mt-2",
+        id="event-detail-content",
+    )
+
+    # Header
+    header = DivHStacked(
+        H3("Event", cls="cool-subtitle-mini-blue"),
+        Span(event_id[:8], cls="text-xs font-mono opacity-40"),
+        Button(
+            UkIcon("x"),
+            cls="glass-icon-btn",
+            type="button",
+            onclick="document.getElementById('component-detail-panel').innerHTML = ''",
+        ),
+        cls="justify-between items-center mb-4",
+    )
+    detail(header)
+
+    # Full condition with styled parts
+    cond_display = Div(
+        H5("Condition", cls="cool-subtitle-mini-blue mb-2"),
+    )
+    cond_line = P(cls="ml-2 font-mono text-sm")
+    for part in condition_parts:
+        if part["type"] == "topic":
+            cond_line(Span(part["value"], cls="cond-topic"))
+            cond_line(Span(".", cls="cond-attribute"))
+        elif part["type"] == "attribute":
+            cond_line(Span(part["value"], cls="cond-attribute"))
+        elif part["type"] == "operator":
+            cond_line(Span(f" {part['value']} ", cls="cond-operator"))
+        elif part["type"] == "ref_value":
+            cond_line(Span(part["value"], cls="cond-ref-value"))
+        elif part["type"] == "logic":
+            cond_line(Span(f" {part['value']} ", cls="cond-logic"))
+    cond_display(cond_line)
+    detail(cond_display)
+
+    # Readable (full string)
+    detail(
+        P(
+            Span("Full expression: ", cls="font-bold text-sm"),
+            Span(readable, cls="font-mono text-sm opacity-70"),
+            cls="ml-2 mt-2",
+        )
+    )
+
+    # Involved topics
+    if involved_topics:
+        topics_section = Div(
+            H5("Involved Topics", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+        )
+        for t in involved_topics:
+            topics_section(P(t, cls="ml-2 font-mono text-sm"))
+        detail(topics_section)
+
+    # Flags
+    flags_section = Div(
+        H5("Properties", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+    )
+    flags_section(
+        P(
+            Span("On change: ", cls="font-bold text-sm"),
+            Span("Yes" if event_data.get("on_change") else "No", cls="text-sm"),
+            cls="ml-2",
+        )
+    )
+    flags_section(
+        P(
+            Span("Handle once: ", cls="font-bold text-sm"),
+            Span("Yes" if event_data.get("handle_once") else "No", cls="text-sm"),
+            cls="ml-2",
+        )
+    )
+    keep_delay = event_data.get("keep_event_delay", 0.0)
+    if keep_delay and keep_delay > 0:
+        flags_section(
+            P(
+                Span("Event delay: ", cls="font-bold text-sm"),
+                Span(f"{keep_delay}s", cls="text-sm"),
+                cls="ml-2",
+            )
+        )
+    detail(flags_section)
+
+    # Actions
+    if actions:
+        actions_section = Div(
+            H5("Actions", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+        )
+        for a in actions:
+            target = f" → {a['component']}" if a.get("component") else ""
+            actions_section(
+                P(
+                    Span(a["name"], cls="font-mono font-bold text-sm"),
+                    Span(target, cls="text-sm"),
+                    Span(f" [{a.get('type', '')}]", cls="text-xs opacity-60"),
+                    cls="ml-2",
+                )
+            )
+        detail(actions_section)
+
+    return detail
+
+
+def system_fallback_card(component_name: str, fallback_config: Dict) -> FT:
+    """Create a card showing fallback strategy for a component.
+
+    :param component_name: Component node name
+    :param fallback_config: Fallback configuration dict
+    :return: Fallback card UI element
+    """
+    # Check if any tier is configured
+    has_any = any(v is not None for v in fallback_config.values())
+
+    card = Card(
+        H4(component_name, cls="text-sm font-bold mb-2"),
+        cls="inner-main-card p-3 m-1",
+    )
+
+    if not has_any:
+        card(P("No fallbacks configured", cls="text-xs opacity-40 ml-2"))
+        return card
+
+    tier_order = [
+        ("on_algorithm_fail", "Algorithm Fail"),
+        ("on_component_fail", "Component Fail"),
+        ("on_system_fail", "System Fail"),
+        ("on_any_fail", "Any Fail"),
+        ("on_giveup", "Give Up"),
+    ]
+
+    for tier_key, tier_label in tier_order:
+        fb = fallback_config.get(tier_key)
+        if fb:
+            actions_str = ", ".join(fb.get("actions", []))
+            retries = fb.get("max_retries")
+            retries_str = f"max {retries}" if retries is not None else "unlimited"
+            card(
+                P(
+                    Span(f"{tier_label}: ", cls="font-bold text-sm"),
+                    Span(actions_str, cls="font-mono text-sm"),
+                    Span(f" ({retries_str})", cls="text-xs opacity-60"),
+                    cls=f"ml-2 fallback-tier {tier_key}",
+                )
+            )
+        else:
+            card(
+                P(
+                    Span(f"{tier_label}: ", cls="font-bold text-sm"),
+                    Span("—", cls="opacity-30"),
+                    cls="ml-2 fallback-tier unconfigured",
+                )
+            )
+
+    return card
 
 
 # ---------------------------------------------------------

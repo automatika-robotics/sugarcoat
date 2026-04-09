@@ -43,6 +43,11 @@ from rclpy import logging
 from rclpy.lifecycle.managed_entity import ManagedEntity
 
 from . import logger
+from .system_info import (
+    serialize_component,
+    serialize_event,
+    serialize_fallbacks,
+)
 from ..io import Topic
 from ..io.supported_types import _additional_types
 from ..core.action import LogInfo
@@ -854,6 +859,29 @@ class Launcher:
 
         self._setup_internal_events_handlers()
 
+    def _build_system_info(self) -> str:
+        """Build a compact JSON string with component metadata, events/actions, and fallbacks
+        for the UI system visualization.
+
+        Called after _setup_events_actions() has resolved all event/action mappings.
+
+        :return: JSON string with system info
+        :rtype: str
+        """
+        system_info = {
+            "components": {
+                comp.node_name: serialize_component(comp) for comp in self._components
+            },
+            "events": [
+                serialize_event(event, actions)
+                for event, actions in self._events_actions.items()
+            ],
+            "fallbacks": {
+                comp.node_name: serialize_fallbacks(comp) for comp in self._components
+            },
+        }
+        return json.dumps(system_info)
+
     def _setup_ui_node(self) -> None:
         """Adds a node to communicate between launched components and web client
 
@@ -882,6 +910,8 @@ class Launcher:
             json.dumps(self._ui_output_elements),
             "--ui_service_clients",
             ui_node._client_inputs_json,
+            "--system_info",
+            self._build_system_info(),
             "--ros-args",
             "--log-level",
             "info",

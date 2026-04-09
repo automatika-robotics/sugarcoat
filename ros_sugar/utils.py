@@ -312,7 +312,8 @@ def has_decorator(method: Callable, decorator_name: str):
         for i in inspect.getsource(method).split("\n")
         if i.strip().startswith("@")
     ]
-    return f"@{decorator_name}" in decorators
+    target = f"@{decorator_name}"
+    return any(d == target or d.startswith(f"{target}(") for d in decorators)
 
 
 def get_methods_with_decorator(obj, decorator_name: str) -> List[str]:
