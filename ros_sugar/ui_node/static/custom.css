@@ -1142,19 +1142,19 @@ html.light .run-type-badge.monitor {
 
 .topic-line {
     stroke: var(--text-muted);
-    stroke-width: 1.5;
+    stroke-width: 2;
     fill: none;
-    opacity: 0.5;
+    opacity: 0.6;
     transition: opacity 0.2s ease, stroke-width 0.2s ease;
 }
 
 .topic-line.highlighted {
     opacity: 1;
-    stroke-width: 2.5;
+    stroke-width: 3;
 }
 
 .topic-arrow {
-    opacity: 0.5;
+    opacity: 0.6;
     transition: opacity 0.2s ease;
 }
 
@@ -1163,29 +1163,31 @@ html.light .run-type-badge.monitor {
 }
 
 .topic-label {
-    font-size: clamp(0.65rem, 0.8vw, 0.9rem);
+    font-size: clamp(0.75rem, 0.9vw, 1rem);
     font-family: var(--font-body);
-    opacity: 0.7;
+    font-weight: 600;
+    opacity: 0.85;
     transition: opacity 0.2s ease;
 }
 
 /* External topic stubs (unconnected inputs/outputs) */
 .topic-stub {
-    stroke-width: 1.5;
-    opacity: 0.5;
+    stroke-width: 2;
+    opacity: 0.6;
     stroke-dasharray: 4 3;
     transition: opacity 0.2s ease;
 }
 
 .topic-stub-arrow {
-    opacity: 0.5;
+    opacity: 0.6;
     transition: opacity 0.2s ease;
 }
 
 .topic-stub-label {
-    font-size: clamp(0.6rem, 0.75vw, 0.85rem);
+    font-size: clamp(0.7rem, 0.85vw, 0.95rem);
     font-family: var(--font-body);
-    opacity: 0.7;
+    font-weight: 600;
+    opacity: 0.85;
     transition: opacity 0.2s ease;
 }
 

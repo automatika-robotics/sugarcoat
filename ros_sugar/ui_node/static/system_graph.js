@@ -10,10 +10,35 @@ const NODE_V_GAP = 130;
 const PADDING_X = 40;
 const PADDING_Y = 60;
 
-const EDGE_PALETTE = [
+const EDGE_PALETTE_DARK = [
     "#E83F3F", "#447AE5", "#2ECC71", "#9B59B6", "#F1C40F",
     "#E67E22", "#1ABC9C", "#FF69B4", "#00CED1", "#FF6347",
 ];
+
+const EDGE_PALETTE_LIGHT = [
+    "#C0392B", "#2255B8", "#1D8348", "#7D3C98", "#B7950B",
+    "#BA4A00", "#0E6655", "#C71585", "#008B8B", "#CC3C28",
+];
+
+function isLightMode() {
+    return document.documentElement.classList.contains("light");
+}
+
+function getEdgePalette() {
+    return isLightMode() ? EDGE_PALETTE_LIGHT : EDGE_PALETTE_DARK;
+}
+
+// Maps dark palette colors to their light equivalents and vice-versa
+function mapColorToTheme(color) {
+    const darkIdx = EDGE_PALETTE_DARK.indexOf(color);
+    if (darkIdx !== -1) return getEdgePalette()[darkIdx];
+    const lightIdx = EDGE_PALETTE_LIGHT.indexOf(color);
+    if (lightIdx !== -1) return getEdgePalette()[lightIdx];
+    return color;
+}
+
+// Legacy reference kept for compatibility
+const EDGE_PALETTE = EDGE_PALETTE_DARK;
 
 // Entry corners for event diamond inputs (bottom reserved for outputs)
 const ENTRY_CORNERS = ["top", "left", "right"];
@@ -217,7 +242,8 @@ function drawTopicConnections() {
 
     function getColor(topic) {
         if (!topicColors[topic]) {
-            topicColors[topic] = EDGE_PALETTE[colorIdx++ % EDGE_PALETTE.length];
+            const palette = getEdgePalette();
+            topicColors[topic] = palette[colorIdx++ % palette.length];
         }
         return topicColors[topic];
     }
@@ -453,7 +479,8 @@ function drawStubRow(svg, cRect, nRect, topics, topicColors, direction, nodeId) 
     const edgeY = direction === "input" ? (nRect.top - cRect.top) : (nRect.bottom - cRect.top);
 
     topics.forEach((topic, idx) => {
-        const color = topicColors[topic] || EDGE_PALETTE[idx % EDGE_PALETTE.length];
+        const palette = getEdgePalette();
+        const color = topicColors[topic] || palette[idx % palette.length];
         if (!topicColors[topic]) topicColors[topic] = color;
         const shortName = topic.startsWith("/") ? topic.slice(1) : topic;
 
@@ -685,4 +712,12 @@ document.addEventListener("DOMContentLoaded", () => {
             setTimeout(drawTopicConnections, 100);
         }
     }).observe(document.body, { childList: true, subtree: true });
+
+    // Re-draw edges with theme-appropriate colors when light/dark mode toggles
+    new MutationObserver(() => {
+        if (document.getElementById("system-graph-container")) {
+            _graphState = null;
+            drawTopicConnections();
+        }
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 });
