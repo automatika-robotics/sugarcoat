@@ -901,7 +901,7 @@ dialog {
 
 /* Run type badges */
 .run-type-badge {
-    font-size: 0.65rem;
+    font-size: clamp(0.5rem, 0.6vw, 0.65rem);
     font-weight: 600;
     padding: 0.15rem 0.5rem;
     border-radius: 9999px;
@@ -973,12 +973,13 @@ html.light .run-type-badge.monitor {
     position: absolute;
     border: 1.5px solid var(--border-subtle);
     border-radius: 8px;
-    padding: 0.4rem 0.7rem;
+    padding: clamp(0.3rem, 0.4vw, 0.5rem) clamp(0.5rem, 0.6vw, 0.8rem);
     cursor: pointer;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     background: var(--bg-card);
     z-index: 2;
     white-space: nowrap;
+    font-size: clamp(0.7rem, 0.8vw, 0.9rem);
 }
 
 .component-node:hover {
@@ -1002,6 +1003,129 @@ html.light .run-type-badge.monitor {
 .component-node.monitor-node:hover {
     border-color: #f1c40f;
     box-shadow: 0 0 0 3px rgba(241, 196, 15, 0.12);
+}
+
+/* Event diamond nodes */
+.event-diamond {
+    position: absolute;
+    z-index: 2;
+    --diamond-size: clamp(70px, 6vw, 100px);
+    width: var(--diamond-size);
+    height: var(--diamond-size);
+    transform: rotate(45deg);
+    background: var(--bg-card);
+    border: 1.5px solid var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: opacity 0.2s ease, box-shadow 0.2s ease;
+}
+
+.event-diamond:hover {
+    opacity: 1;
+    box-shadow: 0 0 0 3px rgba(232, 63, 63, 0.15);
+}
+
+.event-diamond.dimmed {
+    opacity: 0.25;
+}
+
+.event-diamond-content {
+    transform: rotate(-45deg);
+    text-align: center;
+    max-width: clamp(80px, 9vw, 130px);
+    overflow: hidden;
+    word-break: break-word;
+    line-height: 1.3;
+    font-size: clamp(0.5rem, 0.6vw, 0.65rem);
+    font-family: var(--font-mono, monospace);
+}
+
+/* Condition part styling — used in diamond (symbols) and detail panel (full text) */
+.cond-topic {
+    color: var(--secondary-color);
+    font-weight: 600;
+}
+
+.cond-attribute {
+    color: var(--text-main);
+    font-weight: 600;
+}
+
+.cond-operator {
+    color: var(--primary-color);
+    font-weight: 700;
+    font-style: italic;
+}
+
+.cond-ref-value {
+    color: var(--term-green);
+    font-weight: 600;
+}
+
+.cond-logic {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: clamp(0.45rem, 0.55vw, 0.6rem);
+    text-transform: lowercase;
+}
+
+/* Logic operator symbol in diamond (∧, ∨, ¬) */
+.cond-logic-symbol {
+    color: var(--primary-color);
+    font-size: clamp(0.9rem, 1.2vw, 1.4rem);
+    font-weight: 700;
+}
+
+/* Event indicator row (rising edge, once, delay) */
+.event-indicators {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    margin-top: 0.15rem;
+}
+
+.event-indicator-icon {
+    color: var(--primary-color);
+    flex-shrink: 0;
+}
+
+.event-once-label {
+    font-size: clamp(0.5rem, 0.55vw, 0.6rem);
+    font-weight: 700;
+    color: var(--secondary-color);
+}
+
+.event-delay-label {
+    font-size: clamp(0.45rem, 0.5vw, 0.55rem);
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* Recipe-level action oval nodes */
+.recipe-action-oval {
+    position: absolute;
+    z-index: 2;
+    padding: 0.3rem 0.8rem;
+    border: 1.5px dashed var(--text-muted);
+    border-radius: 50%;
+    min-width: clamp(60px, 6vw, 90px);
+    min-height: clamp(35px, 3.5vw, 50px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: clamp(0.5rem, 0.6vw, 0.7rem);
+    background: var(--bg-card);
+    cursor: default;
+    transition: opacity 0.2s ease;
+}
+
+.recipe-action-oval.dimmed {
+    opacity: 0.25;
 }
 
 /* SVG edge layer — fills the graph container */
@@ -1039,7 +1163,7 @@ html.light .run-type-badge.monitor {
 }
 
 .topic-label {
-    font-size: 0.65rem;
+    font-size: clamp(0.5rem, 0.6vw, 0.7rem);
     font-family: var(--font-body);
     opacity: 0.7;
     transition: opacity 0.2s ease;
@@ -1059,7 +1183,7 @@ html.light .run-type-badge.monitor {
 }
 
 .topic-stub-label {
-    font-size: 0.6rem;
+    font-size: clamp(0.45rem, 0.55vw, 0.65rem);
     font-family: var(--font-body);
     opacity: 0.7;
     transition: opacity 0.2s ease;
@@ -1070,27 +1194,6 @@ html.light .run-type-badge.monitor {
     border-top: 1px solid var(--border-subtle);
     margin-top: 0.5rem;
     animation: slideUp 0.3s ease-out;
-}
-
-/* Event rows */
-.event-row {
-    border-bottom: 1px solid var(--border-subtle);
-    padding: 0.5rem 0;
-    transition: background-color 0.15s ease;
-}
-
-.event-row:hover {
-    background-color: var(--bg-hover);
-}
-
-.event-row:last-child {
-    border-bottom: none;
-}
-
-.event-condition {
-    font-family: var(--font-mono, monospace);
-    color: var(--term-green);
-    font-size: 0.85rem;
 }
 
 /* Fallback tiers */

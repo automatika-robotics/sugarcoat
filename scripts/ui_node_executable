@@ -136,13 +136,25 @@ def main():
     @app.get("/system/component/{name}")
     def _(name: str):
         """Return detail panel for a specific component"""
-        comp_meta = fh.system_info.get("components", {}).get(name, {}) if fh.system_info else {}
+        comp_meta = (
+            fh.system_info.get("components", {}).get(name, {}) if fh.system_info else {}
+        )
         return elements.system_component_detail(
             name,
             comp_meta,
             fh.configs.get(name, {}),
             fh.system_info,
         )
+
+    @app.get("/system/event/{event_short_id}")
+    def _(event_short_id: str):
+        """Return detail panel for a specific event"""
+        if not fh.system_info:
+            return Div("No system data available")
+        for ev in fh.system_info.get("events", []):
+            if ev["id"][:8] == event_short_id:
+                return elements.system_event_detail(ev)
+        return Div(f"Event '{event_short_id}' not found")
 
     @app.post("/settings/submit")
     async def _(request, session):
@@ -333,9 +345,7 @@ def main():
                 :type data: Dict
                 """
                 feedback = (
-                    ros_msg_to_str(data["feedback"])
-                    if data["feedback"]
-                    else None
+                    ros_msg_to_str(data["feedback"]) if data["feedback"] else None
                 )
                 fh.action_clients_ft[_name].update(
                     status=data["status"],

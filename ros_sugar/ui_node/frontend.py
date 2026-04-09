@@ -349,19 +349,34 @@ class FHApp:
         )
         graph_container(svg_overlay)
 
-        # Component node cards — positioned by JS
-        components_row = Div(id="components-row")
+        # All graph nodes — components, events, and recipe actions — positioned by JS
+        graph_nodes = Div(id="graph-nodes")
+
+        # Component nodes
         components_data = self.system_info.get("components", {})
         for node_name, comp_meta in components_data.items():
             is_managed = node_name in self.configs
             is_monitor = "monitor" in node_name
-            components_row(
+            graph_nodes(
                 elements.system_component_card(
                     node_name, comp_meta, is_managed, is_monitor,
                 )
             )
 
-        graph_container(components_row)
+        # Event nodes and their recipe-level action nodes
+        events = self.system_info.get("events", [])
+        for event_data in events:
+            graph_nodes(elements.system_event_node(event_data))
+            # Add recipe-level action ovals
+            for action in event_data.get("actions", []):
+                if not action.get("component"):
+                    graph_nodes(
+                        elements.system_recipe_action_node(
+                            action, event_data["id"]
+                        )
+                    )
+
+        graph_container(graph_nodes)
 
         # Detail panel (populated on component click)
         detail_panel = Div(id="component-detail-panel", cls="p-2")
@@ -378,24 +393,6 @@ class FHApp:
             hx_on__after_swap="if(typeof drawTopicConnections==='function') drawTopicConnections()",
         )
         system_grid(architecture_card)
-
-        # Events & Actions
-        events = self.system_info.get("events", [])
-        if events:
-            events_content = Div(id="events-list")
-            for event_data in events:
-                events_content(elements.system_event_row(event_data))
-
-            events_card = Card(
-                DivHStacked(
-                    H4("Events & Actions", cls="cool-subtitle-mini"),
-                    elements._toggle_button(div_to_toggle="events-list"),
-                    cls="space-x-0",
-                ),
-                events_content,
-                cls="main-card",
-            )
-            system_grid(events_card)
 
         return Main(
             system_grid,

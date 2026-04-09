@@ -1,546 +1,503 @@
 /**
  * system_graph.js
- * Lays out component nodes in a layered graph and draws SVG edges between them.
- * Nodes are positioned absolutely; edges are drawn as smooth bezier curves.
+ * Lays out a mixed graph of components, events, and recipe-level actions.
+ * Components = rectangles, events = diamonds, recipe actions = ovals.
+ * All nodes absolutely positioned; edges are SVG bezier curves.
  */
 
-// Layout constants
-const NODE_H_GAP = 60;   // Horizontal gap between nodes in the same layer
-const NODE_V_GAP = 120;  // Vertical gap between layers (room for edge labels)
+const NODE_H_GAP = 60;
+const NODE_V_GAP = 130;
 const PADDING_X = 40;
-const PADDING_Y = 60;   // Room for external input stubs above first layer
+const PADDING_Y = 60;
 
-// Color palette for edges
 const EDGE_PALETTE = [
     "#E83F3F", "#447AE5", "#2ECC71", "#9B59B6", "#F1C40F",
     "#E67E22", "#1ABC9C", "#FF69B4", "#00CED1", "#FF6347",
 ];
 
+// Entry corners for event diamond inputs (bottom reserved for outputs)
+const ENTRY_CORNERS = ["top", "left", "right"];
 
-/**
- * Main entry point: computes layout, positions nodes, draws edges.
- */
+
+// ─── SVG Helpers ──────────────────────────────────────────────
+
+/** Create an SVG element with given tag and attributes. */
+function svgEl(tag, attrs) {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs)) {
+        if (k === "style" && typeof v === "object") {
+            for (const [sk, sv] of Object.entries(v)) el.style[sk] = sv;
+        } else {
+            el.setAttribute(k, v);
+        }
+    }
+    return el;
+}
+
+/** Get the anchor point on an element's bounding box for a given side. */
+function getAnchor(rect, cRect, side) {
+    const cx = rect.left + rect.width / 2 - cRect.left;
+    const cy = rect.top + rect.height / 2 - cRect.top;
+    switch (side) {
+        case "top":    return { x: cx, y: rect.top - cRect.top };
+        case "bottom": return { x: cx, y: rect.bottom - cRect.top };
+        case "left":   return { x: rect.left - cRect.left, y: cy };
+        case "right":  return { x: rect.right - cRect.left, y: cy };
+        default:       return { x: cx, y: rect.top - cRect.top };
+    }
+}
+
+/** Get arrowhead points for a given anchor point and direction. */
+function arrowPoints(x, y, direction, size) {
+    const s = size || 6;
+    switch (direction) {
+        case "down":  return `${x},${y} ${x - s},${y - s * 1.5} ${x + s},${y - s * 1.5}`;
+        case "right": return `${x},${y} ${x - s * 1.5},${y - s} ${x - s * 1.5},${y + s}`;
+        case "left":  return `${x},${y} ${x + s * 1.5},${y - s} ${x + s * 1.5},${y + s}`;
+        default:      return `${x},${y} ${x - s},${y - s * 1.5} ${x + s},${y - s * 1.5}`;
+    }
+}
+
+/** Direction the arrow should point when entering a given side. */
+function arrowDirection(side) {
+    switch (side) {
+        case "left":  return "right";
+        case "right": return "left";
+        default:      return "down";
+    }
+}
+
+
+// ─── Edge Drawing ─────────────────────────────────────────────
+
+/** Draw a bezier edge between two anchor points with an arrowhead and optional label. */
+function drawEdge(svg, src, dst, entrySide, label, color, dashed, fromId, toId) {
+    const curvature = Math.max(Math.abs(dst.y - src.y) * 0.4, 40);
+
+    let d;
+    if (entrySide === "left") {
+        d = `M ${src.x} ${src.y} C ${src.x} ${src.y + curvature}, ${Math.min(src.x, dst.x) - curvature} ${dst.y}, ${dst.x} ${dst.y}`;
+    } else if (entrySide === "right") {
+        d = `M ${src.x} ${src.y} C ${src.x} ${src.y + curvature}, ${Math.max(src.x, dst.x) + curvature} ${dst.y}, ${dst.x} ${dst.y}`;
+    } else {
+        d = `M ${src.x} ${src.y} C ${src.x} ${src.y + curvature}, ${dst.x} ${dst.y - curvature}, ${dst.x} ${dst.y}`;
+    }
+
+    const dataAttrs = { "data-from": fromId, "data-to": toId };
+
+    const path = svgEl("path", {
+        d, class: "topic-line", ...dataAttrs,
+        style: { stroke: color, strokeDasharray: dashed ? "6 4" : "" },
+    });
+    svg.appendChild(path);
+
+    const arrow = svgEl("polygon", {
+        points: arrowPoints(dst.x, dst.y, arrowDirection(entrySide)),
+        class: "topic-arrow", ...dataAttrs,
+        style: { fill: color },
+    });
+    svg.appendChild(arrow);
+
+    if (label) {
+        const shortLabel = label.startsWith("/") ? label.slice(1) : label;
+        const text = svgEl("text", {
+            x: (src.x + dst.x) / 2, y: (src.y + dst.y) / 2 - 4,
+            class: "topic-label", "text-anchor": "middle", ...dataAttrs,
+            style: { fill: color },
+        });
+        text.textContent = shortLabel;
+        svg.appendChild(text);
+    }
+}
+
+/** Draw an external stub (line + arrow + label) arriving at or leaving from a point. */
+function drawStub(svg, x, y, direction, label, color, nodeId) {
+    const stubLen = 30;
+    const as = 4;
+    let x1, y1, labelX, labelY, textAnchor, arrowPts;
+
+    if (direction === "from-top") {
+        x1 = x; y1 = y - stubLen;
+        labelX = x; labelY = y1 - 5; textAnchor = "middle";
+        arrowPts = arrowPoints(x, y, "down", as);
+    } else if (direction === "from-bottom") {
+        x1 = x; y1 = y + stubLen;
+        labelX = x; labelY = y1 + 12; textAnchor = "middle";
+        arrowPts = arrowPoints(x, y1, "down", as);
+    } else if (direction === "from-left") {
+        x1 = x - stubLen; y1 = y;
+        labelX = x1 - 4; labelY = y + 3; textAnchor = "end";
+        arrowPts = arrowPoints(x, y, "right", as);
+    } else { // from-right
+        x1 = x + stubLen; y1 = y;
+        labelX = x1 + 4; labelY = y + 3; textAnchor = "start";
+        arrowPts = arrowPoints(x, y, "left", as);
+    }
+
+    const dataAttr = { "data-node": nodeId || "" };
+    const shortName = label.startsWith("/") ? label.slice(1) : label;
+
+    svg.appendChild(svgEl("line", {
+        x1, y1, x2: x, y2: y, class: "topic-stub", ...dataAttr, style: { stroke: color },
+    }));
+    svg.appendChild(svgEl("polygon", {
+        points: arrowPts, class: "topic-stub-arrow", ...dataAttr, style: { fill: color },
+    }));
+    const text = svgEl("text", {
+        x: labelX, y: labelY, class: "topic-stub-label", "text-anchor": textAnchor,
+        ...dataAttr, style: { fill: color },
+    });
+    text.textContent = shortName;
+    svg.appendChild(text);
+}
+
+
+// ─── Topic Utilities ──────────────────────────────────────────
+
+function normalizeTopic(t) {
+    return t.startsWith("/") ? t.slice(1) : t;
+}
+
+
+// ─── Main ─────────────────────────────────────────────────────
+
 function drawTopicConnections() {
     const container = document.getElementById("system-graph-container");
     const svg = document.getElementById("topic-connections-svg");
-    const row = document.getElementById("components-row");
-    if (!container || !svg || !row) return;
+    const nodesContainer = document.getElementById("graph-nodes");
+    if (!container || !svg || !nodesContainer) return;
 
     svg.innerHTML = "";
 
-    const nodes = Array.from(row.querySelectorAll("[data-node-name]"));
-    if (nodes.length === 0) return;
+    // --- 1. Parse nodes from DOM ---
+    const components = {};
+    const events = {};
+    const recipeActions = {};
 
-    // --- 1. Parse node data ---
-    // Normalize topic names: strip leading slash for consistent matching
-    function normalizeTopic(t) {
-        return t.startsWith("/") ? t.slice(1) : t;
-    }
-
-    const nodeMap = {};
-    nodes.forEach((el) => {
+    nodesContainer.querySelectorAll("[data-node-name]").forEach((el) => {
         const name = el.getAttribute("data-node-name");
-        const rawPubs = JSON.parse(el.getAttribute("data-publishers") || "[]");
-        const rawSubs = JSON.parse(el.getAttribute("data-subscribers") || "[]");
-        const pubs = new Set(rawPubs.map(normalizeTopic));
-        const subs = new Set(rawSubs.map(normalizeTopic));
-        // Action/service interface names (shown as stubs for action servers / servers)
-        const actionName = el.getAttribute("data-action-name") || "";
-        const srvName = el.getAttribute("data-srv-name") || "";
-        nodeMap[name] = { el, pubs, subs, rawPubs, rawSubs, actionName, srvName };
+        components[name] = {
+            el,
+            pubs: new Set(JSON.parse(el.getAttribute("data-publishers") || "[]").map(normalizeTopic)),
+            subs: new Set(JSON.parse(el.getAttribute("data-subscribers") || "[]").map(normalizeTopic)),
+            actionName: el.getAttribute("data-action-name") || "",
+            srvName: el.getAttribute("data-srv-name") || "",
+        };
     });
 
-    // --- 2. Build directed edges (publisher → subscriber) ---
-    const edges = [];       // { from, to, topic }
-    const topicColors = {};
+    nodesContainer.querySelectorAll("[data-node-type='event']").forEach((el) => {
+        const id = el.getAttribute("data-event-id");
+        events[id] = {
+            el,
+            involvedTopics: JSON.parse(el.getAttribute("data-involved-topics") || "[]").map(normalizeTopic),
+            componentActions: JSON.parse(el.getAttribute("data-component-actions") || "[]"),
+            recipeActions: JSON.parse(el.getAttribute("data-recipe-actions") || "[]"),
+        };
+    });
+
+    nodesContainer.querySelectorAll("[data-node-type='recipe_action']").forEach((el) => {
+        recipeActions[el.id] = { el, parentEvent: el.getAttribute("data-parent-event") };
+    });
+
+    // --- 2. Build edges & color map ---
+    const edges = [];
     let colorIdx = 0;
-    const edgeSet = new Set();  // deduplicate
+    const topicColors = {};
 
-    for (const [srcName, srcData] of Object.entries(nodeMap)) {
-        for (const topic of srcData.pubs) {
-            for (const [dstName, dstData] of Object.entries(nodeMap)) {
-                if (srcName === dstName) continue;
-                if (dstData.subs.has(topic)) {
-                    const key = `${srcName}|${dstName}|${topic}`;
-                    if (edgeSet.has(key)) continue;
-                    edgeSet.add(key);
-                    if (!topicColors[topic]) {
-                        topicColors[topic] = EDGE_PALETTE[colorIdx % EDGE_PALETTE.length];
-                        colorIdx++;
-                    }
-                    edges.push({ from: srcName, to: dstName, topic });
+    function getColor(topic) {
+        if (!topicColors[topic]) {
+            topicColors[topic] = EDGE_PALETTE[colorIdx++ % EDGE_PALETTE.length];
+        }
+        return topicColors[topic];
+    }
+
+    // 2a. Component → Component (topic connections)
+    const compEdgeKeys = new Set();
+    for (const [src, srcD] of Object.entries(components)) {
+        for (const topic of srcD.pubs) {
+            for (const [dst, dstD] of Object.entries(components)) {
+                if (src === dst || !dstD.subs.has(topic)) continue;
+                const key = `${src}|${dst}|${topic}`;
+                if (compEdgeKeys.has(key)) continue;
+                compEdgeKeys.add(key);
+                edges.push({ from: src, fromType: "component", to: dst, toType: "component", label: topic, color: getColor(topic), dashed: false });
+            }
+        }
+    }
+
+    // 2b. Component → Event (topic triggers event) with corner assignment
+    const eventCorners = {};
+    for (const [eventId, evD] of Object.entries(events)) {
+        eventCorners[eventId] = {};
+        evD.involvedTopics.forEach((topic, idx) => {
+            const corner = ENTRY_CORNERS[Math.min(idx, ENTRY_CORNERS.length - 1)];
+            eventCorners[eventId][topic] = corner;
+            for (const [comp, compD] of Object.entries(components)) {
+                if (compD.pubs.has(topic)) {
+                    edges.push({ from: comp, fromType: "component", to: eventId, toType: "event", label: topic, color: getColor(topic), dashed: false, entryCorner: corner });
                 }
             }
-        }
-    }
+        });
 
-    // --- 3. Compute layered layout (topological sort by depth) ---
-    const layers = computeLayers(nodeMap, edges);
-
-    // --- 4. Make nodes visible but hidden so browser can compute sizes ---
-    for (const name of Object.keys(nodeMap)) {
-        const el = nodeMap[name].el;
-        el.style.position = "absolute";
-        el.style.visibility = "hidden";
-        el.style.display = "block";
-    }
-
-    // --- 5. Defer layout and drawing to next frame so the browser has computed element sizes ---
-    requestAnimationFrame(() => {
-    positionNodesSync(container, nodeMap, layers);
-
-    // --- 6. Size the SVG to match container ---
-    const containerH = container.offsetHeight;
-    const containerW = container.offsetWidth;
-    svg.setAttribute("width", containerW);
-    svg.setAttribute("height", containerH);
-    svg.setAttribute("viewBox", `0 0 ${containerW} ${containerH}`);
-
-    // --- 7. Draw edges ---
-    edges.forEach((edge) => {
-        drawEdge(svg, container, nodeMap[edge.from].el, nodeMap[edge.to].el, edge.topic, topicColors[edge.topic]);
-    });
-
-    // --- 8. Draw unconnected (external) topic stubs ---
-    // Find topics that are subscribed but not published by any node in the graph (external inputs)
-    // and topics published but not subscribed by any node (external outputs)
-    const allInternalPubs = new Set();
-    const allInternalSubs = new Set();
-    edges.forEach((e) => {
-        allInternalPubs.add(e.topic + "|" + e.from);
-        allInternalSubs.add(e.topic + "|" + e.to);
-    });
-
-    // Build per-node sets of topics that are connected by an edge
-    // A subscription is "connected" if there's an edge delivering that topic TO this node
-    // A publication is "connected" if there's an edge carrying that topic FROM this node
-    const connectedSubsPerNode = {};  // nodeName -> Set of topics received via edges
-    const connectedPubsPerNode = {};  // nodeName -> Set of topics sent via edges
-    for (const name of Object.keys(nodeMap)) {
-        connectedSubsPerNode[name] = new Set();
-        connectedPubsPerNode[name] = new Set();
-    }
-    edges.forEach((e) => {
-        connectedPubsPerNode[e.from].add(e.topic);
-        connectedSubsPerNode[e.to].add(e.topic);
-    });
-
-    for (const [name, data] of Object.entries(nodeMap)) {
-        // External inputs: subscribed topics with no internal publisher delivering to this node
-        const externalInputs = [];
-        for (const topic of data.subs) {
-            if (!connectedSubsPerNode[name].has(topic)) {
-                if (!topicColors[topic]) {
-                    topicColors[topic] = EDGE_PALETTE[colorIdx % EDGE_PALETTE.length];
-                    colorIdx++;
-                }
-                externalInputs.push(topic);
+        // 2c. Event → Component (action method call)
+        for (const a of evD.componentActions) {
+            if (a.component && components[a.component]) {
+                edges.push({ from: eventId, fromType: "event", to: a.component, toType: "component", label: a.name, color: "#888", dashed: true });
             }
         }
 
-        // External outputs: published topics with no internal subscriber receiving from this node
-        const externalOutputs = [];
-        for (const topic of data.pubs) {
-            if (!connectedPubsPerNode[name].has(topic)) {
-                if (!topicColors[topic]) {
-                    topicColors[topic] = EDGE_PALETTE[colorIdx % EDGE_PALETTE.length];
-                    colorIdx++;
-                }
-                externalOutputs.push(topic);
+        // 2d. Event → Recipe action oval
+        for (const a of evD.recipeActions) {
+            const ovalId = `action-${eventId.slice(0, 8)}-${a.name}`;
+            if (recipeActions[ovalId]) {
+                edges.push({ from: eventId, fromType: "event", to: ovalId, toType: "recipe_action", label: "", color: "#888", dashed: true });
             }
-        }
-
-        // Add action/service interface as an input stub for action servers / servers
-        if (data.actionName) {
-            const aName = normalizeTopic(data.actionName);
-            if (!topicColors[aName]) {
-                topicColors[aName] = "#9B59B6";  // Purple for actions
-            }
-            externalInputs.push(aName);
-        }
-        if (data.srvName) {
-            const sName = normalizeTopic(data.srvName);
-            if (!topicColors[sName]) {
-                topicColors[sName] = "#447AE5";  // Blue for services
-            }
-            externalInputs.push(sName);
-        }
-
-        if (externalInputs.length > 0) {
-            drawExternalStubs(svg, container, data.el, externalInputs, topicColors, "input");
-        }
-        if (externalOutputs.length > 0) {
-            drawExternalStubs(svg, container, data.el, externalOutputs, topicColors, "output");
         }
     }
 
-    // --- 9. Hover interactions ---
-    setupHoverHighlighting(nodes, edges);
+    // --- 3. Layered layout (topological sort on component-to-component edges) ---
+    const allNodes = {};
+    const compNames = Object.keys(components);
 
-    }); // end requestAnimationFrame
-}
-
-
-/**
- * Simple layered assignment: nodes with no incoming edges are layer 0,
- * their dependents are layer 1, etc. Nodes with no edges go to layer 0.
- */
-function computeLayers(nodeMap, edges) {
-    const names = Object.keys(nodeMap);
-    const incomingCount = {};
-    const outgoing = {};   // name -> [name, ...]
-
-    names.forEach((n) => {
-        incomingCount[n] = 0;
-        outgoing[n] = [];
-    });
-
-    edges.forEach((e) => {
-        // Deduplicate: only count unique from→to pairs
-        if (!outgoing[e.from].includes(e.to)) {
-            outgoing[e.from].push(e.to);
-            incomingCount[e.to] = (incomingCount[e.to] || 0) + 1;
+    // BFS depth assignment
+    const inCount = {};
+    const outAdj = {};
+    compNames.forEach(n => { inCount[n] = 0; outAdj[n] = []; });
+    edges.forEach(e => {
+        if (e.fromType === "component" && e.toType === "component" && !outAdj[e.from].includes(e.to)) {
+            outAdj[e.from].push(e.to);
+            inCount[e.to]++;
         }
     });
 
-    // BFS-based layer assignment
     const depth = {};
-    const queue = [];
+    const queue = compNames.filter(n => inCount[n] === 0);
+    queue.forEach(n => { depth[n] = 0; });
 
-    names.forEach((n) => {
-        if (incomingCount[n] === 0) {
-            depth[n] = 0;
-            queue.push(n);
-        }
-    });
-
-    while (queue.length > 0) {
-        const current = queue.shift();
-        for (const next of outgoing[current]) {
-            const newDepth = depth[current] + 1;
-            if (depth[next] === undefined || newDepth > depth[next]) {
-                depth[next] = newDepth;
-            }
-            incomingCount[next]--;
-            if (incomingCount[next] <= 0 && !queue.includes(next)) {
-                queue.push(next);
-            }
+    while (queue.length) {
+        const cur = queue.shift();
+        for (const next of outAdj[cur]) {
+            const d = depth[cur] + 1;
+            if (depth[next] === undefined || d > depth[next]) depth[next] = d;
+            if (--inCount[next] <= 0 && !queue.includes(next)) queue.push(next);
         }
     }
+    compNames.forEach(n => { if (depth[n] === undefined) depth[n] = 0; });
 
-    // Assign any remaining (cyclic or isolated) nodes
-    names.forEach((n) => {
-        if (depth[n] === undefined) depth[n] = 0;
-    });
+    // Assign layers (*2 to leave room for events between component layers)
+    compNames.forEach(n => { allNodes[n] = { el: components[n].el, layer: depth[n] * 2 }; });
 
-    // Group by layer
+    let maxLayer = 0;
+    Object.values(allNodes).forEach(n => { maxLayer = Math.max(maxLayer, n.layer); });
+
+    // Events: one layer below deepest source component
+    for (const [id, evD] of Object.entries(events)) {
+        let maxSrc = -1;
+        edges.forEach(e => {
+            if (e.to === id && e.fromType === "component" && allNodes[e.from]) {
+                maxSrc = Math.max(maxSrc, allNodes[e.from].layer);
+            }
+        });
+        allNodes[id] = { el: evD.el, layer: (maxSrc >= 0 ? maxSrc : maxLayer) + 1 };
+    }
+
+    // Recipe actions: one layer below parent event
+    for (const [id, d] of Object.entries(recipeActions)) {
+        const parentLayer = allNodes[d.parentEvent] ? allNodes[d.parentEvent].layer : maxLayer + 1;
+        allNodes[id] = { el: d.el, layer: parentLayer + 1 };
+    }
+
+    // Group into layers
     const layers = {};
-    for (const [name, d] of Object.entries(depth)) {
-        if (!layers[d]) layers[d] = [];
-        layers[d].push(name);
+    for (const [id, d] of Object.entries(allNodes)) {
+        (layers[d.layer] || (layers[d.layer] = [])).push(id);
     }
 
-    return layers;
-}
+    // --- 4. Position nodes (deferred to next frame for accurate measurements) ---
+    for (const d of Object.values(allNodes)) {
+        d.el.style.position = "absolute";
+        d.el.style.visibility = "hidden";
+        d.el.style.display = "";
+    }
 
+    requestAnimationFrame(() => {
+        const containerW = container.offsetWidth;
+        let currentY = PADDING_Y;
 
-/**
- * Positions nodes in a top-to-bottom layered layout, centered horizontally.
- * Assumes nodes are already in the DOM with position:absolute and visibility:hidden
- * so that offsetWidth/offsetHeight are valid.
- */
-function positionNodesSync(container, nodeMap, layers) {
-    const layerKeys = Object.keys(layers).map(Number).sort((a, b) => a - b);
+        Object.keys(layers).map(Number).sort((a, b) => a - b).forEach(layerIdx => {
+            const ids = layers[layerIdx];
+            const sizes = ids.map(id => ({ id, w: allNodes[id].el.offsetWidth, h: allNodes[id].el.offsetHeight }));
+            const totalW = sizes.reduce((s, m) => s + m.w, 0) + NODE_H_GAP * (ids.length - 1);
+            let x = Math.max(PADDING_X, (containerW - totalW) / 2);
+            let maxH = 0;
 
-    // Compute positions
-    const containerWidth = container.offsetWidth;
-    let currentY = PADDING_Y;
-    let maxRight = 0;
-
-    layerKeys.forEach((layerIdx) => {
-        const layerNodes = layers[layerIdx];
-
-        // Measure total width of this layer
-        let totalWidth = 0;
-        const measurements = [];
-        layerNodes.forEach((name) => {
-            const el = nodeMap[name].el;
-            const w = el.offsetWidth;
-            const h = el.offsetHeight;
-            measurements.push({ name, w, h });
-            totalWidth += w;
-        });
-        totalWidth += NODE_H_GAP * (layerNodes.length - 1);
-
-        // Center the layer horizontally
-        let startX = Math.max(PADDING_X, (containerWidth - totalWidth) / 2);
-        let maxH = 0;
-
-        measurements.forEach(({ name, w, h }) => {
-            const el = nodeMap[name].el;
-            el.style.left = `${startX}px`;
-            el.style.top = `${currentY}px`;
-            el.style.visibility = "visible";
-            startX += w + NODE_H_GAP;
-            maxH = Math.max(maxH, h);
-            maxRight = Math.max(maxRight, startX);
+            sizes.forEach(({ id, w, h }) => {
+                allNodes[id].el.style.left = `${x}px`;
+                allNodes[id].el.style.top = `${currentY}px`;
+                allNodes[id].el.style.visibility = "visible";
+                x += w + NODE_H_GAP;
+                maxH = Math.max(maxH, h);
+            });
+            currentY += maxH + NODE_V_GAP;
         });
 
-        currentY += maxH + NODE_V_GAP;
-    });
+        container.style.height = `${currentY + PADDING_Y}px`;
 
-    // Set container height to fit all layers + room for output stubs below
-    container.style.height = `${currentY + PADDING_Y + 30}px`;
+        // Size SVG
+        svg.setAttribute("width", container.offsetWidth);
+        svg.setAttribute("height", container.offsetHeight);
+        svg.setAttribute("viewBox", `0 0 ${container.offsetWidth} ${container.offsetHeight}`);
+
+        const cRect = container.getBoundingClientRect();
+
+        // --- 5. Draw edges ---
+        edges.forEach(e => {
+            const fromN = allNodes[e.from];
+            const toN = allNodes[e.to];
+            if (!fromN || !toN) return;
+
+            const src = getAnchor(fromN.el.getBoundingClientRect(), cRect, "bottom");
+            const dst = getAnchor(toN.el.getBoundingClientRect(), cRect, e.entryCorner || "top");
+            drawEdge(svg, src, dst, e.entryCorner || "top", e.label, e.color, e.dashed, e.from, e.to);
+        });
+
+        // --- 6. External stubs ---
+        // Track which topics are connected per component
+        const connPubs = {};
+        const connSubs = {};
+        compNames.forEach(n => { connPubs[n] = new Set(); connSubs[n] = new Set(); });
+        edges.forEach(e => {
+            if (e.fromType === "component" && e.label) connPubs[e.from].add(normalizeTopic(e.label));
+            if (e.toType === "component" && e.label) connSubs[e.to].add(normalizeTopic(e.label));
+        });
+
+        for (const [name, data] of Object.entries(components)) {
+            const nRect = data.el.getBoundingClientRect();
+            const extIn = [...data.subs].filter(t => !connSubs[name].has(t));
+            const extOut = [...data.pubs].filter(t => !connPubs[name].has(t));
+
+            if (data.actionName) { extIn.push(normalizeTopic(data.actionName)); topicColors[normalizeTopic(data.actionName)] = "#9B59B6"; }
+            if (data.srvName) { extIn.push(normalizeTopic(data.srvName)); topicColors[normalizeTopic(data.srvName)] = "#447AE5"; }
+
+            drawStubRow(svg, cRect, nRect, extIn, topicColors, "input", name);
+            drawStubRow(svg, cRect, nRect, extOut, topicColors, "output", name);
+        }
+
+        // Event external stubs (entering from assigned corners)
+        for (const [eventId, evD] of Object.entries(events)) {
+            const connTopics = new Set();
+            edges.forEach(e => { if (e.to === eventId && e.fromType === "component") connTopics.add(normalizeTopic(e.label)); });
+            const extTopics = evD.involvedTopics.filter(t => !connTopics.has(t));
+            const corners = eventCorners[eventId] || {};
+            const nRect = evD.el.getBoundingClientRect();
+
+            extTopics.forEach(topic => {
+                const corner = corners[topic] || "top";
+                const anchor = getAnchor(nRect, cRect, corner);
+                const dir = corner === "left" ? "from-left" : corner === "right" ? "from-right" : "from-top";
+                drawStub(svg, anchor.x, anchor.y, dir, topic, topicColors[topic] || getColor(topic), eventId);
+            });
+        }
+
+        // --- 7. Hover highlighting ---
+        setupHoverHighlighting(allNodes, edges);
+    });
 }
 
-
-/**
- * Draws a smooth bezier edge from the bottom of srcEl to the top of dstEl.
- */
-function drawEdge(svg, container, srcEl, dstEl, topicName, color) {
-    const cRect = container.getBoundingClientRect();
-
-    const srcRect = srcEl.getBoundingClientRect();
-    const dstRect = dstEl.getBoundingClientRect();
-
-    // Start from bottom-center of source
-    const x1 = srcRect.left + srcRect.width / 2 - cRect.left;
-    const y1 = srcRect.bottom - cRect.top;
-
-    // End at top-center of destination
-    const x2 = dstRect.left + dstRect.width / 2 - cRect.left;
-    const y2 = dstRect.top - cRect.top;
-
-    const dy = Math.abs(y2 - y1);
-    const curvature = Math.max(dy * 0.4, 40);
-
-    // Bezier path
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    const d = `M ${x1} ${y1} C ${x1} ${y1 + curvature}, ${x2} ${y2 - curvature}, ${x2} ${y2}`;
-    path.setAttribute("d", d);
-    path.setAttribute("class", "topic-line");
-    path.setAttribute("data-topic", topicName);
-    path.setAttribute("data-from", srcEl.getAttribute("data-node-name"));
-    path.setAttribute("data-to", dstEl.getAttribute("data-node-name"));
-    path.style.stroke = color;
-    svg.appendChild(path);
-
-    // Arrow head at destination
-    const arrowSize = 6;
-    const arrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-    arrow.setAttribute("points", `${x2},${y2} ${x2 - arrowSize},${y2 - arrowSize * 1.5} ${x2 + arrowSize},${y2 - arrowSize * 1.5}`);
-    arrow.setAttribute("class", "topic-arrow");
-    arrow.setAttribute("data-topic", topicName);
-    arrow.setAttribute("data-from", srcEl.getAttribute("data-node-name"));
-    arrow.setAttribute("data-to", dstEl.getAttribute("data-node-name"));
-    arrow.style.fill = color;
-    svg.appendChild(arrow);
-
-    // Topic label at midpoint
-    const midX = (x1 + x2) / 2;
-    const midY = (y1 + y2) / 2;
-
-    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    label.setAttribute("x", midX);
-    label.setAttribute("y", midY);
-    label.setAttribute("class", "topic-label");
-    label.setAttribute("text-anchor", "middle");
-    label.setAttribute("data-topic", topicName);
-    label.setAttribute("data-from", srcEl.getAttribute("data-node-name"));
-    label.setAttribute("data-to", dstEl.getAttribute("data-node-name"));
-    label.style.fill = color;
-
-    const shortName = topicName.startsWith("/") ? topicName.slice(1) : topicName;
-    label.textContent = shortName;
-    svg.appendChild(label);
-}
-
-
-/**
- * Draws small stub lines with labels for topics that have no connection to another node in the graph.
- * Inputs arrive from the top of the node, outputs exit from the bottom.
- *
- * @param {SVGElement} svg - The SVG overlay element
- * @param {HTMLElement} container - The graph container
- * @param {HTMLElement} nodeEl - The component card element
- * @param {string[]} topics - List of unconnected topic names
- * @param {Object} topicColors - Topic name → color mapping
- * @param {"input"|"output"} direction - Whether these are inputs or outputs
- */
-function drawExternalStubs(svg, container, nodeEl, topics, topicColors, direction) {
-    const cRect = container.getBoundingClientRect();
-    const nRect = nodeEl.getBoundingClientRect();
-    const nodeName = nodeEl.getAttribute("data-node-name");
-
-    const stubLength = 30;
-
-    // Measure label widths to compute proper spacing
-    // Use a heuristic: ~7px per character at 0.6rem font size
-    const labelWidths = topics.map(t => {
-        const name = t.startsWith("/") ? t.slice(1) : t;
-        return name.length * 7;
-    });
+/** Draw a row of stubs spaced horizontally along the top or bottom of a node. */
+function drawStubRow(svg, cRect, nRect, topics, topicColors, direction, nodeId) {
+    if (!topics.length) return;
+    const labelWidths = topics.map(t => (t.startsWith("/") ? t.slice(1) : t).length * 7);
     const spacing = Math.max(50, ...labelWidths);
-
-    // Space stubs horizontally across the top or bottom edge of the node
-    const totalWidth = topics.length * spacing;
-    const startX = nRect.left + (nRect.width - totalWidth) / 2 - cRect.left + spacing / 2;
+    const totalW = topics.length * spacing;
+    const startX = nRect.left + (nRect.width - totalW) / 2 - cRect.left + spacing / 2;
 
     topics.forEach((topic, idx) => {
-        const color = topicColors[topic] || "#888";
-        const shortName = topic.startsWith("/") ? topic.slice(1) : topic;
+        const color = topicColors[topic] || EDGE_PALETTE[idx % EDGE_PALETTE.length];
+        if (!topicColors[topic]) topicColors[topic] = color;
         const x = startX + idx * spacing;
-
-        let x1, y1, x2, y2, labelY, arrowPoints;
-
-        if (direction === "input") {
-            // Stub comes from above into the top of the node
-            y2 = nRect.top - cRect.top;
-            y1 = y2 - stubLength;
-            x1 = x;
-            x2 = x;
-            labelY = y1 - 5;
-            // Arrow pointing down into the node
-            const as = 4;
-            arrowPoints = `${x2},${y2} ${x2 - as},${y2 - as * 1.5} ${x2 + as},${y2 - as * 1.5}`;
-        } else {
-            // Stub exits from the bottom of the node downward
-            y1 = nRect.bottom - cRect.top;
-            y2 = y1 + stubLength;
-            x1 = x;
-            x2 = x;
-            labelY = y2 + 12;
-            // Arrow pointing down away from the node
-            const as = 4;
-            arrowPoints = `${x2},${y2} ${x2 - as},${y2 - as * 1.5} ${x2 + as},${y2 - as * 1.5}`;
-        }
-
-        // Stub line
-        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", x1);
-        line.setAttribute("y1", y1);
-        line.setAttribute("x2", x2);
-        line.setAttribute("y2", y2);
-        line.setAttribute("class", "topic-stub");
-        line.setAttribute("data-node", nodeName);
-        line.style.stroke = color;
-        svg.appendChild(line);
-
-        // Arrow
-        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-        arrow.setAttribute("points", arrowPoints);
-        arrow.setAttribute("class", "topic-stub-arrow");
-        arrow.setAttribute("data-node", nodeName);
-        arrow.style.fill = color;
-        svg.appendChild(arrow);
-
-        // Label (rotated for vertical stubs)
-        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        label.setAttribute("x", x);
-        label.setAttribute("y", labelY);
-        label.setAttribute("class", "topic-stub-label");
-        label.setAttribute("text-anchor", "middle");
-        label.setAttribute("data-node", nodeName);
-        label.style.fill = color;
-        label.textContent = shortName;
-        svg.appendChild(label);
+        const y = direction === "input" ? (nRect.top - cRect.top) : (nRect.bottom - cRect.top);
+        drawStub(svg, x, y, direction === "input" ? "from-top" : "from-bottom", topic, color, nodeId);
     });
 }
 
 
-/**
- * On hover: highlights connected edges, dims unrelated nodes.
- */
-function setupHoverHighlighting(nodeElements, edges) {
-    nodeElements.forEach((node) => {
-        const nodeName = node.getAttribute("data-node-name");
+// ─── Hover ────────────────────────────────────────────────────
 
-        node.addEventListener("mouseenter", () => {
-            // Find connected node names
-            const connected = new Set([nodeName]);
-            edges.forEach((e) => {
-                if (e.from === nodeName) connected.add(e.to);
-                if (e.to === nodeName) connected.add(e.from);
+function setupHoverHighlighting(allNodes, edges) {
+    for (const [nodeId, nodeData] of Object.entries(allNodes)) {
+        nodeData.el.addEventListener("mouseenter", () => {
+            const connected = new Set([nodeId]);
+            edges.forEach(e => {
+                if (e.from === nodeId) connected.add(e.to);
+                if (e.to === nodeId) connected.add(e.from);
             });
 
             // Dim unconnected nodes
-            nodeElements.forEach((n) => {
-                if (!connected.has(n.getAttribute("data-node-name"))) {
-                    n.classList.add("dimmed");
-                }
-            });
+            for (const [id, d] of Object.entries(allNodes)) {
+                if (!connected.has(id)) d.el.classList.add("dimmed");
+            }
 
-            // Highlight connected edges, dim others
-            document.querySelectorAll(".topic-line, .topic-arrow").forEach((el) => {
-                if (el.getAttribute("data-from") === nodeName || el.getAttribute("data-to") === nodeName) {
-                    el.classList.add("highlighted");
-                } else {
-                    el.style.opacity = "0.08";
-                }
-            });
-
-            document.querySelectorAll(".topic-label").forEach((el) => {
-                if (el.getAttribute("data-from") === nodeName || el.getAttribute("data-to") === nodeName) {
-                    el.style.opacity = "1";
-                    el.style.fontWeight = "600";
-                } else {
-                    el.style.opacity = "0.08";
-                }
-            });
-
-            // Dim/highlight external stubs
-            document.querySelectorAll(".topic-stub, .topic-stub-arrow, .topic-stub-label").forEach((el) => {
-                if (el.getAttribute("data-node") === nodeName) {
-                    el.style.opacity = "1";
-                } else {
-                    el.style.opacity = "0.08";
-                }
-            });
+            // Highlight/dim SVG elements
+            svg_highlight(connected, nodeId);
         });
 
-        node.addEventListener("mouseleave", () => {
-            nodeElements.forEach((n) => n.classList.remove("dimmed"));
-
-            document.querySelectorAll(".topic-line, .topic-arrow").forEach((el) => {
-                el.classList.remove("highlighted");
-                el.style.opacity = "";
-            });
-
-            document.querySelectorAll(".topic-label").forEach((el) => {
-                el.style.opacity = "";
-                el.style.fontWeight = "";
-            });
-
-            document.querySelectorAll(".topic-stub, .topic-stub-arrow, .topic-stub-label").forEach((el) => {
-                el.style.opacity = "";
-            });
+        nodeData.el.addEventListener("mouseleave", () => {
+            for (const d of Object.values(allNodes)) d.el.classList.remove("dimmed");
+            svg_reset();
         });
+    }
+}
+
+function svg_highlight(connectedNodes, hoveredId) {
+    document.querySelectorAll(".topic-line, .topic-arrow").forEach(el => {
+        if (el.getAttribute("data-from") === hoveredId || el.getAttribute("data-to") === hoveredId) {
+            el.classList.add("highlighted");
+        } else {
+            el.style.opacity = "0.08";
+        }
+    });
+    document.querySelectorAll(".topic-label").forEach(el => {
+        if (el.getAttribute("data-from") === hoveredId || el.getAttribute("data-to") === hoveredId) {
+            el.style.opacity = "1";
+            el.style.fontWeight = "600";
+        } else {
+            el.style.opacity = "0.08";
+        }
+    });
+    document.querySelectorAll(".topic-stub, .topic-stub-arrow, .topic-stub-label").forEach(el => {
+        const n = el.getAttribute("data-node");
+        el.style.opacity = (n && connectedNodes.has(n)) ? "1" : "0.08";
+    });
+}
+
+function svg_reset() {
+    document.querySelectorAll(".topic-line, .topic-arrow").forEach(el => {
+        el.classList.remove("highlighted");
+        el.style.opacity = "";
+    });
+    document.querySelectorAll(".topic-label").forEach(el => {
+        el.style.opacity = "";
+        el.style.fontWeight = "";
+    });
+    document.querySelectorAll(".topic-stub, .topic-stub-arrow, .topic-stub-label").forEach(el => {
+        el.style.opacity = "";
     });
 }
 
 
-// --- Auto-initialization ---
+// ─── Auto-init ────────────────────────────────────────────────
+
 document.addEventListener("DOMContentLoaded", () => {
-    const observer = new ResizeObserver(() => {
-        if (document.getElementById("system-graph-container")) {
-            drawTopicConnections();
-        }
+    const resizeObs = new ResizeObserver(() => {
+        if (document.getElementById("system-graph-container")) drawTopicConnections();
     });
 
     const existing = document.getElementById("system-graph-container");
-    if (existing) {
-        observer.observe(existing);
-        drawTopicConnections();
-    }
+    if (existing) { resizeObs.observe(existing); drawTopicConnections(); }
 
-    // Watch for the container being added via HTMX swap
-    const bodyObserver = new MutationObserver(() => {
-        const container = document.getElementById("system-graph-container");
-        if (container && !container._resizeObserved) {
-            observer.observe(container);
-            container._resizeObserved = true;
-            setTimeout(drawTopicConnections, 100);
-        }
-    });
-    bodyObserver.observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(() => {
+        const c = document.getElementById("system-graph-container");
+        if (c && !c._observed) { resizeObs.observe(c); c._observed = true; setTimeout(drawTopicConnections, 100); }
+    }).observe(document.body, { childList: true, subtree: true });
 });

@@ -1512,6 +1512,115 @@ def update_logging_card_with_loading(logging_card):
 # ------------- SYSTEM VISUALIZATION ELEMENTS -------------------
 
 
+def system_event_node(event_data: Dict) -> FT:
+    """Create a diamond-shaped node for an event in the system graph.
+
+    :param event_data: Event data from system info
+    :return: Event node UI element
+    """
+    import json as _json
+
+    event_id = event_data.get("id", "")
+    readable = event_data.get("readable", "?")
+    condition_parts = event_data.get("condition_parts", [])
+    involved_topics = event_data.get("involved_topics", [])
+    actions = event_data.get("actions", [])
+
+    # Classify actions into component-targeted and recipe-level
+    component_actions = []
+    recipe_actions = []
+    for a in actions:
+        if a.get("component"):
+            component_actions.append(a)
+        else:
+            recipe_actions.append(a)
+
+    # Determine the main symbol to show in the diamond
+    # For composed conditions: show the logic operator symbol
+    # For simple conditions: show the comparison operator symbol
+    logic_symbols = {"AND": "∧", "OR": "∨", "NOT": "¬"}
+    display_parts = []
+
+    has_logic = any(p["type"] == "logic" for p in condition_parts)
+    if has_logic:
+        # Composed condition — show logic operator symbol
+        for part in condition_parts:
+            if part["type"] == "logic":
+                symbol = logic_symbols.get(part["value"], part["value"])
+                if symbol not in [p.get("symbol") for p in display_parts]:
+                    display_parts.append(Span(symbol, cls="cond-logic-symbol"))
+    else:
+        # Simple condition — show operator symbol
+        for part in condition_parts:
+            if part["type"] == "operator":
+                display_parts.append(Span(part["value"], cls="cond-operator"))
+
+    if not display_parts:
+        display_parts = [Span("?", cls="cond-operator")]
+
+    # Indicators
+    indicators = []
+    if event_data.get("on_change"):
+        rising_edge_svg = NotStr(
+            '<svg class="event-indicator-icon" viewBox="0 0 20 14" width="16" height="11">'
+            '<polyline points="0,12 8,12 8,2 20,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter"/>'
+            "</svg>"
+        )
+        indicators.append(rising_edge_svg)
+
+    if event_data.get("handle_once"):
+        indicators.append(Span("1×", cls="event-once-label"))
+
+    keep_delay = event_data.get("keep_event_delay", 0.0)
+    if keep_delay and keep_delay > 0:
+        delay_str = (
+            f"{keep_delay}s" if keep_delay == int(keep_delay) else f"{keep_delay:.1f}s"
+        )
+        indicators.append(Span(f"⏱ {delay_str}", cls="event-delay-label"))
+
+    content_children = list(display_parts)
+    if indicators:
+        content_children.append(Div(*indicators, cls="event-indicators"))
+
+    return Div(
+        Div(
+            *content_children,
+            cls="event-diamond-content",
+        ),
+        cls="event-diamond",
+        id=f"event-{event_id[:8]}",
+        # Clickable — loads detail into panel
+        hx_get=f"/system/event/{event_id[:8]}",
+        hx_target="#component-detail-panel",
+        hx_swap="innerHTML",
+        # Data attributes for JS
+        data_node_type="event",
+        data_event_id=event_id,
+        data_involved_topics=_json.dumps(involved_topics),
+        data_component_actions=_json.dumps(component_actions),
+        data_recipe_actions=_json.dumps(recipe_actions),
+    )
+
+
+def system_recipe_action_node(action_data: Dict, event_id: str) -> FT:
+    """Create an oval-shaped node for a recipe-level action in the system graph.
+
+    :param action_data: Action data dict with name and type
+    :param event_id: Parent event ID
+    :return: Action node UI element
+    """
+    action_name = action_data.get("name", "?")
+    action_type = action_data.get("type", "launch")
+
+    return Div(
+        P(action_name, cls="text-xs font-mono"),
+        cls="recipe-action-oval",
+        id=f"action-{event_id[:8]}-{action_name}",
+        data_node_type="recipe_action",
+        data_parent_event=event_id,
+    )
+
+
 def system_component_card(
     node_name: str,
     component_meta: Dict,
@@ -1729,73 +1838,122 @@ def system_component_detail(
     return detail
 
 
-def system_event_row(event_data: Dict) -> FT:
-    """Create a collapsible row for an event in the system visualization.
+def system_event_detail(event_data: Dict) -> FT:
+    """Build a detail panel for a specific event.
 
     :param event_data: Event data from system info
-    :return: Event row UI element
+    :return: Detail panel UI element
     """
     event_id = event_data.get("id", "")
-    readable = event_data.get("readable", "Unknown condition")
-    actions = event_data.get("actions", [])
+    readable = event_data.get("readable", "?")
+    condition_parts = event_data.get("condition_parts", [])
     involved_topics = event_data.get("involved_topics", [])
-    handle_once = event_data.get("handle_once", False)
-    on_change = event_data.get("on_change", False)
-    detail_id = f"event-detail-{event_id[:8]}"
+    actions = event_data.get("actions", [])
 
-    # Collapsed header
+    detail = Card(
+        cls="inner-main-card p-4 mt-2",
+        id="event-detail-content",
+    )
+
+    # Header
     header = DivHStacked(
-        Span(readable, cls="event-condition text-sm"),
-        DivHStacked(
-            Span(
-                f"{len(actions)} action{'s' if len(actions) != 1 else ''}",
-                cls="status-badge active",
-            ),
-            _toggle_button(div_to_toggle=detail_id),
-            cls="gap-2",
+        H3("Event", cls="cool-subtitle-mini-blue"),
+        Span(event_id[:8], cls="text-xs font-mono opacity-40"),
+        Button(
+            UkIcon("x"),
+            cls="glass-icon-btn",
+            type="button",
+            onclick="document.getElementById('component-detail-panel').innerHTML = ''",
         ),
-        cls="justify-between items-center event-row p-2",
+        cls="justify-between items-center mb-4",
+    )
+    detail(header)
+
+    # Full condition with styled parts
+    cond_display = Div(
+        H5("Condition", cls="cool-subtitle-mini-blue mb-2"),
+    )
+    cond_line = P(cls="ml-2 font-mono text-sm")
+    for part in condition_parts:
+        if part["type"] == "topic":
+            cond_line(Span(part["value"], cls="cond-topic"))
+            cond_line(Span(".", cls="cond-attribute"))
+        elif part["type"] == "attribute":
+            cond_line(Span(part["value"], cls="cond-attribute"))
+        elif part["type"] == "operator":
+            cond_line(Span(f" {part['value']} ", cls="cond-operator"))
+        elif part["type"] == "ref_value":
+            cond_line(Span(part["value"], cls="cond-ref-value"))
+        elif part["type"] == "logic":
+            cond_line(Span(f" {part['value']} ", cls="cond-logic"))
+    cond_display(cond_line)
+    detail(cond_display)
+
+    # Readable (full string)
+    detail(
+        P(
+            Span("Full expression: ", cls="font-bold text-sm"),
+            Span(readable, cls="font-mono text-sm opacity-70"),
+            cls="ml-2 mt-2",
+        )
     )
 
-    # Expanded details
-    detail = Div(
-        id=detail_id,
-        hidden=True,
-        style="display: none;",
-        cls="p-3 ml-4",
-    )
+    # Involved topics
+    if involved_topics:
+        topics_section = Div(
+            H5("Involved Topics", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+        )
+        for t in involved_topics:
+            topics_section(P(t, cls="ml-2 font-mono text-sm"))
+        detail(topics_section)
 
     # Flags
-    flags = DivHStacked(cls="gap-2 mb-2")
-    if handle_once:
-        flags(Span("handle once", cls="status-badge inactive text-xs"))
-    if on_change:
-        flags(Span("on change", cls="status-badge inactive text-xs"))
-    if involved_topics:
-        flags(
-            Span(
-                f"topics: {', '.join(involved_topics)}",
-                cls="text-xs opacity-60",
-            )
+    flags_section = Div(
+        H5("Properties", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+    )
+    flags_section(
+        P(
+            Span("On change: ", cls="font-bold text-sm"),
+            Span("Yes" if event_data.get("on_change") else "No", cls="text-sm"),
+            cls="ml-2",
         )
-    detail(flags)
-
-    # Actions list
-    for action in actions:
-        action_name = action.get("name", "")
-        component = action.get("component", None)
-        action_type = action.get("type", "")
-        target = f" → {component}" if component else ""
-        detail(
+    )
+    flags_section(
+        P(
+            Span("Handle once: ", cls="font-bold text-sm"),
+            Span("Yes" if event_data.get("handle_once") else "No", cls="text-sm"),
+            cls="ml-2",
+        )
+    )
+    keep_delay = event_data.get("keep_event_delay", 0.0)
+    if keep_delay and keep_delay > 0:
+        flags_section(
             P(
-                Span(action_name, cls="font-mono font-bold text-sm"),
-                Span(target, cls="text-sm"),
-                Span(f" [{action_type}]", cls="text-xs opacity-60"),
+                Span("Event delay: ", cls="font-bold text-sm"),
+                Span(f"{keep_delay}s", cls="text-sm"),
                 cls="ml-2",
             )
         )
+    detail(flags_section)
 
-    return Div(header, detail)
+    # Actions
+    if actions:
+        actions_section = Div(
+            H5("Actions", cls="cool-subtitle-mini-blue mb-2 mt-4"),
+        )
+        for a in actions:
+            target = f" → {a['component']}" if a.get("component") else ""
+            actions_section(
+                P(
+                    Span(a["name"], cls="font-mono font-bold text-sm"),
+                    Span(target, cls="text-sm"),
+                    Span(f" [{a.get('type', '')}]", cls="text-xs opacity-60"),
+                    cls="ml-2",
+                )
+            )
+        detail(actions_section)
+
+    return detail
 
 
 def system_fallback_card(component_name: str, fallback_config: Dict) -> FT:
