@@ -608,20 +608,14 @@ class MsgConditionBuilder:
         )
 
     def _make_condition(self, op: Callable, value: Any) -> Condition:
-        if value is not None:
-            # For list-based operators (contains_any, contains_all, etc.),
-            # validate against the element type, not the list type
-            check_type = type(value)
-            if isinstance(value, (list, tuple)) and value:
-                check_type = type(value[0])  # Check type of first value
-            if not _check_attribute(
-                self._topic.ros_msg_type,
-                check_type,
-                self._base,
-            ):
-                raise TypeError(
-                    f"Condition Initialization error. Cannot initiate using attribute '{self._base}' for class '{self._topic.ros_msg_type}' with trigger of type '{type(value)}'. Trigger should be of type: '{_get_attribute_type(self._topic.ros_msg_type, self._base)}'"
-                )
+        if value is not None and not _check_attribute(
+            self._topic.ros_msg_type,
+            type(value),
+            self._base,
+        ):
+            raise TypeError(
+                f"Condition Initialization error. Cannot initiate using attribute '{self._base}' for class '{self._topic.ros_msg_type}' with trigger of type '{type(value)}'. Trigger should be of type: '{_get_attribute_type(self._topic.ros_msg_type, self._base)}'"
+            )
         return Condition(
             topic_name=self._topic.name,
             topic_msg_type=self._topic.msg_type.__name__,
