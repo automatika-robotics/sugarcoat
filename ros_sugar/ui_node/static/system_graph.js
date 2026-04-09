@@ -434,28 +434,40 @@ function drawStubRow(svg, cRect, nRect, topics, topicColors, direction, nodeId) 
             ? nodeLeft + nodeW / 2
             : nodeLeft + nodeW * 0.2 + (nodeW * 0.6) * (idx / (topics.length - 1));
 
-        let outerY, innerY, labelY, arrowPts;
+        let outerY, innerY, labelY;
         if (direction === "input") {
             outerY = edgeY - stubLen;
             innerY = edgeY;
             labelY = outerY - 5;
-            arrowPts = arrowPoints(innerX, innerY, "down", as);
         } else {
             outerY = edgeY + stubLen;
             innerY = edgeY;
             labelY = outerY + 12;
-            arrowPts = arrowPoints(outerX, outerY, "down", as);
         }
+
+        // Arrow tip and tail points
+        const tipX = direction === "input" ? innerX : outerX;
+        const tipY = direction === "input" ? innerY : outerY;
+        const tailX = direction === "input" ? outerX : innerX;
+        const tailY = direction === "input" ? outerY : innerY;
+
+        // Compute arrowhead aligned to the line direction
+        const angle = Math.atan2(tipY - tailY, tipX - tailX);
+        const ax1 = tipX - as * 1.5 * Math.cos(angle - 0.4);
+        const ay1 = tipY - as * 1.5 * Math.sin(angle - 0.4);
+        const ax2 = tipX - as * 1.5 * Math.cos(angle + 0.4);
+        const ay2 = tipY - as * 1.5 * Math.sin(angle + 0.4);
+        const arrowPts = `${tipX},${tipY} ${ax1},${ay1} ${ax2},${ay2}`;
 
         const dataAttr = { "data-node": nodeId || "" };
 
-        // Line from outer point to inner (arrow) point
+        // Line from outer point to inner point
         svg.appendChild(svgEl("line", {
             x1: outerX, y1: outerY, x2: innerX, y2: innerY,
             class: "topic-stub", ...dataAttr, style: { stroke: color },
         }));
 
-        // Arrow
+        // Arrow (rotated to match line angle)
         svg.appendChild(svgEl("polygon", {
             points: arrowPts, class: "topic-stub-arrow", ...dataAttr, style: { fill: color },
         }));
