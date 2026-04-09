@@ -18,6 +18,11 @@ const EDGE_PALETTE = [
 // Entry corners for event diamond inputs (bottom reserved for outputs)
 const ENTRY_CORNERS = ["top", "left", "right"];
 
+// Persistent graph state for edge redrawing during drag
+let _graphState = null;
+// When true, suppress automatic re-layout (user has manually positioned nodes)
+let _userDragged = false;
+
 
 // ─── SVG Helpers ──────────────────────────────────────────────
 
@@ -162,6 +167,12 @@ function normalizeTopic(t) {
 // ─── Main ─────────────────────────────────────────────────────
 
 function drawTopicConnections() {
+    // If user has manually dragged nodes, only redraw edges — don't re-layout
+    if (_userDragged && _graphState) {
+        redrawAllEdges();
+        return;
+    }
+
     const container = document.getElementById("system-graph-container");
     const svg = document.getElementById("topic-connections-svg");
     const nodesContainer = document.getElementById("graph-nodes");
@@ -344,65 +355,84 @@ function drawTopicConnections() {
 
         container.style.height = `${currentY + PADDING_Y}px`;
 
-        // Size SVG
-        svg.setAttribute("width", container.offsetWidth);
-        svg.setAttribute("height", container.offsetHeight);
-        svg.setAttribute("viewBox", `0 0 ${container.offsetWidth} ${container.offsetHeight}`);
+        // Store state for redrawing during drag
+        _graphState = { svg, container, allNodes, edges, components, events, eventCorners, topicColors, compNames, getColor };
 
-        const cRect = container.getBoundingClientRect();
+        // --- 5. Draw edges + stubs ---
+        redrawAllEdges();
 
-        // --- 5. Draw edges ---
-        edges.forEach(e => {
-            const fromN = allNodes[e.from];
-            const toN = allNodes[e.to];
-            if (!fromN || !toN) return;
-
-            const src = getAnchor(fromN.el.getBoundingClientRect(), cRect, "bottom");
-            const dst = getAnchor(toN.el.getBoundingClientRect(), cRect, e.entryCorner || "top");
-            drawEdge(svg, src, dst, e.entryCorner || "top", e.label, e.color, e.dashed, e.from, e.to);
-        });
-
-        // --- 6. External stubs ---
-        // Track which topics are connected per component
-        const connPubs = {};
-        const connSubs = {};
-        compNames.forEach(n => { connPubs[n] = new Set(); connSubs[n] = new Set(); });
-        edges.forEach(e => {
-            if (e.fromType === "component" && e.label) connPubs[e.from].add(normalizeTopic(e.label));
-            if (e.toType === "component" && e.label) connSubs[e.to].add(normalizeTopic(e.label));
-        });
-
-        for (const [name, data] of Object.entries(components)) {
-            const nRect = data.el.getBoundingClientRect();
-            const extIn = [...data.subs].filter(t => !connSubs[name].has(t));
-            const extOut = [...data.pubs].filter(t => !connPubs[name].has(t));
-
-            if (data.actionName) { extIn.push(normalizeTopic(data.actionName)); topicColors[normalizeTopic(data.actionName)] = "#9B59B6"; }
-            if (data.srvName) { extIn.push(normalizeTopic(data.srvName)); topicColors[normalizeTopic(data.srvName)] = "#447AE5"; }
-
-            drawStubRow(svg, cRect, nRect, extIn, topicColors, "input", name);
-            drawStubRow(svg, cRect, nRect, extOut, topicColors, "output", name);
+        // --- 6. Hover + Drag (only on first layout, not re-attached) ---
+        if (!container._interactionsAttached) {
+            setupHoverHighlighting(allNodes, edges);
+            setupDragging(allNodes);
+            container._interactionsAttached = true;
         }
-
-        // Event external stubs (entering from assigned corners)
-        for (const [eventId, evD] of Object.entries(events)) {
-            const connTopics = new Set();
-            edges.forEach(e => { if (e.to === eventId && e.fromType === "component") connTopics.add(normalizeTopic(e.label)); });
-            const extTopics = evD.involvedTopics.filter(t => !connTopics.has(t));
-            const corners = eventCorners[eventId] || {};
-            const nRect = evD.el.getBoundingClientRect();
-
-            extTopics.forEach(topic => {
-                const corner = corners[topic] || "top";
-                const anchor = getAnchor(nRect, cRect, corner);
-                const dir = corner === "left" ? "from-left" : corner === "right" ? "from-right" : "from-top";
-                drawStub(svg, anchor.x, anchor.y, dir, topic, topicColors[topic] || getColor(topic), eventId);
-            });
-        }
-
-        // --- 7. Hover highlighting ---
-        setupHoverHighlighting(allNodes, edges);
     });
+}
+
+
+/** Redraws all edges and stubs based on current node positions. Called after layout and during drag. */
+function redrawAllEdges() {
+    const s = _graphState;
+    if (!s) return;
+    const { svg, container, allNodes, edges, components, events, eventCorners, topicColors, compNames, getColor } = s;
+
+    svg.innerHTML = "";
+
+    // Size SVG to container
+    svg.setAttribute("width", container.offsetWidth);
+    svg.setAttribute("height", container.offsetHeight);
+    svg.setAttribute("viewBox", `0 0 ${container.offsetWidth} ${container.offsetHeight}`);
+
+    const cRect = container.getBoundingClientRect();
+
+    // Draw edges
+    edges.forEach(e => {
+        const fromN = allNodes[e.from];
+        const toN = allNodes[e.to];
+        if (!fromN || !toN) return;
+
+        const src = getAnchor(fromN.el.getBoundingClientRect(), cRect, "bottom");
+        const dst = getAnchor(toN.el.getBoundingClientRect(), cRect, e.entryCorner || "top");
+        drawEdge(svg, src, dst, e.entryCorner || "top", e.label, e.color, e.dashed, e.from, e.to);
+    });
+
+    // Component external stubs
+    const connPubs = {};
+    const connSubs = {};
+    compNames.forEach(n => { connPubs[n] = new Set(); connSubs[n] = new Set(); });
+    edges.forEach(e => {
+        if (e.fromType === "component" && e.label) connPubs[e.from].add(normalizeTopic(e.label));
+        if (e.toType === "component" && e.label) connSubs[e.to].add(normalizeTopic(e.label));
+    });
+
+    for (const [name, data] of Object.entries(components)) {
+        const nRect = data.el.getBoundingClientRect();
+        const extIn = [...data.subs].filter(t => !connSubs[name].has(t));
+        const extOut = [...data.pubs].filter(t => !connPubs[name].has(t));
+
+        if (data.actionName) { extIn.push(normalizeTopic(data.actionName)); topicColors[normalizeTopic(data.actionName)] = "#9B59B6"; }
+        if (data.srvName) { extIn.push(normalizeTopic(data.srvName)); topicColors[normalizeTopic(data.srvName)] = "#447AE5"; }
+
+        drawStubRow(svg, cRect, nRect, extIn, topicColors, "input", name);
+        drawStubRow(svg, cRect, nRect, extOut, topicColors, "output", name);
+    }
+
+    // Event external stubs
+    for (const [eventId, evD] of Object.entries(events)) {
+        const connTopics = new Set();
+        edges.forEach(e => { if (e.to === eventId && e.fromType === "component") connTopics.add(normalizeTopic(e.label)); });
+        const extTopics = evD.involvedTopics.filter(t => !connTopics.has(t));
+        const corners = eventCorners[eventId] || {};
+        const nRect = evD.el.getBoundingClientRect();
+
+        extTopics.forEach(topic => {
+            const corner = corners[topic] || "top";
+            const anchor = getAnchor(nRect, cRect, corner);
+            const dir = corner === "left" ? "from-left" : corner === "right" ? "from-right" : "from-top";
+            drawStub(svg, anchor.x, anchor.y, dir, topic, topicColors[topic] || getColor(topic), eventId);
+        });
+    }
 }
 
 /** Draw a row of stubs spaced horizontally along the top or bottom of a node.
@@ -483,6 +513,93 @@ function drawStubRow(svg, cRect, nRect, topics, topicColors, direction, nodeId) 
 }
 
 
+// ─── Dragging ─────────────────────────────────────────────────
+
+function setupDragging(allNodes) {
+    let dragNode = null;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    let rafPending = false;
+
+    function onPointerDown(e, nodeId) {
+        // Ignore clicks on interactive children (buttons, links)
+        if (["BUTTON", "A", "INPUT"].includes(e.target.tagName)) return;
+
+        const el = allNodes[nodeId].el;
+        const rect = el.getBoundingClientRect();
+        dragOffsetX = (e.clientX || e.touches[0].clientX) - rect.left;
+        dragOffsetY = (e.clientY || e.touches[0].clientY) - rect.top;
+        dragNode = { id: nodeId, el };
+
+        el.style.zIndex = "10";
+        el.style.cursor = "grabbing";
+        document.body.style.userSelect = "none";
+
+        if (e.cancelable) e.preventDefault();
+    }
+
+    function onPointerMove(e) {
+        if (!dragNode) return;
+        if (e.cancelable) e.preventDefault();
+
+        const container = _graphState.container;
+        const cRect = container.getBoundingClientRect();
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+        const clientY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+
+        const newLeft = clientX - cRect.left - dragOffsetX;
+        const newTop = clientY - cRect.top - dragOffsetY;
+
+        dragNode.el.style.left = `${newLeft}px`;
+        dragNode.el.style.top = `${newTop}px`;
+
+        // Throttle edge redraw to animation frames
+        if (!rafPending) {
+            rafPending = true;
+            requestAnimationFrame(() => {
+                redrawAllEdges();
+                rafPending = false;
+            });
+        }
+    }
+
+    function onPointerUp() {
+        if (!dragNode) return;
+        dragNode.el.style.zIndex = "2";
+        dragNode.el.style.cursor = "";
+        document.body.style.userSelect = "";
+
+        // Mark that the user has manually arranged nodes
+        _userDragged = true;
+
+        // Expand container if node was dragged below current bottom
+        const container = _graphState.container;
+        const el = dragNode.el;
+        const bottom = el.offsetTop + el.offsetHeight + PADDING_Y;
+        if (bottom > container.offsetHeight) {
+            container.style.height = `${bottom}px`;
+        }
+
+        dragNode = null;
+        redrawAllEdges();
+    }
+
+    // Attach per-node handlers
+    for (const [nodeId, nodeData] of Object.entries(allNodes)) {
+        const el = nodeData.el;
+        el.style.cursor = "grab";
+        el.addEventListener("mousedown", (e) => onPointerDown(e, nodeId));
+        el.addEventListener("touchstart", (e) => onPointerDown(e, nodeId), { passive: false });
+    }
+
+    // Global move/up handlers
+    document.addEventListener("mousemove", onPointerMove);
+    document.addEventListener("mouseup", onPointerUp);
+    document.addEventListener("touchmove", onPointerMove, { passive: false });
+    document.addEventListener("touchend", onPointerUp);
+}
+
+
 // ─── Hover ────────────────────────────────────────────────────
 
 function setupHoverHighlighting(allNodes, edges) {
@@ -559,6 +676,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     new MutationObserver(() => {
         const c = document.getElementById("system-graph-container");
-        if (c && !c._observed) { resizeObs.observe(c); c._observed = true; setTimeout(drawTopicConnections, 100); }
+        if (c && !c._observed) {
+            resizeObs.observe(c);
+            c._observed = true;
+            // Fresh DOM — reset user drag state so layout is recomputed
+            _userDragged = false;
+            _graphState = null;
+            setTimeout(drawTopicConnections, 100);
+        }
     }).observe(document.body, { childList: true, subtree: true });
 });
