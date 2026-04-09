@@ -278,13 +278,6 @@ class FHApp:
 
     def _create_component_settings_ui(self, settings: Dict):
         """Creates a Div for component settings from a dictionary."""
-        # Parse number of grid columns and column span based on the number of components
-        # if len(settings) > 2:
-        #     grid_num_cols = 2
-        #     item_col_cls = "col-1"
-        #     # Make the last component span over the whole width if we have an odd number of components
-        #     last_col_cls = "col-span-full" if len(settings) % 2 == 1 else "col-1"
-        # else:
         grid_num_cols = 1
         item_col_cls = "col-span-full"
         last_col_cls = "col-span-full"
