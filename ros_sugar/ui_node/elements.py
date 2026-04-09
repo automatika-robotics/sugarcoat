@@ -1521,7 +1521,6 @@ def system_event_node(event_data: Dict) -> FT:
     import json as _json
 
     event_id = event_data.get("id", "")
-    readable = event_data.get("readable", "?")
     condition_parts = event_data.get("condition_parts", [])
     involved_topics = event_data.get("involved_topics", [])
     actions = event_data.get("actions", [])
@@ -1538,17 +1537,15 @@ def system_event_node(event_data: Dict) -> FT:
     # Determine the main symbol to show in the diamond
     # For composed conditions: show the logic operator symbol
     # For simple conditions: show the comparison operator symbol
-    logic_symbols = {"AND": "∧", "OR": "∨", "NOT": "¬"}
     display_parts = []
 
     has_logic = any(p["type"] == "logic" for p in condition_parts)
     if has_logic:
-        # Composed condition — show logic operator symbol
+        seen = set()
         for part in condition_parts:
-            if part["type"] == "logic":
-                symbol = logic_symbols.get(part["value"], part["value"])
-                if symbol not in [p.get("symbol") for p in display_parts]:
-                    display_parts.append(Span(symbol, cls="cond-logic-symbol"))
+            if part["type"] == "logic" and part["value"] not in seen:
+                seen.add(part["value"])
+                display_parts.append(Span(part["value"], cls="cond-logic-symbol"))
     else:
         # Simple condition — show operator symbol
         for part in condition_parts:
@@ -1610,7 +1607,6 @@ def system_recipe_action_node(action_data: Dict, event_id: str) -> FT:
     :return: Action node UI element
     """
     action_name = action_data.get("name", "?")
-    action_type = action_data.get("type", "launch")
 
     return Div(
         P(action_name, cls="text-xs font-mono"),
@@ -1694,6 +1690,47 @@ def system_component_card(
     )
 
 
+def _render_config_summary(config_data: Dict, indent: int = 0) -> FT:
+    """Render a read-only config summary, handling nested BaseAttrs recursively.
+
+    :param config_data: Config field metadata dict
+    :param indent: Nesting level for visual indentation
+    :return: Grid of config parameters
+    """
+    grid = Grid(cols=4, cls=f"gap-2 {'ml-4' if indent > 0 else ''}")
+    for param_name, param_details in config_data.items():
+        if param_name.startswith("_"):
+            continue
+        field_type, _ = parse_type(param_details.get("type", ""))
+        value = param_details.get("value", "")
+
+        if field_type == "BaseAttrs" and isinstance(value, dict):
+            # Nested config — render as collapsible section
+            section_id = f"detail-config-{param_name}-{indent}"
+            nested_header = DivLAligned(
+                Span(param_name, cls="font-bold text-sm"),
+                _toggle_button(div_to_toggle=section_id),
+                cls="gap-1",
+            )
+            nested_content = Div(
+                _render_config_summary(value, indent + 1),
+                id=section_id,
+                hidden=True,
+                style="display: none;",
+            )
+            grid(Div(nested_header, nested_content, cls="col-span-full"))
+        else:
+            grid(
+                DivLAligned(
+                    P(
+                        Span(param_name, cls="font-bold text-sm"),
+                        Span(f": {value}", cls="text-sm opacity-80"),
+                    ),
+                )
+            )
+    return grid
+
+
 def system_component_detail(
     node_name: str,
     graph_data: Dict,
@@ -1758,25 +1795,12 @@ def system_component_detail(
 
     detail(content_grid)
 
-    # --- Config summary (for managed components) ---
+    # --- Config summary (for managed components, handles nested attrs) ---
     if config_data:
         config_section = Div(
             H5("Configuration", cls="cool-subtitle-mini-blue mb-2 mt-4"),
         )
-        config_grid = Grid(cols=4, cls="gap-2")
-        for param_name, param_details in config_data.items():
-            if param_name.startswith("_"):
-                continue
-            value = param_details.get("value", "")
-            config_grid(
-                DivLAligned(
-                    P(
-                        Span(param_name, cls="font-bold text-sm"),
-                        Span(f": {value}", cls="text-sm opacity-80"),
-                    ),
-                )
-            )
-        config_section(config_grid)
+        config_section(_render_config_summary(config_data))
         detail(config_section)
 
     # --- Related events ---
@@ -1830,7 +1854,7 @@ def system_component_detail(
                         P(
                             Span(f"{tier_label}: ", cls="font-bold"),
                             Span("not configured", cls="text-xs opacity-40"),
-                            cls=f"ml-2 text-sm fallback-tier unconfigured",
+                            cls="ml-2 text-sm fallback-tier unconfigured",
                         )
                     )
             detail(fb_section)

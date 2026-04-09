@@ -1163,7 +1163,7 @@ html.light .run-type-badge.monitor {
 }
 
 .topic-label {
-    font-size: clamp(0.5rem, 0.6vw, 0.7rem);
+    font-size: clamp(0.65rem, 0.8vw, 0.9rem);
     font-family: var(--font-body);
     opacity: 0.7;
     transition: opacity 0.2s ease;
@@ -1183,7 +1183,7 @@ html.light .run-type-badge.monitor {
 }
 
 .topic-stub-label {
-    font-size: clamp(0.45rem, 0.55vw, 0.65rem);
+    font-size: clamp(0.6rem, 0.75vw, 0.85rem);
     font-family: var(--font-body);
     opacity: 0.7;
     transition: opacity 0.2s ease;

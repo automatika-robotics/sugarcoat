@@ -240,9 +240,10 @@ function drawTopicConnections() {
         });
 
         // 2c. Event → Component (action method call)
+        // Use side entry to avoid overlapping with topic edges that enter from top
         for (const a of evD.componentActions) {
             if (a.component && components[a.component]) {
-                edges.push({ from: eventId, fromType: "event", to: a.component, toType: "component", label: a.name, color: "#888", dashed: true });
+                edges.push({ from: eventId, fromType: "event", to: a.component, toType: "component", label: a.name, color: "#888", dashed: true, entryCorner: "right" });
             }
         }
 
@@ -404,20 +405,68 @@ function drawTopicConnections() {
     });
 }
 
-/** Draw a row of stubs spaced horizontally along the top or bottom of a node. */
+/** Draw a row of stubs spaced horizontally along the top or bottom of a node.
+ *  Stubs fan out for label spacing but arrows always touch the node edge. */
 function drawStubRow(svg, cRect, nRect, topics, topicColors, direction, nodeId) {
     if (!topics.length) return;
+
+    const stubLen = 30;
+    const as = 4;
     const labelWidths = topics.map(t => (t.startsWith("/") ? t.slice(1) : t).length * 7);
     const spacing = Math.max(50, ...labelWidths);
     const totalW = topics.length * spacing;
-    const startX = nRect.left + (nRect.width - totalW) / 2 - cRect.left + spacing / 2;
+    const outerStartX = nRect.left + (nRect.width - totalW) / 2 - cRect.left + spacing / 2;
+
+    // Distribute arrow endpoints evenly across the node width
+    const nodeLeft = nRect.left - cRect.left;
+    const nodeW = nRect.width;
+    const edgeY = direction === "input" ? (nRect.top - cRect.top) : (nRect.bottom - cRect.top);
 
     topics.forEach((topic, idx) => {
         const color = topicColors[topic] || EDGE_PALETTE[idx % EDGE_PALETTE.length];
         if (!topicColors[topic]) topicColors[topic] = color;
-        const x = startX + idx * spacing;
-        const y = direction === "input" ? (nRect.top - cRect.top) : (nRect.bottom - cRect.top);
-        drawStub(svg, x, y, direction === "input" ? "from-top" : "from-bottom", topic, color, nodeId);
+        const shortName = topic.startsWith("/") ? topic.slice(1) : topic;
+
+        // Outer point (where label sits) — fanned out for spacing
+        const outerX = outerStartX + idx * spacing;
+        // Inner point (arrow tip) — distributed within the node width
+        const innerX = topics.length === 1
+            ? nodeLeft + nodeW / 2
+            : nodeLeft + nodeW * 0.2 + (nodeW * 0.6) * (idx / (topics.length - 1));
+
+        let outerY, innerY, labelY, arrowPts;
+        if (direction === "input") {
+            outerY = edgeY - stubLen;
+            innerY = edgeY;
+            labelY = outerY - 5;
+            arrowPts = arrowPoints(innerX, innerY, "down", as);
+        } else {
+            outerY = edgeY + stubLen;
+            innerY = edgeY;
+            labelY = outerY + 12;
+            arrowPts = arrowPoints(outerX, outerY, "down", as);
+        }
+
+        const dataAttr = { "data-node": nodeId || "" };
+
+        // Line from outer point to inner (arrow) point
+        svg.appendChild(svgEl("line", {
+            x1: outerX, y1: outerY, x2: innerX, y2: innerY,
+            class: "topic-stub", ...dataAttr, style: { stroke: color },
+        }));
+
+        // Arrow
+        svg.appendChild(svgEl("polygon", {
+            points: arrowPts, class: "topic-stub-arrow", ...dataAttr, style: { fill: color },
+        }));
+
+        // Label at outer end
+        const text = svgEl("text", {
+            x: outerX, y: labelY, class: "topic-stub-label", "text-anchor": "middle",
+            ...dataAttr, style: { fill: color },
+        });
+        text.textContent = shortName;
+        svg.appendChild(text);
     });
 }
 
