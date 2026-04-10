@@ -175,6 +175,8 @@ class Monitor(Node):
         # Create health status subscribers
         if self._components_to_monitor:
             for component_name in self._components_to_monitor:
+                # TODO: Adds status subscribers with heart beat check for
+                # process fail recovery
                 self._turn_on_component_management(component_name)
 
         # Activate event monitoring
