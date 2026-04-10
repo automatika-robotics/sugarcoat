@@ -7,8 +7,7 @@ import json
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from rclpy.node import Node
 from rclpy.publisher import Publisher
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
-from automatika_ros_sugar.msg import ComponentStatus
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from automatika_ros_sugar.srv import (
     ChangeParameter,
     ChangeParameters,
@@ -646,6 +645,28 @@ class Monitor(Node):
             return
         publisher.publish(msg)
 
+    # -------- EVENT MANAGEMENT ------------------
+
+    def __start_callable_based_event_timers(self) -> None:
+        """Create one periodic timer per action-based event sourced from _internal_events.
+
+        Recipe-level action-based events are passed as live Event objects (with the
+        condition callable intact) via _internal_events. The Monitor polls them here.
+        """
+        self.__action_event_timers = []
+        for event in self.__events:
+            if event._is_action_based:
+                rate = event.check_rate or self.config.loop_rate
+                self.__action_event_timers.append(
+                    self.create_timer(
+                        timer_period_sec=1.0 / rate,
+                        callback=partial(
+                            event.check_action_condition, self._events_topics_blackboard
+                        ),
+                        callback_group=MutuallyExclusiveCallbackGroup(),
+                    )
+                )
+
     def __event_topic_callback(self, topic_name: str, msg: Any):
         """
         Central Handler:
@@ -676,13 +697,11 @@ class Monitor(Node):
                 if valid_entry:
                     clean_cache_subset[topic.name] = valid_entry
             # Pass the clean subset to the event
-            event.check_condition(clean_cache_subset)
+            if not event._is_action_based:
+                event.check_condition(clean_cache_subset)
 
-    def _activate_event_monitoring(self) -> None:
-        """
-        Turn on all events
-        """
-        self.__events = []
+    def __reconstruct_monitor_actions(self):
+        self.__events: List[Event] = []
         if self._monitor_events_actions:
             for event, actions in self._monitor_events_actions.items():
                 for action in actions:
@@ -695,6 +714,13 @@ class Monitor(Node):
         if self._internal_events:
             # Add internal events (to emit back to launcher)
             self.__events.extend(self._internal_events)
+
+    def _activate_event_monitoring(self) -> None:
+        """
+        Turn on all events
+        """
+
+        self.__reconstruct_monitor_actions()
 
         # TURN ON EVENTS MANAGEMENT
         # Blackboard to store latest messages for all topics required for all event:
@@ -728,3 +754,4 @@ class Monitor(Node):
             )
             self.__event_listeners.append(listener)
 
+        self.__start_callable_based_event_timers()

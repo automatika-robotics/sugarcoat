@@ -1185,12 +1185,14 @@ class BaseComponent(lifecycle.Node):
             self.__actions = []
         for event_serialized, actions in events_actions_dict.items():
             action_set = actions if isinstance(actions, list) else [actions]
+            event = Event.from_json(event_serialized)
             for action in action_set:
                 if not hasattr(self, action.action_name):
                     raise ValueError(
                         f"Component '{self.node_name}' does not support action '{action.action_name}'"
                     )
-            self.__events.append(Event.from_json(event_serialized))
+                event.verify_required_action_topics(action)
+            self.__events.append(event)
             self.__actions.append(action_set)
 
     # SERIALIZATION AND DESERIALIZATION
