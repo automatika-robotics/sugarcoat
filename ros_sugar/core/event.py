@@ -520,6 +520,8 @@ class Event:
         finally:
             # Reset the flag only after work + delay are done
             self.under_processing = False
+            # NOTE: We set this to true even if the consequent action failed
+            # with an error
             self._processed_once = True
 
     def register_actions(
@@ -550,6 +552,10 @@ class Event:
         Replaces existing trigger logic.
         Evaluates the root Condition tree against the global cache.
         """
+        # Dont keep on checking for handle once events after they have been processed
+        if self._handle_once and self._processed_once:
+            return
+
         topics_dict = {key: value.msg for key, value in global_topic_cache.items()}
 
         if self._on_any:
@@ -596,6 +602,10 @@ class Event:
         """Evaluate the action-based condition and execute registered actions if triggered.
         Called periodically by a component timer; should only be used on action-based events.
         """
+        # Dont keep on checking for handle once events after they have been processed
+        if self._handle_once and self._processed_once:
+            return
+
         triggered = bool(self._action_condition())
 
         if self._on_change and self._previous_trigger is not None:
