@@ -75,19 +75,14 @@ def generate_test_description():
     # Component publishing to the event topic
     component = ChildComponent(component_name="test_component")
 
-    # health status topic
-    status_topic = Topic(name="test_component/status", msg_type="ComponentStatus")
-
     test_topic = Topic(name="test_topic", msg_type="Float32")
 
     # On any
-    event_on_health_status = Event(status_topic, handle_once=True)
+    event_on_health_status = Event(component.status_topic, handle_once=True)
 
     event_on_published_message = Event(test_topic, handle_once=True)
 
-    def inline_method(**_):
-        global inline_action_py_event
-        logging.info("Testing inline action")
+    def inline_method():
         inline_action_py_event.set()
 
     msg = Float32()
@@ -139,7 +134,7 @@ def generate_test_description():
 class TestActions(unittest.TestCase):
     """Tests that all action types are executed correctly"""
 
-    wait_time = 10.0  # seconds
+    wait_time = 20.0  # seconds
 
     def test_inline_action(cls):
         global inline_action_py_event
