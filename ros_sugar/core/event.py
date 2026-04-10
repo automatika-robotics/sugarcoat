@@ -572,13 +572,15 @@ class Event:
             # 1. the event previous value is different from the event current value (there is a change)
             # and 2. if the new_trigger is on
             # If on_change and 1 and 2 -> activate the trigger
-            if (
-                self._on_change
-                and self._previous_trigger is not None
-                and not self._previous_trigger
-                and triggered
-            ):
-                self.trigger = True
+            if self._on_change:
+                if (
+                    self._previous_trigger is not None
+                    and not self._previous_trigger
+                    and triggered
+                ):
+                    self.trigger = True
+                else:
+                    self.trigger = False
             else:
                 # If:
                 # 1. on_change is not required
