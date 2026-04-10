@@ -43,7 +43,7 @@ class Monitor(Node):
     def __init__(
         self,
         components_names: List[str],
-        events_actions: Optional[Dict[str, List[Action]]] = None,
+        events_actions: Optional[Dict[Event, List[Action]]] = None,
         events_to_emit: Optional[List[Event]] = None,
         config: Optional[BaseConfig] = None,
         services_components: Optional[List[BaseComponent]] = None,
@@ -175,7 +175,6 @@ class Monitor(Node):
 
         # Create health status subscribers
         if self._components_to_monitor:
-            self._create_status_subscribers()
             for component_name in self._components_to_monitor:
                 self._turn_on_component_management(component_name)
 
@@ -685,8 +684,7 @@ class Monitor(Node):
         """
         self.__events = []
         if self._monitor_events_actions:
-            for serialized_event, actions in self._monitor_events_actions.items():
-                event = Event.from_json(serialized_event)
+            for event, actions in self._monitor_events_actions.items():
                 for action in actions:
                     method = getattr(self, action.action_name)
                     # register action to the event
@@ -730,32 +728,3 @@ class Monitor(Node):
             )
             self.__event_listeners.append(listener)
 
-    def _create_status_subscribers(self) -> None:
-        """
-        Creates subscribers to all the health status topics of the components
-        """
-        # Reentrant group for multi threaded monitoring
-        callback_group = ReentrantCallbackGroup()
-        for component_name in self._components_to_monitor:
-            logger.info(f"Creating health status subscriber for: {component_name}")
-            self.create_subscription(
-                ComponentStatus,
-                topic=f"{component_name}/status",
-                callback=partial(
-                    self._status_check_callback, component_name=component_name
-                ),
-                qos_profile=10,
-                callback_group=callback_group,
-            )
-
-    def _status_check_callback(self, msg, component_name: str):
-        """
-        Callback to check the health status of a component
-
-        :param msg: Health status message
-        :type msg: ComponentStatus
-        :param component: Node under check
-        :type component: Component
-        """
-        # TODO: handle status
-        self.get_logger().debug(f"Form {component_name} got status {msg}")
