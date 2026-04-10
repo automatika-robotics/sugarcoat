@@ -51,6 +51,7 @@ from .system_info import (
 from ..io import Topic
 from ..io.supported_types import _additional_types
 from ..core.action import LogInfo
+from ..actions import publish_message
 from ..config.base_config import ComponentRunType
 from ..core.action import Action
 from ..core.component import BaseComponent
@@ -159,7 +160,7 @@ class Launcher:
         self._internal_event_names: Optional[List[str]] = None
         self._ros_events_actions: Dict[str, List[ROSLaunchAction]] = {}
         # Dictionaries {serialized_event: actions}
-        self._monitor_events_actions: Dict[str, List[Action]] = {}
+        self._monitor_events_actions: Dict[Event, List[Action]] = {}
         self._components_events_actions: Dict[str, List[Action]] = {}
         self.__events_names: List[str] = []
 
@@ -521,10 +522,17 @@ class Launcher:
         """
         self.__events_names.extend(event.id for event in events_actions_dict)
         for event, action_set in events_actions_dict.items():
+            bridge_events_per_target: Dict[str, Event] = {}
             for action in action_set:
                 # Verify that the action inputs are available from the event topic(s)
                 if isinstance(action, Action):
                     event.verify_required_action_topics(action)
+                # Callable-based events have their own routing logic
+                if event._is_action_based:
+                    self.__route_action_based_event(
+                        event, action, bridge_events_per_target
+                    )
+                    continue
                 # Check if it is a component action:
                 if isinstance(action, Action) and action.component_action:
                     action_object = action.executable.__self__
@@ -546,15 +554,91 @@ class Launcher:
                         )
                 elif isinstance(action, Action) and action._is_monitor_action:
                     # Action to execute through the monitor
-                    serialized_condition: str = (
-                        event.to_json() if isinstance(event, Event) else event
-                    )
-                    self.__update_dict_list(
-                        self._monitor_events_actions, serialized_condition, action
-                    )
+                    self.__update_dict_list(self._monitor_events_actions, event, action)
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
                     self._update_ros_events_actions(event, action)
+
+    def __route_action_based_event(
+        self,
+        event: Event,
+        action: Action,
+        bridge_events_per_target: Dict[str, Event],
+    ) -> None:
+        """Route an action-based event to the appropriate owner.
+
+        Two cases based on who owns the consequence Action:
+
+        1. Recipe-condition + Recipe-action: route both directly to Monitor.
+        2. Recipe-condition + Component-action: Monitor publishes a Bool bridge topic when the
+           condition fires; the consequence component monitors that bridge topic.
+
+        :param event: The action-based event
+        :type event: Event
+        :param action: The consequence action
+        :type action: Action
+        :param bridge_events_per_target: Cache of already-created bridge events keyed by
+            consequence owner name, shared across actions of the same event
+        :type bridge_events_per_target: Dict[str, Event]
+        """
+        from std_msgs.msg import Bool
+
+        # condition_owner is always the Recipe (Launcher/Monitor)
+        consequence_owner: Optional[str] = (
+            action.parent_component if isinstance(action, Action) else None
+        )
+
+        # Case 1: Recipe-level condition + non-component consequence.
+        # The condition callable lives in the launch process; route the event via
+        # _internal_events so ComponentLaunchAction registers _on_internal_event on it
+        # and the Monitor creates a polling timer for it.
+        if not consequence_owner:
+            logger.debug(
+                f"Action-based event '{event}': recipe-level condition + launch-level"
+                f" action, routing via internal event"
+            )
+            if isinstance(action, Action) and action._is_monitor_action:
+                # Action to execute through the monitor
+                self.__update_dict_list(self._monitor_events_actions, event, action)
+            elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
+                # If it is a valid ROS launch action -> nothing is required
+                self._update_ros_events_actions(event, action)
+            return
+
+        # Case 2: Recipe-level condition + component-owned consequence.
+        # Require a Bool bridge topic so the Monitor can signal
+        # the consequence owner across process boundaries.
+        event_id_safe = event.id.replace("-", "_")
+        bridge_topic_name = f"/event_bridge/e_{event_id_safe}_{consequence_owner}"
+
+        # Reuse an already-created bridge event for this (event, consequence_owner) pair
+        bridge_event = bridge_events_per_target.get(consequence_owner)
+        if bridge_event is None:
+            bridge_topic = Topic(name=bridge_topic_name, msg_type="Bool")
+            bridge_event = Event(event_condition=bridge_topic)
+            bridge_event.verify_required_action_topics(action)
+            bridge_events_per_target[consequence_owner] = bridge_event
+        bridge_serialized: str = bridge_event.to_json()
+
+        # The Monitor polls the condition via a timer and, when it fires, publishes
+        # Bool(True) on the bridge topic (via the _on_internal_event → OnInternalEvent
+        # → publish_message path). The consequence component subscribes to the bridge.
+        logger.debug(
+            f"Action-based event '{event}': recipe-level condition + component-action"
+            f" '{consequence_owner}', bridge topic '{bridge_topic_name}'"
+        )
+        bridge_publish_action = publish_message(
+            topic=Topic(name=bridge_topic_name, msg_type="Bool"),
+            msg=Bool(data=True),
+        )
+        # Action to execute through the monitor
+        self.__update_dict_list(
+            self._monitor_events_actions, event, bridge_publish_action
+        )
+        self.__update_dict_list(
+            self._components_events_actions, bridge_serialized, action
+        )
+        return
 
     def _activate_components_action(self) -> SomeEntitiesType:
         """
