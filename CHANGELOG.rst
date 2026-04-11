@@ -2,6 +2,29 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (docs) Adds a more comprehensive guide for the internal events-actions system design
+* (fix) Adds guard to avoid redundant checks for handle once events
+* (feature) Adds tests for generic events with and without dynamic arguments for Actions
+* (feature) Adds generic events management to Monitor
+* (refactor) Removes overhead of serializing/deserializing events in Monitor
+* (feature) Adds support for constructing event conditions using generic methods in the recipe polled at a given check_rate
+* (chore) Removes unused commented code
+* (chore) Improves system graph colors in light theme
+* (feature) Makes system graph draggable and resizable
+* (fix) Fixes arrow heads pointing direction for input/output topics
+* (fix) Fixes multiple issues with input topics in node graph
+* (feature) Adds events and actions to the graph and adds events detail card
+* (refactor) Refactors building system info and adds condition serialization to events
+* (fix) Fixes fetching decorated methods in component
+* (feature) Adds endpoints for system info graph
+* (feature) Adds front end elements for system info graph
+* (feature) Adds serialized system info generation in the launcher
+* (fix) Removes unused imports
+* (fix) Sets destroyed publisher object to None to avoid rclpy errors during restart
+* Contributors: ahr, mkabtoul
+
 0.6.0 (2026-04-05)
 ------------------
 * (docs) Updates docs for the publishing pre-processor consistency and action decorators with description
