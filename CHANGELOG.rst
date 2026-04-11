@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.6.1 (2026-04-11)
+------------------
 * (docs) Adds a more comprehensive guide for the internal events-actions system design
 * (fix) Adds guard to avoid redundant checks for handle once events
 * (feature) Adds tests for generic events with and without dynamic arguments for Actions
