@@ -72,6 +72,7 @@ class PublisherComponent(BaseComponent):
         if self.publishers_dict.get("float_test"):
             self.publishers_dict["float_test"].publish(EXPECTED_VALUE)
 
+
 # ------------------------------------------------------------------
 # Launch description
 # ------------------------------------------------------------------
@@ -202,8 +203,6 @@ class TestActionBasedEvents(unittest.TestCase):
 
     wait_time = 20.0  # seconds
 
-    # --- Case 3: same-component condition + same-component action ---
-
     def test_basic_action_based_trigger(cls):
         """[Case 1] Consequence fires once the condition Action starts returning True."""
         assert basic_trigger_py_event.wait(cls.wait_time), (
@@ -235,8 +234,7 @@ class TestActionBasedEvents(unittest.TestCase):
         )
 
     def test_dynamic_args_comp_action_based_trigger(cls):
-        """[Case 4]"""
+        """[Case 5]"""
         assert dynamic_arg_comp_py_event.wait(cls.wait_time), (
             "Action-based event with dynamic args in the component failed to trigger"
         )
-
