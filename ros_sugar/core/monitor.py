@@ -7,8 +7,7 @@ import json
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from rclpy.node import Node
 from rclpy.publisher import Publisher
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
-from automatika_ros_sugar.msg import ComponentStatus
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from automatika_ros_sugar.srv import (
     ChangeParameter,
     ChangeParameters,
@@ -43,7 +42,7 @@ class Monitor(Node):
     def __init__(
         self,
         components_names: List[str],
-        events_actions: Optional[Dict[str, List[Action]]] = None,
+        events_actions: Optional[Dict[Event, List[Action]]] = None,
         events_to_emit: Optional[List[Event]] = None,
         config: Optional[BaseConfig] = None,
         services_components: Optional[List[BaseComponent]] = None,
@@ -175,8 +174,9 @@ class Monitor(Node):
 
         # Create health status subscribers
         if self._components_to_monitor:
-            self._create_status_subscribers()
             for component_name in self._components_to_monitor:
+                # TODO: Adds status subscribers with heart beat check for
+                # process fail recovery
                 self._turn_on_component_management(component_name)
 
         # Activate event monitoring
@@ -647,6 +647,28 @@ class Monitor(Node):
             return
         publisher.publish(msg)
 
+    # -------- EVENT MANAGEMENT ------------------
+
+    def __start_callable_based_event_timers(self) -> None:
+        """Create one periodic timer per action-based event sourced from _internal_events.
+
+        Recipe-level action-based events are passed as live Event objects (with the
+        condition callable intact) via _internal_events. The Monitor polls them here.
+        """
+        self.__action_event_timers = []
+        for event in self.__events:
+            if event._is_action_based:
+                rate = event.check_rate or self.config.loop_rate
+                self.__action_event_timers.append(
+                    self.create_timer(
+                        timer_period_sec=1.0 / rate,
+                        callback=partial(
+                            event.check_action_condition, self._events_topics_blackboard
+                        ),
+                        callback_group=MutuallyExclusiveCallbackGroup(),
+                    )
+                )
+
     def __event_topic_callback(self, topic_name: str, msg: Any):
         """
         Central Handler:
@@ -677,16 +699,13 @@ class Monitor(Node):
                 if valid_entry:
                     clean_cache_subset[topic.name] = valid_entry
             # Pass the clean subset to the event
-            event.check_condition(clean_cache_subset)
+            if not event._is_action_based:
+                event.check_condition(clean_cache_subset)
 
-    def _activate_event_monitoring(self) -> None:
-        """
-        Turn on all events
-        """
-        self.__events = []
+    def __reconstruct_monitor_actions(self):
+        self.__events: List[Event] = []
         if self._monitor_events_actions:
-            for serialized_event, actions in self._monitor_events_actions.items():
-                event = Event.from_json(serialized_event)
+            for event, actions in self._monitor_events_actions.items():
                 for action in actions:
                     method = getattr(self, action.action_name)
                     # register action to the event
@@ -697,6 +716,13 @@ class Monitor(Node):
         if self._internal_events:
             # Add internal events (to emit back to launcher)
             self.__events.extend(self._internal_events)
+
+    def _activate_event_monitoring(self) -> None:
+        """
+        Turn on all events
+        """
+
+        self.__reconstruct_monitor_actions()
 
         # TURN ON EVENTS MANAGEMENT
         # Blackboard to store latest messages for all topics required for all event:
@@ -730,32 +756,4 @@ class Monitor(Node):
             )
             self.__event_listeners.append(listener)
 
-    def _create_status_subscribers(self) -> None:
-        """
-        Creates subscribers to all the health status topics of the components
-        """
-        # Reentrant group for multi threaded monitoring
-        callback_group = ReentrantCallbackGroup()
-        for component_name in self._components_to_monitor:
-            logger.info(f"Creating health status subscriber for: {component_name}")
-            self.create_subscription(
-                ComponentStatus,
-                topic=f"{component_name}/status",
-                callback=partial(
-                    self._status_check_callback, component_name=component_name
-                ),
-                qos_profile=10,
-                callback_group=callback_group,
-            )
-
-    def _status_check_callback(self, msg, component_name: str):
-        """
-        Callback to check the health status of a component
-
-        :param msg: Health status message
-        :type msg: ComponentStatus
-        :param component: Node under check
-        :type component: Component
-        """
-        # TODO: handle status
-        self.get_logger().debug(f"Form {component_name} got status {msg}")
+        self.__start_callable_based_event_timers()

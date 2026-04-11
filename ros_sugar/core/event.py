@@ -1,5 +1,6 @@
 """Event"""
 
+import inspect
 import json
 import time
 import uuid
@@ -204,10 +205,28 @@ class EventBlackboardEntry:
 
 
 class Event:
-    """An Event is defined by a change in a ROS2 message value on a specific topic. Events are created to alert a robot software stack to any dynamic change at runtime.
+    """A runtime trigger driven by ROS2 topic data or a callable condition.
 
-    Events are used by matching them to 'Actions'; an Action is meant to be executed at runtime once the Event is triggered.
+    An Event monitors one of three condition types and fires registered Actions
+    when the condition becomes true:
 
+    1. **Condition expression** – a declarative predicate on topic message
+       attributes (e.g. ``topic.msg.speed > 5.0``). The condition is evaluated
+       each time new data arrives on the involved topics.
+    2. **Topic (on-any)** – triggers whenever a valid message is available on
+       the given topic(s), regardless of content.
+    3. **Callable** – a user-supplied function polled at ``check_rate`` whose
+       boolean return value determines the trigger state.
+
+    Trigger behaviour can be further refined with:
+
+    * ``on_change`` – fire only on a *rising edge* (condition transitions from
+      false to true), rather than every evaluation cycle.
+    * ``handle_once`` – fire at most once and then become inert.
+    * ``keep_event_delay`` – hold the *under-processing* flag for a fixed
+      duration after actions complete, throttling re-triggers.
+
+    Actions are executed asynchronously via a shared ``ThreadPoolExecutor``.
     """
 
     # SHARED EXECUTOR across all Event instances to prevent thread explosion.
@@ -218,29 +237,35 @@ class Event:
 
     def __init__(
         self,
-        event_condition: Union[Topic, Condition],
+        event_condition: Union[Topic, Condition, Callable],
         on_change: bool = False,
         handle_once: bool = False,
         keep_event_delay: float = 0.0,
+        check_rate: Optional[float] = None,
     ) -> None:
-        """Creates an event
+        """Create a new Event.
 
-        :param event_name: Event key name
-        :type event_name: str
-        :param event_source: Event source configured using a Topic instance or a valid json/dict config
-        :type event_source: Union[Topic, str, Dict]
-        :param trigger_value: Triggers event using this reference value
-        :type trigger_value: Union[float, int, bool, str, List, None]
-        :param nested_attributes: Attribute names to access within the event_source Topic
-        :type nested_attributes: Union[str, List[str]]
-        :param handle_once: Handle the event only once during the node lifetime, defaults to False
+        :param event_condition: The source that drives this event. Can be a
+            ``Condition`` expression on topic attributes, a ``Topic`` for
+            on-any monitoring, or a ``Callable`` that returns ``bool`` and is
+            polled at ``check_rate``.
+        :type event_condition: Union[Topic, Condition, Callable]
+        :param on_change: If True, trigger only on a rising edge (condition
+            transitions from False to True), defaults to False.
+        :type on_change: bool, optional
+        :param handle_once: If True, execute registered actions at most once
+            across the lifetime of this event, defaults to False.
         :type handle_once: bool, optional
-        :param keep_event_delay: Add a time delay between consecutive event handling instances, defaults to 0.0
+        :param keep_event_delay: Minimum delay in seconds to hold the
+            under-processing flag after actions complete, throttling
+            re-triggers, defaults to 0.0.
         :type keep_event_delay: float, optional
-
-        :raises AttributeError: If a non-valid event_source is provided
-
-        :raises TypeError: If the provided nested_attributes cannot be accessed in the Topic message type
+        :param check_rate: Polling rate in Hz for callable-based conditions. If not provided, the component loop_rate is used instead.
+            Only used when ``event_condition`` is a Callable, defaults to None.
+        :type check_rate: Optional[float], optional
+        :raises TypeError: If a callable-based condition is a component-bound
+            method or does not return bool.
+        :raises AttributeError: If ``event_condition`` is not a supported type.
         """
         # Unique event ID
         self.__id = str(uuid.uuid4())
@@ -255,9 +280,15 @@ class Event:
         # Case 1: Init from Condition Expression (topic.msg.data > 5)
         if isinstance(event_condition, Condition):
             self._condition = event_condition
+            self._action_condition: Optional[Action] = None
+            self._is_action_based: bool = False
+            self.check_rate: Optional[float] = None
 
-        # Topics are passed for on_any event
+        # Case 2: Topics are passed for on_any event
         elif isinstance(event_condition, Topic):
+            self._action_condition: Optional[Action] = None
+            self._is_action_based: bool = False
+            self.check_rate: Optional[float] = None
             self._condition = Condition(
                 topic_name=event_condition.name,
                 topic_msg_type=event_condition.msg_type.__name__,
@@ -267,9 +298,28 @@ class Event:
                 ref_value=None,
             )
             self._on_any = True
+        # Case 3: Callable-based polling: action return value is the boolean condition
+        elif isinstance(event_condition, Callable):
+            self._condition = None
+            self._action_condition = Action(method=event_condition)
+            self._is_action_based = True
+            self.check_rate = check_rate
+            # Validate: must not be a @component_action (bound to a component lifecycle)
+            if self._action_condition.component_action:
+                raise TypeError(
+                    f"Cannot use a component method '{event_condition.__name__}' as an event_condition. "
+                    f"Use a plain callable instead."
+                )
+            # Validate: return type must be bool
+            return_type = inspect.signature(event_condition).return_annotation
+            if return_type is not inspect.Parameter.empty and return_type is not bool:
+                raise TypeError(
+                    f"event_condition callable must return bool, "
+                    f"but '{event_condition.__name__}' has return annotation '{return_type}'."
+                )
         else:
             raise AttributeError(
-                f"Cannot initialize Event class. Must provide 'event_source' as a Topic or a valid config from json or dictionary or a condition, got {type(event_condition)}"
+                f"Cannot initialize Event class. Must provide 'event_condition' as a Topic, a Condition on a Topic or a valid Method to be checked at check_rate, got {type(event_condition)}"
             )
 
         # Init trigger as False
@@ -280,9 +330,10 @@ class Event:
 
         # Required topics registry
         self.__required_topics: List[Topic] = []
-        required_topics_dict: Dict = self._condition._get_involved_topics()
-        for topic_name, topic_dict in required_topics_dict.items():
-            self.__required_topics.append(Topic(name=topic_name, **topic_dict))
+        if not self._is_action_based:
+            required_topics_dict: Dict = self._condition._get_involved_topics()
+            for topic_name, topic_dict in required_topics_dict.items():
+                self.__required_topics.append(Topic(name=topic_name, **topic_dict))
 
         # Additional Action Topics
         self.__additional_action_topics: List[Topic] = []
@@ -343,9 +394,10 @@ class Event:
         :return: Event description dictionary
         :rtype: Dict
         """
+        # NOTE: callable-based events are always handled by the Monitor (main process). Events with callable conditions will never be ran in a different process, so the serialization/deserialization of action_condition is not needed
         event_dict = {
             "name": self.__id,
-            "condition": self._condition.to_json(),
+            "condition": self._condition.to_json() if self._condition else None,
             "handle_once": self._handle_once,
             "keep_event_delay": self._keep_event_delay,
             "on_change": self._on_change,
@@ -468,6 +520,9 @@ class Event:
         finally:
             # Reset the flag only after work + delay are done
             self.under_processing = False
+            # NOTE: We set this to true even if the consequent action failed
+            # with an error
+            self._processed_once = True
 
     def register_actions(
         self, actions: Union[Action, Callable, List[Union[Action, Callable]]]
@@ -477,7 +532,6 @@ class Event:
         :param actions: Action or a list of Actions
         :type actions: Union[Action, List[Action]]
         """
-        self._registered_on_trigger_actions = []
         actions = actions if isinstance(actions, List) else [actions]
         # If it is a simple condition
         topics = self.get_involved_topics()
@@ -498,13 +552,17 @@ class Event:
         Replaces existing trigger logic.
         Evaluates the root Condition tree against the global cache.
         """
+        # Dont keep on checking for handle once events after they have been processed
+        if self._handle_once and self._processed_once:
+            return
+
         topics_dict = {key: value.msg for key, value in global_topic_cache.items()}
-        self._previous_trigger = copy(self.trigger)
 
         if self._on_any:
             # Check that all involved topics has values
             topics_names = [topic.name for topic in self.get_involved_topics()]
             self.trigger = all(topics_dict.get(key, None) for key in topics_names)
+            self._previous_trigger = copy(self.trigger)
         else:
             # This assumes self.event_condition is now the root Condition object
             triggered = self._condition.evaluate(topics_dict)
@@ -514,19 +572,22 @@ class Event:
             # 1. the event previous value is different from the event current value (there is a change)
             # and 2. if the new_trigger is on
             # If on_change and 1 and 2 -> activate the trigger
-            if (
-                self._on_change
-                and self._previous_trigger is not None
-                and not self._previous_trigger
-                and triggered
-            ):
-                self.trigger = True
+            if self._on_change:
+                if (
+                    self._previous_trigger is not None
+                    and not self._previous_trigger
+                    and triggered
+                ):
+                    self.trigger = True
+                else:
+                    self.trigger = False
             else:
                 # If:
                 # 1. on_change is not required
                 # or 2. the event previous value is the same as the current value (no change happened)
                 # then just directly update the trigger
                 self.trigger = triggered
+            self._previous_trigger = copy(triggered)
 
         if self.trigger:
             # If triggered update the last processed IDs
@@ -537,8 +598,36 @@ class Event:
             self._execute_actions(topics_dict)
         return
 
+    def check_action_condition(
+        self, global_topic_cache: Dict[str, EventBlackboardEntry]
+    ) -> None:
+        """Evaluate the action-based condition and execute registered actions if triggered.
+        Called periodically by a component timer; should only be used on action-based events.
+        """
+        # Dont keep on checking for handle once events after they have been processed
+        if self._handle_once and self._processed_once:
+            return
+
+        triggered = bool(self._action_condition())
+
+        if self._on_change and self._previous_trigger is not None:
+            self.trigger = triggered and not self._previous_trigger
+        else:
+            self.trigger = triggered
+
+        if self.trigger:
+            topics_dict = {key: value.msg for key, value in global_topic_cache.items()}
+            self.__last_processed_ids = {
+                key: value.id for key, value in global_topic_cache.items()
+            }
+            self._execute_actions(topics_dict)
+
+        self._previous_trigger = copy(triggered)
+
     def __str__(self) -> str:
         """
         str for Event object
         """
+        if self._is_action_based:
+            return f"Callable Based Event(On '{self._action_condition.action_name}' returns true polled at {self.check_rate if self.check_rate else 'loop_rate'}Hz) (ID {self.__id})"
         return f"{self._condition._readable()} (ID {self.__id})"
