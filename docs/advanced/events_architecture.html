@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sugarcoat — Event-Driven Architecture</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181b24;
+    --surface2: #1e2130;
+    --border: #2a2e3a;
+    --border-hover: #3d4255;
+    --text: #e1e4eb;
+    --text-dim: #8b90a0;
+    --accent: #6c8cff;
+    --accent-dim: #3a4d8c;
+    --green: #4ade80;
+    --green-dim: #1a4d30;
+    --orange: #fb923c;
+    --orange-dim: #5c3a18;
+    --pink: #f472b6;
+    --pink-dim: #5c2248;
+    --cyan: #22d3ee;
+    --cyan-dim: #134044;
+    --red: #f87171;
+    --yellow: #facc15;
+    --yellow-dim: rgba(250,204,21,0.2);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 2.5rem 3rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 0.3rem; color: #fff; }
+  h1 span { color: var(--accent); }
+
+  .subtitle { color: var(--text-dim); font-size: 1.1rem; margin-bottom: 2.5rem; }
+
+  h2 {
+    font-size: 1.45rem; font-weight: 600; margin: 3rem 0 0.6rem; color: #fff;
+    display: flex; align-items: center; gap: 0.6rem;
+  }
+
+  .section-desc { color: var(--text-dim); font-size: 1rem; margin-bottom: 1.4rem; max-width: 760px; line-height: 1.7; }
+
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.88em;
+    background: rgba(108,140,255,0.1);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--accent);
+  }
+
+  /* ── Architecture Diagram ── */
+  .arch-container { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1rem; }
+
+  .process-box {
+    border: 1.5px solid var(--border); border-radius: 14px; padding: 1.4rem;
+    background: var(--surface); position: relative; transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .process-box.main { grid-column: 1 / -1; }
+  .process-box.highlight { border-color: var(--accent); box-shadow: 0 0 20px rgba(108,140,255,0.1); }
+
+  .process-label {
+    font-size: 0.82rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 0.9rem;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .process-label .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  .node-card {
+    border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem;
+    background: rgba(255,255,255,0.02); margin-bottom: 0.7rem; transition: all 0.3s;
+  }
+  .node-card:last-child { margin-bottom: 0; }
+  .node-card.highlight { border-color: var(--accent); background: rgba(108,140,255,0.05); }
+  .node-card.highlight-green { border-color: var(--green); background: rgba(74,222,128,0.05); }
+  .node-card.highlight-pink { border-color: var(--pink); background: rgba(244,114,182,0.05); }
+
+  .node-name {
+    font-weight: 600; font-size: 1.05rem; margin-bottom: 0.5rem;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .node-name .icon {
+    width: 22px; height: 22px; border-radius: 5px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 700; flex-shrink: 0;
+  }
+  .node-name .type-label { font-size: 0.8rem; color: var(--text-dim); font-weight: 400; }
+
+  .cap-list { list-style: none; font-size: 0.92rem; color: var(--text-dim); }
+  .cap-list li { padding: 3px 0 3px 1.2rem; position: relative; transition: color 0.2s; }
+  .cap-list li::before { content: '›'; position: absolute; left: 0.3rem; color: var(--accent); font-weight: 700; transition: color 0.2s; }
+  .cap-list li.active { color: var(--text); }
+  .cap-list li.active::before { color: var(--green); }
+
+  /* ── Flow Selector ── */
+  .flow-selector { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1.2rem 0 1.8rem; }
+
+  .flow-btn {
+    padding: 0.55rem 1.2rem; border-radius: 8px; border: 1.5px solid var(--border);
+    background: var(--surface); color: var(--text-dim); font-size: 0.95rem;
+    font-weight: 500; cursor: pointer; transition: all 0.25s; font-family: inherit;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .flow-btn:hover { border-color: var(--border-hover); color: var(--text); background: var(--surface2); }
+  .flow-btn.active { border-color: var(--accent); color: #fff; background: var(--accent-dim); }
+  .flow-btn .flow-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ── Flow Detail Panel ── */
+  .flow-detail {
+    border: 1.5px solid var(--border); border-radius: 14px; background: var(--surface);
+    overflow: hidden; transition: max-height 0.4s ease, opacity 0.3s ease, margin 0.3s ease;
+    max-height: 0; opacity: 0; margin-bottom: 0;
+  }
+  .flow-detail.visible { max-height: 900px; opacity: 1; margin-bottom: 1.5rem; }
+
+  .flow-svg-wrap { width: 100%; overflow-x: auto; margin-top: 1rem; }
+  .flow-svg-wrap svg { display: block; margin: 0 auto; }
+
+  .flow-detail-inner { padding: 1.8rem 2rem; }
+
+  .flow-detail h3 {
+    font-size: 1.2rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem;
+    display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  }
+
+  .flow-detail .flow-desc { color: var(--text-dim); font-size: 0.98rem; margin-bottom: 1rem; max-width: 750px; }
+
+  /* ── Routing Decision Tree ── */
+  .routing-container {
+    border: 1.5px solid var(--border); border-radius: 14px;
+    background: var(--surface); padding: 2rem; overflow-x: auto;
+  }
+  .routing-container svg { display: block; margin: 0 auto; }
+
+  /* ── Blackboard Section ── */
+  .bb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+
+  .bb-card {
+    border: 1.5px solid var(--border); border-radius: 14px;
+    background: var(--surface); padding: 1.5rem;
+  }
+  .bb-card h3 { font-size: 1.15rem; font-weight: 600; color: #fff; margin-bottom: 0.8rem; }
+
+  .bb-entry {
+    border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1.1rem;
+    margin-bottom: 0.6rem; background: rgba(255,255,255,0.02);
+    cursor: pointer; transition: all 0.2s;
+  }
+  .bb-entry:hover { border-color: var(--border-hover); background: rgba(255,255,255,0.04); }
+  .bb-entry:last-child { margin-bottom: 0; }
+  .bb-entry .bb-topic { font-weight: 500; font-size: 1rem; }
+  .bb-entry .bb-meta { font-size: 0.88rem; color: var(--text-dim); margin-top: 3px; }
+
+  .bb-entry .bb-status {
+    float: right; font-size: 0.82rem; font-weight: 500; padding: 2px 9px; border-radius: 5px;
+  }
+  .bb-status.fresh { color: var(--green); background: rgba(74,222,128,0.1); }
+  .bb-status.expired { color: var(--red); background: rgba(248,113,113,0.1); }
+  .bb-status.stale { color: var(--orange); background: rgba(251,146,60,0.1); }
+
+  .bb-expand-detail {
+    margin-top: 0.7rem; padding-top: 0.7rem; border-top: 1px solid var(--border);
+    font-size: 0.92rem; line-height: 1.6;
+  }
+
+  .pipeline-step {
+    display: flex; align-items: flex-start; gap: 0.9rem;
+    padding: 0.75rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .pipeline-step:last-child { border-bottom: none; }
+  .pipeline-num {
+    width: 28px; height: 28px; border-radius: 6px; display: flex;
+    align-items: center; justify-content: center; font-size: 0.88rem;
+    font-weight: 700; flex-shrink: 0; margin-top: 2px;
+  }
+  .pipeline-text { font-size: 1rem; }
+  .pipeline-text strong { color: #fff; font-weight: 600; }
+  .pipeline-text .dim { color: var(--text-dim); font-size: 0.92rem; }
+
+  /* ── Tags ── */
+  .tag {
+    font-size: 0.82rem; padding: 2px 10px; border-radius: 5px;
+    font-weight: 500; border: 1px solid; display: inline-block;
+  }
+  .tag-topic    { color: var(--cyan);   border-color: var(--cyan-dim);   background: rgba(34,211,238,0.08); }
+  .tag-callable { color: var(--orange); border-color: var(--orange-dim); background: rgba(251,146,60,0.08); }
+  .tag-monitor  { color: var(--accent); border-color: var(--accent-dim); background: rgba(108,140,255,0.08); }
+  .tag-component{ color: var(--green);  border-color: var(--green-dim);  background: rgba(74,222,128,0.08); }
+  .tag-launcher { color: var(--pink);   border-color: var(--pink-dim);   background: rgba(244,114,182,0.08); }
+  .tag-bridge   { color: var(--yellow); border-color: var(--yellow-dim); background: rgba(250,204,21,0.08); }
+
+  /* ── Tooltip ── */
+  .tooltip {
+    position: fixed; padding: 0.7rem 1rem; border-radius: 8px;
+    background: #252836; border: 1px solid var(--border-hover);
+    color: var(--text); font-size: 0.92rem; pointer-events: none;
+    opacity: 0; transition: opacity 0.15s; z-index: 100;
+    max-width: 360px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip .tt-file { color: var(--accent); font-size: 0.85rem; font-family: 'JetBrains Mono', monospace; }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    body { padding: 1.2rem; }
+    .arch-container, .bb-grid { grid-template-columns: 1fr; }
+    .process-box.main > div { grid-template-columns: 1fr !important; }
+    .flow-svg-wrap { overflow-x: scroll; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Sugarcoat <span>Event-Driven Architecture</span></h1>
+<p class="subtitle">Interactive visual reference for event routing and execution flows</p>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 1: SYSTEM ARCHITECTURE                                    -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>System Architecture</h2>
+<p class="section-desc">
+  A Sugarcoat application runs across two kinds of processes: the <strong>main process</strong>
+  (hosting the Launcher and Monitor node) and one or more <strong>component processes</strong>.
+  Select a flow below to highlight which parts of the architecture are involved.
+</p>
+
+<div class="arch-container" id="arch">
+  <!-- Main Process -->
+  <div class="process-box main" id="proc-main">
+    <div class="process-label"><span class="dot" style="background:var(--pink)"></span> Main Process</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+      <div class="node-card" id="node-launcher">
+        <div class="node-name">
+          <span class="icon" style="background:var(--pink-dim);color:var(--pink);">L</span>
+          Launcher
+        </div>
+        <ul class="cap-list">
+          <li data-flow="all">Orchestrates the ROS2 launch system</li>
+          <li data-flow="all">Routes event/action pairs by ownership</li>
+          <li data-flow="3,6">Registers <code>OnInternalEvent</code> handlers</li>
+          <li data-flow="3,6">Executes inline recipe methods &amp; ROS launch actions</li>
+          <li data-flow="5">Creates bridge topics for callable → component flows</li>
+        </ul>
+      </div>
+      <div class="node-card" id="node-monitor">
+        <div class="node-name">
+          <span class="icon" style="background:var(--accent-dim);color:var(--accent);">M</span>
+          Monitor
+          <span class="type-label">(ROS2 Node)</span>
+        </div>
+        <ul class="cap-list">
+          <li data-flow="1,3">Subscribes to event topics</li>
+          <li data-flow="1,3,4,5,6">Maintains the event blackboard</li>
+          <li data-flow="1,3">Evaluates topic-based conditions</li>
+          <li data-flow="4,5,6">Polls callable conditions via timers</li>
+          <li data-flow="1,4">Executes system-level actions (publish, srv, action goal)</li>
+          <li data-flow="3,6">Emits <code>InternalEvent</code> back to Launcher context</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Component Processes -->
+  <div class="process-box" id="proc-comp-a">
+    <div class="process-label"><span class="dot" style="background:var(--green)"></span> Component Process</div>
+    <div class="node-card" id="node-comp-a">
+      <div class="node-name">
+        <span class="icon" style="background:var(--green-dim);color:var(--green);">C</span>
+        Component Node
+        <span class="type-label">(LifecycleNode)</span>
+      </div>
+      <ul class="cap-list">
+        <li data-flow="2">Subscribes to its routed event topics</li>
+        <li data-flow="5">Subscribes to bridge topics (<code>/event_bridge/...</code>)</li>
+        <li data-flow="2,5">Maintains its own event blackboard</li>
+        <li data-flow="2,5">Evaluates topic-based conditions</li>
+        <li data-flow="2,5">Executes <code>@component_action</code> methods</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="process-box" id="proc-comp-b">
+    <div class="process-label"><span class="dot" style="background:var(--green)"></span> Component Process</div>
+    <div class="node-card" id="node-comp-b">
+      <div class="node-name">
+        <span class="icon" style="background:var(--green-dim);color:var(--green);">C</span>
+        Component Node
+        <span class="type-label">(LifecycleNode)</span>
+      </div>
+      <ul class="cap-list">
+        <li>Same event infrastructure as any component</li>
+        <li>Independent blackboard and subscriptions</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 2: INTERACTIVE FLOW EXPLORER                              -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>Execution Flows</h2>
+<p class="section-desc">
+  Select a flow to see the step-by-step execution path and highlight the involved architecture components above.
+</p>
+
+<div class="flow-selector" id="flowSelector">
+  <button class="flow-btn" data-flow="1" onclick="selectFlow(1)">
+    <span class="flow-dot" style="background:var(--accent);"></span>
+    1 &middot; Topic → Monitor
+  </button>
+  <button class="flow-btn" data-flow="2" onclick="selectFlow(2)">
+    <span class="flow-dot" style="background:var(--green);"></span>
+    2 &middot; Topic → Component
+  </button>
+  <button class="flow-btn" data-flow="3" onclick="selectFlow(3)">
+    <span class="flow-dot" style="background:var(--pink);"></span>
+    3 &middot; Topic → Launcher
+  </button>
+  <button class="flow-btn" data-flow="4" onclick="selectFlow(4)">
+    <span class="flow-dot" style="background:var(--accent);"></span>
+    4 &middot; Callable → Monitor
+  </button>
+  <button class="flow-btn" data-flow="5" onclick="selectFlow(5)">
+    <span class="flow-dot" style="background:var(--yellow);"></span>
+    5 &middot; Callable → Component (Bridge)
+  </button>
+  <button class="flow-btn" data-flow="6" onclick="selectFlow(6)">
+    <span class="flow-dot" style="background:var(--pink);"></span>
+    6 &middot; Callable → Launcher
+  </button>
+</div>
+
+<!-- Flow 1 -->
+<div class="flow-detail" id="flow-1">
+  <div class="flow-detail-inner">
+    <h3>
+      <span class="tag tag-topic">Topic</span>
+      <span class="tag tag-monitor">Monitor</span>
+      Topic Condition → Monitor Action
+    </h3>
+    <p class="flow-desc">
+      The Monitor subscribes to the event topic, evaluates the condition on each incoming message,
+      and directly executes system-level actions (e.g. <code>publish_message</code>).
+    </p>
+    <div class="flow-svg-wrap">
+      <svg viewBox="0 0 580 130" width="580" height="130" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+        <defs><marker id="f1a" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4a4e5a" stroke-width="1.2"/></marker></defs>
+        <rect x="2" y="20" width="100" height="36" rx="7" fill="rgba(34,211,238,0.1)" stroke="#134044" stroke-width="1"/>
+        <text x="52" y="38" text-anchor="middle" fill="#22d3ee" font-size="11" font-weight="500">ROS Topic</text>
+        <text x="52" y="51" text-anchor="middle" fill="#8b90a0" font-size="9">New message</text>
+        <line x1="102" y1="38" x2="118" y2="38" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f1a)"/>
+        <rect x="120" y="20" width="110" height="36" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+        <text x="175" y="38" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="500">Monitor Sub</text>
+        <text x="175" y="51" text-anchor="middle" fill="#8b90a0" font-size="9">__event_topic_callback</text>
+        <line x1="230" y1="38" x2="246" y2="38" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f1a)"/>
+        <rect x="248" y="20" width="100" height="36" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+        <text x="298" y="35" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="500">Blackboard</text>
+        <text x="298" y="51" text-anchor="middle" fill="#8b90a0" font-size="8.5">+ lazy expiration</text>
+        <line x1="298" y1="56" x2="298" y2="72" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f1a)"/>
+        <rect x="228" y="74" width="140" height="36" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+        <text x="298" y="90" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="500">check_condition()</text>
+        <text x="298" y="104" text-anchor="middle" fill="#8b90a0" font-size="9">Evaluate expression</text>
+        <line x1="368" y1="92" x2="398" y2="92" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f1a)"/>
+        <rect x="400" y="74" width="170" height="42" rx="7" fill="rgba(108,140,255,0.15)" stroke="#6c8cff" stroke-width="1.5"/>
+        <text x="485" y="92" text-anchor="middle" fill="#6c8cff" font-size="12" font-weight="600">ThreadPoolExecutor</text>
+        <text x="485" y="107" text-anchor="middle" fill="#8b90a0" font-size="9">publish_message / srv / action goal</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- Flow 2 -->
+<div class="flow-detail" id="flow-2">
+  <div class="flow-detail-inner">
+    <h3>
+      <span class="tag tag-topic">Topic</span>
+      <span class="tag tag-component">Component</span>
+      Topic Condition → Component Action
+    </h3>
+    <p class="flow-desc">
+      The event is routed directly to the component. The component subscribes to the topic itself,
+      evaluates the condition, and executes the <code>@component_action</code> method.
+    </p>
+    <div class="flow-svg-wrap">
+      <svg viewBox="0 0 580 130" width="580" height="130" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+        <defs><marker id="f2a" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4a4e5a" stroke-width="1.2"/></marker></defs>
+        <rect x="2" y="20" width="100" height="36" rx="7" fill="rgba(34,211,238,0.1)" stroke="#134044" stroke-width="1"/>
+        <text x="52" y="38" text-anchor="middle" fill="#22d3ee" font-size="11" font-weight="500">ROS Topic</text>
+        <text x="52" y="51" text-anchor="middle" fill="#8b90a0" font-size="9">New message</text>
+        <line x1="102" y1="38" x2="118" y2="38" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f2a)"/>
+        <rect x="120" y="20" width="120" height="36" rx="7" fill="rgba(74,222,128,0.1)" stroke="#1a4d30" stroke-width="1"/>
+        <text x="180" y="38" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="500">Component Sub</text>
+        <text x="180" y="51" text-anchor="middle" fill="#8b90a0" font-size="9">__event_topic_callback</text>
+        <line x1="240" y1="38" x2="256" y2="38" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f2a)"/>
+        <rect x="258" y="20" width="100" height="36" rx="7" fill="rgba(74,222,128,0.1)" stroke="#1a4d30" stroke-width="1"/>
+        <text x="308" y="35" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="500">Blackboard</text>
+        <text x="308" y="51" text-anchor="middle" fill="#8b90a0" font-size="8.5">+ lazy expiration</text>
+        <line x1="308" y1="56" x2="308" y2="72" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f2a)"/>
+        <rect x="238" y="74" width="140" height="36" rx="7" fill="rgba(74,222,128,0.1)" stroke="#1a4d30" stroke-width="1"/>
+        <text x="308" y="90" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="500">check_condition()</text>
+        <text x="308" y="104" text-anchor="middle" fill="#8b90a0" font-size="9">Evaluate expression</text>
+        <line x1="378" y1="92" x2="398" y2="92" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f2a)"/>
+        <rect x="400" y="74" width="170" height="42" rx="7" fill="rgba(74,222,128,0.15)" stroke="#4ade80" stroke-width="1.5"/>
+        <text x="485" y="92" text-anchor="middle" fill="#4ade80" font-size="12" font-weight="600">ThreadPoolExecutor</text>
+        <text x="485" y="107" text-anchor="middle" fill="#8b90a0" font-size="9">@component_action method</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- Flow 3 -->
+<div class="flow-detail" id="flow-3">
+  <div class="flow-detail-inner">
+    <h3>
+      <span class="tag tag-topic">Topic</span>
+      <span class="tag tag-launcher">Launcher</span>
+      Topic Condition → Launcher Action
+    </h3>
+    <p class="flow-desc">
+      The Monitor subscribes to the event topic and evaluates the condition. On trigger, it emits an
+      <code>InternalEvent</code> to the ROS2 launch context. The Launcher's <code>OnInternalEvent</code>
+      handler matches it and executes the inline recipe method or ROS launch action.
+    </p>
+    <div class="flow-svg-wrap">
+      <svg viewBox="0 0 680 160" width="680" height="160" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+        <defs>
+          <marker id="f3a" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4a4e5a" stroke-width="1.2"/></marker>
+          <marker id="f3p" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#f472b6" stroke-width="1.2"/></marker>
+        </defs>
+        <rect x="2" y="10" width="100" height="36" rx="7" fill="rgba(34,211,238,0.1)" stroke="#134044" stroke-width="1"/>
+        <text x="52" y="28" text-anchor="middle" fill="#22d3ee" font-size="11" font-weight="500">ROS Topic</text>
+        <text x="52" y="41" text-anchor="middle" fill="#8b90a0" font-size="9">New message</text>
+        <line x1="102" y1="28" x2="118" y2="28" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f3a)"/>
+        <rect x="120" y="10" width="120" height="36" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+        <text x="180" y="28" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="500">Monitor Sub</text>
+        <text x="180" y="41" text-anchor="middle" fill="#8b90a0" font-size="9">check_condition()</text>
+        <line x1="240" y1="28" x2="256" y2="28" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f3a)"/>
+        <rect x="258" y="10" width="150" height="36" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+        <text x="333" y="28" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="500">_on_internal_event()</text>
+        <text x="333" y="41" text-anchor="middle" fill="#8b90a0" font-size="9">Emit to launch context</text>
+        <!-- IPC arrow -->
+        <line x1="408" y1="28" x2="430" y2="28" stroke="#f472b6" stroke-width="1.3" stroke-dasharray="5,3" marker-end="url(#f3p)"/>
+        <text x="419" y="20" text-anchor="middle" fill="#8b90a0" font-size="8">IPC</text>
+        <rect x="432" y="10" width="150" height="36" rx="7" fill="rgba(244,114,182,0.1)" stroke="#5c2248" stroke-width="1"/>
+        <text x="507" y="28" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="500">OnInternalEvent</text>
+        <text x="507" y="41" text-anchor="middle" fill="#8b90a0" font-size="9">Match + inject topics</text>
+        <line x1="507" y1="46" x2="507" y2="68" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f3a)"/>
+        <rect x="412" y="70" width="190" height="48" rx="7" fill="rgba(244,114,182,0.15)" stroke="#f472b6" stroke-width="1.5"/>
+        <text x="507" y="90" text-anchor="middle" fill="#f472b6" font-size="12" font-weight="600">Execute Launch Entity</text>
+        <text x="507" y="105" text-anchor="middle" fill="#8b90a0" font-size="9">OpaqueFunction (inline method)</text>
+        <text x="507" y="116" text-anchor="middle" fill="#8b90a0" font-size="9">or ROS launch action</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- Flow 4 -->
+<div class="flow-detail" id="flow-4">
+  <div class="flow-detail-inner">
+    <h3>
+      <span class="tag tag-callable">Callable</span>
+      <span class="tag tag-monitor">Monitor</span>
+      Callable Condition → Monitor Action
+    </h3>
+    <p class="flow-desc">
+      The Monitor polls the user-supplied callable at <code>check_rate</code> Hz via a timer.
+      When it returns <code>True</code>, the registered system-level action is executed directly.
+    </p>
+    <div class="flow-svg-wrap">
+      <svg viewBox="0 0 530 130" width="530" height="130" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+        <defs><marker id="f4a" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4a4e5a" stroke-width="1.2"/></marker></defs>
+        <rect x="2" y="20" width="110" height="40" rx="7" fill="rgba(251,146,60,0.1)" stroke="#5c3a18" stroke-width="1"/>
+        <text x="57" y="37" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="500">Timer Tick</text>
+        <text x="57" y="53" text-anchor="middle" fill="#8b90a0" font-size="9">check_rate Hz</text>
+        <line x1="112" y1="40" x2="128" y2="40" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f4a)"/>
+        <rect x="130" y="20" width="100" height="40" rx="7" fill="rgba(251,146,60,0.1)" stroke="#5c3a18" stroke-width="1"/>
+        <text x="180" y="37" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="500">callable()</text>
+        <text x="180" y="53" text-anchor="middle" fill="#8b90a0" font-size="9">Returns True</text>
+        <line x1="230" y1="40" x2="246" y2="40" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f4a)"/>
+        <rect x="248" y="20" width="100" height="40" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+        <text x="298" y="35" text-anchor="middle" fill="#6c8cff" font-size="10" font-weight="500">check_action</text>
+        <text x="298" y="47" text-anchor="middle" fill="#6c8cff" font-size="10" font-weight="500">_condition()</text>
+        <line x1="348" y1="40" x2="368" y2="40" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f4a)"/>
+        <rect x="370" y="18" width="155" height="44" rx="7" fill="rgba(108,140,255,0.15)" stroke="#6c8cff" stroke-width="1.5"/>
+        <text x="447" y="38" text-anchor="middle" fill="#6c8cff" font-size="12" font-weight="600">ThreadPoolExecutor</text>
+        <text x="447" y="53" text-anchor="middle" fill="#8b90a0" font-size="9">publish / srv / action goal</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- Flow 5 -->
+<div class="flow-detail" id="flow-5">
+  <div class="flow-detail-inner">
+    <h3>
+      <span class="tag tag-callable">Callable</span>
+      <span class="tag tag-bridge">Bridge</span>
+      <span class="tag tag-component">Component</span>
+      Callable Condition → Component Action (Bridge)
+    </h3>
+    <p class="flow-desc">
+      The callable lives in the recipe (main process) but the action must run inside the component (separate process).
+      A <strong>bridge topic</strong> (<code>/event_bridge/e_{id}_{component}</code>) carries a <code>Bool</code>
+      message across the process boundary.
+    </p>
+    <div class="flow-svg-wrap">
+      <svg viewBox="0 0 860 200" width="860" height="200" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+        <defs>
+          <marker id="f5a" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4a4e5a" stroke-width="1.2"/></marker>
+          <marker id="f5y" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#facc15" stroke-width="1.2"/></marker>
+        </defs>
+        <!-- Process boundary boxes -->
+        <rect x="5" y="5" width="480" height="190" rx="12" fill="rgba(108,140,255,0.04)" stroke="#3a4d8c" stroke-width="1" stroke-dasharray="7,4"/>
+        <text x="18" y="24" fill="#6c8cff" font-size="10" font-weight="600" letter-spacing="0.06em">MONITOR (main process)</text>
+        <rect x="510" y="5" width="345" height="190" rx="12" fill="rgba(74,222,128,0.04)" stroke="#1a4d30" stroke-width="1" stroke-dasharray="7,4"/>
+        <text x="523" y="24" fill="#4ade80" font-size="10" font-weight="600" letter-spacing="0.06em">COMPONENT (separate process)</text>
+        <!-- Step 1: Timer -->
+        <rect x="18" y="42" width="115" height="34" rx="7" fill="rgba(251,146,60,0.1)" stroke="#5c3a18" stroke-width="1"/>
+        <text x="75" y="58" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="500">Timer</text>
+        <text x="75" y="70" text-anchor="middle" fill="#8b90a0" font-size="9">check_rate Hz</text>
+        <line x1="133" y1="59" x2="148" y2="59" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f5a)"/>
+        <!-- Step 2: Callable -->
+        <rect x="150" y="42" width="100" height="34" rx="7" fill="rgba(251,146,60,0.1)" stroke="#5c3a18" stroke-width="1"/>
+        <text x="200" y="58" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="500">callable()</text>
+        <text x="200" y="70" text-anchor="middle" fill="#8b90a0" font-size="9">Returns True</text>
+        <line x1="250" y1="59" x2="268" y2="59" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f5a)"/>
+        <!-- Step 3: Publish -->
+        <rect x="270" y="38" width="200" height="42" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+        <text x="370" y="56" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="500">publish_message()</text>
+        <text x="370" y="71" text-anchor="middle" fill="#8b90a0" font-size="9">Bool(True) → /event_bridge/e_...</text>
+        <!-- Bridge arrow across process boundary -->
+        <line x1="470" y1="59" x2="528" y2="59" stroke="#facc15" stroke-width="1.8" stroke-dasharray="6,3" marker-end="url(#f5y)"/>
+        <text x="499" y="50" text-anchor="middle" fill="#facc15" font-size="9" font-weight="600">ROS Topic</text>
+        <!-- Step 4: Component subscription -->
+        <rect x="530" y="42" width="155" height="34" rx="7" fill="rgba(74,222,128,0.1)" stroke="#1a4d30" stroke-width="1"/>
+        <text x="607" y="58" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="500">Subscription callback</text>
+        <text x="607" y="70" text-anchor="middle" fill="#8b90a0" font-size="9">Bridge topic listener</text>
+        <line x1="607" y1="76" x2="607" y2="96" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f5a)"/>
+        <!-- Step 5: Blackboard -->
+        <rect x="530" y="98" width="155" height="34" rx="7" fill="rgba(74,222,128,0.1)" stroke="#1a4d30" stroke-width="1"/>
+        <text x="607" y="114" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="500">Blackboard update</text>
+        <text x="607" y="126" text-anchor="middle" fill="#8b90a0" font-size="9">on-any → True</text>
+        <line x1="607" y1="132" x2="607" y2="148" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f5a)"/>
+        <!-- Step 6: Execute -->
+        <rect x="525" y="150" width="180" height="36" rx="7" fill="rgba(74,222,128,0.15)" stroke="#4ade80" stroke-width="1.5"/>
+        <text x="615" y="166" text-anchor="middle" fill="#4ade80" font-size="12" font-weight="600">ThreadPoolExecutor</text>
+        <text x="615" y="180" text-anchor="middle" fill="#8b90a0" font-size="9">@component_action method</text>
+        <!-- Why box -->
+        <rect x="18" y="100" width="440" height="78" rx="7" fill="rgba(250,204,21,0.05)" stroke="rgba(250,204,21,0.2)" stroke-width="1"/>
+        <text x="34" y="120" fill="#facc15" font-size="10" font-weight="600">Why a bridge?</text>
+        <text x="34" y="136" fill="#8b90a0" font-size="9.5">The callable condition is a Python function defined in the recipe (main process).</text>
+        <text x="34" y="150" fill="#8b90a0" font-size="9.5">The @component_action runs inside the component's node (separate process).</text>
+        <text x="34" y="164" fill="#8b90a0" font-size="9.5">The bridge topic provides safe cross-process communication via ROS2 pub/sub.</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- Flow 6 -->
+<div class="flow-detail" id="flow-6">
+  <div class="flow-detail-inner">
+    <h3>
+      <span class="tag tag-callable">Callable</span>
+      <span class="tag tag-launcher">Launcher</span>
+      Callable Condition → Launcher Action
+    </h3>
+    <p class="flow-desc">
+      The Monitor polls the callable. On trigger, it emits an <code>InternalEvent</code> to the launch context,
+      where the Launcher executes the inline recipe method or ROS launch action.
+    </p>
+    <div class="flow-svg-wrap">
+      <svg viewBox="0 0 620 130" width="620" height="130" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+        <defs>
+          <marker id="f6a" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4a4e5a" stroke-width="1.2"/></marker>
+          <marker id="f6p" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#f472b6" stroke-width="1.2"/></marker>
+        </defs>
+        <rect x="2" y="20" width="100" height="36" rx="7" fill="rgba(251,146,60,0.1)" stroke="#5c3a18" stroke-width="1"/>
+        <text x="52" y="38" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="500">Timer Tick</text>
+        <text x="52" y="51" text-anchor="middle" fill="#8b90a0" font-size="9">check_rate Hz</text>
+        <line x1="102" y1="38" x2="118" y2="38" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f6a)"/>
+        <rect x="120" y="20" width="100" height="36" rx="7" fill="rgba(251,146,60,0.1)" stroke="#5c3a18" stroke-width="1"/>
+        <text x="170" y="38" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="500">callable()</text>
+        <text x="170" y="51" text-anchor="middle" fill="#8b90a0" font-size="9">Returns True</text>
+        <line x1="220" y1="38" x2="236" y2="38" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f6a)"/>
+        <rect x="238" y="20" width="150" height="36" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+        <text x="313" y="38" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="500">_on_internal_event()</text>
+        <text x="313" y="51" text-anchor="middle" fill="#8b90a0" font-size="9">Emit to context</text>
+        <line x1="388" y1="38" x2="412" y2="38" stroke="#f472b6" stroke-width="1.3" stroke-dasharray="5,3" marker-end="url(#f6p)"/>
+        <text x="400" y="30" text-anchor="middle" fill="#8b90a0" font-size="8">IPC</text>
+        <rect x="414" y="20" width="140" height="36" rx="7" fill="rgba(244,114,182,0.1)" stroke="#5c2248" stroke-width="1"/>
+        <text x="484" y="38" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="500">OnInternalEvent</text>
+        <text x="484" y="51" text-anchor="middle" fill="#8b90a0" font-size="9">Match event_name</text>
+        <line x1="484" y1="56" x2="484" y2="72" stroke="#4a4e5a" stroke-width="1" marker-end="url(#f6a)"/>
+        <rect x="404" y="74" width="160" height="42" rx="7" fill="rgba(244,114,182,0.15)" stroke="#f472b6" stroke-width="1.5"/>
+        <text x="484" y="92" text-anchor="middle" fill="#f472b6" font-size="12" font-weight="600">Execute</text>
+        <text x="484" y="107" text-anchor="middle" fill="#8b90a0" font-size="9">Inline recipe method</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 3: ROUTING DECISION TREE                                  -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>Action Routing Decision Tree</h2>
+<p class="section-desc">
+  The Launcher inspects each action and routes it based on ownership.
+  Hover over destination boxes to see the responsible source file and method.
+</p>
+
+<div class="routing-container">
+<svg viewBox="0 0 920 460" width="920" height="460" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+  <defs>
+    <marker id="a-dim" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4a4e5a" stroke-width="1.2"/></marker>
+    <marker id="a-accent" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#6c8cff" stroke-width="1.2"/></marker>
+    <marker id="a-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4ade80" stroke-width="1.2"/></marker>
+    <marker id="a-pink" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#f472b6" stroke-width="1.2"/></marker>
+    <marker id="a-yellow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#facc15" stroke-width="1.2"/></marker>
+  </defs>
+
+  <!-- ROOT -->
+  <rect x="340" y="12" width="240" height="42" rx="8" fill="var(--surface2)" stroke="#4a4e5a" stroke-width="1.2"/>
+  <text x="460" y="38" text-anchor="middle" fill="#e1e4eb" font-size="14" font-weight="600">Event / Action Pair</text>
+
+  <line x1="460" y1="54" x2="460" y2="82" stroke="#4a4e5a" stroke-width="1.2" marker-end="url(#a-dim)"/>
+
+  <!-- Decision 1: Callable? -->
+  <rect x="345" y="84" width="230" height="38" rx="7" fill="rgba(251,146,60,0.1)" stroke="#5c3a18" stroke-width="1"/>
+  <text x="460" y="108" text-anchor="middle" fill="#fb923c" font-size="13" font-weight="500">Callable-based condition?</text>
+
+  <!-- NO (left) -->
+  <line x1="345" y1="103" x2="210" y2="103" stroke="#4a4e5a" stroke-width="1.2"/>
+  <line x1="210" y1="103" x2="210" y2="162" stroke="#4a4e5a" stroke-width="1.2" marker-end="url(#a-dim)"/>
+  <text x="272" y="97" text-anchor="middle" fill="#8b90a0" font-size="12">No (topic-based)</text>
+
+  <!-- YES (right) -->
+  <line x1="575" y1="103" x2="710" y2="103" stroke="#4a4e5a" stroke-width="1.2"/>
+  <line x1="710" y1="103" x2="710" y2="162" stroke="#4a4e5a" stroke-width="1.2" marker-end="url(#a-dim)"/>
+  <text x="646" y="97" text-anchor="middle" fill="#8b90a0" font-size="12">Yes (callable)</text>
+
+  <!-- LEFT: component_action? -->
+  <rect x="105" y="164" width="210" height="38" rx="7" fill="rgba(74,222,128,0.1)" stroke="#1a4d30" stroke-width="1"/>
+  <text x="210" y="188" text-anchor="middle" fill="#4ade80" font-size="13" font-weight="500">@component_action?</text>
+
+  <line x1="210" y1="202" x2="210" y2="232" stroke="#4a4e5a" stroke-width="1.2" marker-end="url(#a-dim)"/>
+  <text x="222" y="222" fill="#8b90a0" font-size="11">Yes</text>
+
+  <rect x="115" y="234" width="190" height="38" rx="7" fill="rgba(74,222,128,0.1)" stroke="#1a4d30" stroke-width="1"/>
+  <text x="210" y="258" text-anchor="middle" fill="#4ade80" font-size="13" font-weight="500">Lifecycle action?</text>
+
+  <line x1="115" y1="253" x2="40" y2="253" stroke="#4a4e5a" stroke-width="1.2"/>
+  <line x1="40" y1="253" x2="40" y2="340" stroke="#f472b6" stroke-width="1.2" marker-end="url(#a-pink)"/>
+  <text x="72" y="247" fill="#8b90a0" font-size="11">Yes</text>
+
+  <line x1="210" y1="272" x2="210" y2="340" stroke="#4ade80" stroke-width="1.2" marker-end="url(#a-green)"/>
+  <text x="222" y="305" fill="#8b90a0" font-size="11">No</text>
+
+  <!-- No component → system-level? -->
+  <line x1="315" y1="183" x2="435" y2="183" stroke="#4a4e5a" stroke-width="1.2"/>
+  <line x1="435" y1="183" x2="435" y2="232" stroke="#4a4e5a" stroke-width="1.2" marker-end="url(#a-dim)"/>
+  <text x="372" y="177" fill="#8b90a0" font-size="11">No</text>
+
+  <rect x="330" y="234" width="210" height="38" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+  <text x="435" y="258" text-anchor="middle" fill="#6c8cff" font-size="13" font-weight="500">System-level action?</text>
+
+  <line x1="388" y1="272" x2="388" y2="340" stroke="#6c8cff" stroke-width="1.2" marker-end="url(#a-accent)"/>
+  <text x="370" y="305" fill="#8b90a0" font-size="11">Yes</text>
+
+  <line x1="482" y1="272" x2="482" y2="340" stroke="#f472b6" stroke-width="1.2" marker-end="url(#a-pink)"/>
+  <text x="498" y="305" fill="#8b90a0" font-size="11">No</text>
+
+  <!-- RIGHT: component action? -->
+  <rect x="600" y="164" width="220" height="38" rx="7" fill="rgba(74,222,128,0.1)" stroke="#1a4d30" stroke-width="1"/>
+  <text x="710" y="188" text-anchor="middle" fill="#4ade80" font-size="13" font-weight="500">Action owned by component?</text>
+
+  <line x1="660" y1="202" x2="660" y2="340" stroke="#6c8cff" stroke-width="1.2" marker-end="url(#a-accent)"/>
+  <text x="643" y="225" fill="#8b90a0" font-size="11">No</text>
+
+  <line x1="820" y1="183" x2="862" y2="183" stroke="#4a4e5a" stroke-width="1.2"/>
+  <line x1="862" y1="183" x2="862" y2="340" stroke="#facc15" stroke-width="1.2" marker-end="url(#a-yellow)"/>
+  <text x="835" y="177" fill="#8b90a0" font-size="11">Yes</text>
+
+  <!-- DESTINATION BOXES -->
+  <rect class="dest-box" x="2" y="342" width="130" height="56" rx="9" fill="rgba(244,114,182,0.1)" stroke="#f472b6" stroke-width="1.5"
+    data-tooltip="launcher.py → _setup_internal_events_handlers()\nLifecycle transitions via launch events"/>
+  <text x="67" y="366" text-anchor="middle" fill="#f472b6" font-size="13" font-weight="600">Launcher</text>
+  <text x="67" y="384" text-anchor="middle" fill="#8b90a0" font-size="10">_ros_events_actions</text>
+
+  <rect class="dest-box" x="148" y="342" width="140" height="56" rx="9" fill="rgba(74,222,128,0.1)" stroke="#4ade80" stroke-width="1.5"
+    data-tooltip="launcher.py → __rewrite_actions_for_components()\nSerialized event JSON passed to component at init"/>
+  <text x="218" y="366" text-anchor="middle" fill="#4ade80" font-size="13" font-weight="600">Component</text>
+  <text x="218" y="384" text-anchor="middle" fill="#8b90a0" font-size="10">_components_events_actions</text>
+
+  <rect class="dest-box" x="306" y="342" width="170" height="56" rx="9" fill="rgba(108,140,255,0.1)" stroke="#6c8cff" stroke-width="1.5"
+    data-tooltip="monitor.py → __reconstruct_monitor_actions()\nResolves action names to Monitor methods"/>
+  <text x="391" y="366" text-anchor="middle" fill="#6c8cff" font-size="13" font-weight="600">Monitor</text>
+  <text x="391" y="384" text-anchor="middle" fill="#8b90a0" font-size="10">_monitor_events_actions</text>
+
+  <rect class="dest-box" x="492" y="342" width="130" height="56" rx="9" fill="rgba(244,114,182,0.1)" stroke="#f472b6" stroke-width="1.5"
+    data-tooltip="launcher.py → _setup_internal_events_handlers()\nInline recipe methods wrapped as OpaqueFunction"/>
+  <text x="557" y="366" text-anchor="middle" fill="#f472b6" font-size="13" font-weight="600">Launcher</text>
+  <text x="557" y="384" text-anchor="middle" fill="#8b90a0" font-size="10">_ros_events_actions</text>
+
+  <rect class="dest-box" x="636" y="342" width="100" height="56" rx="9" fill="rgba(108,140,255,0.1)" stroke="#6c8cff" stroke-width="1.5"
+    data-tooltip="monitor.py → _activate_event_monitoring()\nDirect execution via Monitor's ThreadPoolExecutor"/>
+  <text x="686" y="366" text-anchor="middle" fill="#6c8cff" font-size="13" font-weight="600">Monitor</text>
+  <text x="686" y="384" text-anchor="middle" fill="#8b90a0" font-size="10">direct exec</text>
+
+  <rect class="dest-box" x="790" y="342" width="128" height="56" rx="9" fill="rgba(250,204,21,0.1)" stroke="#facc15" stroke-width="1.5"
+    data-tooltip="launcher.py → __route_action_based_event()\nCreates /event_bridge/e_{id}_{component} Bool topic"/>
+  <text x="854" y="362" text-anchor="middle" fill="#facc15" font-size="13" font-weight="600">Bridge</text>
+  <text x="854" y="378" text-anchor="middle" fill="#8b90a0" font-size="10">Monitor → Topic</text>
+  <text x="854" y="392" text-anchor="middle" fill="#8b90a0" font-size="10">→ Component</text>
+
+  <!-- Key files footer -->
+  <rect x="30" y="420" width="860" height="32" rx="6" fill="rgba(255,255,255,0.02)" stroke="var(--border)" stroke-width="0.8"/>
+  <text x="460" y="441" text-anchor="middle" fill="#8b90a0" font-size="11">
+    <tspan font-weight="500" fill="#6c8cff">Routing:</tspan> launcher.py → __rewrite_actions_for_components() / __route_action_based_event()
+    <tspan dx="30" font-weight="500" fill="#6c8cff">Emission:</tspan> launch_actions.py → _on_internal_event()
+  </text>
+</svg>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 4: BLACKBOARD & EVALUATION                                -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>Blackboard &amp; Condition Evaluation</h2>
+<p class="section-desc">
+  Both the Monitor and each Component maintain their own event blackboard.
+  Click on a blackboard entry to see how it is handled during evaluation.
+</p>
+
+<div class="bb-grid">
+  <div class="bb-card">
+    <h3>Event Blackboard</h3>
+    <p style="font-size:0.92rem;color:var(--text-dim);margin-bottom:1rem;">
+      <code>Dict[str, EventBlackboardEntry]</code> — one entry per subscribed topic
+    </p>
+
+    <div class="bb-entry" onclick="toggleBbDetail(this)" data-detail="Valid entry. Will be included in the clean cache subset passed to check_condition(). The UUID prevents this exact message instance from triggering the same event twice.">
+      <span class="bb-status fresh">FRESH</span>
+      <div class="bb-topic" style="color:var(--cyan)">/sensor/data</div>
+      <div class="bb-meta">msg: Float32(data=7.2) &nbsp;|&nbsp; age: 0.02s &nbsp;|&nbsp; id: a3f8...</div>
+      <div class="bb-expand-detail" style="display:none;color:var(--green);"></div>
+    </div>
+
+    <div class="bb-entry" onclick="toggleBbDetail(this)" data-detail="Age exceeds topic.data_timeout → Lazy Deletion: entry is removed from the dict entirely. Returns None for this topic, so multi-topic conditions with this dependency will not fire.">
+      <span class="bb-status expired">EXPIRED</span>
+      <div class="bb-topic" style="color:var(--cyan)">/camera/image</div>
+      <div class="bb-meta">msg: Image(...) &nbsp;|&nbsp; age: 3.1s &nbsp;|&nbsp; id: c72b...</div>
+      <div class="bb-expand-detail" style="display:none;color:var(--red);"></div>
+    </div>
+
+    <div class="bb-entry" onclick="toggleBbDetail(this)" data-detail="The entry ID matches the event's last_processed_id → this message already triggered this event. Returns None for this event specifically, but the entry stays in the dict for other events that depend on the same topic.">
+      <span class="bb-status stale">ALREADY PROCESSED</span>
+      <div class="bb-topic" style="color:var(--cyan)">/odom</div>
+      <div class="bb-meta">msg: Odometry(...) &nbsp;|&nbsp; age: 0.01s &nbsp;|&nbsp; id: e91d...</div>
+      <div class="bb-expand-detail" style="display:none;color:var(--orange);"></div>
+    </div>
+  </div>
+
+  <div class="bb-card">
+    <h3>Evaluation Pipeline</h3>
+
+    <div class="pipeline-step">
+      <div class="pipeline-num" style="background:rgba(34,211,238,0.15);color:var(--cyan);">1</div>
+      <div class="pipeline-text">
+        <strong>Message arrives</strong><br>
+        <span class="dim"><code>__event_topic_callback(topic, msg)</code> updates the blackboard entry with a fresh timestamp and new UUID.</span>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <div class="pipeline-num" style="background:rgba(108,140,255,0.15);color:var(--accent);">2</div>
+      <div class="pipeline-text">
+        <strong>Lookup dependent events</strong><br>
+        <span class="dim"><code>__events_per_topic[topic_name]</code> returns all events that reference this topic.</span>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <div class="pipeline-num" style="background:rgba(108,140,255,0.15);color:var(--accent);">3</div>
+      <div class="pipeline-text">
+        <strong>Build clean cache subset</strong><br>
+        <span class="dim">For each topic the event needs: check TTL (time-to-live) and idempotency (stale ID). Only valid entries pass through.</span>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <div class="pipeline-num" style="background:rgba(108,140,255,0.15);color:var(--accent);">4</div>
+      <div class="pipeline-text">
+        <strong>Evaluate condition tree</strong><br>
+        <span class="dim"><code>event.check_condition(subset)</code> — applies <code>on_change</code> rising edge,
+        <code>handle_once</code> guard, and <code>keep_event_delay</code> throttle.</span>
+      </div>
+    </div>
+
+    <div class="pipeline-step" style="border-bottom:none;">
+      <div class="pipeline-num" style="background:rgba(74,222,128,0.15);color:var(--green);">5</div>
+      <div class="pipeline-text">
+        <strong>Execute actions</strong><br>
+        <span class="dim">If triggered, submit all registered actions to the shared <code>ThreadPoolExecutor</code> (10 workers).
+        The ROS callback thread is never blocked.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 5: DATA FLOW SUMMARY                                      -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>Internal Data Flow Summary</h2>
+<p class="section-desc">
+  How event/action data moves through the system from user configuration to runtime execution.
+</p>
+
+<div class="routing-container">
+<svg viewBox="0 0 860 400" width="860" height="400" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+  <defs>
+    <marker id="da" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4a4e5a" stroke-width="1.2"/></marker>
+    <marker id="db" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#6c8cff" stroke-width="1.2"/></marker>
+    <marker id="dg" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#4ade80" stroke-width="1.2"/></marker>
+    <marker id="dp" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#f472b6" stroke-width="1.2"/></marker>
+    <marker id="dy" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="none" stroke="#facc15" stroke-width="1.2"/></marker>
+  </defs>
+
+  <!-- Phase 1: Configuration -->
+  <rect x="5" y="5" width="195" height="390" rx="12" fill="rgba(244,114,182,0.04)" stroke="#5c2248" stroke-width="1"/>
+  <text x="102" y="30" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="600" letter-spacing="0.06em">CONFIGURATION</text>
+
+  <rect x="18" y="48" width="170" height="38" rx="7" fill="rgba(244,114,182,0.1)" stroke="#5c2248" stroke-width="1"/>
+  <text x="103" y="65" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="500">launcher.add_pkg()</text>
+  <text x="103" y="80" text-anchor="middle" fill="#8b90a0" font-size="9">events_actions={...}</text>
+
+  <line x1="103" y1="86" x2="103" y2="106" stroke="#4a4e5a" stroke-width="1" marker-end="url(#da)"/>
+
+  <rect x="18" y="108" width="170" height="56" rx="7" fill="rgba(244,114,182,0.1)" stroke="#5c2248" stroke-width="1"/>
+  <text x="103" y="128" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="500">__rewrite_actions</text>
+  <text x="103" y="142" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="500">_for_components()</text>
+  <text x="103" y="158" text-anchor="middle" fill="#8b90a0" font-size="9">Route by ownership</text>
+
+  <!-- Arrows to 3 destinations -->
+  <line x1="188" y1="130" x2="222" y2="68" stroke="#6c8cff" stroke-width="1.2" marker-end="url(#db)"/>
+  <line x1="188" y1="135" x2="222" y2="190" stroke="#4ade80" stroke-width="1.2" marker-end="url(#dg)"/>
+  <line x1="188" y1="140" x2="222" y2="310" stroke="#f472b6" stroke-width="1.2" marker-end="url(#dp)"/>
+
+  <!-- Phase 2: Storage -->
+  <rect x="210" y="5" width="245" height="390" rx="12" fill="rgba(255,255,255,0.02)" stroke="var(--border)" stroke-width="1"/>
+  <text x="332" y="30" text-anchor="middle" fill="#e1e4eb" font-size="11" font-weight="600" letter-spacing="0.06em">STORAGE</text>
+
+  <!-- Monitor dict -->
+  <rect x="224" y="48" width="218" height="54" rx="7" fill="rgba(108,140,255,0.1)" stroke="#3a4d8c" stroke-width="1"/>
+  <text x="333" y="66" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="500">_monitor_events_actions</text>
+  <text x="333" y="80" text-anchor="middle" fill="#8b90a0" font-size="9">Dict[Event, List[Action]]</text>
+  <text x="333" y="94" text-anchor="middle" fill="#8b90a0" font-size="9">System-level + callable bridge actions</text>
+
+  <!-- Component dict -->
+  <rect x="224" y="170" width="218" height="54" rx="7" fill="rgba(74,222,128,0.1)" stroke="#1a4d30" stroke-width="1"/>
+  <text x="333" y="188" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="500">_components_events_actions</text>
+  <text x="333" y="202" text-anchor="middle" fill="#8b90a0" font-size="9">Dict[str(JSON), List[Action]]</text>
+  <text x="333" y="216" text-anchor="middle" fill="#8b90a0" font-size="9">Serialized events → component actions</text>
+
+  <!-- ROS events dict -->
+  <rect x="224" y="292" width="218" height="54" rx="7" fill="rgba(244,114,182,0.1)" stroke="#5c2248" stroke-width="1"/>
+  <text x="333" y="310" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="500">_ros_events_actions</text>
+  <text x="333" y="324" text-anchor="middle" fill="#8b90a0" font-size="9">Dict[str(ID), List[LaunchEntity]]</text>
+  <text x="333" y="338" text-anchor="middle" fill="#8b90a0" font-size="9">+ _internal_events (Event objects)</text>
+
+  <!-- Phase 3: Runtime -->
+  <rect x="470" y="5" width="385" height="390" rx="12" fill="rgba(255,255,255,0.02)" stroke="var(--border)" stroke-width="1"/>
+  <text x="662" y="30" text-anchor="middle" fill="#e1e4eb" font-size="11" font-weight="600" letter-spacing="0.06em">RUNTIME</text>
+
+  <!-- Monitor runtime -->
+  <line x1="442" y1="75" x2="488" y2="75" stroke="#6c8cff" stroke-width="1.2" marker-end="url(#db)"/>
+  <rect x="490" y="48" width="350" height="78" rx="7" fill="rgba(108,140,255,0.06)" stroke="#3a4d8c" stroke-width="1"/>
+  <text x="665" y="66" text-anchor="middle" fill="#6c8cff" font-size="11" font-weight="500">Monitor Node</text>
+  <text x="665" y="82" text-anchor="middle" fill="#8b90a0" font-size="9.5">__reconstruct_monitor_actions() → resolve method refs</text>
+  <text x="665" y="96" text-anchor="middle" fill="#8b90a0" font-size="9.5">_activate_event_monitoring() → create subscriptions + timers</text>
+  <text x="665" y="110" text-anchor="middle" fill="#8b90a0" font-size="9.5">__event_topic_callback() / check_action_condition()</text>
+
+  <!-- Component runtime -->
+  <line x1="442" y1="197" x2="488" y2="197" stroke="#4ade80" stroke-width="1.2" marker-end="url(#dg)"/>
+  <rect x="490" y="170" width="350" height="64" rx="7" fill="rgba(74,222,128,0.06)" stroke="#1a4d30" stroke-width="1"/>
+  <text x="665" y="190" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="500">Component Node</text>
+  <text x="665" y="206" text-anchor="middle" fill="#8b90a0" font-size="9.5">Deserialize events from JSON → Event objects</text>
+  <text x="665" y="220" text-anchor="middle" fill="#8b90a0" font-size="9.5">_turn_on_events_management() → subscriptions + register actions</text>
+
+  <!-- Launcher runtime -->
+  <line x1="442" y1="319" x2="488" y2="319" stroke="#f472b6" stroke-width="1.2" marker-end="url(#dp)"/>
+  <rect x="490" y="292" width="350" height="78" rx="7" fill="rgba(244,114,182,0.06)" stroke="#5c2248" stroke-width="1"/>
+  <text x="665" y="310" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="500">Launcher (ROS Launch Context)</text>
+  <text x="665" y="326" text-anchor="middle" fill="#8b90a0" font-size="9.5">_setup_internal_events_handlers() → OnInternalEvent handlers</text>
+  <text x="665" y="340" text-anchor="middle" fill="#8b90a0" font-size="9.5">ComponentLaunchAction.execute() → register emit callbacks</text>
+  <text x="665" y="354" text-anchor="middle" fill="#8b90a0" font-size="9.5">InternalEvent emitted → handler matches → entity executes</text>
+
+  <!-- Emit arrow from monitor to launcher -->
+  <line x1="665" y1="126" x2="665" y2="148" stroke="#f472b6" stroke-width="1" stroke-dasharray="4,3"/>
+  <rect x="600" y="148" width="130" height="18" rx="4" fill="rgba(244,114,182,0.1)" stroke="#5c2248" stroke-width="0.8"/>
+  <text x="665" y="161" text-anchor="middle" fill="#f472b6" font-size="8.5">emit InternalEvent</text>
+  <line x1="665" y1="166" x2="665" y2="290" stroke="#f472b6" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#dp)"/>
+
+  <!-- Bridge arrow from monitor to component -->
+  <line x1="555" y1="126" x2="555" y2="168" stroke="#facc15" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#dy)"/>
+  <text x="535" y="150" fill="#facc15" font-size="8.5">bridge</text>
+</svg>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- TOOLTIP                                                           -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ── Flow selection & architecture highlighting ──
+let activeFlow = null;
+
+const flowHighlightMap = {
+  1: { nodes: ['node-monitor'], procs: ['proc-main'] },
+  2: { nodes: ['node-comp-a'], procs: ['proc-comp-a'] },
+  3: { nodes: ['node-monitor', 'node-launcher'], procs: ['proc-main'] },
+  4: { nodes: ['node-monitor'], procs: ['proc-main'] },
+  5: { nodes: ['node-monitor', 'node-comp-a'], procs: ['proc-main', 'proc-comp-a'] },
+  6: { nodes: ['node-monitor', 'node-launcher'], procs: ['proc-main'] },
+};
+
+function clearHighlights() {
+  document.querySelectorAll('.flow-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.flow-detail').forEach(d => d.classList.remove('visible'));
+  document.querySelectorAll('.node-card').forEach(c => c.classList.remove('highlight', 'highlight-green', 'highlight-pink'));
+  document.querySelectorAll('.process-box').forEach(p => p.classList.remove('highlight'));
+  document.querySelectorAll('.cap-list li').forEach(li => li.classList.remove('active'));
+}
+
+function selectFlow(n) {
+  const wasActive = activeFlow === n;
+  clearHighlights();
+  if (wasActive) { activeFlow = null; return; }
+
+  activeFlow = n;
+  document.querySelector('.flow-btn[data-flow="' + n + '"]').classList.add('active');
+  const detail = document.getElementById('flow-' + n);
+  detail.classList.add('visible');
+
+  // Highlight architecture nodes
+  const hl = flowHighlightMap[n];
+  hl.nodes.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (id.startsWith('node-comp')) el.classList.add('highlight-green');
+    else if (id === 'node-launcher') el.classList.add('highlight-pink');
+    else el.classList.add('highlight');
+  });
+  hl.procs.forEach(function(id) { document.getElementById(id).classList.add('highlight'); });
+
+  // Highlight relevant capabilities
+  document.querySelectorAll('.cap-list li[data-flow]').forEach(function(li) {
+    var flows = li.dataset.flow.split(',');
+    if (flows.indexOf(String(n)) !== -1 || flows.indexOf('all') !== -1) {
+      li.classList.add('active');
+    }
+  });
+
+  // Scroll detail into view smoothly
+  setTimeout(function() { detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 50);
+}
+
+// ── Blackboard entry expand/collapse ──
+function toggleBbDetail(entry) {
+  var detail = entry.querySelector('.bb-expand-detail');
+  if (detail.style.display === 'none') {
+    detail.textContent = entry.dataset.detail;
+    detail.style.display = 'block';
+  } else {
+    detail.style.display = 'none';
+  }
+}
+
+// ── SVG Tooltips on destination boxes ──
+var tooltip = document.getElementById('tooltip');
+
+document.querySelectorAll('.dest-box').forEach(function(el) {
+  el.style.cursor = 'pointer';
+
+  el.addEventListener('mouseenter', function(e) {
+    var raw = el.getAttribute('data-tooltip');
+    var lines = raw.split('\\n');
+    tooltip.innerHTML = lines.map(function(l, i) {
+      return i === 0
+        ? '<div class="tt-file">' + l + '</div>'
+        : '<div style="color:var(--text-dim);font-size:0.85rem;margin-top:2px;">' + l + '</div>';
+    }).join('');
+    tooltip.classList.add('show');
+  });
+
+  el.addEventListener('mousemove', function(e) {
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+  });
+
+  el.addEventListener('mouseleave', function() {
+    tooltip.classList.remove('show');
+  });
+});
+
+// ── Keyboard navigation ──
+document.addEventListener('keydown', function(e) {
+  if (e.key >= '1' && e.key <= '6') {
+    selectFlow(parseInt(e.key));
+  } else if (e.key === 'Escape') {
+    clearHighlights();
+    activeFlow = null;
+  }
+});
+</script>
+
+</body>
+</html>
