@@ -2154,15 +2154,29 @@ class BaseComponent(lifecycle.Node):
         try:
             method = getattr(self, request.name)
             result = method(**kwargs)
-            if result is not None and isinstance(result, bool):
+            if isinstance(result, bool):
                 response.success = result
+                # TODO: If the error is caught in the method and it returns false
+                # we consider this a failure. This is for backward compatibility
+                # Thus component actions cannot return False as a legitimate
+                # response. We should ensure all component actions in downstream
+                # packages are modified before changing this behaviour.
                 if not result:
                     response.error_msg = f"The method '{request.name}' executed but returned False, indicating failure without an exception."
-            elif result is not None and isinstance(result, str):
+                else:
+                    response.response_json = json.dumps(result)
+            # NOTE: empty responses are considered successful
+            elif result is None:
                 response.success = True
-                response.error_msg = f"The method '{request.name}' executed and returned the following string: {result}"
             else:
                 response.success = True
+                try:
+                    response.response_json = json.dumps(result)
+                except (TypeError, ValueError) as e:
+                    response.response_json = ""
+                    response.error_msg = (
+                        f"The method '{request.name}' returned a value that is not JSON serializable: {e}"
+                    )
         except Exception as e:
             response.success = False
             response.error_msg = f"Component {self.node_name} has a method with requested name '{request.name}' but the following error raised while running: {e}"

@@ -3,3 +3,4 @@ string kwargs_json
 ---
 bool success
 string error_msg
+string response_json
