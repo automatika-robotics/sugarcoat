@@ -75,7 +75,7 @@ class Publisher:
                 # type check processor output if incorrect, raise an error
                 pre_output_type = type(pre_output)
                 if out_type is not type(pre_output):
-                    get_logger(self.node_name).warn(
+                    get_logger(self.node_name).warning(
                         f"The output produced by the component for topic {self.output_topic.name} is of type {out_type}. Got pre_processor output of type {pre_output_type}"
                     )
                 # if all good, set output equal to post output

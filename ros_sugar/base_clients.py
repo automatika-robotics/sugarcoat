@@ -137,14 +137,14 @@ class ServiceClientHandler:
             timeout_sec=self.config.attempt_period_secs
         ):
             # If the service is not available give warning
-            self.node.get_logger().warn(
+            self.node.get_logger().warning(
                 f"Service {self.config.name} not available, Waiting... timeout in {(self.config.timeout_secs - _timeout_count):.2f} secs"
             )
             _timeout_count += self.config.attempt_period_secs
 
             # Check for service request timeout
             if _timeout_count > self.config.timeout_secs:
-                self.node.get_logger().warn(
+                self.node.get_logger().warning(
                     f"Service {self.config.name} is not available, Cancelling"
                 )
                 return None
