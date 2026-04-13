@@ -8,6 +8,7 @@ import toml
 import socket
 from abc import abstractmethod
 from copy import deepcopy
+from contextlib import contextmanager
 import threading
 from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple, Type
 from functools import wraps, partial
@@ -2978,6 +2979,34 @@ class BaseComponent(lifecycle.Node):
             return self.on_shutdown(state)
 
         return super().on_error(state)
+
+    @contextmanager
+    def safe_restart(self):
+        """Stop the component, yield for operations, then restart and wait for ACTIVE state."""
+        self._maintain_default_services = True
+
+        try:
+            self.stop()
+            self.trigger_cleanup()
+            yield
+        finally:
+            self.start()
+
+            timeout_counter = 0
+            while self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE and (
+                timeout_counter < self.config.wait_for_restart_time
+            ):
+                self.get_logger().warn(
+                    f"Component {self.node_name} is not in ACTIVE state. Waiting for it to become active again.",
+                    once=True,
+                )
+                # NOTE: Callbacks will not fire during this sleep
+                time.sleep(1 / self.config.loop_rate)
+                timeout_counter += 1 / self.config.loop_rate
+
+            if self.lifecycle_state != LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
+                self.health_status.set_fail_component()
+                raise RuntimeError("Error restarting the component")
 
     def custom_on_configure(self) -> None:
         """
