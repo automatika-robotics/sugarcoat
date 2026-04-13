@@ -32,7 +32,7 @@ jobs:
           mkdir -p /ws/src
           ln -s $GITHUB_WORKSPACE /ws/src/sugarcoat
           cd /ws
-          pip install opencv-python-headless 'attrs>=23.2.0' jinja2 \
+          pip install --ignore-installed opencv-python-headless 'attrs>=23.2.0' jinja2 \
                       msgpack msgpack-numpy setproctitle pyyaml toml
           colcon build --symlink-install
         shell: bash
