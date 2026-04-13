@@ -32,8 +32,8 @@ jobs:
           mkdir -p /ws/src
           ln -s $GITHUB_WORKSPACE /ws/src/sugarcoat
           cd /ws
-          pip install numpy 'attrs>=23.2.0' jinja2 \
-                      msgpack msgpack-numpy setproctitle platformdirs tqdm websockets
+          pip install numpy opencv-python-headless 'attrs>=23.2.0' jinja2 \
+                      msgpack msgpack-numpy setproctitle pyyaml toml
           colcon build --symlink-install
         shell: bash
 
