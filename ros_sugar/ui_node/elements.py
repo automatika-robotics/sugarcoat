@@ -900,7 +900,26 @@ def _log_text_element(logging_card, output, data_src: str, id: str = "text"):
     return logging_card(_styled_logging_text(output, data_src, id))
 
 
-# _INPUT_ELEMENTS and _OUTPUT_ELEMENTS are the main dictionaries used to link message types with their UI elements
+def _log_geometry_element(logging_card, output, data_src: str, id: str = "geometry"):
+    """Adds a Point/PointStamped/Pose/PoseStamped output to the main logging card.
+
+    Upstream callbacks emit `{"data": [x, y, z]}` for Point variants and
+    `{"data": [x, y, z, heading]}` for Pose variants. Dispatch on length.
+    """
+    data = output.get("data") if isinstance(output, dict) else None
+    if data is None or len(data) < 3:
+        formatted = f"Geometry: {output}"
+    elif len(data) == 3:
+        formatted = f"Point: x={data[0]:.3f}, y={data[1]:.3f}, z={data[2]:.3f}"
+    else:
+        formatted = (
+            f"Pose: x={data[0]:.3f}, y={data[1]:.3f}, "
+            f"z={data[2]:.3f}, heading={data[3]:.3f}"
+        )
+    return logging_card(_styled_logging_text(formatted, data_src, id))
+
+
+# NOTE: _INPUT_ELEMENTS and _OUTPUT_ELEMENTS are the main dictionaries used to link message types with their UI elements
 # (both inputs: _INPUT_ELEMENTS and outputs: _OUTPUT_ELEMENTS)
 # Other Sugarcoat-based packages can implement their own UI elements
 # and these dictionaries will be populated and updated automatically
@@ -923,6 +942,10 @@ _OUTPUT_ELEMENTS: Dict = {
     "Float64": _log_text_element,
     "Bool": _log_text_element,
     "Audio": _log_audio_element,
+    "Point": _log_geometry_element,
+    "PointStamped": _log_geometry_element,
+    "Pose": _log_geometry_element,
+    "PoseStamped": _log_geometry_element,
     "Image": _out_image_element,
     "CompressedImage": _out_image_element,
     "OccupancyGrid": _out_map_element,

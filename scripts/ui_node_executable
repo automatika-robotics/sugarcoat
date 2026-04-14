@@ -422,9 +422,21 @@ def main():
     async def on_conn(send):
         """When a client connects, register its callback."""
 
+        # NOTE: Types that will be routed to the map websocket once it attaches.
+        # They are dropped from the default log callback to avoid a brief
+        # flash in the log during the startup window between the main /ws
+        # connecting and /ws_map attaching its per-type callbacks.
+        map_overlay_types = (
+            {t for _, t in fh.get_all_map_overlay_outputs()}
+            if fh.get_all_map_outputs()
+            else set()
+        )
+
         # Callback function for ROS node
         async def websocket_callback(data: Dict, **_):
             # Recieve json style data from node and pass to UI with send
+            if data.get("type") in map_overlay_types:
+                return
             if len(data["payload"]) > 0:
                 await log_data(
                     send, data["payload"], data_type=data["type"], data_src="robot"
