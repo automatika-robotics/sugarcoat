@@ -878,7 +878,9 @@ class BaseComponent(lifecycle.Node):
         transform_listener = TransformListener(buffer=tf_handler.tf_buffer, node=self)
         tf_handler.set_listener(transform_listener)
         transform_timer = self.create_timer(
-            1 / tf_config.lookup_rate, tf_handler.timer_callback
+            1 / tf_config.lookup_rate,
+            tf_handler.timer_callback,
+            callback_group=MutuallyExclusiveCallbackGroup(),
         )  # timer to lookup the transform with given rate
         tf_handler.timer = transform_timer
         return tf_handler
