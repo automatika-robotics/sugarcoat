@@ -108,7 +108,8 @@ def component_action(
 ):
     """
     Decorator for components actions
-    Verifies that the function is a valid Component method, returns a boolean or None, and that the Component is active
+    Verifies that the function is a valid Component method and that the Component is active.
+    Actions may return any JSON-serializable value, or None.
 
     Can be used as:
         @component_action
@@ -131,13 +132,6 @@ def component_action(
             self = args[0]
             if not isinstance(self, LifecycleNode):
                 raise TypeError(f"'{func.__name__}' is not a valid Component method")
-
-            # Check return type
-            return_type = inspect.signature(func).return_annotation
-            if return_type is not bool and return_type:
-                raise TypeError(
-                    f"Action methods must return boolean or None. Method '{func.__name__}' cannot have '@component_action' decorator"
-                )
 
             # Check Component is active
             if rclpy_is_ok() and hasattr(self, "_state_machine"):
@@ -214,7 +208,7 @@ def component_fallback(
                     return None
             else:
                 logger.error(
-                    f"Cannot use component action method '{func.__name__}' without initializing rclpy and the Component"
+                    f"Cannot use component fallback method '{func.__name__}' without initializing rclpy and the Component"
                 )
 
         _wrapper.__name__ = func.__name__
