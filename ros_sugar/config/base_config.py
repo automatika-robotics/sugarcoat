@@ -109,6 +109,8 @@ class BaseConfig(BaseAttrs):
 
     :param loop_rate: Rate (Hz) in which the node executes
     :type loop_rate: float
+    :param executor_spin_timeout: Timeout (seconds) for the executor spin_once call. Controls how long the executor blocks waiting for work when no callbacks are pending. Independent of loop_rate.
+    :type executor_spin_timeout: float
     :param visualization: To publish additional topics for visualization
     :type visualization: bool
     """
@@ -117,6 +119,9 @@ class BaseConfig(BaseAttrs):
     loop_rate: float = field(
         default=100.0, validator=base_validators.in_range(min_value=1e-4, max_value=1e9)
     )  # Hz
+    executor_spin_timeout: float = field(
+        default=0.01, validator=base_validators.in_range(min_value=1e-4, max_value=1.0)
+    )  # seconds
 
 
 class ComponentRunType(Enum):
