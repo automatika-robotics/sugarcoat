@@ -15,6 +15,9 @@ from automatika_ros_sugar.srv import (
     ReplaceTopic,
     ExecuteMethod,
 )
+from lifecycle_msgs.srv import ChangeState as ChangeStateSrv
+from lifecycle_msgs.srv import GetState as GetStateSrv
+from lifecycle_msgs.msg import State, Transition
 
 from .. import base_clients
 from .component import BaseComponent
@@ -107,11 +110,22 @@ class Monitor(Node):
 
         self._components_to_activate_on_start: List[str] = activate_on_start or []
 
-        self.__components_activation_event: Optional[Callable] = None
-
         # Handle timeout when waiting for looking for the components to activate
         self.__activation_timeout = activation_timeout
         self.__activation_attempt_time = activation_attempt_time
+
+        # Per-watch state for _arm_discovery_watch: keyed by watch_key.
+        # Entry is a dict with target_names, timeout_sec, elapsed, timer, on_ready
+        self.__discovery_watches: Dict[str, Dict[str, Any]] = {}
+
+        # Launch-context emit callables are registered in _pure_internal_events.
+        # activate_all flows through the launch event system for initial activation
+        self._pure_internal_events: List[str] = ["activate_all"]
+
+        # TODO: Additional internal actions that can be populated by downstream
+        # packages. Processing can be moved to upstream launcher after finalizing
+        # downstream API
+        self._additional_internal_actions = {}
 
         # Emit exit all to the launcher
         self._emit_exit_to_launcher: Optional[Callable] = None
@@ -133,11 +147,6 @@ class Monitor(Node):
         :param action: Action to be executed on event trigger
         :type action: Action
         """
-        if not hasattr(self, "_pure_internal_events") or not hasattr(
-            self, "_additional_internal_actions"
-        ):
-            self._pure_internal_events = []
-            self._additional_internal_actions = {}
         self._pure_internal_events.append(event_id)
         self._additional_internal_actions[event_id] = action
 
@@ -148,28 +157,30 @@ class Monitor(Node):
         Node.__init__(self, self.node_name, *args, **kwargs)
         self.get_logger().info(f"NODE {self.get_name()} STARTED")
 
-    def add_components_activation_event(self, method) -> None:
-        """
-        Adds a method to be executed when components are activated
-
-        :param method: Method to be executed on components activation
-        :type method: Callable
-        """
-        self.__components_activation_event = method
-
     def start(self):
         return self.activate()
 
     def activate(self):
         """Activate all subscribers/publishers/etc..."""
-        # Create a timer for components activation
+        # Poll the ROS graph for all components to activate and emit
+        # activate_all once they are up, as a single atomic barrier.
         if self._components_to_activate_on_start:
-            callback_group = MutuallyExclusiveCallbackGroup()
-            self.__activation_wait_time: float = 0.0
-            self.__components_monitor_timer = self.create_timer(
-                timer_period_sec=self.__activation_attempt_time,
-                callback=self._check_and_activate_components,
-                callback_group=callback_group,
+
+            def _emit_activate_all() -> None:
+                emit = self.emit_internal_event_methods.get("activate_all")
+                if emit is not None:
+                    emit()
+                else:
+                    logger.warning(
+                        "No launch-context emitter for 'activate_all'; "
+                        "initial activation will not trigger."
+                    )
+
+            self._arm_discovery_watch(
+                target_names=self._components_to_activate_on_start,
+                on_ready=_emit_activate_all,
+                watch_key="activate_all",
+                timeout_sec=self.__activation_timeout,
             )
 
         # Create health status subscribers
@@ -210,35 +221,229 @@ class Monitor(Node):
                     )
                 )
 
-    def _check_and_activate_components(self) -> None:
+    def _arm_discovery_watch(
+        self,
+        target_names: List[str],
+        on_ready: Callable[[], None],
+        watch_key: str,
+        timeout_sec: Optional[float] = None,
+    ) -> None:
         """
-        Checks and activates requested components
+        Start polling the ROS graph for ``target_names`` and invoke ``on_ready``
+        once all targets appear in ``get_node_names()`` and their lifecycle
+        ``change_state`` services are in the graph.
+
+        Idempotent: re-arming for the same ``watch_key`` cancels the previous
+        watch. The timer destroys itself after ``on_ready`` is invoked.
+
+        :param target_names: Component node names to wait for.
+        :param on_ready: Callable invoked once with no args when all targets
+            are ready. Typically either emits an internal event to the launch
+            context (initial activation) or drives direct lifecycle service
+            calls (respawn reactivation).
+        :param watch_key: Opaque key identifying this watch, used for idempotent
+            re-arming.
+        :param timeout_sec: If set, emit exit_all and raise LookupError when
+            the wait exceeds this many seconds. ``None`` waits indefinitely.
         """
-        self.__activation_wait_time += self.__activation_attempt_time
-        node_names = self.get_node_names()
-        __notfound: Optional[set[str]] = None
-        if set(self._components_to_activate_on_start).issubset(set(node_names)):
+        existing = self.__discovery_watches.get(watch_key)
+        if existing is not None and existing.get("timer") is not None:
+            self.destroy_timer(existing["timer"])
+
+        watch: Dict[str, Any] = {
+            "target_names": list(target_names),
+            "timeout_sec": timeout_sec,
+            "elapsed": 0.0,
+            "timer": None,
+            "on_ready": on_ready,
+        }
+        self.__discovery_watches[watch_key] = watch
+        watch["timer"] = self.create_timer(
+            timer_period_sec=self.__activation_attempt_time,
+            callback=partial(self._run_discovery_watch, watch_key),
+            callback_group=MutuallyExclusiveCallbackGroup(),
+        )
+
+    def _run_discovery_watch(self, watch_key: str) -> None:
+        """Timer callback for a single discovery watch.
+
+        A target is considered ready when it is present in
+        ``get_node_names()`` and its lifecycle ``change_state`` service is
+        in the graph. Note that after a process crash this check can match
+        a stale DDS entry from the dead process; respawn callers handle
+        that in a follow-up probe phase rather than at the watch level.
+        """
+        watch = self.__discovery_watches.get(watch_key)
+        if watch is None:
+            return
+
+        watch["elapsed"] += self.__activation_attempt_time
+        node_names_set = set(self.get_node_names())
+        present_services = {name for name, _ in self.get_service_names_and_types()}
+
+        missing = set()
+        for target in watch["target_names"]:
+            lifecycle_service = f"/{target}/change_state"
+            if (
+                target not in node_names_set
+                or lifecycle_service not in present_services
+            ):
+                missing.add(target)
+
+        if not missing:
             logger.info(
-                f"NODES '{self._components_to_activate_on_start}' ARE UP ... ACTIVATING"
+                f"NODES '{watch['target_names']}' ARE UP ... "
+                f"triggering on_ready for watch '{watch_key}'"
             )
-            if self.__components_activation_event:
-                self.__components_activation_event()
-            self.destroy_timer(self.__components_monitor_timer)
-        else:
-            __notfound = set(self._components_to_activate_on_start).difference(
-                set(node_names)
-            )
-            logger.info(f"Waiting for Nodes '{__notfound}' to come up to activate ...")
-        if (
-            self.__activation_timeout
-            and self.__activation_wait_time > self.__activation_timeout
-        ):
+            on_ready = watch["on_ready"]
+            self.destroy_timer(watch["timer"])
+            del self.__discovery_watches[watch_key]
+            try:
+                on_ready()
+            except Exception as exc:
+                logger.error(f"on_ready callback for watch '{watch_key}' raised: {exc}")
+            return
+
+        logger.info(f"Waiting for {missing} to come up for watch '{watch_key}' ...")
+
+        timeout = watch["timeout_sec"]
+        if timeout and watch["elapsed"] > timeout:
             if self._emit_exit_to_launcher:
                 self._emit_exit_to_launcher()
-
             raise LookupError(
-                f"Timeout while Waiting for nodes '{__notfound}' to come up to activate. A process might have died. If all processes are starting without errors, then this might be a ROS2 discovery problem. Run 'ros2 node list' to see if nodes with the same name already exist or old nodes are not killed properly. Alternatively, try to restart ROS2 daemon."
+                f"Timeout while waiting for nodes '{missing}' to come up for "
+                f"watch '{watch_key}'. A process might have died. If "
+                f"all processes are starting without errors, then this might be "
+                f"a ROS2 discovery problem. Run 'ros2 node list' to see if nodes "
+                f"with the same name already exist or old nodes are not killed "
+                f"properly. Alternatively, try to restart ROS2 daemon."
             )
+
+    def watch_and_activate_component(self, component_name: str) -> None:
+        """
+        Poll for a respawned component and drive it back to the ``active``
+        state via direct lifecycle service calls once it is reachable.
+
+        Called by the Launcher after a process-level respawn. Bypasses the
+        ``LifecycleTransition`` launch action to avoid duplicate ChangeState
+        dispatch from stale ``LifecycleEventManager`` instances left behind
+        by the crashed process.
+        """
+        logger.info(f"Watching for respawned '{component_name}' to reactivate")
+        self._arm_discovery_watch(
+            target_names=[component_name],
+            on_ready=partial(self._transition_component_to_active, component_name),
+            watch_key=f"reactivate_{component_name}",
+            timeout_sec=None,
+        )
+
+    def _call_service(
+        self,
+        client: Any,
+        request: Any,
+        timeout_sec: Optional[float] = None,
+    ) -> Optional[Any]:
+        """
+        Send ``request`` on ``client`` asynchronously and wait for the response.
+
+        If ``timeout_sec`` is given, the future is cancelled after that many
+        seconds and the method returns ``None`` (used by the probe loop so a
+        zombie endpoint does not hang us). If ``timeout_sec`` is ``None``, we
+        wait indefinitely — appropriate for transition calls, where the
+        response time depends on the user's ``configure``/``activate``
+        callbacks and can legitimately be long.
+
+        Uses ``time.sleep`` to wait; since the Monitor runs on a
+        MultiThreadedExecutor, other callbacks continue on other threads.
+        """
+        future = client.call_async(request)
+        deadline = time.time() + timeout_sec if timeout_sec is not None else None
+        while not future.done():
+            if deadline is not None and time.time() > deadline:
+                future.cancel()
+                return None
+            time.sleep(0.05)
+        return future.result()
+
+    def _probe_for_unconfigured(self, component_name: str) -> None:
+        """
+        Poll GetState on the target component until it reports
+        ``PRIMARY_STATE_UNCONFIGURED``. Unbounded retries: zombie DDS
+        endpoints from the crashed process will eventually be cleaned up.
+        Each attempt creates and destroys its own service client so DDS
+        discovery starts fresh. Each call has ``__activation_attempt_time``
+        as its timeout, and we sleep the same interval between attempts.
+        """
+        attempt = 0
+        while True:
+            attempt += 1
+            client = self.create_client(GetStateSrv, f"/{component_name}/get_state")
+            try:
+                result = self._call_service(
+                    client,
+                    GetStateSrv.Request(),
+                    timeout_sec=self.__activation_attempt_time,
+                )
+                if result is None:
+                    logger.info(
+                        f"Probe {attempt} for '{component_name}' timed out; retrying"
+                    )
+                else:
+                    if result.current_state.id == State.PRIMARY_STATE_UNCONFIGURED:
+                        logger.info(
+                            f"'{component_name}' is unconfigured after "
+                            f"respawn; proceeding with reactivation"
+                        )
+                        return
+                    logger.info(
+                        f"'{component_name}' state is "
+                        f"'{result.current_state.label}'; waiting for "
+                        f"'unconfigured'"
+                    )
+            finally:
+                self.destroy_client(client)
+            time.sleep(self.__activation_attempt_time)
+
+    def _transition_component_to_active(self, component_name: str) -> None:
+        """
+        Drive a lifecycle component from ``unconfigured`` to ``active`` via two
+        direct ChangeState service calls, preceded by a GetState probe that
+        verifies we are talking to the freshly-spawned rclpy node and not a
+        zombie DDS endpoint from the dead process. Every service client is
+        freshly created here and destroyed afterwards.
+        """
+        logger.info(f"Starting reactivation for '{component_name}'")
+        self._probe_for_unconfigured(component_name)
+
+        client = self.create_client(ChangeStateSrv, f"/{component_name}/change_state")
+        try:
+            for transition_id, name in (
+                (Transition.TRANSITION_CONFIGURE, "CONFIGURE"),
+                (Transition.TRANSITION_ACTIVATE, "ACTIVATE"),
+            ):
+                req = ChangeStateSrv.Request()
+                req.transition.id = transition_id
+                # No timeout: the node's configure()/activate() callbacks may
+                # legitimately take a long time (e.g. model loading). We have
+                # already confirmed via the probe that we are talking to a
+                # live node, so an unbounded wait is safe here.
+                result = self._call_service(client, req)
+                if result is None:
+                    logger.error(
+                        f"{name} for '{component_name}' returned no result; "
+                        f"aborting reactivation."
+                    )
+                    return
+                if not result.success:
+                    logger.error(
+                        f"{name} for '{component_name}' returned "
+                        f"success=False; aborting reactivation."
+                    )
+                    return
+        finally:
+            self.destroy_client(client)
+
+        logger.info(f"'{component_name}' is active again after respawn")
 
     def _turn_on_component_management(self, component_name: str) -> None:
         """
