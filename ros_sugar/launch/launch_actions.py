@@ -180,7 +180,7 @@ class ComponentLaunchAction(NodeLaunchAction):
 
     def _run(self):
         """
-        Overrides _run method of launch_ros.actions.Node to spin using the monitor loop_rate
+        Overrides _run method of launch_ros.actions.Node to spin using the executor spin timeout
         """
         if not self.__ros_executor:
             raise Exception("Node executor is unknown")
@@ -190,7 +190,7 @@ class ComponentLaunchAction(NodeLaunchAction):
                 # TODO: switch this to `spin()` when it considers
                 #   asynchronously added subscriptions.
                 self.__ros_executor.spin_once(
-                    timeout_sec=1 / self.__ros_node.config.loop_rate
+                    timeout_sec=self.__ros_node.config.executor_spin_timeout
                 )
         except KeyboardInterrupt:
             pass
