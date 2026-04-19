@@ -89,20 +89,43 @@ UI_EXTENSIONS = {}
 
 class Launcher:
     """
-    Launcher is a class created to provide a more pythonic way to launch and configure ROS nodes.
+    Launcher is a pythonic front-end for bringing up a stack of ROS2 components.
 
-    Launcher starts a pre-configured component or a set of components as ROS2 nodes. Launcher can also manage a set of Events-Actions through its internal Monitor node (See Monitor class).
+    A Launcher groups one or more components into a launch description, manages
+    their lifecycle, wires up an internal :class:`Monitor` node to coordinate
+    their activation and to route events and actions, and can optionally serve
+    a web UI for them.
 
-    ## Available options:
-    - Provide a ROS2 namespace to all the components
-    - Provide a config file.
-    - Enable/Disable events monitoring
+    ## What it does
 
-    Launcher forwards all the provided Events to its internal Monitor, when the Monitor detects an Event trigger it emits an InternalEvent back to the Launcher. Execution of the Action is done directly by the Launcher or a request is forwarded to the Monitor depending on the selected run method (multi-processes or multi-threaded).
+    - Starts components as ROS2 nodes, either in separate processes
+      (``multiprocessing=True`` on :meth:`add_pkg`) or in threads within the
+      launcher's own process (threaded default).
+    - Applies a shared ROS2 namespace and optional config file to all
+      components.
+    - Manages lifecycle transitions so every lifecycle component reaches the
+      ``active`` state once the ROS graph confirms it is discoverable.
+    - Dispatches events to actions. Every event/action pair registered via
+      :meth:`add_pkg` or the component's own ``on_fail`` hook flows through
+      the internal Monitor: the Monitor detects triggers and either invokes
+      the action directly (component actions) or emits an internal event
+      back to the Launcher which executes the corresponding launch action.
+    - Process-level crash recovery via :meth:`on_process_fail`: when enabled,
+      multi-process components that exit unexpectedly are respawned and
+      driven back to the ``active`` state, up to a configurable retry cap.
+      Clean exits, shutdown, and user signals (Ctrl+C, SIGTERM) are not
+      treated as crashes and do not trigger respawns.
+    - Optional web UI via :meth:`enable_ui`.
 
-    :::{note} While Launcher supports executing standard [ROS2 launch actions](https://github.com/ros2/launch). Launcher does not support standard [ROS2 launch events](https://github.com/ros2/launch/tree/rolling/launch/launch/events) for the current version.
-    :::
+    ## Events and actions
 
+    Use this project's richer event/action system instead of the low-level
+    ROS2 launch event primitives. See :class:`~ros_sugar.core.event.Event`,
+    :class:`~ros_sugar.core.action.Action`, and the ``events_actions``
+    parameter on :meth:`add_pkg`: events can be built from topic conditions,
+    compositional boolean expressions, internal signals, or arbitrary
+    callables, and they can drive component methods, lifecycle transitions,
+    or any ROS2 launch action.
     """
 
     def __init__(
