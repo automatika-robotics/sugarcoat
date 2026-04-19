@@ -10,7 +10,6 @@ from launch_ros.actions import Node as NodeLaunchAction
 from rclpy.context import Context
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.impl.logging_severity import LoggingSeverity
-from rclpy.lifecycle.managed_entity import ManagedEntity
 from rclpy.logging import set_logger_level
 
 from . import logger
@@ -136,12 +135,6 @@ class ComponentLaunchAction(NodeLaunchAction):
                 self.__ros_node._emit_exit_to_launcher = partial(
                     self._on_internal_event, "exit_all"
                 )
-
-            # Adds an emit event for components activation
-            self.__logger.debug("Registering Conditional Activation Handle")
-            self.__ros_node.add_components_activation_event(
-                partial(self._on_internal_event, "activate_all")
-            )
 
         # Get rclpy context and init the monitor
         self.__ros_context = Context()

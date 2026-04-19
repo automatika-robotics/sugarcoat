@@ -17,6 +17,7 @@ from typing import (
     Any,
     Tuple,
     Mapping,
+    cast,
 )
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
@@ -32,9 +33,11 @@ from launch.actions import (
     GroupAction,
     OpaqueCoroutine,
     OpaqueFunction,
+    RegisterEventHandler,
     Shutdown,
     SetEnvironmentVariable,
 )
+from launch.event_handlers import OnProcessExit, OnShutdown
 from launch_ros.actions import LifecycleNode as LifecycleNodeLaunchAction
 from launch_ros.actions import Node as NodeLaunchAction
 from launch_ros.actions import PushRosNamespace
@@ -75,25 +78,54 @@ else:
 m_pack.patch()
 
 
+# Return codes that indicate the process was terminated by a signal rather
+# than a genuine crash. Launch/subprocess reports signal terminations as
+# negative values (-signum); shells that propagate them use 128+signum.
+_SIGNAL_EXIT_CODES = frozenset({-2, -9, -15, 130, 137, 143})
+
+
 UI_EXTENSIONS = {}
 
 
 class Launcher:
     """
-    Launcher is a class created to provide a more pythonic way to launch and configure ROS nodes.
+    Launcher is a pythonic front-end for bringing up a stack of ROS2 components.
 
-    Launcher starts a pre-configured component or a set of components as ROS2 nodes. Launcher can also manage a set of Events-Actions through its internal Monitor node (See Monitor class).
+    A Launcher groups one or more components into a launch description, manages
+    their lifecycle, wires up an internal :class:`Monitor` node to coordinate
+    their activation and to route events and actions, and can optionally serve
+    a web UI for them.
 
-    ## Available options:
-    - Provide a ROS2 namespace to all the components
-    - Provide a config file.
-    - Enable/Disable events monitoring
+    ## What it does
 
-    Launcher forwards all the provided Events to its internal Monitor, when the Monitor detects an Event trigger it emits an InternalEvent back to the Launcher. Execution of the Action is done directly by the Launcher or a request is forwarded to the Monitor depending on the selected run method (multi-processes or multi-threaded).
+    - Starts components as ROS2 nodes, either in separate processes
+      (``multiprocessing=True`` on :meth:`add_pkg`) or in threads within the
+      launcher's own process (threaded default).
+    - Applies a shared ROS2 namespace and optional config file to all
+      components.
+    - Manages lifecycle transitions so every lifecycle component reaches the
+      ``active`` state once the ROS graph confirms it is discoverable.
+    - Dispatches events to actions. Every event/action pair registered via
+      :meth:`add_pkg` or the component's own ``on_fail`` hook flows through
+      the internal Monitor: the Monitor detects triggers and either invokes
+      the action directly (component actions) or emits an internal event
+      back to the Launcher which executes the corresponding launch action.
+    - Process-level crash recovery via :meth:`on_process_fail`: when enabled,
+      multi-process components that exit unexpectedly are respawned and
+      driven back to the ``active`` state, up to a configurable retry cap.
+      Clean exits, shutdown, and user signals (Ctrl+C, SIGTERM) are not
+      treated as crashes and do not trigger respawns.
+    - Optional web UI via :meth:`enable_ui`.
 
-    :::{note} While Launcher supports executing standard [ROS2 launch actions](https://github.com/ros2/launch). Launcher does not support standard [ROS2 launch events](https://github.com/ros2/launch/tree/rolling/launch/launch/events) for the current version.
-    :::
+    ## Events and actions
 
+    Use this project's richer event/action system instead of the low-level
+    ROS2 launch event primitives. See :class:`~ros_sugar.core.event.Event`,
+    :class:`~ros_sugar.core.action.Action`, and the ``events_actions``
+    parameter on :meth:`add_pkg`: events can be built from topic conditions,
+    compositional boolean expressions, internal signals, or arbitrary
+    callables, and they can drive component methods, lifecycle transitions,
+    or any ROS2 launch action.
     """
 
     def __init__(
@@ -166,6 +198,11 @@ class Launcher:
 
         # Thread pool for external processors
         self._thread_pool: Union[ThreadPoolExecutor, None] = None
+
+        # Process-level crash recovery state
+        self._process_fail_max_retries: Optional[int] = None
+        self._process_retry_counts: Dict[str, int] = {}
+        self._is_shutting_down: bool = False
 
     def add_pkg(
         self,
@@ -740,37 +777,25 @@ class Launcher:
         for component in self._components:
             component.fallback_rate = value
 
-    def on_fail(self, action_name: str, max_retries: Optional[int] = None) -> None:
+    def on_process_fail(self, max_retries: int = 3) -> None:
         """
-        Set the fallback strategy (action) on any fail for all components
+        Enable process-level crash recovery for all multi-process components.
 
-        :param action: Action to be executed on failure
-        :type action: Union[List[Action], Action]
-        :param max_retries: Maximum number of action execution retries. None is equivalent to unlimited retries, defaults to None
-        :type max_retries: Optional[int], optional
+        When a component process exits unexpectedly (non-zero return code, not during
+        launcher shutdown, and not via user signal), the launcher will respawn it up
+        to ``max_retries`` times. After the limit is reached, the component is left
+        down and a terminal error is logged.
+
+        :param max_retries: Maximum number of respawn attempts per component. Must be
+            a positive integer. Defaults to 3.
+        :type max_retries: int
+        :raises ValueError: if ``max_retries`` is not a positive integer.
         """
-        for component in self._components:
-            if action_name in component.fallbacks:
-                method = getattr(component, action_name)
-                method_params = inspect.signature(method).parameters
-                if any(
-                    x.default is inspect.Parameter.empty
-                    and x.kind
-                    not in (
-                        inspect.Parameter.VAR_POSITIONAL,
-                        inspect.Parameter.VAR_KEYWORD,
-                    )
-                    for x in method_params.values()
-                ):
-                    raise ValueError(
-                        f"{method} takes {method_params} as arguments. Only actions without any arguments or with keyword only arguments can be set as on_fail actions from the launcher. Use component.on_fail to pass specific arguments."
-                    )
-                action = Action(method=method)
-                component.on_fail(action, max_retries)
-            else:
-                raise ValueError(
-                    f"Non valid action fallback {action_name}: Fallback is not available in component {component.node_name}. Available component fallbacks are the following methods: '{component.fallbacks}'"
-                )
+        if not isinstance(max_retries, int) or max_retries < 1:
+            raise ValueError(
+                f"max_retries must be a positive integer, got {max_retries!r}"
+            )
+        self._process_fail_max_retries = max_retries
 
     def _get_action_launch_entity(self, action: Action) -> SomeEntitiesType:
         """Gets the action launch entity for a given Action.
@@ -1058,6 +1083,139 @@ class Launcher:
                     processor,  # type: ignore
                 )
 
+    def _build_component_launch_action(
+        self,
+        component: BaseComponent,
+        pkg_name: str,
+        executable_name: str,
+    ) -> Union[LifecycleNodeLaunchAction, NodeLaunchAction]:
+        """
+        Build a fresh NodeLaunchAction (or lifecycle variant) for the given
+        component. Used both for initial launch and for respawning on crash.
+        """
+        name = component.node_name
+        rclpy_log_level = self._rclpy_log_level.get(component.node_name)
+        if rclpy_log_level:
+            arguments = component.launch_cmd_args + [
+                "--additional_types",
+                json.dumps(list(_additional_types.keys())),
+                "--ros-args",
+                "--log-level",
+                rclpy_log_level,
+            ]
+        else:
+            arguments = component.launch_cmd_args
+        if issubclass(component.__class__, ManagedEntity):
+            return LifecycleNodeLaunchAction(
+                package=pkg_name,
+                exec_name=name,
+                namespace=self._namespace,
+                name=name,
+                executable=executable_name,
+                output="screen",
+                arguments=arguments,
+            )
+        return NodeLaunchAction(
+            package=pkg_name,
+            exec_name=name,
+            namespace=self._namespace,
+            name=name,
+            executable=executable_name,
+            output="screen",
+            arguments=arguments,
+        )
+
+    def _build_exit_handler_entity(
+        self,
+        component: BaseComponent,
+        pkg_name: str,
+        executable_name: str,
+        node_action: Union[LifecycleNodeLaunchAction, NodeLaunchAction],
+    ) -> RegisterEventHandler:
+        """
+        Build a RegisterEventHandler that respawns the component on unexpected exit.
+
+        The handler is only constructed when process-level recovery is enabled.
+
+        On exit the callback does one of three things:
+
+        1. Ignore: orderly shutdown (``_is_shutting_down`` set), clean exit
+           (returncode 0), signal-terminated (Ctrl+C race before shutdown flag was
+           set), or missing returncode.
+        2. Give up: real crash but retry budget exhausted — log and stop.
+        3. Respawn: real crash within budget — increment counter, build a fresh
+           launch action plus a fresh exit handler bound to it, return both.
+        """
+        component_name = component.node_name
+
+        def _on_exit(event, context):
+            returncode = getattr(event, "returncode", None)
+
+            # Do not respawn
+            if (
+                self._is_shutting_down
+                or returncode is None
+                or returncode == 0
+                or returncode in _SIGNAL_EXIT_CODES
+            ):
+                return None
+
+            # Genuine crash. This handler is only built when
+            # _process_fail_max_retries is set.
+            max_retries = cast(int, self._process_fail_max_retries)
+            count = self._process_retry_counts.get(component_name, 0)
+            if count >= max_retries:
+                logger.error(
+                    f"Component '{component_name}' exceeded max_retries "
+                    f"({max_retries}); giving up on process recovery."
+                )
+                return None
+
+            attempt = count + 1
+            self._process_retry_counts[component_name] = attempt
+            logger.warning(
+                f"Component '{component_name}' exited with code {returncode}. "
+                f"Respawning (attempt {attempt}/{max_retries})..."
+            )
+
+            # Clear the dead node's entry from launch_ros' name tracker so the
+            # respawned Node action does not issue warnings about node name
+            # NOTE: The key stored is the fully-qualified node name "/component_name"
+            # The dict is created lazily by launch_ros; guard in case it is missing.
+            try:
+                node_names_dict = context.locals.unique_ros_node_names
+                for registered in list(node_names_dict.keys()):
+                    if registered == component_name or registered.endswith(
+                        f"/{component_name}"
+                    ):
+                        node_names_dict[registered] = 0
+            except AttributeError:
+                pass
+
+            new_action = self._build_component_launch_action(
+                component, pkg_name, executable_name
+            )
+            entities: List[ROSLaunchAction] = [new_action]
+            # Hand off reactivation to the Monitor: it polls for node+service
+            # readiness and drives CONFIGURE+ACTIVATE via direct rclpy calls.
+            # No delay needed here because the polling loop itself waits for
+            # the new lifecycle service to appear in the graph.
+            if isinstance(component, ManagedEntity):
+                def _kick_monitor_watch(_ctx, name=component_name):
+                    self.monitor_node.watch_and_activate_component(name)
+
+                entities.append(OpaqueFunction(function=_kick_monitor_watch))
+            entities.append(
+                self._build_exit_handler_entity(
+                    component, pkg_name, executable_name, new_action
+                )
+            )
+            return entities
+
+        return RegisterEventHandler(
+            OnProcessExit(target_action=node_action, on_exit=_on_exit)
+        )
+
     def _setup_component_in_process(
         self,
         component: BaseComponent,
@@ -1070,47 +1228,18 @@ class Launcher:
         :param ros_log_level: Log level for ROS2
         :type ros_log_level: str, default to "info"
         """
-        name = component.node_name
         component._update_cmd_args_list()
         self._setup_external_processors(component)
-        rclpy_log_level = (
-            self._rclpy_log_level[component.node_name]
-            if component.node_name in self._rclpy_log_level
-            else None
+        new_node = self._build_component_launch_action(
+            component, pkg_name, executable_name
         )
-        if rclpy_log_level:
-            arguments = component.launch_cmd_args + [
-                "--additional_types",
-                json.dumps(list(_additional_types.keys())),
-                "--ros-args",
-                "--log-level",
-                rclpy_log_level,
-            ]
-        else:
-            arguments = component.launch_cmd_args
-        # Check if the component is a lifecycle node
-        if issubclass(component.__class__, ManagedEntity):
-            new_node = LifecycleNodeLaunchAction(
-                package=pkg_name,
-                exec_name=name,
-                namespace=self._namespace,
-                name=name,
-                executable=executable_name,
-                output="screen",
-                arguments=arguments,
-            )
-        else:
-            new_node = NodeLaunchAction(
-                package=pkg_name,
-                exec_name=name,
-                namespace=self._namespace,
-                name=name,
-                executable=executable_name,
-                output="screen",
-                arguments=arguments,
-            )
-
         self._launch_group.append(new_node)
+        if self._process_fail_max_retries is not None:
+            self._launch_group.append(
+                self._build_exit_handler_entity(
+                    component, pkg_name, executable_name, new_node
+                )
+            )
 
     def _setup_component_in_thread(self, component: BaseComponent):
         """
@@ -1232,6 +1361,23 @@ class Launcher:
                 logger.exception(error_msg)
                 raise ValueError(error_msg)
 
+    def _register_shutdown_guards(self) -> None:
+        """
+        Register an OnShutdown handler that flips ``_is_shutting_down`` before child
+        processes are signaled. This lets the respawn logic in OnProcessExit
+        handlers distinguish between a crash and an intentional shutdown. Ctrl+C,
+        a Shutdown launch action, and the existing ``exit_all`` internal event
+        (which ultimately emits Shutdown) all flow through here.
+        """
+
+        def _mark_shutting_down(*_args, **_kwargs):
+            self._is_shutting_down = True
+            return None
+
+        self._description.add_action(
+            RegisterEventHandler(OnShutdown(on_shutdown=_mark_shutting_down))
+        )
+
     def setup_launch_description(
         self,
     ):
@@ -1244,6 +1390,9 @@ class Launcher:
             setproctitle.setproctitle(logger.name)
         except ImportError:
             pass
+
+        if self._process_fail_max_retries is not None:
+            self._register_shutdown_guards()
 
         self._setup_events_actions()
 
