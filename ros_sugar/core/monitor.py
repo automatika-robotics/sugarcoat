@@ -354,15 +354,18 @@ class Monitor(Node):
         callbacks and can legitimately be long.
 
         Uses ``time.sleep`` to wait; since the Monitor runs on a
-        MultiThreadedExecutor, other callbacks continue on other threads.
+        MultiThreadedExecutor, other callbacks continue on other threads. The
+        sleep interval tracks this node's ``loop_rate`` so one knob governs
+        polling responsiveness consistently with the rest of the Monitor.
         """
         future = client.call_async(request)
         deadline = time.time() + timeout_sec if timeout_sec is not None else None
+        sleep_interval = 1.0 / self.config.loop_rate
         while not future.done():
             if deadline is not None and time.time() > deadline:
                 future.cancel()
                 return None
-            time.sleep(0.05)
+            time.sleep(sleep_interval)
         return future.result()
 
     def _probe_for_unconfigured(self, component_name: str) -> None:
