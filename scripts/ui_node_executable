@@ -226,12 +226,20 @@ def main():
         if not result_code:
             fh.toasting(result, session, "error", duration=100000)
         else:
-            fh.toasting(f"Action goal sent: {result}", session, "info", duration=100000)
+            fh.toasting(f"Task sent: {result}", session, "info", duration=100000)
             fh.action_clients_ft[action_name].update(
                 status="accepted",
                 duration=0,
             )
             fh.action_clients_ft[action_name].total_calls += 1
+            # display the action on the main logging card
+            goal_payload = {k: v for k, v in data_dict.items() if k != "action_name"}
+            elements.update_logging_card(
+                fh.outputs_log,
+                f"Start Task '{action_name}': {goal_payload}",
+                data_type="String",
+                data_src="user",
+            )
         return fh.get_main_page()
 
     @app.post("/action/cancel")
@@ -245,6 +253,13 @@ def main():
             fh.toasting(result, session, "error", duration=100000)
         else:
             fh.toasting(f"{result}", session, "info", duration=100000)
+            # display cancellation request on the main logging card
+            elements.update_logging_card(
+                fh.outputs_log,
+                f"Cancel Task '{action_name}'.",
+                data_type="String",
+                data_src="user",
+            )
         return fh.get_main_page()
 
     # -- WS handling --
@@ -356,6 +371,16 @@ def main():
                 await send(fh.action_clients_ft[_name].card)
 
                 if data["status"] in ["aborted", "completed", "canceled"]:
+                    # display action aborted as an error on the main logging card
+                    if data["status"] == "aborted":
+                        await log_data(
+                            send,
+                            f"Task '{_name}' aborted: {feedback}"
+                            if feedback
+                            else f"Task '{_name}' aborted",
+                            data_type="String",
+                            data_src="error",
+                        )
                     ros_node.cleanup_action(action_name=_name)
                     fh.action_clients_ft[_name].cleanup()
 
