@@ -226,7 +226,7 @@ def main():
         if not result_code:
             fh.toasting(result, session, "error", duration=100000)
         else:
-            fh.toasting(f"Action goal sent: {result}", session, "info", duration=100000)
+            fh.toasting(f"Task sent: {result}", session, "info", duration=100000)
             fh.action_clients_ft[action_name].update(
                 status="accepted",
                 duration=0,
@@ -236,7 +236,7 @@ def main():
             goal_payload = {k: v for k, v in data_dict.items() if k != "action_name"}
             elements.update_logging_card(
                 fh.outputs_log,
-                f"Action '{action_name}' goal sent: {goal_payload}",
+                f"Start Task '{action_name}': {goal_payload}",
                 data_type="String",
                 data_src="user",
             )
@@ -256,7 +256,7 @@ def main():
             # display cancellation request on the main logging card
             elements.update_logging_card(
                 fh.outputs_log,
-                f"Action '{action_name}' cancelled.",
+                f"Cancel Task '{action_name}'.",
                 data_type="String",
                 data_src="user",
             )
@@ -375,9 +375,9 @@ def main():
                     if data["status"] == "aborted":
                         await log_data(
                             send,
-                            f"Action '{_name}' aborted: {feedback}"
+                            f"Task '{_name}' aborted: {feedback}"
                             if feedback
-                            else f"Action '{_name}' aborted",
+                            else f"Task '{_name}' aborted",
                             data_type="String",
                             data_src="error",
                         )
