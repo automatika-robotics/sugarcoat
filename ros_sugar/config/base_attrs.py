@@ -205,9 +205,13 @@ class BaseAttrs:
                     self.__parse_from_serialized_list(attribute_to_set, value),
                 )
             else:
-                # Handle Any typing as it cannot be checked with isinstance
+                # Any-typed fields are not allowed in base attrs derived classes
                 if attribute_type is Any:
-                    continue
+                    raise TypeError(
+                        f"Attribute '{key}' is typed as Any, which cannot be "
+                        f"validated. Declare a concrete type on the attrs "
+                        f"field to allow loading it from a config."
+                    )
                 elif attribute_type:
                     value = self.__check_value_against_attr_type(
                         key, value, attribute_to_set, attribute_type
