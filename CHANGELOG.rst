@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.7.0 (2026-04-30)
+------------------
 * (chore) Adds tests for base attrs
 * (fix) Adds check for any type fields in base attrs
 * (feature) Adds display of action server logs in the main logging card (`#46 <https://github.com/automatika-robotics/sugarcoat/issues/46>`_)
