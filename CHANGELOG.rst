@@ -2,6 +2,26 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (chore) Adds tests for base attrs
+* (fix) Adds check for any type fields in base attrs
+* (feature) Adds display of action server logs in the main logging card (`#46 <https://github.com/automatika-robotics/sugarcoat/issues/46>`_)
+* (fix) Changes sleep time between probe service response checks to 1/loop_rate instead of arbitrary constant
+* (feature) Adds on_process_fail method to launcher that respawns processes
+  - Adds lifecycle service calling methods in monitor to respawn processes and handle lifecylce transitions
+  - Creates unified timer for watching process start for initial launch and failed process launch
+  - Uses internal launch actions for emitting the action to launch all components at init
+* (fix) Adds a param to base config for executor spin timeout to decouple it from loop rate
+* (feature) Adds ui display for geometry types when no map element is present
+* (fix) Specifies callback in tf listener timer (`#43 <https://github.com/automatika-robotics/sugarcoat/issues/43>`_)
+* (chore) Adds testing for execute action service
+* (feature) Calling the execute method service for component actions now returns the method response
+* (chore) Adds testing CI
+* (chore) Adds test for safe restart
+* (feature) Adds the safe restart context manager in base component
+* Contributors: Maria Kabtoul, ahr, mkabtoul
+
 0.6.1 (2026-04-11)
 ------------------
 * (docs) Adds a more comprehensive guide for the internal events-actions system design
