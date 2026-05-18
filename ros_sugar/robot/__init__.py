@@ -12,7 +12,13 @@ from .bus import FeedbackBus, InProcessFeedbackBus, SocketFeedbackBus
 from .command import CommandSpec, RobotCommand
 from .feedback import Feedback, FeedbackSpec
 from .plugin import PluginMetadata, RobotPlugin, RobotPluginHost
-from .registries import ActionRegistry, ActionSpec, EventRegistry, EventSpec
+from .registries import (
+    ActionRegistry,
+    ActionSpec,
+    EventRegistry,
+    EventSpec,
+    plugin_action,
+)
 from .transports import SubscriptionHandle, Transport
 from .transports.http import HttpTransport
 from .transports.ros import RosServiceTransport, RosTopicTransport
@@ -35,6 +41,7 @@ __all__ = [
     "EventRegistry",
     "ActionSpec",
     "EventSpec",
+    "plugin_action",
     # transports
     "Transport",
     "SubscriptionHandle",
