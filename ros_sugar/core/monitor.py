@@ -1,6 +1,7 @@
 """Monitor"""
 
 import os
+import threading
 from functools import partial
 import time
 import json
@@ -129,6 +130,14 @@ class Monitor(Node):
 
         # Emit exit all to the launcher
         self._emit_exit_to_launcher: Optional[Callable] = None
+
+        # Robot plugin support: topics fed by a robot plugin's feedback bus
+        # instead of a ROS subscription, plus a lock so plugin ingress threads
+        # and ROS executor callbacks do not race on the event blackboard.
+        self._external_topics: set = set()
+        self._blackboard_lock = threading.Lock()
+        self._events_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
+        self.__events_per_topic: Dict[str, List[Event]] = {}
 
     def _register_pure_internal_event_emit_method(
         self, event_name: str, emit_method: Callable
@@ -882,33 +891,61 @@ class Monitor(Node):
         Central Handler:
         1. Updates Cache of all required events topics
         2. Re-evaluates all events that depend on this topic
+
+        Guarded by ``_blackboard_lock`` so ROS executor callbacks and robot
+        plugin feedback-bus ingress threads do not race on the blackboard.
         """
-        # Update Blackboard
-        self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
-            msg=msg, timestamp=time.time()
-        )
+        with self._blackboard_lock:
+            # Update Blackboard
+            self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
+                msg=msg, timestamp=time.time()
+            )
 
-        # READ & CLEAN: Identify events dependent on this topic
-        relevant_events = self.__events_per_topic.get(topic_name, [])
+            # READ & CLEAN: Identify events dependent on this topic
+            relevant_events = self.__events_per_topic.get(topic_name, [])
 
-        for event in relevant_events:
-            # Instead of passing the raw blackboard
-            # we perform a lazy cleanup right here for the topics THIS event needs.
+            for event in relevant_events:
+                # Instead of passing the raw blackboard
+                # we perform a lazy cleanup right here for the topics THIS event
+                # needs.
+                clean_cache_subset = {}
+                for topic in event.get_involved_topics():
+                    # This call performs the check and DELETES expired data if necessary
+                    valid_entry = EventBlackboardEntry.get(
+                        self._events_topics_blackboard,
+                        topic.name,
+                        topic.data_timeout,
+                        event.get_last_processed_id(topic.name),
+                    )
+                    if valid_entry:
+                        clean_cache_subset[topic.name] = valid_entry
+                # Pass the clean subset to the event
+                if not event._is_action_based:
+                    event.check_condition(clean_cache_subset)
 
-            clean_cache_subset = {}
-            for topic in event.get_involved_topics():
-                # This call performs the check and DELETES expired data if necessary
-                valid_entry = EventBlackboardEntry.get(
-                    self._events_topics_blackboard,
-                    topic.name,
-                    topic.data_timeout,
-                    event.get_last_processed_id(topic.name),
-                )
-                if valid_entry:
-                    clean_cache_subset[topic.name] = valid_entry
-            # Pass the clean subset to the event
-            if not event._is_action_based:
-                event.check_condition(clean_cache_subset)
+    def register_external_topic(self, topic: Topic) -> None:
+        """Register a topic fed by a robot plugin feedback bus rather than a ROS
+        subscription.
+
+        Events referencing this topic are still tracked and evaluated normally;
+        :meth:`_activate_event_monitoring` simply skips creating a ROS
+        subscription for it. Must be called before the Monitor is activated.
+
+        :param topic: The synthetic feedback topic (``Feedback.as_topic()``).
+        """
+        self._external_topics.add(topic.name)
+
+    def feed_external_topic(self, topic_name: str, msg: Any) -> None:
+        """Inject a decoded non-ROS message into the event blackboard.
+
+        Called by a robot plugin HOST when it decodes a telemetry packet, so
+        that Events and Conditions over plugin feedback topics are evaluated
+        exactly as if a ROS message had arrived.
+
+        :param topic_name: Synthetic topic name (the feedback's bus channel).
+        :param msg: The decoded ROS message instance.
+        """
+        self.__event_topic_callback(topic_name, msg)
 
     def __reconstruct_monitor_actions(self):
         self.__events: List[Event] = []
@@ -952,9 +989,17 @@ class Monitor(Node):
                 else:
                     self.__events_per_topic[topic.name].append(event)
 
-        # Create ONE subscription per Topic
+        # Create one subscription per Topic. Topics fed by a robot plugin
+        # feedback bus are skipped here; the plugin HOST pushes their messages
+        # in via feed_external_topic() instead.
         self.__event_listeners = []
         for name, topic_obj in unique_topics.items():
+            if name in self._external_topics:
+                self.get_logger().info(
+                    f"Event topic '{name}' is fed by a robot plugin; "
+                    "no ROS subscription created"
+                )
+                continue
             listener = self.create_subscription(
                 msg_type=topic_obj.ros_msg_type,
                 topic=topic_obj.name,
