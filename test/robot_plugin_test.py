@@ -83,7 +83,7 @@ class MockPlugin(RobotPlugin):
         self.transports = {"state": state_transport, "cmd": cmd_transport}
         self.feedbacks = {
             "Int32": Feedback(
-                name="Int32",
+                key="Int32",
                 msg_type=RobotInt32,
                 transport=state_transport,
                 decoder=_decode_int32,
@@ -93,7 +93,7 @@ class MockPlugin(RobotPlugin):
         }
         self.commands = {
             "Int32": RobotCommand(
-                name="Int32",
+                key="Int32",
                 transport=cmd_transport,
                 encoder=_encode_int32,
                 description="Mock robot integer command",
@@ -272,10 +272,10 @@ def test_plugin_introspection():
     desc = plugin.describe()
     assert desc["metadata"]["name"] == "MockPlugin"
     assert desc["transports"] == {"state": "UdpTransport", "cmd": "UdpTransport"}
-    assert [f["name"] for f in desc["feedbacks"]] == ["Int32"]
+    assert [f["key"] for f in desc["feedbacks"]] == ["Int32"]
     assert desc["feedbacks"][0]["transport_kind"] == "UdpTransport"
     assert desc["feedbacks"][0]["channel"] == "robot/feedback/Int32"
-    assert [c["name"] for c in desc["commands"]] == ["Int32"]
+    assert [c["key"] for c in desc["commands"]] == ["Int32"]
     assert {a["name"] for a in desc["actions"]} == {"ping"}
     assert {e["name"] for e in desc["events"]} == {"state_high"}
 
@@ -305,7 +305,7 @@ def test_inspect_cli():
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["metadata"]["name"] == "MockPlugin"
-    assert [f["name"] for f in payload["feedbacks"]] == ["Int32"]
+    assert [f["key"] for f in payload["feedbacks"]] == ["Int32"]
 
 
 # ---------------------------------------------------------------------------
@@ -418,8 +418,8 @@ def test_component_use_robot_plugin(rclpy_context):
 
     component = BaseComponent(
         component_name="robot_plugin_test_component",
-        inputs=[Topic(name="robot_state", msg_type="Int32")],
-        outputs=[Topic(name="robot_cmd", msg_type="Int32")],
+        inputs=[Topic(name="robot_state", msg_type="Int32", use_plugin=True)],
+        outputs=[Topic(name="robot_cmd", msg_type="Int32", use_plugin=True)],
     )
     component.rclpy_init_node()
     component._robot_plugin = plugin
@@ -450,4 +450,153 @@ def test_component_use_robot_plugin(rclpy_context):
     finally:
         host.close()
         robot_cmd_sock.close()
+        component.destroy_node()
+
+
+# ---------------------------------------------------------------------------
+# use_plugin opt-in and key-based disambiguation
+# ---------------------------------------------------------------------------
+
+
+def test_topic_use_plugin_default_is_false():
+    """Without explicit opt-in, a Topic does not route through the plugin."""
+    topic = Topic(name="raw", msg_type="Int32")
+    assert topic.use_plugin is False
+
+
+def test_topic_without_use_plugin_is_not_claimed(rclpy_context):
+    """A topic that doesn't opt in stays as a plain ROS subscriber/publisher
+    even when the plugin has a matching message type."""
+    from ros_sugar.core.component import BaseComponent
+    from ros_sugar.robot.adapters import RobotCommandPublisher
+
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    bus = InProcessFeedbackBus()
+    host = RobotPluginHost(plugin, node=None, bus=bus)
+    host.open()
+    component = BaseComponent(
+        component_name="optout_component",
+        inputs=[Topic(name="internal_state", msg_type="Int32")],   # no use_plugin
+        outputs=[Topic(name="internal_cmd", msg_type="Int32")],    # no use_plugin
+    )
+    component.rclpy_init_node()
+    component._robot_plugin = plugin
+    try:
+        component._use_robot_plugin()
+        # Neither topic is claimed by the plugin
+        assert "internal_state" not in component._external_topics
+        assert "internal_cmd" not in component._external_topics
+        assert not isinstance(
+            component.publishers_dict.get("internal_cmd"), RobotCommandPublisher
+        )
+    finally:
+        host.close()
+        component.destroy_node()
+
+
+def test_resolve_feedback_by_topic_name_disambiguates():
+    """Recipe authors disambiguate by setting ``Topic.name`` to match the
+    plugin's registry key (no separate string param)."""
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    extra_transport = UdpTransport("extra", send_to=("127.0.0.1", _free_port()))
+    plugin.feedbacks["left_arm"] = Feedback(
+        key="left_arm",
+        msg_type=RobotInt32,
+        transport=extra_transport,
+        decoder=_decode_int32,
+    )
+    plugin.feedbacks["right_arm"] = Feedback(
+        key="right_arm",
+        msg_type=RobotInt32,
+        transport=extra_transport,
+        decoder=_decode_int32,
+    )
+    # Drop the type-named entry so the type-scan path is ambiguous.
+    plugin.feedbacks.pop("Int32")
+
+    left = plugin.resolve_feedback("left_arm", "Int32")
+    right = plugin.resolve_feedback("right_arm", "Int32")
+    assert left is plugin.feedbacks["left_arm"]
+    assert right is plugin.feedbacks["right_arm"]
+
+
+def test_resolve_feedback_ambiguous_type_raises():
+    """When the topic name doesn't match any key and multiple feedbacks share
+    the type, the framework raises with the available keys."""
+    from ros_sugar.robot import AmbiguousPluginEntryError
+
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    extra_transport = UdpTransport("extra", send_to=("127.0.0.1", _free_port()))
+    plugin.feedbacks["left_arm"] = Feedback(
+        key="left_arm",
+        msg_type=RobotInt32,
+        transport=extra_transport,
+        decoder=_decode_int32,
+    )
+    plugin.feedbacks["right_arm"] = Feedback(
+        key="right_arm",
+        msg_type=RobotInt32,
+        transport=extra_transport,
+        decoder=_decode_int32,
+    )
+    plugin.feedbacks.pop("Int32")
+
+    with pytest.raises(AmbiguousPluginEntryError) as excinfo:
+        plugin.resolve_feedback("nonmatching_topic", "Int32")
+    msg = str(excinfo.value)
+    assert "left_arm" in msg and "right_arm" in msg
+
+
+def test_resolve_feedback_type_mismatch_on_key_match_raises():
+    """When ``Topic.name`` matches a plugin key but the message types
+    disagree, the recipe is mis-wired -- surface it loudly."""
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    # The MockPlugin has ``feedbacks["Int32"]`` of type RobotInt32. Asking
+    # for it by key with a *different* type should fail.
+    with pytest.raises(TypeError) as excinfo:
+        plugin.resolve_feedback("Int32", "Float64")
+    msg = str(excinfo.value)
+    assert "Int32" in msg and "Float64" in msg
+
+
+def test_resolve_feedback_unique_type_match_succeeds():
+    """When the topic name doesn't match any key and only one feedback has
+    the requested type, that feedback is returned (the common case)."""
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    # Drop the type-named key so resolution falls through to the type-scan path
+    plugin.feedbacks["only_one"] = plugin.feedbacks.pop("Int32")
+
+    feedback = plugin.resolve_feedback("any_topic_name", "Int32")
+    assert feedback is plugin.feedbacks["only_one"]
+
+
+def test_feedback_spec_exposes_key():
+    """``FeedbackSpec.key`` is the value to pass to ``Topic(use_plugin=)``."""
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    desc = plugin.describe()
+    keys = {f["key"] for f in desc["feedbacks"]}
+    assert keys == {"Int32"}
+    cmd_keys = {c["key"] for c in desc["commands"]}
+    assert cmd_keys == {"Int32"}
+
+
+def test_warn_orphaned_plugin_topics(rclpy_context, caplog):
+    """When no plugin is attached, ``use_plugin=True`` topics still work but
+    emit a warning so the recipe-vs-deployment mismatch is visible."""
+    import logging
+    from ros_sugar.core.component import BaseComponent
+
+    component = BaseComponent(
+        component_name="orphan_warn_component",
+        inputs=[Topic(name="cmd", msg_type="Int32", use_plugin=True)],
+    )
+    component.rclpy_init_node()
+    try:
+        # No plugin attached
+        assert component._robot_plugin is None
+        with caplog.at_level(logging.WARNING):
+            component._warn_orphaned_plugin_topics()
+        # Topic stays as an ordinary ROS topic; no _external_topics entry
+        assert "cmd" not in component._external_topics
+    finally:
         component.destroy_node()
