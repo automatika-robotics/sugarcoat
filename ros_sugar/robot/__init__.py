@@ -11,7 +11,12 @@ Authors subclass `RobotPlugin`; see ``docs/development/custom_robot_plugin.md``.
 from .bus import FeedbackBus, InProcessFeedbackBus, SocketFeedbackBus
 from .command import CommandSpec, RobotCommand
 from .feedback import Feedback, FeedbackSpec
-from .plugin import PluginMetadata, RobotPlugin, RobotPluginHost
+from .plugin import (
+    AmbiguousPluginEntryError,
+    PluginMetadata,
+    RobotPlugin,
+    RobotPluginHost,
+)
 from .registries import (
     ActionRegistry,
     ActionSpec,
@@ -31,6 +36,7 @@ __all__ = [
     "RobotPlugin",
     "RobotPluginHost",
     "PluginMetadata",
+    "AmbiguousPluginEntryError",
     # descriptors
     "Feedback",
     "FeedbackSpec",

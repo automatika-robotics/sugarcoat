@@ -157,6 +157,7 @@ class Topic(BaseAttrs, Generic[MsgT]):
         default=Factory(QoSConfig), converter=_make_qos_config
     )
     data_timeout: float = field(default=1.0, validator=base_validators.gt(0.0))
+    use_plugin: bool = field(default=False)
     ros_msg_type: Type[MsgT] = field(init=False)
     additional_types: List[Type[supported_types.SupportedType]] = field(
         default=Factory(list)

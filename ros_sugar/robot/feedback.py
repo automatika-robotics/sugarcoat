@@ -13,17 +13,22 @@ from ..io.topic import Topic
 from .transports import Transport
 
 
-def _feedback_channel(name: str) -> str:
+def _feedback_channel(key: str) -> str:
     """Bus channel / synthetic topic name for a feedback stream."""
-    return f"robot/feedback/{name}"
+    return f"robot/feedback/{key}"
 
 
 @dataclass
 class Feedback:
     """A robot telemetry stream.
 
-    :param name: Standard message-type name this feedback stands in for, e.g.
-        ``"Odometry"`` or ``"Imu"``. Matched against component input topics.
+    :param key: Registry key on ``plugin.feedbacks`` -- the string a recipe
+        author passes to ``Topic(use_plugin="<key>")`` to wire that topic to
+        this feedback. For plugins that expose exactly one feedback per
+        message type, conventionally the message-type name (``"Odometry"``,
+        ``"Imu"``). For plugins with multiple feedbacks of the same type
+        (e.g. a humanoid's ``"left_arm"`` / ``"right_arm"`` JointStates),
+        choose a descriptive role name.
     :param msg_type: ``SupportedType`` subclass wrapping the robot's message,
         typically built with :func:`ros_sugar.robot.create_supported_type`.
     :param transport: Transport carrying this stream.
@@ -35,7 +40,7 @@ class Feedback:
     :param description: Human-readable description.
     """
 
-    name: str
+    key: str
     msg_type: Type[SupportedType]
     transport: Transport
     decoder: Optional[Callable[[Any], Optional[Any]]] = None
@@ -46,7 +51,7 @@ class Feedback:
     @property
     def channel(self) -> str:
         """Feedback bus channel / synthetic topic name for this stream."""
-        return _feedback_channel(self.name)
+        return _feedback_channel(self.key)
 
     def as_topic(self) -> Topic:
         """Return the `io.topic.Topic` that Events, Conditions
@@ -81,7 +86,7 @@ class Feedback:
     def spec(self) -> "FeedbackSpec":
         """Return the introspection spec for this feedback."""
         return FeedbackSpec(
-            name=self.name,
+            key=self.key,
             description=self.description,
             msg_type=self.msg_type.__name__,
             transport_kind=self.transport.kind,
@@ -93,9 +98,17 @@ class Feedback:
 
 @dataclass
 class FeedbackSpec:
-    """Introspection record for a `Feedback` (see ``plugin.list_feedbacks``)."""
+    """Introspection record for a `Feedback` (see ``plugin.list_feedbacks``).
 
-    name: str
+    :attr:`key` is the registry key on ``plugin.feedbacks`` -- pass it to
+    ``Topic(use_plugin="<key>")`` to wire that topic to this feedback. Use
+    this form when the plugin exposes multiple feedbacks of the same
+    message type and a recipe needs to disambiguate. For plugins with
+    exactly one feedback per type, ``Topic(use_plugin=True)`` resolves
+    against the message type and the key isn't strictly needed.
+    """
+
+    key: str
     description: str
     msg_type: str
     transport_kind: str

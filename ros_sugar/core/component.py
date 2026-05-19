@@ -269,16 +269,38 @@ class BaseComponent(lifecycle.Node):
             out.msg_type.convert = selected_convert
         return outputs
 
+    def _warn_orphaned_plugin_topics(self):
+        """Emit a warning for any ``use_plugin`` flagged topic when no robot
+        plugin is attached.
+        """
+        orphaned = [
+            t.name
+            for t in list(getattr(self, "in_topics", ()) or ())
+            + list(getattr(self, "out_topics", ()) or ())
+            if t.use_plugin
+        ]
+        if orphaned:
+            self.get_logger().warning(
+                f"Component '{self.node_name}' has {len(orphaned)} topic(s) "
+                f"flagged use_plugin={{True | '<key>'}} but no robot plugin "
+                f"is attached to the launcher: {orphaned}. Those topics will "
+                "behave as ordinary ROS topics."
+            )
+
     def _use_robot_plugin(self):
         """Adapt the component's inputs/outputs to the robot plugin.
 
-        For every component input topic whose message type the plugin provides a
-        `robot.feedback.Feedback` for, the input is rewired:
-        ROS-topic feedback re-uses the native subscriber-swap path, any other
-        transport is bound through the feedback bus.
+        Only topics that opt in with ``use_plugin=True`` are rewired. The
+        plugin entry is resolved by ``topic.name`` first (so a recipe can
+        disambiguate sibling feedbacks of the same type by naming the topic
+        after the plugin's registry key) and falls back to a unique-type
+        match when no key matches. ``use_plugin=False`` (the default) means
+        the topic is internal, never claimed by the plugin even if a
+        matching type exists.
 
-        Likewise every output topic the plugin provides a
-        `robot.command.RobotCommand` for is rewired to that command's transport.
+        ROS-topic transports re-use the native subscriber/publisher swap
+        path; non-ROS transports are bound through the feedback bus or the
+        command adapter.
         """
         from ..robot.transports.ros import RosTopicTransport
 
@@ -292,8 +314,16 @@ class BaseComponent(lifecycle.Node):
         for topic in list(getattr(self, "in_topics", ()) or ()):
             if topic.name in self._external_topics:
                 continue
-            feedback = plugin.resolve_feedback(topic.msg_type.__name__)
+            if not topic.use_plugin:
+                continue
+            feedback = plugin.resolve_feedback(topic.name, topic.msg_type.__name__)
             if feedback is None:
+                self.get_logger().warning(
+                    f"Topic '{topic.name}' ({topic.msg_type.__name__}) opted "
+                    f"into the robot plugin ({plugin.metadata.name}) but no "
+                    "matching feedback was found. Falling back to an "
+                    "ordinary ROS subscription."
+                )
                 continue
             transport = feedback.transport
             if isinstance(transport, RosTopicTransport):
@@ -314,8 +344,16 @@ class BaseComponent(lifecycle.Node):
         for topic in list(getattr(self, "out_topics", ()) or ()):
             if topic.name in self._external_topics:
                 continue
-            command = plugin.resolve_command(topic.msg_type.__name__)
+            if not topic.use_plugin:
+                continue
+            command = plugin.resolve_command(topic.name, topic.msg_type.__name__)
             if command is None:
+                self.get_logger().warning(
+                    f"Topic '{topic.name}' ({topic.msg_type.__name__}) opted "
+                    f"into the robot plugin ({plugin.metadata.name}) but no "
+                    "matching command was found. Falling back to an "
+                    "ordinary ROS publisher."
+                )
                 continue
             transport = command.transport
             if isinstance(transport, RosTopicTransport):
@@ -373,7 +411,7 @@ class BaseComponent(lifecycle.Node):
         self._external_topics.add(topic.name)
         self.get_logger().info(
             f"Input '{topic.name}' bound to robot plugin feedback "
-            f"'{feedback.name}' via {feedback.transport.kind}"
+            f"'{feedback.key}' via {feedback.transport.kind}"
         )
 
     def _replace_output_by_transport(self, topic: Topic, command) -> None:
@@ -416,7 +454,7 @@ class BaseComponent(lifecycle.Node):
         self._external_topics.add(normalized_topic_name)
         self.get_logger().info(
             f"Output '{topic.name}' bound to robot plugin command "
-            f"'{command.name}' via {transport.kind}"
+            f"'{command.key}' via {transport.kind}"
         )
 
     # Managing algorithms
@@ -668,9 +706,13 @@ class BaseComponent(lifecycle.Node):
         # Init any global node variables
         self.init_variables()
 
-        # Update the component topics using the robot plugin if provided
+        # Update the component topics using the robot plugin if provided.
+        # When no plugin is attached, topics that opted in with use_plugin=True
+        # issue a warning and keep working
         if self._robot_plugin is not None:
             self._use_robot_plugin()
+        else:
+            self._warn_orphaned_plugin_topics()
 
         self.create_all_subscribers()
 

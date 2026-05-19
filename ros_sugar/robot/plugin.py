@@ -31,6 +31,12 @@ from .transports import Transport
 from .transports.ros import RosServiceTransport, RosTopicTransport
 
 
+class AmbiguousPluginEntryError(LookupError):
+    """Raised when ``Topic(use_plugin=True)`` matches more than one plugin
+    entry by message type and the recipe needs an explicit key to disambiguate.
+    """
+
+
 @dataclass
 class PluginMetadata:
     """Descriptive metadata for a robot plugin."""
@@ -171,13 +177,85 @@ class RobotPlugin:
         pass
 
     # consumer API (used by components)
-    def resolve_feedback(self, std_type_name: str) -> Optional[Feedback]:
-        """Return the `Feedback` standing in for ``std_type_name``, if any."""
-        return self.feedbacks.get(std_type_name)
+    def resolve_feedback(
+        self, topic_name: str, msg_type_name: str
+    ) -> Optional[Feedback]:
+        """Return the `Feedback` standing in for an input topic.
 
-    def resolve_command(self, std_type_name: str) -> Optional[RobotCommand]:
-        """Return the `RobotCommand` standing in for ``std_type_name``, if any."""
-        return self.commands.get(std_type_name)
+        Two-step resolution:
+
+        1. Exact match on ``plugin.feedbacks[topic_name]`` -- the recipe
+           author's `io.topic.Topic.name` doubles as the registry key for
+           disambiguation.
+        2. Unique-type fallback: a single feedback whose ``msg_type`` matches
+           ``msg_type_name``. Common case for plugins exposing one entry per
+           message type.
+
+        :raises TypeError: when the topic name matches a feedback by key but
+            the message types disagree -- the recipe is mis-wired.
+        :raises AmbiguousPluginEntryError: when the topic name doesn't match
+            any key and multiple feedbacks share ``msg_type_name``; the
+            error lists the available keys so the recipe author can rename
+            the topic to disambiguate.
+        """
+        return self._resolve_entry(
+            self.feedbacks, topic_name, msg_type_name, kind="feedback"
+        )
+
+    def resolve_command(
+        self, topic_name: str, msg_type_name: str
+    ) -> Optional[RobotCommand]:
+        """Return the `RobotCommand` standing in for an output topic.
+        Same resolution rules as `resolve_feedback`.
+        """
+        return self._resolve_entry(
+            self.commands, topic_name, msg_type_name, kind="command"
+        )
+
+    def _resolve_entry(
+        self,
+        registry: Dict[str, Any],
+        topic_name: str,
+        msg_type_name: str,
+        kind: str,
+    ) -> Optional[Any]:
+        # Exact key match, topic.name == plugin entry key.
+        # NOTE: For ROS-typed entries we also verify the message types agree;
+        # commands on non-ROS transports keep ``msg_type=None`` because the
+        # encoder, not a ROS type, defines the wire payload.
+        if topic_name in registry:
+            entry = registry[topic_name]
+            entry_type = entry.msg_type.__name__ if entry.msg_type else None
+            if entry_type is not None and entry_type != msg_type_name:
+                raise TypeError(
+                    f"Plugin '{self.metadata.name}' {kind} '{topic_name}' has "
+                    f"type '{entry_type}' but the recipe's topic "
+                    f"'{topic_name}' is declared as '{msg_type_name}'. The "
+                    "recipe and the plugin disagree on the message type."
+                )
+            return entry
+
+        # Unique-type fallback, when topic.name is just a label
+        # NOTE: Entries without a ``msg_type`` (non-ROS commands) participate in
+        # this scan only if their dict key matches the type name
+        matches = []
+        for k, e in registry.items():
+            if e.msg_type is not None:
+                if e.msg_type.__name__ == msg_type_name:
+                    matches.append((k, e))
+            elif k == msg_type_name:
+                matches.append((k, e))
+        if len(matches) == 1:
+            return matches[0][1]
+        if len(matches) > 1:
+            keys = sorted(k for k, _ in matches)
+            raise AmbiguousPluginEntryError(
+                f"Plugin '{self.metadata.name}' exposes multiple "
+                f"{kind} entries of type '{msg_type_name}'. Rename the "
+                f"recipe's topic to match one of the plugin's keys to "
+                f"disambiguate. Available keys: {keys}"
+            )
+        return None
 
     def subscribe_feedback(
         self, feedback: Feedback, on_ros_msg: Callable[[Any], None]
@@ -358,14 +436,14 @@ class RobotPluginHost:
         """Decode one raw inbound payload and publish it on the bus + monitor."""
         if feedback.decoder is None:
             get_logger(LOGGER_NAME).error(
-                f"Feedback '{feedback.name}' has a non-ROS transport but no decoder"
+                f"Feedback '{feedback.key}' has a non-ROS transport but no decoder"
             )
             return
         try:
             msg = feedback.decoder(raw)
         except Exception as e:  # pragma: no cover - defensive
             get_logger(LOGGER_NAME).error(
-                f"Decoder for feedback '{feedback.name}' raised: {e}"
+                f"Decoder for feedback '{feedback.key}' raised: {e}"
             )
             return
         if msg is None:
