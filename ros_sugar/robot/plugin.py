@@ -39,7 +39,14 @@ class AmbiguousPluginEntryError(LookupError):
 
 @dataclass
 class PluginMetadata:
-    """Descriptive metadata for a robot plugin."""
+    """Descriptive metadata for a robot plugin.
+
+    :param name: Short robot name, e.g. ``"Lite3"``.
+    :param vendor: Manufacturer / vendor name.
+    :param version: Plugin or interface version string.
+    :param description: A 1-3 sentence plain-language description of the
+        robot; its form factor, how it moves, and what it is for.
+    """
 
     name: str
     vendor: str = ""
