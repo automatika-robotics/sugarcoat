@@ -271,14 +271,10 @@ class BaseComponent(lifecycle.Node):
 
     def _warn_orphaned_plugin_topics(self):
         """Emit a warning for any ``use_plugin`` flagged topic when no robot
-        plugin is attached.
-        """
-        orphaned = [
-            t.name
-            for t in list(getattr(self, "in_topics", ()) or ())
-            + list(getattr(self, "out_topics", ()) or ())
-            if t.use_plugin
-        ]
+        plugin is attached."""
+        in_topics = [cb.input_topic for cb in self.callbacks.values()]
+        out_topics = [pub.output_topic for pub in self.publishers_dict.values()]
+        orphaned = [t.name for t in in_topics + out_topics if t.use_plugin]
         if orphaned:
             self.get_logger().warning(
                 f"Component '{self.node_name}' has {len(orphaned)} topic(s) "
@@ -310,8 +306,10 @@ class BaseComponent(lifecycle.Node):
             f"'{plugin.metadata.name}'"
         )
 
-        # Handle Robot Feedback (System Input Topics)
-        for topic in list(getattr(self, "in_topics", ()) or ()):
+        # Handle Robot Feedback (System Input Topics). Snapshot the topics
+        # first, _attach_external_feedback / _replace_input_topic mutate
+        # the callbacks dict as we go.
+        for topic in [cb.input_topic for cb in list(self.callbacks.values())]:
             if topic.name in self._external_topics:
                 continue
             if not topic.use_plugin:
@@ -340,8 +338,9 @@ class BaseComponent(lifecycle.Node):
             else:
                 self._attach_external_feedback(topic, feedback)
 
-        # Handle Robot Commands (System Output Topics)
-        for topic in list(getattr(self, "out_topics", ()) or ()):
+        # Handle Robot Commands (System Output Topics). Snapshot first, as
+        # _replace_output_by_transport mutates publishers_dict as we go.
+        for topic in [pub.output_topic for pub in list(self.publishers_dict.values())]:
             if topic.name in self._external_topics:
                 continue
             if not topic.use_plugin:
@@ -2153,6 +2152,8 @@ class BaseComponent(lifecycle.Node):
 
     def _update_inactive_input_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new input topic"""
+        if not hasattr(self, "in_topics"):
+            return
         # Update in_topics list
         try:
             idx = self.in_topics.index(old_topic)
@@ -2220,6 +2221,8 @@ class BaseComponent(lifecycle.Node):
 
     def _update_inactive_output_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new output topic"""
+        if not hasattr(self, "out_topics"):
+            return
         # Update out_topics list
         try:
             idx = self.out_topics.index(old_topic)

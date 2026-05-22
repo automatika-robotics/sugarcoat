@@ -600,3 +600,53 @@ def test_warn_orphaned_plugin_topics(rclpy_context, caplog):
         assert "cmd" not in component._external_topics
     finally:
         component.destroy_node()
+
+
+def test_use_robot_plugin_component_without_in_topics(rclpy_context):
+    """A component that builds ``callbacks`` directly without passing
+    ``inputs=`` to ``BaseComponent`` -- like the EmbodiedAgents Memory
+    component -- still gets its ``use_plugin`` topics rewired.
+
+    Regression: ``_use_robot_plugin`` used to iterate ``in_topics``, which is
+    only populated when ``inputs`` is passed through ``__init__``. Components
+    that build ``callbacks`` directly were silently skipped.
+    """
+    from ros_sugar.core.component import BaseComponent
+
+    state_port = _free_port()
+    plugin = MockPlugin(state_port=state_port, cmd_port=_free_port())
+    bus = InProcessFeedbackBus()
+    host = RobotPluginHost(plugin, node=None, bus=bus)
+    host.open()
+
+    # Memory-style construction: no inputs/outputs at __init__ time.
+    component = BaseComponent(component_name="no_in_topics_component")
+    component.rclpy_init_node()
+    # Precondition: the component genuinely has no in_topics list.
+    assert not hasattr(component, "in_topics")
+
+    # Callbacks built directly, the way Memory._layers does it.
+    topic = Topic(name="robot_state", msg_type="Int32", use_plugin=True)
+    component.callbacks = {
+        topic.name: topic.msg_type.callback(topic, node_name=component.node_name)
+    }
+    component._robot_plugin = plugin
+    try:
+        component._use_robot_plugin()
+
+        # The use_plugin topic was discovered and bound despite no in_topics.
+        assert "robot_state" in component._external_topics
+
+        # Plugin telemetry reaches the (swapped) callback slot.
+        robot_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        robot_tx.sendto(b"77", ("127.0.0.1", state_port))
+        callback = component.callbacks["robot_state"]
+        deadline = time.time() + 2.0
+        while callback.msg is None and time.time() < deadline:
+            time.sleep(0.02)
+        robot_tx.close()
+        assert callback.msg is not None
+        assert callback.get_output() == 77
+    finally:
+        host.close()
+        component.destroy_node()
