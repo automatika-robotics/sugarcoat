@@ -650,3 +650,91 @@ def test_use_robot_plugin_component_without_in_topics(rclpy_context):
     finally:
         host.close()
         component.destroy_node()
+
+
+# ---------------------------------------------------------------------------
+# launcher.robot auto-apply from plugin.robot_config
+# ---------------------------------------------------------------------------
+
+
+class _FakeComponentConfig:
+    """Bare component config with a duck-typed ``robot`` slot."""
+
+    def __init__(self):
+        self.robot = None
+
+
+class _FakeComponent:
+    """Minimum surface the launcher's robot-broadcast path needs."""
+
+    def __init__(self, node_name: str):
+        self.node_name = node_name
+        self.config = _FakeComponentConfig()
+
+
+def test_plugin_robot_config_auto_applied_on_bringup_hook():
+    """When the recipe doesn't set ``launcher.robot``, the plugin's
+    ``robot_config`` is broadcast to every component with a ``config.robot``
+    slot."""
+    from ros_sugar import Launcher
+
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    plugin.robot_config = {"sentinel": "from_plugin"}
+
+    launcher = Launcher(robot_plugin=plugin)
+    comp_a = _FakeComponent("a")
+    comp_b = _FakeComponent("b")
+    launcher._components = [comp_a, comp_b]
+
+    launcher._apply_plugin_robot_config()
+
+    assert comp_a.config.robot == {"sentinel": "from_plugin"}
+    assert comp_b.config.robot == {"sentinel": "from_plugin"}
+
+
+def test_recipe_override_wins_over_plugin():
+    """An explicit ``launcher.robot = ...`` sets the sentinel and the
+    auto-apply step at bringup is a no-op (recipe wins)."""
+    from ros_sugar import Launcher
+
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    plugin.robot_config = {"sentinel": "from_plugin"}
+
+    launcher = Launcher(robot_plugin=plugin)
+    comp = _FakeComponent("c")
+    launcher._components = [comp]
+
+    launcher.robot = {"sentinel": "from_recipe"}
+    assert launcher._robot_explicitly_set is True
+    assert comp.config.robot == {"sentinel": "from_recipe"}
+
+    launcher._apply_plugin_robot_config()  # would normally fire at bringup
+    assert comp.config.robot == {"sentinel": "from_recipe"}  # untouched
+
+
+def test_plugin_without_robot_config_attr_is_noop():
+    """A plugin that doesn't expose ``robot_config`` causes no broadcast and
+    no error -- the auto-apply path is fully opt-in."""
+    from ros_sugar import Launcher
+
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    assert not hasattr(plugin, "robot_config")
+
+    launcher = Launcher(robot_plugin=plugin)
+    comp = _FakeComponent("d")
+    launcher._components = [comp]
+
+    launcher._apply_plugin_robot_config()
+    assert comp.config.robot is None
+
+
+def test_no_plugin_attached_is_noop():
+    """Launcher with no plugin attached -- auto-apply is a no-op."""
+    from ros_sugar import Launcher
+
+    launcher = Launcher()
+    comp = _FakeComponent("e")
+    launcher._components = [comp]
+
+    launcher._apply_plugin_robot_config()
+    assert comp.config.robot is None

@@ -173,6 +173,9 @@ class Launcher:
         self._enable_ui = False
         self._robot_plugin = robot_plugin
         self._robot_plugin_host: Optional[RobotPluginHost] = None
+        # Tracks whether the recipe explicitly set robot config. If not config
+        # is pulled from a plugin. In case both present, recipe wins.
+        self._robot_explicitly_set: bool = False
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
@@ -439,6 +442,14 @@ class Launcher:
         :param config: Robot configuration
         :type config: RobotConfig
         """
+        self._robot_explicitly_set = True
+        self._broadcast_robot_config(robot_config)
+
+    def _broadcast_robot_config(self, robot_config) -> None:
+        """Assign ``robot_config`` to every component whose config carries a
+        ``robot`` slot. Duck-typed, sugarcoat does not import the config
+        type itself.
+        """
         for component in self._components:
             if hasattr(component.config, "robot"):
                 try:
@@ -447,6 +458,22 @@ class Launcher:
                     logger.error(
                         f"Cannot set component {component.node_name} 'robot' configuration parameter of type '{type(component.config.robot)}' to provided value of type '{type(robot_config)}'. Skipping setting robot configuration for '{component.node_name}'"
                     )
+
+    def _apply_plugin_robot_config(self) -> None:
+        """Pull ``robot_config`` from the attached plugin and broadcast it to
+        every component, unless the recipe already set one explicitly
+        """
+        if self._robot_explicitly_set:
+            return
+        if self._robot_plugin is None:
+            return
+        robot_config = getattr(self._robot_plugin, "robot_config", None)
+        if robot_config is None:
+            return
+        logger.info(
+            f"Applying robot config from plugin '{self._robot_plugin.metadata.name}'"
+        )
+        self._broadcast_robot_config(robot_config)
 
     @property
     def frames(self) -> Dict[str, Any]:
@@ -1518,6 +1545,10 @@ class Launcher:
             raise ValueError(
                 "Cannot bringup without adding any components. Use 'add_pkg' method to add a set of components from one ROS2 package then use 'bringup' to start and run your system"
             )
+
+        # If the attached plugin carries a robot_config and the recipe didn't
+        # set one, broadcast it to every component
+        self._apply_plugin_robot_config()
 
         if config_file:
             self.configure(config_file)
