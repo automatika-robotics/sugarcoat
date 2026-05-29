@@ -393,9 +393,16 @@ def test_plugin_host_feedback_and_command_flow():
 
 @pytest.fixture
 def rclpy_context():
-    rclpy.init()
+    # Other tests in the suite (e.g. launcher tests) may leave the default
+    # rclpy context initialized -- Launcher.__init__ does `if not rclpy.ok():
+    # rclpy.init()` and never shuts down. Mirror that guard so we tolerate a
+    # pre-initialized context and only tear down what we own.
+    own = not rclpy.ok()
+    if own:
+        rclpy.init()
     yield
-    rclpy.shutdown()
+    if own and rclpy.ok():
+        rclpy.shutdown()
 
 
 def test_component_use_robot_plugin(rclpy_context):
