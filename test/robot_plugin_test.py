@@ -22,6 +22,7 @@ from ros_sugar.robot import (
     ActionRegistry,
     EventRegistry,
     Feedback,
+    HttpTransport,
     InProcessFeedbackBus,
     PluginMetadata,
     RobotCommand,
@@ -194,6 +195,67 @@ def test_sdk_callback_transport():
     assert registered["unregistered"] == "handle-1"
 
 
+def test_http_transport_send_and_poll():
+    """``HttpTransport`` POSTs commands and polls telemetry against a real
+    local HTTP server -- exercises both directions end to end.
+
+    HttpTransport is a public extension point with no in-repo robot using it
+    yet; this keeps it verified rather than unexercised.
+    """
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    received_posts = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):  # silence default stderr logging
+            pass
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", 0))
+            received_posts.append(self.rfile.read(length))
+            self.send_response(200)
+            self.end_headers()
+
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"telemetry-data")
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    port = server.server_address[1]
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    transport = HttpTransport(
+        "http",
+        base_url=f"http://127.0.0.1:{port}",
+        send_path="cmd",
+        poll_path="telemetry",
+        poll_rate_hz=50.0,
+    )
+    polled = []
+    transport.subscribe(lambda body: polled.append(body))
+    transport.open()
+    try:
+        # Outbound: a POST command reaches the server with the exact body.
+        assert transport.send(b"go")
+        deadline = time.time() + 2.0
+        while not received_posts and time.time() < deadline:
+            time.sleep(0.02)
+        assert received_posts and received_posts[0] == b"go"
+
+        # Inbound: the polled GET body is dispatched to the subscriber.
+        deadline = time.time() + 2.0
+        while not polled and time.time() < deadline:
+            time.sleep(0.02)
+        assert polled and polled[0] == b"telemetry-data"
+    finally:
+        transport.close()
+        server.shutdown()
+        server_thread.join(timeout=2.0)
+
+
 # ---------------------------------------------------------------------------
 # Feedback bus
 # ---------------------------------------------------------------------------
@@ -238,6 +300,68 @@ def test_socket_feedback_bus_bidirectional():
             time.sleep(0.02)
         assert client_seen == [b"telemetry"]
         assert server_seen == [b"command"]
+    finally:
+        client.close()
+        server.close()
+
+
+def test_socket_feedback_bus_concurrent_client_publishes():
+    """Many threads publishing on one client socket must not interleave frames.
+
+    ``sendall`` isn't atomic across threads; without a send lock concurrent
+    publishes corrupt the length-prefixed stream and the server desyncs. Each
+    payload is distinct and large enough to span multiple ``send`` syscalls,
+    so an unserialized writer would reliably scramble framing.
+    """
+    import threading
+
+    server = SocketFeedbackBus()
+    server.start()
+    client = SocketFeedbackBus(server.endpoint)
+    client.connect()
+    try:
+        # Shrink the client send buffer so each large publish forces ``sendall``
+        # to loop over multiple ``send`` syscalls -- that loop is where an
+        # unserialized concurrent writer interleaves bytes. Without this, a
+        # single-syscall send on loopback is atomic by luck and the race hides.
+        client._client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2048)
+
+        received = []
+        server.subscribe("cmd", lambda d: received.append(d))
+        time.sleep(0.3)  # let the SUBSCRIBE register
+
+        n_threads, per_thread = 8, 15
+        # Distinct payloads, each far larger than the send buffer (so sendall
+        # makes many syscalls). A single byte-level interleave yields a payload
+        # that isn't in the valid set.
+        payloads = {
+            t: bytes([65 + t]) * (256 * 1024 + t) for t in range(n_threads)
+        }
+
+        def publisher(t):
+            for _ in range(per_thread):
+                client.publish("cmd", payloads[t])
+
+        threads = [threading.Thread(target=publisher, args=(t,)) for t in range(n_threads)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+
+        deadline = time.time() + 15.0
+        total = n_threads * per_thread
+        while len(received) < total and time.time() < deadline:
+            time.sleep(0.02)
+
+        assert len(received) == total, f"lost frames: {len(received)}/{total}"
+        # Every received frame must be one of the intact payloads -- a single
+        # interleaved/desynced frame would not match any.
+        valid = set(payloads.values())
+        assert all(r in valid for r in received), "frame corruption / interleave detected"
+        # And each payload arrived the expected number of times.
+        from collections import Counter
+        counts = Counter(received)
+        assert all(counts[p] == per_thread for p in payloads.values())
     finally:
         client.close()
         server.close()
@@ -381,6 +505,48 @@ def test_plugin_host_feedback_and_command_flow():
         data, _ = robot_cmd_sock.recvfrom(1024)
         assert data == b"42"
         robot_tx.close()
+    finally:
+        host.close()
+        robot_cmd_sock.close()
+
+
+class _RouteViaHostPlugin(RobotPlugin):
+    """Plugin whose command transport is marked ``route_via_host`` -- the
+    client publishes the command to the bus and the HOST forwards it to the
+    transport. Exercises the route-via-host path (for command transports that
+    can only live in the host process, e.g. a single-connection vendor SDK)."""
+
+    def __init__(self, cmd_port: int = 0):
+        self.metadata = PluginMetadata(name="RouteViaHost", vendor="test")
+        cmd = UdpTransport(
+            "cmd", send_to=("127.0.0.1", cmd_port), route_via_host=True
+        )
+        self.transports = {"cmd": cmd}
+        self.commands = {
+            "Int32": RobotCommand(key="Int32", transport=cmd, encoder=_encode_int32)
+        }
+
+
+def test_route_via_host_command_forwarding():
+    """A ``route_via_host`` command published from the client side is forwarded
+    by the HOST to the underlying transport."""
+    cmd_port = _free_port()
+    robot_cmd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    robot_cmd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    robot_cmd_sock.bind(("127.0.0.1", cmd_port))
+    robot_cmd_sock.settimeout(2.0)
+
+    plugin = _RouteViaHostPlugin(cmd_port=cmd_port)
+    assert plugin.commands["Int32"].transport.route_via_host is True
+
+    host = RobotPluginHost(plugin, node=None, bus=InProcessFeedbackBus())
+    host.open()  # attaches the bus and registers the host-side forwarder
+    try:
+        # send_command sees route_via_host -> publishes to the bus channel;
+        # the HOST's forwarder receives it and calls transport.send.
+        assert plugin.send_command(plugin.commands["Int32"], _encode_int32(7))
+        data, _ = robot_cmd_sock.recvfrom(1024)
+        assert data == b"7"
     finally:
         host.close()
         robot_cmd_sock.close()
