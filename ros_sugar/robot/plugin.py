@@ -17,12 +17,13 @@ import importlib
 import inspect
 import json
 import threading
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
+from attrs import define, field
 from rclpy.logging import get_logger
 from rclpy.serialization import deserialize_message, serialize_message
 
+from ..config import BaseAttrs
 from .bus import LOGGER_NAME, BusHandle, FeedbackBus, SocketFeedbackBus
 from .command import CommandSpec, RobotCommand
 from .feedback import Feedback, FeedbackSpec
@@ -33,12 +34,13 @@ from .transports.ros import RosServiceTransport, RosTopicTransport
 
 class AmbiguousPluginEntryError(LookupError):
     """Raised when ``Topic(use_plugin=True)`` matches more than one plugin
-    entry by message type and the recipe needs an explicit key to disambiguate.
+    entry by message type; the recipe must name the topic after one of the
+    plugin's registry keys to disambiguate.
     """
 
 
-@dataclass
-class PluginMetadata:
+@define(kw_only=True)
+class PluginMetadata(BaseAttrs):
     """Descriptive metadata for a robot plugin.
 
     :param name: Short robot name, e.g. ``"Lite3"``.
@@ -48,10 +50,10 @@ class PluginMetadata:
         robot; its form factor, how it moves, and what it is for.
     """
 
-    name: str
-    vendor: str = ""
-    version: str = ""
-    description: str = ""
+    name: str = field()
+    vendor: str = field(default="")
+    version: str = field(default="")
+    description: str = field(default="")
 
 
 def _is_ros_transport(transport: Transport) -> bool:
@@ -322,12 +324,12 @@ class RobotPlugin:
     def describe(self) -> Dict[str, Any]:
         """Return a JSON-serializable introspection tree for this plugin."""
         return {
-            "metadata": vars(self.metadata),
+            "metadata": self.metadata.asdict(),
             "transports": {name: t.kind for name, t in self.transports.items()},
-            "feedbacks": [vars(s) for s in self.list_feedbacks()],
-            "commands": [vars(s) for s in self.list_commands()],
-            "actions": [vars(s) for s in self.list_actions()],
-            "events": [vars(s) for s in self.list_events()],
+            "feedbacks": [s.asdict() for s in self.list_feedbacks()],
+            "commands": [s.asdict() for s in self.list_commands()],
+            "actions": [s.asdict() for s in self.list_actions()],
+            "events": [s.asdict() for s in self.list_events()],
         }
 
 

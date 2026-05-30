@@ -16,9 +16,11 @@ LLM-driven components (e.g. in EmbodiedAgents) consume these via
 import functools
 import inspect
 import json
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from attrs import define, field
+
+from ..config import BaseAttrs
 from ..core.action import Action
 from ..core.event import Event
 
@@ -72,23 +74,23 @@ def plugin_action(
     return _decorator
 
 
-@dataclass
-class ActionSpec:
+@define(kw_only=True)
+class ActionSpec(BaseAttrs):
     """Introspection record for one action factory."""
 
-    name: str
-    description: str
-    signature: str
-    tool_description: Optional[Union[str, Dict]] = None
+    name: str = field()
+    description: str = field()
+    signature: str = field()
+    tool_description: Optional[Union[str, Dict]] = field(default=None)
 
 
-@dataclass
-class EventSpec:
+@define(kw_only=True)
+class EventSpec(BaseAttrs):
     """Introspection record for one event factory."""
 
-    name: str
-    description: str
-    signature: str
+    name: str = field()
+    description: str = field()
+    signature: str = field()
 
 
 class _FactoryRegistry:

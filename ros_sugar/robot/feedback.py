@@ -5,9 +5,11 @@ message type it stands in for, which transport carries it, and how to
 decode a raw inbound payload into a ROS message.
 """
 
-from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Type
 
+from attrs import define, field
+
+from ..config import BaseAttrs
 from ..io.supported_types import SupportedType
 from ..io.topic import Topic
 from .transports import Transport
@@ -18,17 +20,19 @@ def _feedback_channel(key: str) -> str:
     return f"robot/feedback/{key}"
 
 
-@dataclass
-class Feedback:
+@define(kw_only=True)
+class Feedback(BaseAttrs):
     """A robot telemetry stream.
 
-    :param key: Registry key on ``plugin.feedbacks`` -- the string a recipe
-        author passes to ``Topic(use_plugin="<key>")`` to wire that topic to
-        this feedback. For plugins that expose exactly one feedback per
-        message type, conventionally the message-type name (``"Odometry"``,
-        ``"Imu"``). For plugins with multiple feedbacks of the same type
-        (e.g. a humanoid's ``"left_arm"`` / ``"right_arm"`` JointStates),
-        choose a descriptive role name.
+    :param key: Registry key on ``plugin.feedbacks``. A recipe binds a topic
+        to this feedback with ``Topic(..., use_plugin=True)``; resolution
+        matches the topic's ``name`` against this key first, then falls back
+        to a unique message-type match. For plugins that expose exactly one
+        feedback per message type, conventionally the message-type name
+        (``"Odometry"``, ``"Imu"``). For plugins with multiple feedbacks of
+        the same type (e.g. a humanoid's ``"left_arm"`` / ``"right_arm"``
+        JointStates), choose a descriptive role name and name the recipe's
+        topic to match it.
     :param msg_type: ``SupportedType`` subclass wrapping the robot's message,
         typically built with :func:`ros_sugar.robot.create_supported_type`.
     :param transport: Transport carrying this stream.
@@ -40,12 +44,12 @@ class Feedback:
     :param description: Human-readable description.
     """
 
-    key: str
-    msg_type: Type[SupportedType]
-    transport: Transport
-    decoder: Optional[Callable[[Any], Optional[Any]]] = None
-    rate_hz: Optional[float] = None
-    description: str = ""
+    key: str = field()
+    msg_type: Type[SupportedType] = field()
+    transport: Transport = field()
+    decoder: Optional[Callable[[Any], Optional[Any]]] = field(default=None)
+    rate_hz: Optional[float] = field(default=None)
+    description: str = field(default="")
     _topic: Optional[Topic] = field(default=None, init=False, repr=False)
 
     @property
@@ -96,25 +100,25 @@ class Feedback:
         )
 
 
-@dataclass
-class FeedbackSpec:
+@define(kw_only=True)
+class FeedbackSpec(BaseAttrs):
     """Introspection record for a `Feedback` (see ``plugin.list_feedbacks``).
 
-    :attr:`key` is the registry key on ``plugin.feedbacks`` -- pass it to
-    ``Topic(use_plugin="<key>")`` to wire that topic to this feedback. Use
-    this form when the plugin exposes multiple feedbacks of the same
-    message type and a recipe needs to disambiguate. For plugins with
-    exactly one feedback per type, ``Topic(use_plugin=True)`` resolves
-    against the message type and the key isn't strictly needed.
+    `key` is the registry key on ``plugin.feedbacks``. To wire a topic
+    to this feedback, set ``Topic(use_plugin=True)`` and name the topic after
+    this key -- needed when the plugin exposes multiple feedbacks of the same
+    message type and a recipe must disambiguate. For plugins with exactly one
+    feedback per type, ``use_plugin=True`` resolves by message type and the
+    name need not match the key.
     """
 
-    key: str
-    description: str
-    msg_type: str
-    transport_kind: str
-    transport_name: str
-    rate_hz: Optional[float]
-    channel: str
+    key: str = field()
+    description: str = field()
+    msg_type: str = field()
+    transport_kind: str = field()
+    transport_name: str = field()
+    rate_hz: Optional[float] = field()
+    channel: str = field()
 
 
 __all__ = ["Feedback", "FeedbackSpec"]
