@@ -1411,13 +1411,13 @@ class BaseComponent(lifecycle.Node):
         each component subprocess rebuilds a CLIENT plugin from this spec and
         connects to the HOST feedback bus at ``bus_endpoint``.
 
-        :return: JSON ``{"spec": <plugin spec>, "bus_endpoint": [host, port]}``
+        :return: JSON ``{"spec": <plugin spec>, "bus_endpoint": <name>}``
         :rtype: str
         """
         if self._robot_plugin is None:
             return "{}"
         bus = self._robot_plugin.bus
-        endpoint = list(bus.endpoint) if bus is not None and bus.endpoint else None
+        endpoint = bus.endpoint if bus is not None else None
         return json.dumps({
             "spec": self._robot_plugin.to_spec(),
             "bus_endpoint": endpoint,

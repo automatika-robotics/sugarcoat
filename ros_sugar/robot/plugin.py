@@ -136,7 +136,7 @@ class RobotPlugin:
         """Rebuild a plugin from a `to_spec` dict.
 
         :param spec: The spec dict produced by `to_spec`.
-        :param bus_endpoint: ``(host, port)`` of the host's feedback bus; when
+        :param bus_endpoint: socket name of the host's feedback bus; when
             given, a connected `robot.bus.SocketFeedbackBus`
             is attached so the plugin's consumer API (``subscribe_feedback`` /
             ``send_command``) talks to the host across the process boundary.
@@ -148,7 +148,7 @@ class RobotPlugin:
             obj = getattr(obj, part)
         plugin: RobotPlugin = obj(**spec.get("kwargs", {}))
         if bus_endpoint is not None:
-            bus = SocketFeedbackBus(tuple(bus_endpoint))
+            bus = SocketFeedbackBus(bus_endpoint)
             bus.connect()
             plugin.set_bus(bus)
         return plugin

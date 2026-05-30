@@ -9,11 +9,12 @@ The bus carries **bytes only**; callers serialize ROS messages with
 The bus is symmetric. Either side may ``publish`` or ``subscribe``.
 """
 
+import os
 import socket
 import struct
 import threading
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional
 
 from rclpy.logging import get_logger
 
@@ -22,6 +23,15 @@ _OP_SUB = 1
 _OP_PUB = 2
 
 LOGGER_NAME = "robot_plugin"
+
+
+def _abstract_addr(name: str) -> str:
+    """Linux abstract-namespace AF_UNIX address for ``name``.
+
+    A leading NUL byte puts the socket in the abstract namespace: it has no
+    filesystem entry and is reclaimed automatically when the socket closes
+    """
+    return "\0" + name
 
 
 class BusHandle:
@@ -62,8 +72,8 @@ class FeedbackBus(ABC):
         """Tear the bus down and release all resources."""
 
     @property
-    def endpoint(self) -> Optional[Tuple[str, int]]:
-        """``(host, port)`` for socket buses; ``None`` for in-process buses."""
+    def endpoint(self) -> Optional[str]:
+        """Socket name for socket buses; ``None`` for in-process buses."""
         return None
 
 
@@ -165,23 +175,27 @@ def _read_frame(sock: socket.socket):
 
 
 class SocketFeedbackBus(FeedbackBus):
-    """Localhost TCP fan-out - used for multiprocess launch.
+    """Local abstract-namespace ``AF_UNIX`` fan-out - used for multiprocess launch.
 
-    The HOST calls `start` (binds a server socket on ``127.0.0.1`` with an
-    OS-assigned port, exposed via `endpoint`). Each component process
-    constructs a ``SocketFeedbackBus`` with that endpoint and calls
-    `connect`.
+    The HOST calls `start`, which binds an abstract-namespace Unix socket and
+    exposes its name via `endpoint`. Each component process constructs a
+    ``SocketFeedbackBus`` with that endpoint and calls `connect`.
     """
 
-    def __init__(self, endpoint: Optional[Tuple[str, int]] = None) -> None:
+    def __init__(self, endpoint: Optional[str] = None) -> None:
         self._endpoint = endpoint
         self._is_server = False
         # server state
         self._server_sock: Optional[socket.socket] = None
         self._conns: List[socket.socket] = []
         self._conn_subs: Dict[socket.socket, set] = {}
+        # Per-connection send lock. ``sendall`` is not atomic across threads
+        # One lock per connection so a slow client can't stall fan-out to rest
+        self._conn_send_locks: Dict[socket.socket, threading.Lock] = {}
         # client state
         self._client_sock: Optional[socket.socket] = None
+        # Serializes writes on the single client socket
+        self._client_send_lock = threading.Lock()
         # shared
         self._local_subs: Dict[str, List[Callable[[bytes], None]]] = {}
         self._lock = threading.Lock()
@@ -189,18 +203,18 @@ class SocketFeedbackBus(FeedbackBus):
         self._threads: List[threading.Thread] = []
 
     @property
-    def endpoint(self) -> Optional[Tuple[str, int]]:  # noqa: D102
+    def endpoint(self) -> Optional[str]:  # noqa: D102
         return self._endpoint
 
     # HOST side
     def start(self) -> None:  # noqa: D102
         self._is_server = True
-        self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_sock.bind(("127.0.0.1", 0))
+        # Abstract-namespace name unique per pid and per instance
+        self._endpoint = f"sugarcoat_fb_{os.getpid()}_{id(self)}"
+        self._server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._server_sock.bind(_abstract_addr(self._endpoint))
         self._server_sock.listen(16)
         self._server_sock.settimeout(0.5)
-        self._endpoint = self._server_sock.getsockname()
         self._stop.clear()
         t = threading.Thread(
             target=self._accept_loop, name="feedback-bus-accept", daemon=True
@@ -220,6 +234,7 @@ class SocketFeedbackBus(FeedbackBus):
             with self._lock:
                 self._conns.append(conn)
                 self._conn_subs[conn] = set()
+                self._conn_send_locks[conn] = threading.Lock()
             t = threading.Thread(
                 target=self._server_conn_loop, args=(conn,), daemon=True
             )
@@ -244,6 +259,7 @@ class SocketFeedbackBus(FeedbackBus):
             if conn in self._conns:
                 self._conns.remove(conn)
             self._conn_subs.pop(conn, None)
+            self._conn_send_locks.pop(conn, None)
         try:
             conn.close()
         except OSError:
@@ -256,10 +272,12 @@ class SocketFeedbackBus(FeedbackBus):
         to ``channel`` (server side only)."""
         with self._lock:
             local = list(self._local_subs.get(channel, ()))
-            conns = [
-                c
+            # Snapshot each target with its send lock so the actual (blocking)
+            # sends happen outside ``_lock``, serialized per connection.
+            targets = [
+                (c, self._conn_send_locks[c])
                 for c, chans in self._conn_subs.items()
-                if channel in chans and c is not exclude
+                if channel in chans and c is not exclude and c in self._conn_send_locks
             ]
         for handler in local:
             try:
@@ -269,9 +287,10 @@ class SocketFeedbackBus(FeedbackBus):
                     f"Feedback handler for '{channel}' raised: {e}"
                 )
         frame = _encode_frame(_OP_PUB, channel, data)
-        for conn in conns:
+        for conn, send_lock in targets:
             try:
-                conn.sendall(frame)
+                with send_lock:
+                    conn.sendall(frame)
             except OSError:
                 pass
 
@@ -280,8 +299,8 @@ class SocketFeedbackBus(FeedbackBus):
         if self._endpoint is None:
             raise RuntimeError("SocketFeedbackBus.connect() needs an endpoint")
         self._is_server = False
-        self._client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._client_sock.connect(self._endpoint)
+        self._client_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._client_sock.connect(_abstract_addr(self._endpoint))
         self._client_sock.settimeout(0.5)
         self._stop.clear()
         t = threading.Thread(
@@ -318,7 +337,8 @@ class SocketFeedbackBus(FeedbackBus):
             if self._client_sock is None:
                 raise RuntimeError("SocketFeedbackBus not connected")
             try:
-                self._client_sock.sendall(_encode_frame(_OP_PUB, channel, data))
+                with self._client_send_lock:
+                    self._client_sock.sendall(_encode_frame(_OP_PUB, channel, data))
             except OSError as e:
                 get_logger(LOGGER_NAME).error(f"Feedback bus publish failed: {e}")
 
@@ -328,7 +348,8 @@ class SocketFeedbackBus(FeedbackBus):
         # a connected client must tell the server it wants this channel
         if not self._is_server and self._client_sock is not None:
             try:
-                self._client_sock.sendall(_encode_frame(_OP_SUB, channel, b""))
+                with self._client_send_lock:
+                    self._client_sock.sendall(_encode_frame(_OP_SUB, channel, b""))
             except OSError as e:
                 get_logger(LOGGER_NAME).error(f"Feedback bus subscribe failed: {e}")
 
@@ -352,6 +373,7 @@ class SocketFeedbackBus(FeedbackBus):
         self._threads.clear()
         self._conns.clear()
         self._conn_subs.clear()
+        self._conn_send_locks.clear()
         self._local_subs.clear()
         self._server_sock = None
         self._client_sock = None
