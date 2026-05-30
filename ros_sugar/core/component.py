@@ -366,7 +366,7 @@ class BaseComponent(lifecycle.Node):
                 )
                 continue
             if command is None:
-                self.get_logger().warning(
+                self.get_logger().error(
                     f"Topic '{topic.name}' ({topic.msg_type.__name__}) opted "
                     f"into the robot plugin ({plugin.metadata.name}) but no "
                     "matching command was found. Falling back to an "
