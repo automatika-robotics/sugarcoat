@@ -399,6 +399,7 @@ class BaseComponent(lifecycle.Node):
             name=topic.name,
             msg_type=feedback.msg_type,
             qos_profile=topic.qos_profile,
+            use_plugin=topic.use_plugin,
         )
         new_callback = feedback.msg_type.callback(new_topic, node_name=self.node_name)
         if old_callback._subscriber:
@@ -900,10 +901,12 @@ class BaseComponent(lifecycle.Node):
             self.destroy_subscription(listener)
         for listener in self.__fallbacks_listeners:
             self.destroy_subscription(listener)
-        # Release robot plugin feedback-bus subscriptions
+        # Release robot plugin feedback-bus subscriptions and forget the
+        # plugin-bound topics so they are not skipped on reactivation
         for handle in self._robot_plugin_bus_handles:
             handle.unsubscribe()
         self._robot_plugin_bus_handles.clear()
+        self._external_topics.clear()
         # Destroy all input subscribers
         for callback in self.callbacks.values():
             if callback._subscriber:

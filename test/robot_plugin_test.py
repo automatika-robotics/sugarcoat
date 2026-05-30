@@ -626,6 +626,81 @@ def test_component_use_robot_plugin(rclpy_context):
         component.destroy_node()
 
 
+def test_use_robot_plugin_survives_deactivate_reactivate(rclpy_context):
+    """A deactivate/activate cycle must re-bind plugin feedback and commands.
+
+    Regression: ``destroy_all_subscribers`` released the feedback-bus handles
+    but ``_external_topics`` was never cleared, so the re-activation
+    ``_use_robot_plugin`` skipped re-binding and the component went deaf to
+    plugin feedback.
+    """
+    from ros_sugar.core.component import BaseComponent
+    from ros_sugar.robot.adapters import RobotCommandPublisher
+
+    state_port = _free_port()
+    cmd_port = _free_port()
+    robot_cmd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    robot_cmd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    robot_cmd_sock.bind(("127.0.0.1", cmd_port))
+    robot_cmd_sock.settimeout(2.0)
+
+    plugin = MockPlugin(state_port=state_port, cmd_port=cmd_port)
+    host = RobotPluginHost(plugin, node=None, bus=InProcessFeedbackBus())
+    host.open()
+
+    component = BaseComponent(
+        component_name="reactivate_test_component",
+        inputs=[Topic(name="robot_state", msg_type="Int32", use_plugin=True)],
+        outputs=[Topic(name="robot_cmd", msg_type="Int32", use_plugin=True)],
+    )
+    component.rclpy_init_node()
+    component._robot_plugin = plugin
+
+    def _feedback_roundtrip(expected: int):
+        """Push one telemetry value through the plugin and assert it lands."""
+        cb = component.callbacks["robot_state"]
+        cb.msg = None
+        tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        tx.sendto(str(expected).encode(), ("127.0.0.1", state_port))
+        deadline = time.time() + 2.0
+        while cb.msg is None and time.time() < deadline:
+            time.sleep(0.02)
+        tx.close()
+        assert cb.msg is not None, "plugin feedback not received"
+        assert cb.get_output() == expected
+
+    try:
+        # --- first activation ---
+        component._use_robot_plugin()
+        assert component._external_topics == {"robot_state", "robot_cmd"}
+        _feedback_roundtrip(11)
+
+        # --- deactivate ---
+        component.destroy_all_subscribers()
+        # bus handles released and the plugin-topic set reset
+        assert component._robot_plugin_bus_handles == []
+        assert component._external_topics == set()
+
+        # --- re-activate ---
+        component._use_robot_plugin()
+        assert component._external_topics == {"robot_state", "robot_cmd"}
+
+        # Feedback flows again (the regression: it didn't).
+        _feedback_roundtrip(22)
+
+        # Command still routes through the plugin adapter.
+        assert isinstance(
+            component.publishers_dict["robot_cmd"], RobotCommandPublisher
+        )
+        component.publishers_dict["robot_cmd"].publish(88)
+        data, _ = robot_cmd_sock.recvfrom(1024)
+        assert data == b"88"
+    finally:
+        host.close()
+        robot_cmd_sock.close()
+        component.destroy_node()
+
+
 # ---------------------------------------------------------------------------
 # use_plugin opt-in and key-based disambiguation
 # ---------------------------------------------------------------------------
