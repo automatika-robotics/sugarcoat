@@ -298,6 +298,7 @@ class BaseComponent(lifecycle.Node):
         path; non-ROS transports are bound through the feedback bus or the
         command adapter.
         """
+        from ..robot.plugin import AmbiguousPluginEntryError
         from ..robot.transports.ros import RosTopicTransport
 
         plugin = self._robot_plugin
@@ -314,9 +315,18 @@ class BaseComponent(lifecycle.Node):
                 continue
             if not topic.use_plugin:
                 continue
-            feedback = plugin.resolve_feedback(topic.name, topic.msg_type.__name__)
+            try:
+                feedback = plugin.resolve_feedback(topic.name, topic.msg_type.__name__)
+            except (TypeError, AmbiguousPluginEntryError) as e:
+                # Surface miswired topics loudly but let component launch
+                # Falls back to an ordinary ROS topic
+                self.get_logger().error(
+                    f"Topic '{topic.name}' could not be bound to the robot "
+                    f"plugin: {e} Falling back to an ordinary ROS subscription."
+                )
+                continue
             if feedback is None:
-                self.get_logger().warning(
+                self.get_logger().error(
                     f"Topic '{topic.name}' ({topic.msg_type.__name__}) opted "
                     f"into the robot plugin ({plugin.metadata.name}) but no "
                     "matching feedback was found. Falling back to an "
@@ -345,7 +355,16 @@ class BaseComponent(lifecycle.Node):
                 continue
             if not topic.use_plugin:
                 continue
-            command = plugin.resolve_command(topic.name, topic.msg_type.__name__)
+            try:
+                command = plugin.resolve_command(topic.name, topic.msg_type.__name__)
+            except (TypeError, AmbiguousPluginEntryError) as e:
+                # See the feedback loop above: contain a mis-wired topic to
+                # itself, log loudly, fall back to an ordinary ROS publisher.
+                self.get_logger().error(
+                    f"Topic '{topic.name}' could not be bound to the robot "
+                    f"plugin: {e} Falling back to an ordinary ROS publisher."
+                )
+                continue
             if command is None:
                 self.get_logger().warning(
                     f"Topic '{topic.name}' ({topic.msg_type.__name__}) opted "

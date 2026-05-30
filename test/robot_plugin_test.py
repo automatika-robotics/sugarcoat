@@ -900,6 +900,46 @@ def test_use_robot_plugin_component_without_in_topics(rclpy_context):
         component.destroy_node()
 
 
+def test_use_robot_plugin_mismatch_is_contained(rclpy_context):
+    """A mis-wired plugin topic (type mismatch) is logged and skipped, not
+    fatal -- other correctly-wired topics on the same component still bind.
+
+    Regression: ``_resolve_entry`` raises ``TypeError`` on a key match with
+    disagreeing types; that used to propagate out of ``_use_robot_plugin``
+    and abort the whole component's activation.
+    """
+    from ros_sugar.core.component import BaseComponent
+
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    host = RobotPluginHost(plugin, node=None, bus=InProcessFeedbackBus())
+    host.open()
+
+    component = BaseComponent(
+        component_name="mismatch_component",
+        inputs=[
+            # Correctly wired: resolves to the plugin's Int32 feedback.
+            Topic(name="robot_state", msg_type="Int32", use_plugin=True),
+            # Mis-wired: name matches the plugin feedback key "Int32" but the
+            # declared type disagrees -> _resolve_entry raises TypeError.
+            Topic(name="Int32", msg_type="Float64", use_plugin=True),
+        ],
+    )
+    component.rclpy_init_node()
+    component._robot_plugin = plugin
+    try:
+        # Must not raise despite the mis-wired topic.
+        component._use_robot_plugin()
+
+        # The valid topic was bound to the plugin...
+        assert "robot_state" in component._external_topics
+        # ...and the mis-wired one fell back to an ordinary ROS topic.
+        assert "Int32" not in component._external_topics
+        assert "Int32" in component.callbacks  # still a normal callback slot
+    finally:
+        host.close()
+        component.destroy_node()
+
+
 # ---------------------------------------------------------------------------
 # launcher.robot auto-apply from plugin.robot_config
 # ---------------------------------------------------------------------------
