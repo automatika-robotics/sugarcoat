@@ -1,0 +1,8 @@
+string[] modalities       # Requested modalities; empty -> Recorder default
+string[] sinks            # Requested sinks (mcap, jsonl, parquet); empty -> Recorder default
+string output_dir         # Output directory; empty -> Recorder default
+string reason             # Human-readable reason for the recording
+---
+bool success
+string error_msg
+string recording_id       # Identifier of the started recording

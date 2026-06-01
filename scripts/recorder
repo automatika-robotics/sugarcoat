@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Executable that runs the generic recording node."""
+
+import argparse
+import json
+import uuid
+
+import rclpy
+
+from ros_sugar.recording.manifest import RecordingManifest
+from ros_sugar.recording.recorder import Recorder
+from ros_sugar.utils import logger
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--node_name", default="recorder")
+    parser.add_argument("--output_dir", default="~/emos/recordings")
+    parser.add_argument("--recording_id", default="")
+    parser.add_argument("--sinks", default="mcap")
+    parser.add_argument("--prebuffer_seconds", type=float, default=30.0)
+    parser.add_argument("--prebuffer_budget_mb", type=int, default=256)
+    parser.add_argument("--mcap_compression", default="zstd")
+    parser.add_argument("--manifest_seed", default="")
+    # ROS passes --ros-args; ignore the remainder.
+    args, _ = parser.parse_known_args()
+
+    recording_id = args.recording_id or uuid.uuid4().hex
+
+    seed = {}
+    if args.manifest_seed:
+        try:
+            seed = json.loads(args.manifest_seed)
+        except Exception as e:
+            logger.warning(f"recorder: could not parse manifest seed: {e}")
+
+    manifest = RecordingManifest(
+        recording_id,
+        args.output_dir,
+        recipe=seed.get("recipe"),
+        stack=seed.get("stack"),
+        system_info=seed.get("system_info"),
+        runtime=seed.get("runtime"),
+        modalities=seed.get("modalities"),
+    )
+
+    rclpy.init()
+    recorder = Recorder(
+        node_name=args.node_name,
+        output_dir=args.output_dir,
+        sinks=args.sinks.split(",") if args.sinks else ["mcap"],
+        recording_id=recording_id,
+        prebuffer_seconds=args.prebuffer_seconds,
+        prebuffer_budget_mb=args.prebuffer_budget_mb,
+        mcap_compression=args.mcap_compression,
+        manifest=manifest,
+        auto_start=True,
+    )
+    logger.info(f"Recorder process up: id={recording_id}")
+    try:
+        rclpy.spin(recorder)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        recorder.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

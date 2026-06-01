@@ -1,0 +1,7 @@
+float32 window_before     # Seconds of pre-buffer to capture as a one-shot slice
+string reason             # Human-readable reason for the snapshot
+string[] modalities       # Modalities to include; empty -> Recorder default
+---
+bool success
+string error_msg
+string episode_id         # Identifier of the captured snapshot slice

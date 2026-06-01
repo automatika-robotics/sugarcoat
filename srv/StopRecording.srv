@@ -1,0 +1,5 @@
+string recording_id       # Recording to stop; empty -> the active recording
+---
+bool success
+string error_msg
+string manifest_path      # Path to the finalized manifest.json

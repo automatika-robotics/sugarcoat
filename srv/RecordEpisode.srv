@@ -1,0 +1,9 @@
+float32 window_before     # Seconds of pre-buffer to flush at episode open
+float32 window_after      # Seconds to keep recording after open before auto-closing
+string reason             # Human-readable trigger reason (e.g. "emergency_stop")
+string[] modalities       # Modalities to include; empty -> Recorder default
+string episode_id         # Explicit episode id; empty -> Recorder generates one
+---
+bool success
+string error_msg
+string episode_id         # Identifier of the captured episode

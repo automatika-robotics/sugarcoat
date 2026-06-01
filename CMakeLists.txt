@@ -33,6 +33,10 @@ set(service_files
   "srv/ConfigureFromFile.srv"
   "srv/ReplaceTopic.srv"
   "srv/ExecuteMethod.srv"
+  "srv/StartRecording.srv"
+  "srv/StopRecording.srv"
+  "srv/Snapshot.srv"
+  "srv/RecordEpisode.srv"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -56,6 +60,12 @@ DESTINATION lib/${PROJECT_NAME}
 # Backend UI node executable
 install(PROGRAMS
 scripts/ui_node_executable
+DESTINATION lib/${PROJECT_NAME}
+)
+
+# Recorder (data-collection) node executable
+install(PROGRAMS
+scripts/recorder
 DESTINATION lib/${PROJECT_NAME}
 )
 
