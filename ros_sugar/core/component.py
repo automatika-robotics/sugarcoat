@@ -278,7 +278,7 @@ class BaseComponent(lifecycle.Node):
         if orphaned:
             self.get_logger().warning(
                 f"Component '{self.node_name}' has {len(orphaned)} topic(s) "
-                f"flagged use_plugin={{True | '<key>'}} but no robot plugin "
+                f"flagged use_plugin=True but no robot plugin "
                 f"is attached to the launcher: {orphaned}. Those topics will "
                 "behave as ordinary ROS topics."
             )
