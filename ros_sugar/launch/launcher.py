@@ -64,6 +64,12 @@ from .launch_actions import ComponentLaunchAction
 from ..base_clients import ServiceClientConfig, ActionClientConfig
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
 from ..ui_node import UINode, UINodeConfig
+from ..robot import (
+    InProcessFeedbackBus,
+    RobotPlugin,
+    RobotPluginHost,
+    SocketFeedbackBus,
+)
 
 # Get ROS distro
 __installed_distro = os.environ.get("ROS_DISTRO", "").lower()
@@ -133,7 +139,7 @@ class Launcher:
         namespace: str = "",
         config_file: Optional[str] = None,
         activation_timeout: Optional[float] = None,
-        robot_plugin: Optional[str] = None,
+        robot_plugin: Optional[RobotPlugin] = None,
     ) -> None:
         """Initialize launcher to manager components launch in ROS2
 
@@ -145,8 +151,12 @@ class Launcher:
         :type enable_monitoring: bool, optional
         :param activation_timeout: Timeout (seconds) for waiting on ROS2 nodes to come up for activation, defaults to None
         :type activation_timeout: float, optional
-        :param robot_plugin: Name of the robot plugin package for compatibility handling, defaults to None
-        :type robot_plugin: str, optional
+        :param robot_plugin: A `robot.RobotPlugin` instance that adapts a
+            specific robot's control surface to the components. The launcher
+            process hosts the plugin (owns its transports, runs its
+            feedback bus and heartbeats); component processes rebuild it from a
+            serializable spec. Defaults to None.
+        :type robot_plugin: Optional[RobotPlugin], optional
         """
         # Make sure RCLPY in initialized
         if not rclpy.ok():
@@ -162,6 +172,10 @@ class Launcher:
         self._launch_group = []
         self._enable_ui = False
         self._robot_plugin = robot_plugin
+        self._robot_plugin_host: Optional[RobotPluginHost] = None
+        # Tracks whether the recipe explicitly set robot config. If not config
+        # is pulled from a plugin. In case both present, recipe wins.
+        self._robot_explicitly_set: bool = False
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
@@ -291,7 +305,11 @@ class Launcher:
 
         # Configure components from config_file
         for component in components:
-            component.config._robot_plugin = self._robot_plugin
+            # Hand each component the robot plugin instance.
+            # NOTE: In multithreaded launch the component thread uses this HOST
+            # instance directly; in multiprocess launch it is only used to
+            # serialize the plugin spec into the component's launch args
+            component._robot_plugin = self._robot_plugin
             if rclpy_log_level:
                 self._rclpy_log_level[component.node_name] = rclpy_log_level
             if ros_log_level:
@@ -299,6 +317,31 @@ class Launcher:
             if self._config_file:
                 component._config_file = self._config_file
                 component.config_from_file(self._config_file)
+
+    def on(
+        self,
+        event: Event,
+        action: Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
+    ) -> None:
+        """Register an event/action mapping on the launcher.
+
+        Convenience sugar equivalent to passing ``events_actions={event: action}``
+        to `add_pkg`; especially handy with robot-plugin-provided events
+        and action factories::
+
+            launcher.on(plugin.events.fall_detected(), plugin.actions.stand_up())
+
+        :param event: The event to monitor.
+        :type event: Event
+        :param action: The action (or list of actions) to run when the event fires.
+        :type action: Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]]
+        """
+        if not self._events_actions.get(event):
+            self._events_actions[event] = []
+        if isinstance(action, list):
+            self._events_actions[event].extend(action)
+        else:
+            self._events_actions[event].append(action)
 
     def enable_ui(
         self,
@@ -399,6 +442,14 @@ class Launcher:
         :param config: Robot configuration
         :type config: RobotConfig
         """
+        self._robot_explicitly_set = True
+        self._broadcast_robot_config(robot_config)
+
+    def _broadcast_robot_config(self, robot_config) -> None:
+        """Assign ``robot_config`` to every component whose config carries a
+        ``robot`` slot. Duck-typed, sugarcoat does not import the config
+        type itself.
+        """
         for component in self._components:
             if hasattr(component.config, "robot"):
                 try:
@@ -407,6 +458,22 @@ class Launcher:
                     logger.error(
                         f"Cannot set component {component.node_name} 'robot' configuration parameter of type '{type(component.config.robot)}' to provided value of type '{type(robot_config)}'. Skipping setting robot configuration for '{component.node_name}'"
                     )
+
+    def _apply_plugin_robot_config(self) -> None:
+        """Pull ``robot_config`` from the attached plugin and broadcast it to
+        every component, unless the recipe already set one explicitly
+        """
+        if self._robot_explicitly_set:
+            return
+        if self._robot_plugin is None:
+            return
+        robot_config = getattr(self._robot_plugin, "robot_config", None)
+        if robot_config is None:
+            return
+        logger.info(
+            f"Applying robot config from plugin '{self._robot_plugin.metadata.name}'"
+        )
+        self._broadcast_robot_config(robot_config)
 
     @property
     def frames(self) -> Dict[str, Any]:
@@ -1201,6 +1268,7 @@ class Launcher:
             # No delay needed here because the polling loop itself waits for
             # the new lifecycle service to appear in the graph.
             if isinstance(component, ManagedEntity):
+
                 def _kick_monitor_watch(_ctx, name=component_name):
                     self.monitor_node.watch_and_activate_component(name)
 
@@ -1378,6 +1446,41 @@ class Launcher:
             RegisterEventHandler(OnShutdown(on_shutdown=_mark_shutting_down))
         )
 
+    def _setup_robot_plugin(self) -> None:
+        """Bring up the robot plugin HOST in the launcher process.
+
+        Opens the plugin's transports, starts its feedback bus and heartbeats,
+        and wires decoded feedback into the Monitor's event blackboard. Must run
+        after `_setup_monitor_node` (the Monitor must exist) and before the
+        component group is built, so multiprocess components serialize a plugin
+        spec that points at an already-started feedback bus.
+        """
+        if self._robot_plugin is None:
+            return
+        plugin = self._robot_plugin
+        # A socket feedback bus is needed when any component runs as its own
+        # process; otherwise an in-process bus avoids the socket round trip.
+        use_socket_bus = bool(self._pkg_executable)
+        bus = SocketFeedbackBus() if use_socket_bus else InProcessFeedbackBus()
+        self._robot_plugin_host = RobotPluginHost(
+            plugin,
+            node=self.monitor_node,
+            bus=bus,
+            monitor_feed=self.monitor_node.feed_external_topic,
+        )
+        self._robot_plugin_host.open()
+        # Register every non-ROS feedback's synthetic topic with the Monitor so
+        # events over it are tracked without a ROS subscription. ROS-topic
+        # feedbacks keep a normal ROS subscription (their as_topic() is the real
+        # robot topic), so they are NOT registered as external.
+        for feedback in plugin.feedbacks.values():
+            if not feedback.is_ros_topic:
+                self.monitor_node.register_external_topic(feedback.as_topic())
+        logger.info(
+            f"Robot plugin '{plugin.metadata.name}' active "
+            f"({'socket' if use_socket_bus else 'in-process'} feedback bus)"
+        )
+
     def setup_launch_description(
         self,
     ):
@@ -1405,6 +1508,10 @@ class Launcher:
 
         # NOTE: Monitor setup step should ALWAYS be called after UI node is setup, to ensure that its added to the components that require activation at start.
         self._setup_monitor_node()
+
+        # Bring up the robot plugin HOST after the Monitor exists and before the
+        # component group is built
+        self._setup_robot_plugin()
 
         # Add configured components to launcher
         for component in self._components:
@@ -1439,12 +1546,20 @@ class Launcher:
                 "Cannot bringup without adding any components. Use 'add_pkg' method to add a set of components from one ROS2 package then use 'bringup' to start and run your system"
             )
 
+        # If the attached plugin carries a robot_config and the recipe didn't
+        # set one, broadcast it to every component
+        self._apply_plugin_robot_config()
+
         if config_file:
             self.configure(config_file)
 
         self.setup_launch_description()
 
         self._start_ros_launch(introspect, launch_debug)
+
+        # Tear down the robot plugin HOST
+        if self._robot_plugin_host is not None:
+            self._robot_plugin_host.close()
 
         if self._thread_pool:
             self._thread_pool.shutdown()

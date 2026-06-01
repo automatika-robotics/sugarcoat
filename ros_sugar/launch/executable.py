@@ -58,6 +58,11 @@ def _parse_args() -> Tuple[argparse.Namespace, List[str]]:
         type=str,
         help="Additional type modules from derived packages",
     )
+    parser.add_argument(
+        "--robot_plugin",
+        type=str,
+        help="Serialized robot plugin spec and feedback-bus endpoint",
+    )
     return parser.parse_known_args()
 
 
@@ -221,6 +226,11 @@ def setup_component(
     # Set external processors
     if args.external_processors:
         component._external_processors_json = args.external_processors
+
+    # Rebuild the robot plugin as a CLIENT and connect it to the HOST
+    # feedback bus running in the launcher process
+    if args.robot_plugin:
+        component._robot_plugin_json = args.robot_plugin
 
     return component
 

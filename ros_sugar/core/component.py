@@ -59,7 +59,6 @@ from ..utils import (
     log_srv,
 )
 from ..base_clients import ActionClientConfig
-from ..robot_plugin import RobotPluginServiceClient
 from ..tf import TFListener, TFListenerConfig
 
 
@@ -177,6 +176,14 @@ class BaseComponent(lifecycle.Node):
         # Additional types from derived packages
         self._additional_types: List[Type[SupportedType]] = []
 
+        # Robot plugin (set by the Launcher; a HOST instance in multithreaded
+        # launch or a reconstructed CLIENT instance in multiprocess launch)
+        self._robot_plugin = None
+        # Names of input/output topics bound to non-ROS robot plugin transports
+        self._external_topics: set = set()
+        # Feedback-bus subscription handles to release on deactivation
+        self._robot_plugin_bus_handles: List = []
+
         # To use without launcher -> Init the ROS2 node directly
         if self.config._use_without_launcher:
             self.rclpy_init_node(component_name, **kwargs)
@@ -262,83 +269,212 @@ class BaseComponent(lifecycle.Node):
             out.msg_type.convert = selected_convert
         return outputs
 
+    def _warn_orphaned_plugin_topics(self):
+        """Emit a warning for any ``use_plugin`` flagged topic when no robot
+        plugin is attached."""
+        in_topics = [cb.input_topic for cb in self.callbacks.values()]
+        out_topics = [pub.output_topic for pub in self.publishers_dict.values()]
+        orphaned = [t.name for t in in_topics + out_topics if t.use_plugin]
+        if orphaned:
+            self.get_logger().warning(
+                f"Component '{self.node_name}' has {len(orphaned)} topic(s) "
+                f"flagged use_plugin=True but no robot plugin "
+                f"is attached to the launcher: {orphaned}. Those topics will "
+                "behave as ordinary ROS topics."
+            )
+
     def _use_robot_plugin(self):
-        """Replace the component inputs/outputs with topics or clients provided by the robot plugin
+        """Adapt the component's inputs/outputs to the robot plugin.
 
-        :raises ModuleNotFoundError: If the robot plugin module is not found
-        :raises AttributeError: If the robot plugin module is malformed or missing required 'robot_feedback' or 'robot_action' dictionaries
+        Only topics that opt in with ``use_plugin=True`` are rewired. The
+        plugin entry is resolved by ``topic.name`` first (so a recipe can
+        disambiguate sibling feedbacks of the same type by naming the topic
+        after the plugin's registry key) and falls back to a unique-type
+        match when no key matches. ``use_plugin=False`` (the default) means
+        the topic is internal, never claimed by the plugin even if a
+        matching type exists.
+
+        ROS-topic transports re-use the native subscriber/publisher swap
+        path; non-ROS transports are bound through the feedback bus or the
+        command adapter.
         """
-        # Load the plugin module and its definitions
-        try:
-            robot_plugins = importlib.import_module(self.config._robot_plugin)
-            robot_feedback_plugins: Dict[str, Topic] = robot_plugins.robot_feedback
-            robot_action_plugins: Dict[str, Union[Topic, RobotPluginServiceClient]] = (
-                robot_plugins.robot_action
-            )
-            self.get_logger().info(
-                f"Successfully loaded robot plugin: '{self.config._robot_plugin}'"
-            )
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError(
-                f"Robot Plugin is enabled for component '{self.node_name}', "
-                f"but no plugin with name '{self.config._robot_plugin}' is found. "
-                "Install the plugin or disable the plugin use in this component"
-            ) from e
-        except AttributeError as e:
-            raise AttributeError(
-                f"Robot plugin '{self.config._robot_plugin}' is malformed or "
-                f"missing required 'robot_feedback' or 'robot_action' dictionaries: {e}"
-            ) from e
+        from ..robot.plugin import AmbiguousPluginEntryError
+        from ..robot.transports.ros import RosTopicTransport
 
-        # Handle Robot Feedback (System Input Topics)
-        if self.config._enable_plugin_feedbacks_handling:
-            for topic in self.in_topics:
-                msg_type_name = topic.msg_type.__name__
-                # find a matching plugin by message type
-                plugin_value = robot_feedback_plugins.get(msg_type_name)
+        plugin = self._robot_plugin
+        self.get_logger().info(
+            f"Adapting component '{self.node_name}' to robot plugin "
+            f"'{plugin.metadata.name}'"
+        )
 
-                if isinstance(plugin_value, Topic):
-                    if topic.name != plugin_value.name:
-                        self.get_logger().warning(
-                            f"Input Topic is given with name '{topic.name}' ({msg_type_name}), "
-                            f"but robot plugin provides default name '{plugin_value.name}' ({plugin_value.msg_type.__name__})."
-                        )
-                        self.get_logger().warning(
-                            f"Robot Plugin Topic Name will be Used! To change it, replace the name in '{self.config._robot_plugin}'"
-                        )
-                    self._replace_input_topic(
-                        topic.name, plugin_value.name, plugin_value.msg_type
-                    )
-
-        # Handle Actions (Output Topics)
-        if self.config._enable_plugin_actions_handling:
-            for topic in self.out_topics:
-                msg_type_name = topic.msg_type.__name__
-                plugin_value = robot_action_plugins.get(msg_type_name)
-
-                if isinstance(plugin_value, Topic):
-                    if topic.name != plugin_value.name:
-                        self.get_logger().warning(
-                            f"Input Topic is given with name '{topic.name}' ({msg_type_name}), "
-                            f"but robot plugin provides default name '{plugin_value.name}' ({plugin_value.msg_type.__name__})."
-                        )
-                        self.get_logger().warning(
-                            f"Robot Plugin Topic Name will be Used! To change it, replace the name in '{self.config._robot_plugin}'"
-                        )
-                    self._replace_output_topic(
-                        topic.name, plugin_value.name, plugin_value.msg_type
-                    )
-                elif plugin_value and issubclass(
-                    plugin_value, RobotPluginServiceClient
-                ):
-                    # Check for plugin_value truthiness before issubclass to avoid error on None
+        # Handle Robot Feedback (System Input Topics). Snapshot the topics
+        # first, _attach_external_feedback / _replace_input_topic mutate
+        # the callbacks dict as we go.
+        for topic in [cb.input_topic for cb in list(self.callbacks.values())]:
+            if topic.name in self._external_topics:
+                continue
+            if not topic.use_plugin:
+                continue
+            try:
+                feedback = plugin.resolve_feedback(topic.name, topic.msg_type.__name__)
+            except (TypeError, AmbiguousPluginEntryError) as e:
+                # Surface miswired topics loudly but let component launch
+                # Falls back to an ordinary ROS topic
+                self.get_logger().error(
+                    f"Topic '{topic.name}' could not be bound to the robot "
+                    f"plugin: {e} Falling back to an ordinary ROS subscription."
+                )
+                continue
+            if feedback is None:
+                self.get_logger().error(
+                    f"Topic '{topic.name}' ({topic.msg_type.__name__}) opted "
+                    f"into the robot plugin ({plugin.metadata.name}) but no "
+                    "matching feedback was found. Falling back to an "
+                    "ordinary ROS subscription."
+                )
+                continue
+            transport = feedback.transport
+            if isinstance(transport, RosTopicTransport):
+                if topic.name != transport.topic_name:
                     self.get_logger().info(
-                        f"Plugin provides a client for type '{topic.msg_type}': Replacing output topic '{topic.name}' ({msg_type_name}) "
-                        f"with a plugin service client."
+                        f"Robot plugin remaps input '{topic.name}' "
+                        f"({topic.msg_type.__name__}) to '{transport.topic_name}'"
                     )
-                    # Instantiate the client class, passing 'self' (the component)
-                    client_instance = plugin_value(self)
-                    self._replace_output_by_client(topic.name, client_instance)
+                error = self._replace_input_topic(
+                    topic.name, transport.topic_name, transport.msg_type
+                )
+                if error:
+                    self.get_logger().error(error)
+            else:
+                self._attach_external_feedback(topic, feedback)
+
+        # Handle Robot Commands (System Output Topics). Snapshot first, as
+        # _replace_output_by_transport mutates publishers_dict as we go.
+        for topic in [pub.output_topic for pub in list(self.publishers_dict.values())]:
+            if topic.name in self._external_topics:
+                continue
+            if not topic.use_plugin:
+                continue
+            try:
+                command = plugin.resolve_command(topic.name, topic.msg_type.__name__)
+            except (TypeError, AmbiguousPluginEntryError) as e:
+                # See the feedback loop above: contain a mis-wired topic to
+                # itself, log loudly, fall back to an ordinary ROS publisher.
+                self.get_logger().error(
+                    f"Topic '{topic.name}' could not be bound to the robot "
+                    f"plugin: {e} Falling back to an ordinary ROS publisher."
+                )
+                continue
+            if command is None:
+                self.get_logger().error(
+                    f"Topic '{topic.name}' ({topic.msg_type.__name__}) opted "
+                    f"into the robot plugin ({plugin.metadata.name}) but no "
+                    "matching command was found. Falling back to an "
+                    "ordinary ROS publisher."
+                )
+                continue
+            transport = command.transport
+            if isinstance(transport, RosTopicTransport):
+                if topic.name != transport.topic_name:
+                    self.get_logger().info(
+                        f"Robot plugin remaps output '{topic.name}' "
+                        f"({topic.msg_type.__name__}) to '{transport.topic_name}'"
+                    )
+                error = self._replace_output_topic(
+                    topic.name, transport.topic_name, transport.msg_type
+                )
+                if error:
+                    self.get_logger().error(error)
+            else:
+                self._replace_output_by_transport(topic, command)
+
+    def _attach_external_feedback(self, topic: Topic, feedback) -> None:
+        """Bind a non-ROS robot feedback stream into the component's callback slot.
+
+        No ROS subscription is created for ``topic``; instead the component
+        subscribes to the plugin's feedback bus and decoded ROS messages are
+        pushed into a `io.callbacks.GenericCallback` slot the component reads
+        from, so component code is unaware the data did not arrive over ROS.
+
+        The plugin decodes to ``feedback.msg_type``, which may differ from the
+        component's originally-declared input type (e.g. a manufacturer's custom
+        message standing in for ``Odometry``). The component's callback object
+        is therefore swapped for one of ``feedback.msg_type``, keeping the
+        original topic name as the ``callbacks`` dict key - exactly as
+        `_replace_input_topic` does for ROS-topic feedback.
+
+        :param topic: The component input topic being adapted.
+        :param feedback: The `robot.feedback.Feedback` to bind.
+        """
+        old_callback = self.callbacks.get(topic.name)
+        if old_callback is None:
+            self.get_logger().error(
+                f"Cannot bind robot feedback: no callback slot for input '{topic.name}'"
+            )
+            return
+        # Build a callback for the feedback's (possibly custom) message type,
+        # keyed under the original topic name so component code is unaware.
+        new_topic = Topic(
+            name=topic.name,
+            msg_type=feedback.msg_type,
+            qos_profile=topic.qos_profile,
+            use_plugin=topic.use_plugin,
+        )
+        new_callback = feedback.msg_type.callback(new_topic, node_name=self.node_name)
+        if old_callback._subscriber:
+            self.destroy_subscription(old_callback._subscriber)
+        self.callbacks[topic.name] = new_callback
+        self._update_inactive_input_topic(old_callback.input_topic, new_topic)
+        handle = self._robot_plugin.subscribe_feedback(feedback, new_callback.callback)
+        self._robot_plugin_bus_handles.append(handle)
+        self._external_topics.add(topic.name)
+        self.get_logger().info(
+            f"Input '{topic.name}' bound to robot plugin feedback "
+            f"'{feedback.key}' via {feedback.transport.kind}"
+        )
+
+    def _replace_output_by_transport(self, topic: Topic, command) -> None:
+        """Replace a component output publisher with a robot plugin command adapter.
+
+        ``Publisher`` in ``publishers_dict`` is swapped (under the same key) for
+        a `robot.adapters.RobotCommandPublisher` that runs the component's
+        pre-processors, encodes the output, and sends it through the command's
+        transport. Any ROS publisher already created is destroyed.
+
+        :param topic: The component output topic being adapted.
+        :param command: The :class:`~ros_sugar.robot.command.RobotCommand` to route to.
+        """
+        from ..robot.adapters import RobotCommandPublisher
+        from ..robot.transports.ros import RosServiceTransport
+
+        normalized_topic_name = (
+            topic.name[1:] if topic.name.startswith("/") else topic.name
+        )
+        old_publisher = self.publishers_dict.get(normalized_topic_name)
+        transport = command.transport
+
+        # ROS service transports need the component's node to create their client
+        if isinstance(transport, RosServiceTransport):
+            transport.bind_node(self)
+        # Prepare the command transport for sending
+        self._robot_plugin.open_command(command)
+
+        adapter = RobotCommandPublisher(
+            self._robot_plugin, command, topic, node_name=self.node_name
+        )
+        # Preserve the original publisher's pre-processor chain
+        if old_publisher is not None:
+            if getattr(old_publisher, "_pre_processors", None):
+                adapter.add_pre_processors(old_publisher._pre_processors)
+            if getattr(old_publisher, "_publisher", None):
+                self.destroy_publisher(old_publisher._publisher)
+
+        self.publishers_dict[normalized_topic_name] = adapter
+        self._external_topics.add(normalized_topic_name)
+        self.get_logger().info(
+            f"Output '{topic.name}' bound to robot plugin command "
+            f"'{command.key}' via {transport.kind}"
+        )
 
     # Managing algorithms
     @property
@@ -589,9 +725,13 @@ class BaseComponent(lifecycle.Node):
         # Init any global node variables
         self.init_variables()
 
-        # Update the component topics using the robot plugin if provided
-        if self.config._robot_plugin:
+        # Update the component topics using the robot plugin if provided.
+        # When no plugin is attached, topics that opted in with use_plugin=True
+        # issue a warning and keep working
+        if self._robot_plugin is not None:
             self._use_robot_plugin()
+        else:
+            self._warn_orphaned_plugin_topics()
 
         self.create_all_subscribers()
 
@@ -654,7 +794,11 @@ class BaseComponent(lifecycle.Node):
         """
         self.get_logger().info("STARTING ALL SUBSCRIBERS")
         # Create subscribers
-        for callback in self.callbacks.values():
+        for topic_name, callback in self.callbacks.items():
+            # Inputs bound to a non-ROS robot plugin transport are fed through
+            # the feedback bus, not a ROS subscription
+            if topic_name in self._external_topics:
+                continue
             callback.set_node_name(self.node_name)
             callback.set_subscriber(self._add_ros_subscriber(callback))
 
@@ -670,7 +814,11 @@ class BaseComponent(lifecycle.Node):
             qos_profile=1,
         )
         # Create publisher and attach it to output publisher object
-        for publisher in self.publishers_dict.values():
+        for topic_name, publisher in self.publishers_dict.items():
+            # Outputs bound to a non-ROS robot plugin transport route through a
+            # command adapter, not a ROS publisher
+            if topic_name in self._external_topics:
+                continue
             if isinstance(publisher, Publisher):
                 publisher.set_node_name(self.node_name)
                 # Set ROS publisher for each output publisher
@@ -772,6 +920,12 @@ class BaseComponent(lifecycle.Node):
             self.destroy_subscription(listener)
         for listener in self.__fallbacks_listeners:
             self.destroy_subscription(listener)
+        # Release robot plugin feedback-bus subscriptions and forget the
+        # plugin-bound topics so they are not skipped on reactivation
+        for handle in self._robot_plugin_bus_handles:
+            handle.unsubscribe()
+        self._robot_plugin_bus_handles.clear()
+        self._external_topics.clear()
         # Destroy all input subscribers
         for callback in self.callbacks.values():
             if callback._subscriber:
@@ -1168,8 +1322,7 @@ class BaseComponent(lifecycle.Node):
         if not self.__events or not self.__actions:
             return {}
         return {
-            event.id: action
-            for event, action in zip(self.__events, self.__actions)
+            event.id: action for event, action in zip(self.__events, self.__actions)
         }
 
     @_events_actions.setter
@@ -1268,6 +1421,47 @@ class BaseComponent(lifecycle.Node):
                 "--external_processors",
                 self._external_processors_json,
             ]
+
+        if self._robot_plugin is not None:
+            self.launch_cmd_args = ["--robot_plugin", self._robot_plugin_json]
+
+    @property
+    def _robot_plugin_json(self) -> str:
+        """Getter of the serialized robot plugin spec + feedback-bus endpoint.
+
+        Used to carry the robot plugin across the multiprocess launch boundary:
+        each component subprocess rebuilds a CLIENT plugin from this spec and
+        connects to the HOST feedback bus at ``bus_endpoint``.
+
+        :return: JSON ``{"spec": <plugin spec>, "bus_endpoint": <name>}``
+        :rtype: str
+        """
+        if self._robot_plugin is None:
+            return "{}"
+        bus = self._robot_plugin.bus
+        endpoint = bus.endpoint if bus is not None else None
+        return json.dumps({
+            "spec": self._robot_plugin.to_spec(),
+            "bus_endpoint": endpoint,
+        })
+
+    @_robot_plugin_json.setter
+    def _robot_plugin_json(self, value: Union[str, bytes]):
+        """Setter that rebuilds a CLIENT robot plugin from a serialized spec.
+
+        :param value: JSON produced by the :attr:`_robot_plugin_json` getter
+        :type value: Union[str, bytes]
+        """
+        from ..robot.plugin import RobotPlugin
+
+        data = json.loads(value)
+        if not data:
+            self._robot_plugin = None
+            return
+        self._robot_plugin = RobotPlugin.from_spec(
+            data["spec"],
+            bus_endpoint=data.get("bus_endpoint"),
+        )
 
     @property
     def _events_json(self) -> Union[str, bytes]:
@@ -1980,6 +2174,8 @@ class BaseComponent(lifecycle.Node):
 
     def _update_inactive_input_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new input topic"""
+        if not hasattr(self, "in_topics"):
+            return
         # Update in_topics list
         try:
             idx = self.in_topics.index(old_topic)
@@ -2047,6 +2243,8 @@ class BaseComponent(lifecycle.Node):
 
     def _update_inactive_output_topic(self, old_topic, new_topic):
         """Updates internal topics list with a new output topic"""
+        if not hasattr(self, "out_topics"):
+            return
         # Update out_topics list
         try:
             idx = self.out_topics.index(old_topic)
@@ -2057,46 +2255,6 @@ class BaseComponent(lifecycle.Node):
                 f"Old topic {old_topic.name} not found in self.out_topics. "
                 "Updating publisher dictionary anyway."
             )
-
-    def _replace_output_by_client(
-        self, topic_name: str, service_client: RobotPluginServiceClient
-    ) -> Optional[str]:
-        """Replaces an output topic by a robot service client - Used for enabling clients from robot plugins
-
-        :param topic_name: Old topic name
-        :type topic_name: str
-        :param service_client: Robot service client
-        :type service_client: RobotPluginServiceClient
-        :return: Error message or None if no errors are found
-        :rtype: Optional[str]
-        """
-        # Normalize names
-        normalized_topic_name = (
-            topic_name[1:] if topic_name.startswith("/") else topic_name
-        )
-
-        if topic_name not in self.publishers_dict.keys():
-            return f"Topic '{topic_name}' not found in publishers"
-
-        publisher = self.publishers_dict[normalized_topic_name]
-
-        # Get old_topic *before* replacing it on the publisher
-        old_topic = publisher.output_topic
-
-        # Handle Active Publisher
-        # If the publisher is active, "hot-swap"
-        if publisher._publisher:
-            self.destroy_publisher(publisher._publisher)
-
-        # Update publishers_dict
-        old_publisher = self.publishers_dict.pop(normalized_topic_name)
-        service_client.replace_publisher(old_publisher)
-        # Note: new_name comes from new_topic.name
-        self.publishers_dict[service_client.name] = service_client
-
-        # update the internal lists
-        self._update_inactive_output_topic(old_topic, service_client)
-        return None
 
     @log_srv
     def _change_topic_srv_callback(
@@ -2176,9 +2334,7 @@ class BaseComponent(lifecycle.Node):
                     response.response_json = json.dumps(result)
                 except (TypeError, ValueError) as e:
                     response.response_json = ""
-                    response.error_msg = (
-                        f"The method '{request.name}' returned a value that is not JSON serializable: {e}"
-                    )
+                    response.error_msg = f"The method '{request.name}' returned a value that is not JSON serializable: {e}"
         except Exception as e:
             response.success = False
             response.error_msg = f"Component {self.node_name} has a method with requested name '{request.name}' but the following error raised while running: {e}"
