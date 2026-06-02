@@ -6,6 +6,7 @@ import inspect
 import sys
 import socket
 import json
+import hashlib
 from typing import (
     Awaitable,
     Callable,
@@ -19,6 +20,7 @@ from typing import (
     Mapping,
     cast,
 )
+from importlib.metadata import version, PackageNotFoundError
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 
@@ -171,10 +173,20 @@ class Launcher:
         self._config_file: Optional[str] = config_file
         self._launch_group = []
         self._enable_ui = False
+        # Data recording configuration; off unless enable_recording()
+        self._enable_recording = False
+        self._recording_sinks: List[str] = ["mcap"]
+        self._recording_modalities: List[str] = []
+        self._recording_prebuffer_seconds: float = 30.0
+        self._recording_prebuffer_budget_mb: int = 256
+        self._recording_output_dir: str = "~/emos/recordings"
+        self._recording_mcap_compression: str = "zstd"
+        self._recording_id: Optional[str] = None
+        # Robot plugin settings; off unless robot plugin is passed
         self._robot_plugin = robot_plugin
         self._robot_plugin_host: Optional[RobotPluginHost] = None
-        # Tracks whether the recipe explicitly set robot config. If not config
-        # is pulled from a plugin. In case both present, recipe wins.
+        # NOTE: Tracks whether the recipe explicitly set robot config. If not
+        # config is pulled from a plugin. In case both present, recipe wins.
         self._robot_explicitly_set: bool = False
 
         # Components list and package/executable
@@ -964,6 +976,61 @@ class Launcher:
         )
         self._description.add_action(monitor_action)
 
+    def enable_recording(
+        self,
+        sinks: Optional[List[str]] = None,
+        modalities: Optional[List[str]] = None,
+        prebuffer_seconds: float = 30.0,
+        prebuffer_budget_mb: int = 256,
+        output_dir: str = "~/emos/recordings",
+        mcap_compression: str = "zstd",
+    ) -> None:
+        """Enable generic recording (data collection) for this recipe.
+
+        Starts a Recorder in its own process at bringup that captures the
+        recipe's topics and the ROS-native system topics
+        (``/parameter_events``, ``<node>/transition_event``,
+        ``<component>/status``) to the chosen sinks, keeping a pre-buffer so
+        event-triggered episodes can include a window *before* the trigger
+        :param sinks: Storage sinks to write; subset of {"mcap", "jsonl", "parquet"}, defaults to ["mcap"]
+        :type sinks: Optional[List[str]], optional
+        :param modalities: Modality hints recorded in the manifest, defaults to None
+        :type modalities: Optional[List[str]], optional
+        :param prebuffer_seconds: Look-back pre-buffer window in seconds, defaults to 30.0
+        :type prebuffer_seconds: float
+        :param prebuffer_budget_mb: Hard cap on pre-buffer memory in MB, defaults to 256
+        :type prebuffer_budget_mb: int
+        :param output_dir: Directory recordings are written under, defaults to "~/emos/recordings"
+        :type output_dir: str
+        :param mcap_compression: MCAP file compression, "zstd" or "none", defaults to "zstd"
+        :type mcap_compression: str
+
+        :raises ModuleNotFoundError: if a requested sink's optional dependency is missing
+        :raises ValueError: if an unknown sink name is requested
+        """
+        sinks = list(sinks) if sinks else ["mcap"]
+        # Validate sink dependencies up front: importing each sink module
+        # triggers its module-top guard
+        for name in sinks:
+            if name == "mcap":
+                import ros_sugar.recording.sinks.mcap  # noqa: F401
+            elif name == "jsonl":
+                import ros_sugar.recording.sinks.jsonl  # noqa: F401
+            elif name == "parquet":
+                import ros_sugar.recording.sinks.parquet  # noqa: F401
+            else:
+                raise ValueError(
+                    f"Unknown recording sink '{name}'. Choose from: mcap, jsonl, parquet."
+                )
+
+        self._enable_recording = True
+        self._recording_sinks = sinks
+        self._recording_modalities = list(modalities) if modalities else []
+        self._recording_prebuffer_seconds = float(prebuffer_seconds)
+        self._recording_prebuffer_budget_mb = int(prebuffer_budget_mb)
+        self._recording_output_dir = output_dir
+        self._recording_mcap_compression = mcap_compression
+
     def _setup_monitor_node(self) -> None:
         """Adds a node to monitor all the launched components and their events"""
         # Update internal events
@@ -1104,6 +1171,99 @@ class Launcher:
         )
 
         self._launch_group.append(ui_node)
+
+    def _setup_recorder_node(self) -> None:
+        """Add the generic Recorder as its own process to the launch group.
+
+        Run as a standalone executable so a recorder crash cannot take down
+        the recipe. The Recorder is a plain rclpy node with no lifecycle. The
+        recipe/stack/runtime/system_info manifest seed is passed as a JSON arg.
+        """
+        import uuid as _uuid
+
+        recording_id = self._recording_id or _uuid.uuid4().hex
+        self._recording_id = recording_id
+
+        seed = {
+            "recipe": self._capture_recipe_info(),
+            "stack": self._capture_stack_versions(),
+            "runtime": self._capture_runtime_info(),
+            "modalities": self._recording_modalities,
+        }
+        try:
+            seed["system_info"] = json.loads(self._build_system_info())
+        except Exception as e:
+            logger.debug(f"recorder: could not attach system_info: {e}")
+
+        arguments = [
+            "--node_name", "recorder",
+            "--output_dir", self._recording_output_dir,
+            "--recording_id", recording_id,
+            "--sinks", ",".join(self._recording_sinks),
+            "--prebuffer_seconds", str(self._recording_prebuffer_seconds),
+            "--prebuffer_budget_mb", str(self._recording_prebuffer_budget_mb),
+            "--mcap_compression", self._recording_mcap_compression,
+            "--manifest_seed", json.dumps(seed),
+        ]
+        recorder_action = NodeLaunchAction(
+            package="automatika_ros_sugar",
+            executable="recorder",
+            name="recorder",
+            namespace=self._namespace,
+            output="screen",
+            arguments=arguments,
+        )
+        self._launch_group.append(recorder_action)
+        logger.info(
+            f"Recording enabled -> {self._recording_output_dir}/{recording_id} "
+            f"(sinks={self._recording_sinks})"
+        )
+
+    @staticmethod
+    def _capture_recipe_info() -> Dict:
+        """Best-effort capture of the recipe file path and content hash."""
+        info: Dict = {}
+        try:
+            path = os.path.abspath(sys.argv[0]) if sys.argv and sys.argv[0] else ""
+            info["path"] = path
+            if path and os.path.isfile(path):
+                with open(path, "rb") as f:
+                    info["sha256"] = hashlib.sha256(f.read()).hexdigest()
+        except Exception as e:
+            logger.debug(f"recorder: could not capture recipe info: {e}")
+        return info
+
+    @staticmethod
+    def _capture_stack_versions() -> Dict:
+        """Version provenance for the recording: ``{emos, packages}``.
+
+        ``emos`` is the EMOS CLI release pin (from the ``EMOS_VERSION`` env var),
+        ``None`` when the stack is used standalone. ``packages`` maps each EMOS
+        stack package to its installed version.
+        """
+        packages: Dict = {}
+        for pkg in (
+            "automatika-ros-sugar",
+            "automatika-embodied-agents",
+            "kompass",
+        ):
+            try:
+                packages[pkg] = version(pkg)
+            except PackageNotFoundError:
+                continue
+        return {
+            "emos": os.environ.get("EMOS_VERSION") or None,
+            "packages": packages,
+        }
+
+    def _capture_runtime_info(self) -> Dict:
+        """ROS distro / RMW / host context for the manifest."""
+        return {
+            "ros_distro": os.environ.get("ROS_DISTRO", ""),
+            "rmw": os.environ.get("RMW_IMPLEMENTATION", ""),
+            "hostname": socket.gethostname(),
+            "namespace": self._namespace,
+        }
 
     def __listen_for_external_processing(self, sock: socket.socket, func: Callable):
         # Block to accept connections
@@ -1506,11 +1666,18 @@ class Launcher:
         if self._enable_ui:
             self._setup_ui_node()
 
-        # NOTE: Monitor setup step should ALWAYS be called after UI node is setup, to ensure that its added to the components that require activation at start.
+        # NOTE: Monitor setup step should ALWAYS be called after UI node is
+        # setup, to ensure that its added to the components that require
+        # activation at start.
         self._setup_monitor_node()
 
-        # Bring up the robot plugin HOST after the Monitor exists and before the
-        # component group is built
+        # NOTE: Create the Recorder process if recording is enabled (after the
+        # Monitor so the manifest seed can include system_info).
+        if self._enable_recording:
+            self._setup_recorder_node()
+
+        # NOTE: Bring up the robot plugin HOST after the Monitor exists and
+        # before the component group is built
         self._setup_robot_plugin()
 
         # Add configured components to launcher
