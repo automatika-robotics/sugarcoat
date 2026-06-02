@@ -864,6 +864,72 @@ class Monitor(Node):
             return
         publisher.publish(msg)
 
+    # -------- RECORDING ACTIONS ------------------
+
+    def _recorder_srv_client(self, srv_type, name):
+        """Lazily create/cache an ad-hoc client to a recorder service.
+
+        The methods below are monitor actions. They reach the Recorder over
+        services and call them in a **fire-and-forget** pattern.
+        """
+        clients = self.__dict__.setdefault("_recorder_srv_clients", {})
+        if name not in clients:
+            clients[name] = self.create_client(srv_type, name)
+        return clients[name]
+
+    def record_episode(
+        self,
+        window_before: float = 30.0,
+        window_after: float = 10.0,
+        reason: str = "",
+        modalities=None,
+        episode_id: str = "",
+        **_,
+    ) -> None:
+        """Open a recording episode that auto-closes after window_after.
+        The Recorder owns the close timer.
+        """
+        from automatika_ros_sugar.srv import RecordEpisode
+
+        client = self._recorder_srv_client(RecordEpisode, "/_recorder/record_episode")
+        req = RecordEpisode.Request()
+        req.window_before = float(window_before or 0.0)
+        req.window_after = float(window_after or 0.0)
+        req.reason = reason or ""
+        req.modalities = [str(m) for m in (modalities or [])]
+        req.episode_id = episode_id or ""
+        client.call_async(req)
+
+    def start_recording(self, modalities=None, reason: str = "", **_) -> None:
+        """Start a continuous recording"""
+        from automatika_ros_sugar.srv import StartRecording
+
+        client = self._recorder_srv_client(StartRecording, "/_recorder/start_recording")
+        req = StartRecording.Request()
+        req.modalities = [str(m) for m in (modalities or [])]
+        req.reason = reason or ""
+        client.call_async(req)
+
+    def stop_recording(self, **_) -> None:
+        """Stop the active recording and finalize its manifest"""
+        from automatika_ros_sugar.srv import StopRecording
+
+        client = self._recorder_srv_client(StopRecording, "/_recorder/stop_recording")
+        client.call_async(StopRecording.Request())
+
+    def snapshot(
+        self, window_before: float = 30.0, reason: str = "", modalities=None, **_
+    ) -> None:
+        """Capture a one-shot look-back slice of the pre-buffer"""
+        from automatika_ros_sugar.srv import Snapshot
+
+        client = self._recorder_srv_client(Snapshot, "/_recorder/snapshot")
+        req = Snapshot.Request()
+        req.window_before = float(window_before or 0.0)
+        req.reason = reason or ""
+        req.modalities = [str(m) for m in (modalities or [])]
+        client.call_async(req)
+
     # -------- EVENT MANAGEMENT ------------------
 
     def __start_callable_based_event_timers(self) -> None:

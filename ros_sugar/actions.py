@@ -62,6 +62,10 @@ __all__ = [
     "update_parameters",
     "log",
     "publish_message",
+    "record_episode",
+    "start_recording",
+    "stop_recording",
+    "snapshot",
     "send_srv_request",
     "trigger_service",
     "send_component_service_request",
@@ -370,6 +374,108 @@ def publish_message(
 
     stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
     stack_action.action_name = "publish_message"
+    stack_action._is_monitor_action = True
+    return stack_action
+
+
+def record_episode(
+    window_before: float = 30.0,
+    window_after: float = 10.0,
+    *,
+    reason: str = "",
+    modalities: Optional[List[str]] = None,
+    episode_id: str = "",
+) -> Action:
+    """Action to capture a time-bounded recording episode around a trigger.
+
+    Opens a recording episode immediately -- flushing ``window_before`` seconds
+    of pre-buffer to the sinks -- then closes it ``window_after`` seconds later.
+    Requires a Recorder running in the recipe.
+
+    :param window_before: Seconds of pre-trigger pre-buffer to include, defaults to 30.0
+    :type window_before: float
+    :param window_after: Seconds to keep recording after the trigger, defaults to 10.0
+    :type window_after: float
+    :param reason: Human-readable trigger reason, defaults to ""
+    :type reason: str
+    :param modalities: Modalities to include; None -> Recorder default, defaults to None
+    :type modalities: Optional[List[str]], optional
+    :param episode_id: Explicit episode id; empty -> Recorder generates one, defaults to ""
+    :type episode_id: str
+
+    :return: Record-episode action
+    :rtype: Action
+    """
+    kwargs = {
+        "window_before": window_before,
+        "window_after": window_after,
+        "reason": reason,
+        "modalities": modalities,
+        "episode_id": episode_id,
+    }
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
+    stack_action.action_name = "record_episode"
+    stack_action._is_monitor_action = True
+    return stack_action
+
+
+def start_recording(
+    *, modalities: Optional[List[str]] = None, reason: str = ""
+) -> Action:
+    """Action to start a continuous recording.
+
+    :param modalities: Modalities to include; None -> Recorder default, defaults to None
+    :type modalities: Optional[List[str]], optional
+    :param reason: Human-readable reason, defaults to ""
+    :type reason: str
+
+    :return: Start-recording action
+    :rtype: Action
+    """
+    kwargs = {"modalities": modalities, "reason": reason}
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
+    stack_action.action_name = "start_recording"
+    stack_action._is_monitor_action = True
+    return stack_action
+
+
+def stop_recording() -> Action:
+    """Action to stop the active recording and finalize its manifest.
+
+    :return: Stop-recording action
+    :rtype: Action
+    """
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs={})
+    stack_action.action_name = "stop_recording"
+    stack_action._is_monitor_action = True
+    return stack_action
+
+
+def snapshot(
+    window_before: float = 30.0,
+    *,
+    reason: str = "",
+    modalities: Optional[List[str]] = None,
+) -> Action:
+    """Action to capture a one-shot look-back slice of the pre-buffer.
+
+    :param window_before: Seconds of pre-buffer to capture, defaults to 30.0
+    :type window_before: float
+    :param reason: Human-readable reason, defaults to ""
+    :type reason: str
+    :param modalities: Modalities to include; None -> Recorder default, defaults to None
+    :type modalities: Optional[List[str]], optional
+
+    :return: Snapshot action
+    :rtype: Action
+    """
+    kwargs = {
+        "window_before": window_before,
+        "reason": reason,
+        "modalities": modalities,
+    }
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
+    stack_action.action_name = "snapshot"
     stack_action._is_monitor_action = True
     return stack_action
 
