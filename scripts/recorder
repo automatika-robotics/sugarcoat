@@ -53,6 +53,7 @@ def main():
         prebuffer_seconds=args.prebuffer_seconds,
         prebuffer_budget_mb=args.prebuffer_budget_mb,
         mcap_compression=args.mcap_compression,
+        modalities=seed.get("modalities"),
         manifest=manifest,
         auto_start=True,
     )

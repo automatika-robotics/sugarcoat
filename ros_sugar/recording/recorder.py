@@ -9,7 +9,9 @@ type string.
 """
 
 import os
+import threading
 import uuid
+from collections import defaultdict, deque
 from typing import Dict, List, Optional
 
 from rclpy.node import Node
@@ -73,6 +75,62 @@ def _stamp_ns(msg) -> Optional[int]:
     return t if t > 0 else None
 
 
+class _WriteQueue:
+    """Bounded, tier-aware write queue drained by the recorder's writer thread.
+
+    Holds write items ``("w", name, raw, t_ns, tier)`` and flush barriers
+    ``("b", Event)``. When full it drops the lowest tier first (tier-3 before
+    tier-2) and never drops tier-1; barriers are never dropped. Per-tier drop
+    counts are tracked for the recording's sink metadata.
+    """
+
+    def __init__(self, maxlen: int = 4096) -> None:
+        """Create an empty queue with the given hard length cap."""
+        self._dq = deque()
+        self._max = maxlen
+        self._cv = threading.Condition()
+        self.drops: Dict[int, int] = defaultdict(int)
+
+    def put_write(self, name: str, raw: bytes, t_ns: int, tier: int) -> None:
+        """Enqueue a write, applying the tier-aware drop policy when full."""
+        with self._cv:
+            if len(self._dq) >= self._max:
+                if tier >= 3:
+                    self.drops[3] += 1
+                    return
+                if tier == 2 and not self._evict_tier(3):
+                    self.drops[2] += 1
+                    return
+                if tier == 1:
+                    # never drop tier-1: make room by evicting the lowest tier
+                    if not self._evict_tier(3):
+                        self._evict_tier(2)
+            self._dq.append(("w", name, raw, t_ns, tier))
+            self._cv.notify()
+
+    def put_barrier(self, event) -> None:
+        """Enqueue a barrier; the writer sets ``event`` once prior writes land."""
+        with self._cv:
+            self._dq.append(("b", event))
+            self._cv.notify()
+
+    def _evict_tier(self, tier: int) -> bool:
+        """Drop the oldest queued write of ``tier`` (caller holds the lock)."""
+        for i, item in enumerate(self._dq):
+            if item[0] == "w" and item[4] == tier:
+                del self._dq[i]
+                self.drops[tier] += 1
+                return True
+        return False
+
+    def get(self, timeout: float):
+        """Pop the next item, blocking up to ``timeout`` seconds; None if empty."""
+        with self._cv:
+            if not self._dq:
+                self._cv.wait(timeout)
+            return self._dq.popleft() if self._dq else None
+
+
 class Recorder(Node):
     """Generic, sink-pluggable recorder node."""
 
@@ -90,6 +148,8 @@ class Recorder(Node):
         record_tier3_decimate_hz: float = 2.0,
         manifest: Optional[RecordingManifest] = None,
         mcap_compression: str = "zstd",
+        modalities: Optional[List[str]] = None,
+        write_queue_max: int = 4096,
         auto_start: bool = True,
     ) -> None:
         """Set up sinks, pre-buffer, control services, and topic discovery."""
@@ -99,6 +159,10 @@ class Recorder(Node):
         self._sink_names = list(sinks) if sinks else ["mcap"]
         self._tier_overrides = tier_overrides or {}
         self._mcap_compression = mcap_compression
+        # Modality filter: lower-cased name/type substrings. A topic is recorded
+        # if it is tier-1, or its name or type matches one of these.
+        # None -> record everything.
+        self._modalities = [m.lower() for m in modalities] if modalities else None
         self._window_before_ns = int(prebuffer_seconds * _NS_PER_SEC)
 
         self._buffer = PreBufferRing(
@@ -120,6 +184,16 @@ class Recorder(Node):
         self._manifest = manifest or RecordingManifest(
             self._recording_id, self._output_dir
         )
+
+        # Async write path: a bounded, tier-aware drop-queue drained by a writer
+        # thread.
+        self._wq = _WriteQueue(maxlen=write_queue_max)
+        self._sink_lock = threading.Lock()
+        self._writer_stop = False
+        self._writer_thread = threading.Thread(
+            target=self._writer_loop, name=f"{node_name}_writer", daemon=True
+        )
+        self._writer_thread.start()
 
         # Control plane: services
         self._srv_start = self.create_service(
@@ -174,25 +248,42 @@ class Recorder(Node):
         """Open all sinks and register the currently known topics with them."""
         if self._sinks_open:
             return
-        self._sinks = self._build_sinks()
-        for s in self._sinks:
-            s.open(output_dir=self._output_dir, recording_id=self._recording_id)
-            for name, type_str in self._known_topics.items():
-                s.add_topic(
-                    RecordedTopic(name, type_str, tier=self._tiers.get(name, 2))
-                )
-            self._manifest.add_sink(s.name, s.uri)
+        with self._sink_lock:
+            sinks = self._build_sinks()
+            for s in sinks:
+                s.open(output_dir=self._output_dir, recording_id=self._recording_id)
+                for name, type_str in self._known_topics.items():
+                    s.add_topic(
+                        RecordedTopic(name, type_str, tier=self._tiers.get(name, 2))
+                    )
+                self._manifest.add_sink(s.name, s.uri)
+            self._sinks = sinks
         self._sinks_open = True
 
     def _close_sinks(self) -> None:
-        """Finalize and release all sinks."""
-        for s in self._sinks:
-            try:
-                s.close()
-            except Exception as e:
-                logger.error(f"[recorder] sink {s.name} close error: {e}")
-        self._sinks = []
-        self._sinks_open = False
+        """Flush the write queue, record drop counts, then finalize all sinks."""
+        if not self._sinks_open:
+            return
+        # Flush: every write queued before this barrier is written first.
+        done = threading.Event()
+        self._wq.put_barrier(done)
+        done.wait(timeout=5.0)
+        with self._sink_lock:
+            drops = {t: n for t, n in self._wq.drops.items() if n}
+            if drops:
+                logger.warning(f"[recorder] dropped messages by tier: {drops}")
+                for s in self._sinks:
+                    try:
+                        s.write_metadata({"recorder_dropped_by_tier": drops})
+                    except Exception:
+                        pass
+            for s in self._sinks:
+                try:
+                    s.close()
+                except Exception as e:
+                    logger.error(f"[recorder] sink {s.name} close error: {e}")
+            self._sinks = []
+            self._sinks_open = False
 
     def _start(self) -> None:
         """Open the sinks and begin continuous recording (idempotent)."""
@@ -233,6 +324,10 @@ class Recorder(Node):
                 logger.debug(f"[recorder] skip {name} ({type_str}): {e}")
                 continue
             tier = _classify_tier(name, type_str, self._tier_overrides)
+            if not self._should_record(name, type_str, tier):
+                self._subs[name] = None  # mark seen so we don't re-check each cycle
+                logger.debug(f"[recorder] skip {name} (modality filter)")
+                continue
             self._known_topics[name] = type_str
             self._tiers[name] = tier
             self._buffer.set_tier(name, tier)
@@ -248,9 +343,17 @@ class Recorder(Node):
                 continue
             self._subs[name] = sub
             if self._sinks_open:
-                for s in self._sinks:
-                    s.add_topic(RecordedTopic(name, type_str, tier=tier))
+                with self._sink_lock:
+                    for s in self._sinks:
+                        s.add_topic(RecordedTopic(name, type_str, tier=tier))
             logger.debug(f"[recorder] subscribed {name} [{type_str}] tier={tier}")
+
+    def _should_record(self, name: str, type_str: str, tier: int) -> bool:
+        """Whether a topic passes the modality filter (tier-1 is always recorded)."""
+        if self._modalities is None or tier == 1:
+            return True
+        hay = (name + " " + type_str).lower()
+        return any(m in hay for m in self._modalities)
 
     def _qos_for(self, name: str) -> QoSProfile:
         """Adopt a publisher's QoS so latched/sensor topics are captured."""
@@ -291,12 +394,27 @@ class Recorder(Node):
         return False
 
     def _write(self, name: str, raw: bytes, t_ns: int) -> None:
-        """Write one raw message to every active sink."""
-        for s in self._sinks:
-            try:
-                s.write(name, raw, t_ns)
-            except Exception as e:
-                logger.debug(f"[recorder] sink {s.name} write {name} error: {e}")
+        """Enqueue one raw message for the async writer (tier-aware drop on overflow)."""
+        self._wq.put_write(name, raw, t_ns, self._tiers.get(name, 2))
+
+    def _writer_loop(self) -> None:
+        """Drain the write queue into the sinks on a dedicated thread."""
+        while not self._writer_stop:
+            item = self._wq.get(timeout=0.2)
+            if item is None:
+                continue
+            if item[0] == "b":
+                item[1].set()
+                continue
+            _, name, raw, t_ns, _ = item
+            with self._sink_lock:
+                for s in self._sinks:
+                    try:
+                        s.write(name, raw, t_ns)
+                    except Exception as e:
+                        logger.debug(
+                            f"[recorder] sink {s.name} write {name} error: {e}"
+                        )
 
     # --- control plane --- #
     def _on_start_recording(self, _, response):
@@ -423,10 +541,13 @@ class Recorder(Node):
 
     # --- shutdown --- #
     def destroy_node(self) -> bool:
-        """Stop recording (flushing the manifest) before node teardown."""
+        """Stop recording (flushing the manifest), stop the writer, then tear down."""
         try:
             if self._recording or self._sinks_open:
                 self._stop()
         except Exception as e:
             logger.error(f"[recorder] error during shutdown: {e}")
+        self._writer_stop = True
+        if self._writer_thread.is_alive():
+            self._writer_thread.join(timeout=2.0)
         return super().destroy_node()

@@ -994,7 +994,11 @@ class Launcher:
         event-triggered episodes can include a window *before* the trigger
         :param sinks: Storage sinks to write; subset of {"mcap", "jsonl", "parquet"}, defaults to ["mcap"]
         :type sinks: Optional[List[str]], optional
-        :param modalities: Modality hints recorded in the manifest, defaults to None
+        :param modalities: Optional topic filter, a name/type substring list. A
+            topic is recorded only if its name or message type contains one of
+            these (case-insensitive); tier-1 trace/status topics are always
+            recorded. None records everything. Also stored in the manifest.
+            Defaults to None
         :type modalities: Optional[List[str]], optional
         :param prebuffer_seconds: Look-back pre-buffer window in seconds, defaults to 30.0
         :type prebuffer_seconds: float
