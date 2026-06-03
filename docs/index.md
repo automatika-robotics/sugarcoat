@@ -132,6 +132,7 @@ development/custom_processing
 development/custom_robot_plugin
 development/custom_ui_elements
 development/event_system
+development/recording
 development/testing
 ```
 
