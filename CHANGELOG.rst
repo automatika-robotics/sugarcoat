@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.7.1 (2026-06-05)
+------------------
 * (fix) Fixes stale reference in logged warning
 * (chore) Adds more tests for plugins, http transport, route via host and telemetry bus
 * (refactor) Changes from tcp to AF_UNIX sockets in transport bus and fixes pubilishing from multiple threads on the same sock via locks
