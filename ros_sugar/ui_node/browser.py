@@ -1,0 +1,485 @@
+"""FastHTML browser UI for the UI node"""
+
+import array
+import base64
+from functools import partial
+from typing import Dict
+
+import numpy as np
+from rosidl_runtime_py.convert import message_to_ordereddict
+
+from fasthtml.common import *  # noqa: F401,F403 -- FT components
+
+from . import elements
+from .frontend import FHApp
+from ..supported_types import ros_msg_to_str
+from ..utils import logger
+
+
+def _marker_on_map(payload, **_):
+    """Helper callback to parse a map Maker data from point-like message"""
+    content = payload.get("payload", None)
+    if content is None:
+        return
+    msg_type = payload.get("type")
+    try:
+        if msg_type == "Path":
+            # Content data will have the filtered path points
+            return {
+                "op": "path",
+                "id": payload.get("topic", ""),
+                "frame_id": content.get("frame_id", ""),
+                "points": content.get("data"),
+            }
+        if msg_type in ["Point", "PointStamped"]:
+            # Content data will have an array of [x, y, z]
+            return {
+                "op": "overlay",
+                "id": payload.get("topic", ""),
+                "frame_id": content.get("frame_id", ""),
+                "x": content.get("data")[0],
+                "y": content.get("data")[1],
+            }
+        if msg_type in ["Pose", "PoseStamped", "Odometry"]:
+            # Content data will have an array of [x, y, z, heading] for Pose, PoseStamped
+            # and [x, y, z, heading] for Odometry
+            return {
+                "op": "overlay",
+                "id": payload.get("topic", ""),
+                "frame_id": content.get("frame_id", ""),
+                "x": content.get("data")[0],
+                "y": content.get("data")[1],
+                "theta": content.get("data")[3],
+            }
+    except Exception:
+        logger.error(f"Error parsing UI input from topic type {msg_type}")
+
+
+def build_browser_app(
+    ros_node,
+    additional_input_elements=None,
+    additional_output_elements=None,
+    system_info=None,
+):
+    """Build the FastHTML browser app for the UI node.
+
+    :param ros_node: The running UI node.
+    :param additional_input_elements: UI input elements from derived packages.
+    :param additional_output_elements: UI output elements from derived packages.
+    :param system_info: System metadata for the visualization page.
+    :return: The FastHTML application (a Starlette app) to mount under ``/``.
+    """
+    ros_node_config = ros_node.config
+
+    fh = FHApp(
+        ros_node_config.components,
+        ros_node.out_topics,  # Inputs from the client to the ros node
+        ros_node.in_topics,  # Outputs to the client from the ros node
+        srv_clients_configs=ros_node.srv_clients_inputs_dicts(),
+        action_clients_configs=ros_node.action_clients_inputs_dicts(),
+        additional_input_elements=additional_input_elements,  # Additional UI input elements from derived packages
+        additional_output_elements=additional_output_elements,  # Additional UI output elements from derived packages
+        hide_settings_panel=ros_node_config.hide_settings,
+        system_info=system_info,
+    )  # inputs and outputs are reversed
+    app, _ = fh.get_app()
+
+    # Routes for the app backend
+    @app.get("/")
+    def _():
+        """Serves the main application page."""
+        fh.toggle_settings = False
+        fh.toggle_system = False
+        return fh.get_main_page()
+
+    @app.get("/settings/show")
+    def _():
+        """Show the settings tabs"""
+        fh.toggle_system = False
+        fh.toggle_settings = not fh.toggle_settings
+        return fh.get_main_page()
+
+    @app.get("/system/show")
+    def _():
+        """Show the system visualization"""
+        fh.toggle_settings = False
+        fh.toggle_system = not fh.toggle_system
+        return fh.get_main_page()
+
+    @app.get("/system/component/{name}")
+    def _(name: str):
+        """Return detail panel for a specific component"""
+        comp_meta = (
+            fh.system_info.get("components", {}).get(name, {}) if fh.system_info else {}
+        )
+        return elements.system_component_detail(
+            name,
+            comp_meta,
+            fh.configs.get(name, {}),
+            fh.system_info,
+        )
+
+    @app.get("/system/event/{event_short_id}")
+    def _(event_short_id: str):
+        """Return detail panel for a specific event"""
+        if not fh.system_info:
+            return Div("No system data available")
+        for ev in fh.system_info.get("events", []):
+            if ev["id"][:8] == event_short_id:
+                return elements.system_event_detail(ev)
+        return Div(f"Event '{event_short_id}' not found")
+
+    @app.post("/settings/submit")
+    async def _(request, session):
+        """Update Settings"""
+        # update config
+        # update UI
+        form_data = await request.form()
+        result = ros_node.update_configs(dict(form_data.items()))
+        success = all(result.success)
+        if not success:
+            item_names = list(form_data.keys())
+            error_msg = "Error in updating the following settings values: \n"
+            for key in range(len(result.success)):
+                if not result.success[key]:
+                    error_msg += f"{item_names[key + 1]}: {result.error_msg[key]}\n"
+            fh.toasting(error_msg, session, "error", duration=100000)
+        else:
+            fh.toasting("Settings changed successfully", session, "success")
+            # Persist the new configuration
+            fh.update_configs_from_data(dict(form_data.items()))
+        return fh.get_main_page()
+
+    @app.post("/service/call")
+    async def _(request, session):
+        """Send a ROS2 service call from the client"""
+        form_data = await request.form()
+        data_dict = dict(form_data.items())
+        # Add request to logging card
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"Sending service call: '{data_dict}'",
+            data_type="String",
+            data_src="user",
+        )
+        result_code, result = ros_node.send_srv_call(data_dict)
+        if not result_code:
+            fh.toasting(result, session, "error", duration=100000)
+        else:
+            fh.toasting(
+                f"Service returned response: {result}", session, "info", duration=100000
+            )
+        # Add response to logging card
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"Service returned response: '{result}'",
+            data_type="String",
+            data_src="robot",
+        )
+        return fh.get_main_page()
+
+    @app.post("/action/goal")
+    async def _(request, session):
+        """Send a ROS2 action goal from the client"""
+        form_data = await request.form()
+        data_dict = dict(form_data.items())
+        action_name = data_dict.get("action_name", "")
+        if (
+            action_name in fh.action_clients_ft
+            and fh.action_clients_ft[action_name].is_active()
+        ):
+            fh.toasting(
+                "Cannot send a new goal while the current goal is still active. Cancel ongoing goal first.",
+                session,
+                "error",
+                duration=100000,
+            )
+            return fh.get_main_page()
+        result_code, result = ros_node.send_action_goal(data_dict)
+        if not result_code:
+            fh.toasting(result, session, "error", duration=100000)
+        else:
+            fh.toasting(f"Task sent: {result}", session, "info", duration=100000)
+            fh.action_clients_ft[action_name].update(
+                status="accepted",
+                duration=0,
+            )
+            fh.action_clients_ft[action_name].total_calls += 1
+            # display the action on the main logging card
+            goal_payload = {k: v for k, v in data_dict.items() if k != "action_name"}
+            elements.update_logging_card(
+                fh.outputs_log,
+                f"Start Task '{action_name}': {goal_payload}",
+                data_type="String",
+                data_src="user",
+            )
+        return fh.get_main_page()
+
+    @app.post("/action/cancel")
+    async def _(request, session):
+        """Cancel a ROS2 action goal from the client"""
+        form_data = await request.form()
+        data_dict = dict(form_data.items())
+        action_name = data_dict.get("action_name")
+        result_code, result = ros_node.cancel_action(action_name)
+        if not result_code:
+            fh.toasting(result, session, "error", duration=100000)
+        else:
+            fh.toasting(f"{result}", session, "info", duration=100000)
+            # display cancellation request on the main logging card
+            elements.update_logging_card(
+                fh.outputs_log,
+                f"Cancel Task '{action_name}'.",
+                data_type="String",
+                data_src="user",
+            )
+        return fh.get_main_page()
+
+    # -- WS handling --
+    async def log_data(send, data: str, data_type: str, data_src: str):
+        """Send data to log"""
+
+        await send(
+            elements.update_logging_card(
+                fh.outputs_log,
+                data,
+                data_type,
+                data_src,
+            )
+        )
+
+    async def on_disconn(session):
+        """Message for disconnection"""
+        fh.toasting(
+            "Disconnected from the robot. Check if the recipe is running or refresh the page",
+            session,
+            toast_type="error",
+        )
+
+    async def on_conn_stream(ws, send, topic_type: str):
+        """When a client connects, register its callback."""
+
+        # Callback function for ROS node
+        async def stream_callback(data: Dict, **_):
+            if data["type"] == "error":
+                await log_data(
+                    send, data["payload"], data_type=data["type"], data_src=data["type"]
+                )
+            else:
+                await ws.send_json(data)
+
+        ros_node.attach_websocket_callback(stream_callback, topic_type)
+
+    async def on_conn_map(ws, _, map_topic_type: str):
+        """When a client connects, register its callback."""
+
+        # Callback function for ROS node
+        async def map_callback(payload, msg):
+            # --- CASE 1: Incoming marker data ----
+            # If the incoming data is for a marker
+            if payload.get("type", None) != "OccupancyGrid":
+                response = _marker_on_map(payload)
+                if response:
+                    await ws.send_json(response)
+                return
+
+            # --- CASE 2: Incoming MAP data ----
+            # Convert ROS message to a JSON-serializable dict
+            # Convert header and info normally (they are small)
+            msg_dict = {
+                "header": message_to_ordereddict(msg.header),
+                "info": message_to_ordereddict(msg.info),
+            }
+
+            # FAST CONVERSION of data field
+            # 'data' is typically a list of int8. We want a Base64 string.
+            data_field = msg.data
+            raw_bytes = b""
+
+            if isinstance(data_field, list):
+                # 'b' is signed char (int8), matches ROS int8[]
+                raw_bytes = array.array("b", data_field).tobytes()
+            elif isinstance(data_field, array.array):
+                raw_bytes = data_field.tobytes()
+            elif isinstance(data_field, bytes):
+                raw_bytes = data_field
+            elif isinstance(data_field, np.ndarray):
+                raw_bytes = data_field.tobytes()
+            else:
+                # Fallback (slowest)
+                raw_bytes = bytes(data_field)
+
+            msg_dict["data"] = base64.b64encode(raw_bytes).decode("utf-8")
+
+            response = {"op": "publish", "msg": msg_dict}
+            await ws.send_json(response)
+
+        ros_node.attach_websocket_callback(map_callback, map_topic_type)
+
+        # Add all point outputs to the map websocket callback
+        for _, topic_type in fh.get_all_map_overlay_outputs():
+            ros_node.attach_websocket_callback(map_callback, topic_type)
+
+    async def on_conn_action(_, send):
+        """When a client connects, register feedback callbacks for all action clients."""
+
+        for clients_config in ros_node.action_clients_inputs_dicts():
+            _action_name = clients_config["name"]
+
+            async def feedback_callback(data: Dict, *, _name=_action_name, **_):
+                """Updates an action client with new feedback from the server
+
+                :param data: UI data dict (status, feedback, etc.)
+                :type data: Dict
+                """
+                feedback = (
+                    ros_msg_to_str(data["feedback"]) if data["feedback"] else None
+                )
+                fh.action_clients_ft[_name].update(
+                    status=data["status"],
+                    feedback=feedback,
+                    duration=data["duration_secs"],
+                    timestep=data["timestep"],
+                )
+                await send(fh.action_clients_ft[_name].card)
+
+                if data["status"] in ["aborted", "completed", "canceled"]:
+                    # display action aborted as an error on the main logging card
+                    if data["status"] == "aborted":
+                        await log_data(
+                            send,
+                            f"Task '{_name}' aborted: {feedback}"
+                            if feedback
+                            else f"Task '{_name}' aborted",
+                            data_type="String",
+                            data_src="error",
+                        )
+                    ros_node.cleanup_action(action_name=_name)
+                    fh.action_clients_ft[_name].cleanup()
+
+            ros_node.attach_client_feedback_callback(feedback_callback, _action_name)
+
+    # Create websockets for streaming output topics
+    for topic_name, topic_type in fh.get_all_stream_outputs():
+
+        @app.ws(
+            f"/ws_{topic_name}",
+            conn=partial(on_conn_stream, topic_type=topic_type),
+            disconn=on_disconn,
+        )
+        async def _():
+            pass
+
+    # Create websockets for map output topics
+    for map_topic_name, map_topic_type in fh.get_all_map_outputs():
+        logger.debug(f"Starting ws for {map_topic_name}, {map_topic_type}...")
+
+        @app.ws(
+            f"/ws_{map_topic_name}",
+            conn=partial(on_conn_map, map_topic_type=map_topic_type),
+            disconn=on_disconn,
+        )
+        async def _(_, data):
+            # Map websockets send back clicked points (Point, Pose, etc.)
+            # The actual point data is in data.data, but it is expected in the ui node directly in data.x, etc.
+            if message := data.pop("data", None):
+                data.update(message)
+                ros_node.publish_data(data)
+
+    if ros_node.action_clients_inputs_dicts():
+
+        @app.ws(
+            "/ws_actions",
+            conn=on_conn_action,
+            disconn=on_disconn,
+        )
+        async def _():
+            """WS route for sending action feedback to ROS UI Node"""
+            pass
+
+    @app.ws("/ws_audio", disconn=on_disconn)
+    async def _(data, send):
+        """WS route for sending audio to ROS UI Node"""
+        # Only handle audio data
+        if data["type"] == "audio" and len(data["payload"]) > 0:
+            try:
+                await log_data(
+                    send, data["payload"], data_type="Audio", data_src="user"
+                )
+                ros_node.publish_data({
+                    "topic_name": data["topic_name"],
+                    "topic_type": "Audio",
+                    "data": data["payload"],
+                })
+            except RuntimeError:
+                logger.warning("Runtime error when sending audio")
+
+            # Send the robot loading dots
+            return elements.update_logging_card_with_loading(fh.outputs_log)
+
+    async def on_conn(send):
+        """When a client connects, register its callback."""
+
+        # NOTE: Types that will be routed to the map websocket once it attaches.
+        # They are dropped from the default log callback to avoid a brief
+        # flash in the log during the startup window between the main /ws
+        # connecting and /ws_map attaching its per-type callbacks.
+        map_overlay_types = (
+            {t for _, t in fh.get_all_map_overlay_outputs()}
+            if fh.get_all_map_outputs()
+            else set()
+        )
+
+        # Callback function for ROS node
+        async def websocket_callback(data: Dict, **_):
+            # Recieve json style data from node and pass to UI with send
+            if data.get("type") in map_overlay_types:
+                return
+            if len(data["payload"]) > 0:
+                await log_data(
+                    send, data["payload"], data_type=data["type"], data_src="robot"
+                )
+
+        ros_node.attach_websocket_callback(websocket_callback)
+
+    @app.ws("/ws", conn=on_conn, disconn=on_disconn)
+    async def _(data, send):
+        """WS route for input/output communication with ROS UI Node"""
+
+        if (data_type := data.get("topic_type")) == "String":
+            # display in log for string data types
+            await log_data(send, data["data"], data_type=data_type, data_src="user")
+            ros_node.publish_data(data=data)
+            # Send the robot loading dots
+            return elements.update_logging_card_with_loading(fh.outputs_log)
+        elif data.get("topic_type") in ["Point", "PointStamped"]:
+            # display in log for coordinates data types
+            await log_data(
+                send,
+                f"Published to topic /{data.get('topic_name')} using coordinates: x={data['x']}, y={data['y']}, z={data['z']}",
+                data_type="String",
+                data_src="user",
+            )
+            ros_node.publish_data(data=data)
+        elif data.get("topic_type") in ["Pose", "PoseStamped"]:
+            # display in log for coordinates data types
+            await log_data(
+                send,
+                f"Published to topic /{data.get('topic_name')} using coordinates: (Position: x={data['x']}, y={data['y']}, z={data['z']}), (Orientation: w={data['ori_w'] or '1'}, x={data['ori_x'] or '0'}, y={data['ori_y'] or '0'}, z={data['ori_z'] or '0'})",
+                data_type="String",
+                data_src="user",
+            )
+            ros_node.publish_data(data=data)
+        elif data.get("topic_type") == "Bool":
+            # display in log for coordinates data types
+            await log_data(
+                send,
+                f"Published to topic /{data.get('topic_name')}: {data.get('data', 'off')}",
+                data_type="String",
+                data_src="user",
+            )
+            ros_node.publish_data(data=data)
+        else:
+            ros_node.publish_data(data=data)
+
+    return app
