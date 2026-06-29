@@ -1,7 +1,6 @@
 """Tests for the front-end-agnostic UI API (issue #54), Phase 0.
 
 Covers:
-* ``ros_sugar.io.json_utils`` -- faithful ROS-message -> JSON coercion.
 * the ``_get_ui_content`` source fix -- specialized callbacks must return
   JSON-serializable content (no numpy arrays).
 * ``ros_sugar.ui_node.api.build_interfaces`` -- the discovery document.
@@ -17,44 +16,6 @@ import numpy as np
 import pytest
 
 from ros_sugar.io.topic import Topic
-
-
-# ---------------------------------------------------------------------------
-# json_utils: faithful ROS message -> JSON
-# ---------------------------------------------------------------------------
-def test_ros_msg_to_jsonable_is_json_serializable():
-    """A message with array/nested fields serializes cleanly to JSON."""
-    from sensor_msgs.msg import LaserScan
-
-    from ros_sugar.io.json_utils import ros_msg_to_jsonable
-
-    scan = LaserScan()
-    scan.angle_min = -1.5
-    scan.angle_max = 1.5
-    scan.ranges = [0.1, 0.2, 0.3]  # float32[] -> array.array internally
-
-    jsonable = ros_msg_to_jsonable(scan)
-    # Must round-trip through json without raising
-    dumped = json.dumps(jsonable)
-    assert "ranges" in jsonable
-    assert json.loads(dumped)["ranges"] == [
-        pytest.approx(0.1),
-        pytest.approx(0.2),
-        pytest.approx(0.3),
-    ]
-
-
-def test_coerce_handles_bytes_and_arrays():
-    """bytes -> base64 string, array.array -> list, recursively."""
-    import array
-
-    from ros_sugar.io.json_utils import _coerce
-
-    out = _coerce({"blob": b"\x00\x01", "nums": array.array("i", [1, 2]), "n": [3, 4]})
-    assert isinstance(out["blob"], str)  # base64 string
-    assert out["nums"] == [1, 2]
-    assert out["n"] == [3, 4]
-    json.dumps(out)  # must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -168,10 +129,129 @@ def test_main_import_does_not_pull_web_stack():
         "import ros_sugar\n"
         "import ros_sugar.ui_node\n"
         "import ros_sugar.launch.launcher\n"
-        "import ros_sugar.io.json_utils\n"
         "import ros_sugar.io.callbacks\n"
         "leaked = [m for m in ('fasthtml', 'monsterui', 'starlette', 'uvicorn')\n"
         "          if m in sys.modules]\n"
         "assert not leaked, f'web stack leaked into main import path: {leaked}'\n"
     )
     subprocess.check_call([sys.executable, "-c", code])
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: inputs + services REST endpoints
+# ---------------------------------------------------------------------------
+class _ApiNode:
+    """Fake UINode exposing just the surface the API routes use."""
+
+    def __init__(self):
+        self.in_topics = [Topic(name="odom", msg_type="Odometry")]
+        self.out_topics = [Topic(name="cmd_vel", msg_type="Twist")]
+        self.config = _FakeConfig()
+        self.published = []
+        self.publish_error = None  # exception to raise from publish_data
+        self.service_response = None  # raw ROS response to return
+        self.service_error = None  # exception to raise from send_srv_call
+
+    def srv_clients_inputs_dicts(self):
+        return [{"name": "reset", "type": "Trigger", "fields": {}}]
+
+    def action_clients_inputs_dicts(self):
+        return []
+
+    def publish_data(self, data):
+        if self.publish_error is not None:
+            raise self.publish_error
+        self.published.append(data)
+        return 2
+
+    def send_srv_call(self, data):
+        if self.service_error is not None:
+            raise self.service_error
+        return self.service_response
+
+
+def _make_client(node):
+    pytest.importorskip("httpx")
+    pytest.importorskip("fasthtml")
+    from fasthtml.common import fast_app
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.api import register_api
+
+    app, _ = fast_app()
+    register_api(app, node)
+    return TestClient(app)
+
+
+def test_publish_input_ok():
+    node = _ApiNode()
+    client = _make_client(node)
+    resp = client.post("/api/inputs/cmd_vel", json={"linear": {"x": 1.0}})
+    assert resp.status_code == 200
+    assert resp.json() == {"published": "cmd_vel", "subscribers": 2}
+    # publish_data receives the topic name folded into the field dict
+    assert node.published == [{"topic_name": "cmd_vel", "linear": {"x": 1.0}}]
+
+
+def test_publish_input_unknown_topic_404():
+    client = _make_client(_ApiNode())
+    resp = client.post("/api/inputs/nope", json={})
+    assert resp.status_code == 404
+
+
+def test_publish_input_not_ready_503():
+    node = _ApiNode()
+    node.publish_error = RuntimeError("Publisher for input topic 'cmd_vel' is not ready")
+    client = _make_client(node)
+    resp = client.post("/api/inputs/cmd_vel", json={})
+    assert resp.status_code == 503
+
+
+def test_publish_input_bad_fields_400():
+    node = _ApiNode()
+    node.publish_error = ValueError("Cannot build a Twist message")
+    client = _make_client(node)
+    resp = client.post("/api/inputs/cmd_vel", json={"bogus": 1})
+    assert resp.status_code == 400
+
+
+def test_call_service_ok():
+    from std_srvs.srv import Trigger
+
+    node = _ApiNode()
+    response = Trigger.Response()
+    response.success = True
+    response.message = "ok"
+    node.service_response = response
+    client = _make_client(node)
+
+    resp = client.post("/api/services/reset", json={})
+    assert resp.status_code == 200
+    assert resp.json() == {"service": "reset", "response": {"success": True, "message": "ok"}}
+
+
+def test_call_service_unknown_404():
+    client = _make_client(_ApiNode())
+    resp = client.post("/api/services/nope", json={})
+    assert resp.status_code == 404
+
+
+def test_call_service_no_response_502():
+    node = _ApiNode()
+    node.service_response = None  # simulates no response received
+    client = _make_client(node)
+    resp = client.post("/api/services/reset", json={})
+    assert resp.status_code == 502
+
+
+def test_msg_to_jsonable_handles_arrays():
+    pytest.importorskip("starlette")
+    from sensor_msgs.msg import LaserScan
+
+    from ros_sugar.ui_node.api import _msg_to_jsonable
+
+    scan = LaserScan()
+    scan.ranges = [0.1, 0.2, 0.3]  # float32[] -> array.array internally
+    out = _msg_to_jsonable(scan)
+    assert out["ranges"] == [pytest.approx(0.1), pytest.approx(0.2), pytest.approx(0.3)]
+    json.dumps(out)  # must not raise
