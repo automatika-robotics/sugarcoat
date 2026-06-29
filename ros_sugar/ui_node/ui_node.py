@@ -9,7 +9,7 @@ from functools import partial
 
 from ..config.base_attrs import BaseAttrs
 from ..config.base_validators import in_range
-from ..core.component import BaseComponent, BaseComponentConfig, Publisher
+from ..core.component import BaseComponent, BaseComponentConfig
 from .. import base_clients
 from ..io.callbacks import GenericCallback
 from ..io.topic import Topic
@@ -372,38 +372,21 @@ class UINode(BaseComponent):
         if self._ros_action_clients.get(action_name, None):
             self._ros_action_clients_feedback_callbacks[action_name] = ws_callback
 
-    def send_srv_call(self, srv_call_data: Dict) -> Tuple[bool, Any]:
-        """
-        Send a service call using the service request form data
+    def send_srv_call(self, srv_call_data: Dict) -> Any:
+        """Call a declared service client and return the raw ROS response.
+
+        ``srv_call_data`` must contain ``srv_name``; the remaining keys are the
+        request fields. The raw ROS response object or None is returned.
+
+        :param srv_call_data: ``{"srv_name": <name>, **request_fields}``.
+        :raises RuntimeError: If the service client is not ready.
+        :return: The raw ROS response message, or ``None``.
         """
         srv_name = srv_call_data.pop("srv_name")
-        if srv_name not in self._ros_service_clients:
-            return (False, f'Service client "{srv_name}" not found!')
-
-        try:
-            output = self._ros_service_clients[srv_name].send_request_from_dict(
-                request_fields=srv_call_data
-            )
-        except Exception as e:
-            return (
-                False,
-                f'Error occurred when sending service request to "{srv_name}": {e}',
-            )
-
-        if output:
-            # Parse response to display on UI
-            response_fields = self._ros_service_clients[
-                srv_name
-            ].client.srv_type.Response.get_fields_and_field_types()
-            # Format a response string with fields dictionary keys and actual response values
-            response_str = ""
-            for key in response_fields.keys():
-                response_str += f"{key} = {getattr(output, key)}, "
-            return (True, response_str)
-        return (
-            False,
-            f'Server Error - Service "{srv_name}" request send but no service response received',
-        )
+        client = self._ros_service_clients.get(srv_name)
+        if client is None:
+            raise RuntimeError(f"Service client '{srv_name}' is not ready")
+        return client.send_request_from_dict(request_fields=srv_call_data)
 
     def send_action_goal(self, action_goal_data: Dict) -> Tuple[bool, Any]:
         """
@@ -452,9 +435,7 @@ class UINode(BaseComponent):
             action_name, None
         ):
             # await feedback_func(feedback_data)
-            asyncio.run_coroutine_threadsafe(
-                feedback_func(feedback_data), self.loop
-            )
+            asyncio.run_coroutine_threadsafe(feedback_func(feedback_data), self.loop)
 
     def cancel_action(self, action_name: str) -> Tuple[bool, str]:
         """Cancel ongoing action goal
@@ -479,71 +460,34 @@ class UINode(BaseComponent):
         """
         self.destroy_timer(self._ros_action_clients_feedback_timers[action_name])
 
-    def publish_data(self, data: Any):
-        """
-        Publish data to input topics if any
+    def publish_data(self, data: Dict) -> int:
+        """Publish a message on a declared input topic from a field dict.
+
+        ``data`` must contain ``topic_name``; the remaining keys are message
+        fields matching the topic's ROS message schema (as advertised by the
+        API discovery document)
+
+        :param data: ``{"topic_name": <name>, **message_fields}``.
+        :raises RuntimeError: If the publisher for the topic is not ready.
+        :raises ValueError: If the fields cannot be converted to the message.
+        :return: The current number of subscribers on the topic.
         """
         topic_name = data.pop("topic_name")
-        topic_type_str = data.pop("topic_type")
-        frame_id = data.pop("frame_id", None)
-        topic_type = getattr(supported_types, topic_type_str, None)
-
-        if not topic_type:
-            return self._return_error(
-                f'Data type "{topic_type_str}" not found in supported types. Make sure the UI element is created correctly'
-            )
-
-        if self.count_subscribers(topic_name) == 0:
-            return self._return_error(
-                f'No subscribers found for the topic "{topic_name}". Please check the topic name and re-send data'
-            )
-
+        data.pop("topic_type", None)  # type comes from the declared publisher
+        publisher = self.publishers_dict.get(topic_name)
+        if publisher is None or publisher._publisher is None:
+            raise RuntimeError(f"Publisher for input topic '{topic_name}' is not ready")
         try:
-            output = topic_type.convert_ui_dict(
-                data
-            )  # Convert to publisher compatible data
-        except NotImplementedError:
-            return self._return_error(
-                f'Data type "{topic_type_str}" does not implement a converter'
+            msg = supported_types.set_ros_msg_from_dict(
+                publisher.output_topic.ros_msg_type, data
             )
         except Exception as e:
-            return self._return_error(
-                f'Error occurred when converting {data} to Sugar type "{topic_type_str}": {e}'
-            )
-        kwargs = {"output": output}
-
-        # Add the data frame_id if it is sent
-        if frame_id:
-            kwargs["frame_id"] = frame_id
-
-        try:
-            if publisher := self.publishers_dict.get(topic_name, None):
-                # Confirm that the topic type was not updated dynamically in the UI
-                if publisher.output_topic.msg_type.__name__ == topic_type_str:
-                    publisher.publish(**kwargs)
-                    return
-                else:
-                    # Destroy the old publisher to create a new one
-                    self.destroy_publisher(publisher._publisher)
-                    self.get_logger().debug(
-                        f"Destroying old publisher for {topic_name} of type {publisher.output_topic.msg_type.__name__}"
-                    )
-            # Handle creating publishers for dynamically added or modified outputs in the UI
-            self.publishers_dict[topic_name] = Publisher(
-                Topic(name=topic_name, msg_type=topic_type_str),
-                node_name=self.node_name,
-            )
-            self.publishers_dict[topic_name].set_node_name(self.node_name)
-            # Set ROS publisher for each output publisher
-            self.publishers_dict[topic_name].set_publisher(
-                self._add_ros_publisher(self.publishers_dict[topic_name])
-            )
-            self.publishers_dict[topic_name].publish(**kwargs)
-            return
-        except Exception as e:
-            self.get_logger().error(
-                f"Error publishing UI input data to topic {topic_name}: {e}"
-            )
+            raise ValueError(
+                f"Cannot build a {publisher.output_topic.msg_type.__name__} "
+                f"message from {data}: {e}"
+            ) from e
+        publisher._publisher.publish(msg)
+        return self.count_subscribers(topic_name)
 
     def _execution_step(self):
         """
