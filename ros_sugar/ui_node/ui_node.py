@@ -114,6 +114,11 @@ class UINode(BaseComponent):
         self._ros_action_clients_feedback_callbacks: Dict[str, Callable] = {}
         self._ros_action_clients_feedback_timers: Dict = {}
 
+        # Latest UI content per output topic name. The API streams outputs by
+        # sampling this (which lets multiple clients consume the same topic at
+        # independent rates)
+        self._latest_output: Dict[str, Any] = {}
+
         self.config: UINodeConfig
 
     def srv_clients_inputs_dicts(self) -> List[Dict]:
@@ -156,6 +161,10 @@ class UINode(BaseComponent):
 
     def get_active_action_clients(self) -> Dict[str, ActionClientHandler]:
         return self._ros_action_clients
+
+    def get_latest_output(self, topic_name: str) -> Any:
+        """Return the most recent UI content for an output topic, or ``None``."""
+        return self._latest_output.get(topic_name)
 
     @property
     def _client_inputs_json(self) -> str:
@@ -258,31 +267,22 @@ class UINode(BaseComponent):
         )
 
     def _add_ros_subscriber(self, callback: GenericCallback):
-        """Overrides creating subscribers to run the ui callback instead of the main callback
+        """Override subscriber creation to cache the latest UI content per
+        output topic, which the API streams to clients.
         :param callback:
         :type callback: GenericCallback
         """
-        payload = {
-            "type": callback.input_topic.msg_type.__name__,
-            "topic": callback.input_topic.name,
-        }
-
-        setattr(self, f"{payload['type']}_callback", None)
 
         def _ui_callback(msg) -> None:
-            ws_callback = (
-                getattr(self, f"{payload['type']}_callback")
-                or self.default_websocket_callback
-            )
             callback.msg = msg
             if hasattr(msg, "header") and isinstance(msg.header, Header):
                 callback._frame_id = msg.header.frame_id
             try:
                 ui_content = callback._get_ui_content()
-                payload["payload"] = ui_content
             except Exception as e:
                 return self._return_error(f"Topic callback error: {e}")
-            asyncio.run_coroutine_threadsafe(ws_callback(payload, msg=msg), self.loop)
+            # Cache the latest content for the API's rate-sampled streaming.
+            self._latest_output[callback.input_topic.name] = ui_content
 
         _subscriber = self.create_subscription(
             msg_type=callback.input_topic.ros_msg_type,
