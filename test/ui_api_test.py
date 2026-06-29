@@ -137,6 +137,22 @@ def test_main_import_does_not_pull_web_stack():
     subprocess.check_call([sys.executable, "-c", code])
 
 
+def test_api_module_does_not_pull_fasthtml():
+    """The API tier depends on Starlette, never on the browser stack.
+
+    Importing ``ros_sugar.ui_node.api`` must not pull in fasthtml/monsterui, so
+    the API can run on systems where only Starlette + uvicorn are installed.
+    """
+    pytest.importorskip("starlette")
+    code = (
+        "import sys\n"
+        "import ros_sugar.ui_node.api\n"
+        "leaked = [m for m in ('fasthtml', 'monsterui') if m in sys.modules]\n"
+        "assert not leaked, f'browser stack leaked into the API module: {leaked}'\n"
+    )
+    subprocess.check_call([sys.executable, "-c", code])
+
+
 # ---------------------------------------------------------------------------
 # Phase 1: inputs + services REST endpoints
 # ---------------------------------------------------------------------------
@@ -151,12 +167,16 @@ class _ApiNode:
         self.publish_error = None  # exception to raise from publish_data
         self.service_response = None  # raw ROS response to return
         self.service_error = None  # exception to raise from send_srv_call
+        self.latest = {}  # topic_name -> cached _get_ui_content result
 
     def srv_clients_inputs_dicts(self):
         return [{"name": "reset", "type": "Trigger", "fields": {}}]
 
     def action_clients_inputs_dicts(self):
         return []
+
+    def get_latest_output(self, name):
+        return self.latest.get(name)
 
     def publish_data(self, data):
         if self.publish_error is not None:
@@ -171,16 +191,14 @@ class _ApiNode:
 
 
 def _make_client(node):
+    # The API is a standalone Starlette app -- no FastHTML needed to test it.
     pytest.importorskip("httpx")
-    pytest.importorskip("fasthtml")
-    from fasthtml.common import fast_app
+    pytest.importorskip("starlette")
     from starlette.testclient import TestClient
 
-    from ros_sugar.ui_node.api import register_api
+    from ros_sugar.ui_node.api import build_api_app
 
-    app, _ = fast_app()
-    register_api(app, node)
-    return TestClient(app)
+    return TestClient(build_api_app(node))
 
 
 def test_publish_input_ok():
@@ -255,3 +273,61 @@ def test_msg_to_jsonable_handles_arrays():
     out = _msg_to_jsonable(scan)
     assert out["ranges"] == [pytest.approx(0.1), pytest.approx(0.2), pytest.approx(0.3)]
     json.dumps(out)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: output streaming + latest value
+# ---------------------------------------------------------------------------
+def test_output_latest_ok():
+    node = _ApiNode()
+    node.latest["odom"] = {"frame_id": "odom", "data": [1.0, 2.0, 3.0]}
+    client = _make_client(node)
+    resp = client.get("/api/outputs/odom/latest")
+    assert resp.status_code == 200
+    assert resp.json() == {"topic": "odom", "payload": {"frame_id": "odom", "data": [1.0, 2.0, 3.0]}}
+
+
+def test_output_latest_unknown_404():
+    client = _make_client(_ApiNode())
+    resp = client.get("/api/outputs/nope/latest")
+    assert resp.status_code == 404
+
+
+def test_output_latest_no_data_404():
+    client = _make_client(_ApiNode())  # latest is empty
+    resp = client.get("/api/outputs/odom/latest")
+    assert resp.status_code == 404
+
+
+def test_output_stream_ok():
+    node = _ApiNode()
+    node.latest["odom"] = {"frame_id": "odom", "data": [1.0, 2.0, 3.0]}
+    client = _make_client(node)
+    with client.websocket_connect("/api/outputs/odom?rate=50") as ws:
+        data = ws.receive_json()
+    assert data == {"topic": "odom", "payload": {"frame_id": "odom", "data": [1.0, 2.0, 3.0]}}
+
+
+def test_output_stream_unknown_closes():
+    from starlette.websockets import WebSocketDisconnect
+
+    client = _make_client(_ApiNode())
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/api/outputs/nope") as ws:
+            ws.receive_json()
+
+
+def test_content_to_jsonable_passes_through_and_converts():
+    pytest.importorskip("starlette")
+    from sensor_msgs.msg import LaserScan
+
+    from ros_sugar.ui_node.api import _content_to_jsonable
+
+    # JSON-native content (from a specialized _get_ui_content) passes through
+    assert _content_to_jsonable({"data": [1.0, 2.0]}) == {"data": [1.0, 2.0]}
+    # A raw ROS message (unspecialized type) is faithfully converted
+    scan = LaserScan()
+    scan.ranges = [0.5]
+    out = _content_to_jsonable(scan)
+    assert out["ranges"] == [pytest.approx(0.5)]
+    json.dumps(out)
