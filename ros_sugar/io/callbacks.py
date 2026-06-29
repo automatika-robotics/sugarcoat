@@ -227,6 +227,11 @@ class StdMsgArrayCallback(GenericCallback):
         except Exception as e:
             raise ValueError(f"Failed to parse MultiArray message: {str(e)}") from e
 
+    def _get_ui_content(self, **_) -> Optional[List]:
+        """Get JSON-serializable UI content for a MultiArray."""
+        output = self.get_output(clear_last=True)
+        return output.tolist() if output is not None else None
+
 
 class ImageCallback(GenericCallback):
     """
@@ -492,7 +497,8 @@ class OdomCallback(GenericCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
+        output = self.get_output(clear_last=True)
+        return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
 
     def _process(self, msg: Odometry) -> np.ndarray:
         """Takes Odometry ROS object and converts it to a numpy array with [x, y, z, heading, speed]
@@ -568,7 +574,8 @@ class PointCallback(GenericCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        return {"data": self.get_output(clear_last=True)}
+        output = self.get_output(clear_last=True)
+        return {"data": output.tolist() if output is not None else None}
 
 
 class PointStampedCallback(GenericCallback):
@@ -602,7 +609,8 @@ class PointStampedCallback(GenericCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
+        output = self.get_output(clear_last=True)
+        return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
 
 
 class PoseCallback(GenericCallback):
@@ -707,7 +715,8 @@ class PoseCallback(GenericCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        return {"data": self.get_output(clear_last=True)}
+        output = self.get_output(clear_last=True)
+        return {"data": output.tolist() if output is not None else None}
 
 
 class PoseStampedCallback(PoseCallback):
@@ -747,7 +756,8 @@ class PoseStampedCallback(PoseCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        return {"frame_id": self.frame_id, "data": self.get_output(clear_last=True)}
+        output = self.get_output(clear_last=True)
+        return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
 
 
 class PathCallback(GenericCallback):
