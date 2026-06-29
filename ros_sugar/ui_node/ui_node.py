@@ -36,6 +36,15 @@ class UINodeConfig(BaseComponentConfig):
     feedback_update_period: float = field(
         default=1.0, validator=in_range(min_value=1e-3, max_value=1e3)
     )  # 1 second ui feedback update rate
+    # Default rate (Hz) at which the JSON API streams output topics to a
+    # connected client when it does not request one explicitly.
+    api_stream_default_rate: float = field(
+        default=10.0, validator=in_range(min_value=1e-3, max_value=1e3)
+    )
+    # Hard upper bound (Hz) for a client-requested API stream rate.
+    api_max_stream_rate: float = field(
+        default=30.0, validator=in_range(min_value=1e-3, max_value=1e3)
+    )
 
 
 class UINode(BaseComponent):
