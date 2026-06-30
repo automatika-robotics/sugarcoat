@@ -30,6 +30,12 @@ API_BASE = "/api"
 # rather than as JSON data
 _BINARY_STREAM_TYPES = frozenset({"Image", "CompressedImage", "OccupancyGrid", "Audio"})
 
+# Composition of the /api/world map scene: an occupancy grid plus point-like
+# overlays and paths rendered on it
+_GRID_TYPE = "OccupancyGrid"
+_PATH_TYPE = "Path"
+_OVERLAY_TYPES = frozenset({"Point", "PointStamped", "Pose", "PoseStamped", "Odometry"})
+
 
 def _topic_schema(topic) -> Dict[str, Any]:
     """Field schema for a topic's ROS message type (empty dict on failure)."""
@@ -69,6 +75,41 @@ def _content_to_jsonable(content: Any) -> Any:
     return _coerce(content)
 
 
+def _marker_from_content(
+    topic_name: str, type_name: str, content: Any
+) -> Optional[Dict]:
+    """Turn an overlay/path payload into a map op.
+
+    Point/Pose/Odometry become ``{op:"overlay", x, y[, theta]}`` markers; Path
+    becomes ``{op:"path", points}``. Returns ``None`` if there is nothing to render.
+    """
+    if not isinstance(content, dict):
+        return None
+    data = content.get("data")
+    if not data:
+        return None
+    frame_id = content.get("frame_id", "")
+    if type_name == _PATH_TYPE:
+        return {"op": "path", "id": topic_name, "frame_id": frame_id, "points": data}
+    if type_name in ("Point", "PointStamped"):
+        return {
+            "op": "overlay",
+            "id": topic_name,
+            "frame_id": frame_id,
+            "x": data[0],
+            "y": data[1],
+        }
+    # Pose / PoseStamped / Odometry -> data is [x, y, z, heading, ...]
+    return {
+        "op": "overlay",
+        "id": topic_name,
+        "frame_id": frame_id,
+        "x": data[0],
+        "y": data[1],
+        "theta": data[3],
+    }
+
+
 async def _json_body(request) -> Any:
     """Parse a request's JSON body, returning ``{}`` on an empty/invalid body."""
     try:
@@ -102,8 +143,9 @@ async def _stream_at_rate(websocket, default_rate, max_rate, sample) -> None:
                 await websocket.send_json(payload)
             if done:
                 break
-            # Wait one period for a client message: a timeout is the normal
-            # tick (inbound messages are ignored); a disconnect ends the stream.
+            # NOTE: Wait one period for a client message. A timeout is the
+            # normal tick (inbound messages are ignored). Disconnect ends
+            # the stream.
             try:
                 await asyncio.wait_for(websocket.receive(), timeout=period)
             except asyncio.TimeoutError:
@@ -168,11 +210,30 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
         for client in ros_node.action_clients_inputs_dicts()
     ]
 
+    # A "world" composes an occupancy grid with the overlay/path outputs drawn
+    # on it, streamed together over one socket.
+    overlay_outputs = [
+        {"name": t.name, "msg_type": t.msg_type.__name__}
+        for t in (ros_node.in_topics or [])
+        if t.msg_type.__name__ in _OVERLAY_TYPES or t.msg_type.__name__ == _PATH_TYPE
+    ]
+    worlds = [
+        {
+            "name": topic.name,
+            "grid": topic.name,
+            "overlays": overlay_outputs,
+            "stream": f"WS {API_BASE}/world/{topic.name}",
+        }
+        for topic in (ros_node.in_topics or [])
+        if topic.msg_type.__name__ == _GRID_TYPE
+    ]
+
     return {
         "inputs": inputs,
         "outputs": outputs,
         "services": services,
         "actions": actions,
+        "worlds": worlds,
         "stream": {
             "default_rate": ros_node.config.api_stream_default_rate,
             "max_rate": ros_node.config.api_max_stream_rate,
@@ -196,6 +257,15 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
     service_names = {client["name"] for client in ros_node.srv_clients_inputs_dicts()}
     output_names = {topic.name for topic in (ros_node.in_topics or [])}
     action_names = {client["name"] for client in ros_node.action_clients_inputs_dicts()}
+    grid_names = {
+        t.name for t in (ros_node.in_topics or []) if t.msg_type.__name__ == _GRID_TYPE
+    }
+    # Overlay/path output topics composed onto every world map
+    marker_topics = [
+        (t.name, t.msg_type.__name__)
+        for t in (ros_node.in_topics or [])
+        if t.msg_type.__name__ in _OVERLAY_TYPES or t.msg_type.__name__ == _PATH_TYPE
+    ]
 
     async def health(request):
         """Liveness probe for the API server."""
@@ -402,6 +472,65 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
             except RuntimeError:
                 pass
 
+    async def stream_world(websocket):
+        """Stream a composable map scene over one socket. The occupancy grid
+        plus the overlay/path outputs drawn on it (emitted on change).
+        The ``?rate`` query param caps the grid rate. Markers are checked at
+        the max rate so they stay responsive.
+        """
+        name = websocket.path_params["name"]
+        if name not in grid_names:
+            await websocket.close(code=1008)  # not an occupancy-grid output
+            return
+        await websocket.accept()
+
+        loop = asyncio.get_running_loop()
+        default_rate = ros_node.config.api_stream_default_rate
+        max_rate = ros_node.config.api_max_stream_rate
+        try:
+            grid_rate = float(websocket.query_params.get("rate", default_rate))
+        except (TypeError, ValueError):
+            grid_rate = default_rate
+        if grid_rate <= 0:
+            grid_rate = default_rate
+        grid_period = 1.0 / min(grid_rate, max_rate)  # checked at default rate
+        tick_period = 1.0 / max_rate  # markers checked at the fast tick
+
+        last_grid = None
+        last_grid_emit = loop.time() - grid_period  # emit the grid on connect
+        last_marker: Dict[str, Any] = {}
+
+        try:
+            while True:
+                now = loop.time()
+                # Grid
+                grid = ros_node.get_latest_output(name)
+                if (
+                    grid is not None
+                    and grid is not last_grid
+                    and (now - last_grid_emit) >= grid_period
+                ):
+                    await websocket.send_json({"op": "publish", "msg": grid})
+                    last_grid = grid
+                    last_grid_emit = now
+                # Overlays/paths. Emit each one only when its value changes.
+                for marker_name, marker_type in marker_topics:
+                    content = ros_node.get_latest_output(marker_name)
+                    if content is None or content is last_marker.get(marker_name):
+                        continue
+                    last_marker[marker_name] = content
+                    marker = _marker_from_content(marker_name, marker_type, content)
+                    if marker is not None:
+                        await websocket.send_json(marker)
+                # NOTE: Wait one tick for a client message. A timeout is the
+                # normal tick; a disconnect ends the stream.
+                try:
+                    await asyncio.wait_for(websocket.receive(), timeout=tick_period)
+                except asyncio.TimeoutError:
+                    pass
+        except (WebSocketDisconnect, RuntimeError):
+            return
+
     routes = [
         Route(f"{API_BASE}/health", health, methods=["GET"]),
         Route(f"{API_BASE}/interfaces", interfaces, methods=["GET"]),
@@ -412,6 +541,7 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
         Route(f"{API_BASE}/actions/{{name}}", send_goal, methods=["POST"]),
         Route(f"{API_BASE}/actions/{{name}}/cancel", cancel_goal, methods=["POST"]),
         WebSocketRoute(f"{API_BASE}/actions/{{name}}/feedback", stream_action_feedback),
+        WebSocketRoute(f"{API_BASE}/world/{{name}}", stream_world),
     ]
     # Mount the browser app last so the specific /api/* routes take precedence
     if browser_app is not None:
