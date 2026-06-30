@@ -10,7 +10,6 @@ from ..config.base_attrs import BaseAttrs
 from ..config.base_validators import in_range
 from ..core.component import BaseComponent, BaseComponentConfig
 from .. import base_clients
-from ..io.callbacks import GenericCallback
 from ..io.topic import Topic
 from ..base_clients import (
     ServiceClientHandler,
@@ -22,7 +21,6 @@ from ..io import supported_types
 from automatika_ros_sugar.srv import ChangeParameters
 
 from rclpy.logging import get_logger
-from std_msgs.msg import Header
 
 
 @define
@@ -113,10 +111,10 @@ class UINode(BaseComponent):
         self._ros_action_clients_feedback_callbacks: Dict[str, Callable] = {}
         self._ros_action_clients_feedback_timers: Dict = {}
 
-        # Latest UI content per output topic name. The API streams outputs by
-        # sampling this (which lets multiple clients consume the same topic at
-        # independent rates)
-        self._latest_output: Dict[str, Any] = {}
+        # Memoized UI content per output topic: name -> (source msg, ui content).
+        # Computed lazily from the topic's callback (self.callbacks[name]) only
+        # when a client consumes it.
+        self._output_memo: Dict[str, Any] = {}
 
         self.config: UINodeConfig
 
@@ -162,8 +160,27 @@ class UINode(BaseComponent):
         return self._ros_action_clients
 
     def get_latest_output(self, topic_name: str) -> Any:
-        """Return the most recent UI content for an output topic, or ``None``."""
-        return self._latest_output.get(topic_name)
+        """Return UI content for an output topic's latest message, or ``None``.
+
+        Asks the topic's callback (which already holds the latest message) for
+        its UI content on demand, and memoizes the result per message so
+        expensive conversions only run when a client is consuming the topic.
+        """
+        callback = self.callbacks.get(topic_name)
+        if callback is None or callback.msg is None:
+            return None
+        cached_msg, cached_content = self._output_memo.get(topic_name, (None, None))
+        if cached_msg is callback.msg:
+            return cached_content
+        try:
+            content = callback._get_ui_content()
+        except Exception as e:
+            get_logger(self.node_name).error(
+                f"Error computing UI content for '{topic_name}': {e}"
+            )
+            return None
+        self._output_memo[topic_name] = (callback.msg, content)
+        return content
 
     def get_action_feedback(self, action_name: str) -> Optional[Dict]:
         """Return the latest UI elements for an action client, or ``None``.
@@ -288,44 +305,6 @@ class UINode(BaseComponent):
                 get_logger(self.node_name).warning(
                     f"Error parsing action clients inputs: {e}"
                 )
-
-    def _return_error(self, error_msg: str):
-        """Return error msg to the UI"""
-        self.get_logger().error(error_msg)
-        payload = {"type": "error", "payload": error_msg}
-        asyncio.run_coroutine_threadsafe(
-            self.default_websocket_callback(payload), self.loop
-        )
-
-    def _add_ros_subscriber(self, callback: GenericCallback):
-        """Override subscriber creation to cache the latest UI content per
-        output topic, which the API streams to clients.
-        :param callback:
-        :type callback: GenericCallback
-        """
-
-        def _ui_callback(msg) -> None:
-            callback.msg = msg
-            if hasattr(msg, "header") and isinstance(msg.header, Header):
-                callback._frame_id = msg.header.frame_id
-            try:
-                ui_content = callback._get_ui_content()
-            except Exception as e:
-                return self._return_error(f"Topic callback error: {e}")
-            # Cache the latest content for the API's rate-sampled streaming.
-            self._latest_output[callback.input_topic.name] = ui_content
-
-        _subscriber = self.create_subscription(
-            msg_type=callback.input_topic.ros_msg_type,
-            topic=callback.input_topic.name,
-            qos_profile=callback.input_topic.qos_profile.to_ros(),
-            callback=_ui_callback,
-            callback_group=self.callback_group,
-        )
-        self.get_logger().debug(
-            f"Started subscriber to topic: {callback.input_topic.name} of type {callback.input_topic.msg_type.__name__}"
-        )
-        return _subscriber
 
     def custom_on_activate(self):
         """Custom activation configuration"""
