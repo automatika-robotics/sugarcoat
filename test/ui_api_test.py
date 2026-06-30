@@ -168,12 +168,20 @@ class _ApiNode:
         self.service_response = None  # raw ROS response to return
         self.service_error = None  # exception to raise from send_srv_call
         self.latest = {}  # topic_name -> cached _get_ui_content result
+        self.goals = []  # recorded action goals
+        self.goal_accepted = True  # send_action_goal return value
+        self.goal_error = None  # exception to raise from send_action_goal
+        self.cancel_result = (True, "Action goal cancelled successfully")
+        self.cancel_error = None  # exception to raise from cancel_action
+        self.feedback = None  # get_action_feedback return value
+        self.feedback_ready = True  # add_action_feedback_listener return value
+        self.feedback_listeners = {}  # action_name -> set of push listeners
 
     def srv_clients_inputs_dicts(self):
         return [{"name": "reset", "type": "Trigger", "fields": {}}]
 
     def action_clients_inputs_dicts(self):
-        return []
+        return [{"name": "navigate", "type": "NavigateToPose", "fields": {}}]
 
     def get_latest_output(self, name):
         return self.latest.get(name)
@@ -188,6 +196,36 @@ class _ApiNode:
         if self.service_error is not None:
             raise self.service_error
         return self.service_response
+
+    def send_action_goal(self, data):
+        if self.goal_error is not None:
+            raise self.goal_error
+        self.goals.append(data)
+        return self.goal_accepted
+
+    def cancel_action(self, name):
+        if self.cancel_error is not None:
+            raise self.cancel_error
+        return self.cancel_result
+
+    def get_action_feedback(self, name):
+        return self.feedback
+
+    def add_action_feedback_listener(self, name, listener):
+        if not self.feedback_ready:
+            return False
+        self.feedback_listeners.setdefault(name, set()).add(listener)
+        return True
+
+    def remove_action_feedback_listener(self, name, listener):
+        listeners = self.feedback_listeners.get(name)
+        if listeners:
+            listeners.discard(listener)
+
+    def fire_action_feedback(self, name):
+        """Simulate feedback arriving (invoke listeners, as the ROS thread would)."""
+        for listener in list(self.feedback_listeners.get(name, ())):
+            listener()
 
 
 def _make_client(node):
@@ -331,3 +369,142 @@ def test_content_to_jsonable_passes_through_and_converts():
     out = _content_to_jsonable(scan)
     assert out["ranges"] == [pytest.approx(0.5)]
     json.dumps(out)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: actions
+# ---------------------------------------------------------------------------
+def test_send_goal_accepted_202():
+    node = _ApiNode()
+    client = _make_client(node)
+    resp = client.post("/api/actions/navigate", json={"x": 1.0})
+    assert resp.status_code == 202
+    assert resp.json() == {
+        "accepted": True,
+        "action": "navigate",
+        "feedback": "/api/actions/navigate/feedback",
+    }
+    assert node.goals == [{"action_name": "navigate", "x": 1.0}]
+
+
+def test_send_goal_unknown_404():
+    client = _make_client(_ApiNode())
+    resp = client.post("/api/actions/nope", json={})
+    assert resp.status_code == 404
+
+
+def test_send_goal_not_ready_503():
+    node = _ApiNode()
+    node.goal_error = RuntimeError("Action client 'navigate' is not ready")
+    client = _make_client(node)
+    resp = client.post("/api/actions/navigate", json={})
+    assert resp.status_code == 503
+
+
+def test_send_goal_rejected_502():
+    node = _ApiNode()
+    node.goal_accepted = False
+    client = _make_client(node)
+    resp = client.post("/api/actions/navigate", json={})
+    assert resp.status_code == 502
+
+
+def test_cancel_goal_ok():
+    node = _ApiNode()
+    node.cancel_result = (True, "Action goal cancelled successfully")
+    client = _make_client(node)
+    resp = client.post("/api/actions/navigate/cancel")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "cancelled": True,
+        "message": "Action goal cancelled successfully",
+    }
+
+
+def test_cancel_goal_unknown_404():
+    client = _make_client(_ApiNode())
+    resp = client.post("/api/actions/nope/cancel")
+    assert resp.status_code == 404
+
+
+def test_action_feedback_emits_current_state_on_connect():
+    from geometry_msgs.msg import Point as ROSPoint
+
+    node = _ApiNode()
+    node.feedback = {
+        "status": "running",
+        "feedback": ROSPoint(x=1.0, y=2.0, z=3.0),  # a raw ROS message
+        "timestep": 5,
+        "feedback_timeout": False,
+        "duration_secs": 2.0,
+    }
+    client = _make_client(node)
+    with client.websocket_connect("/api/actions/navigate/feedback") as ws:
+        data = ws.receive_json()
+    assert data == {
+        "status": "running",
+        "feedback": {"x": 1.0, "y": 2.0, "z": 3.0},
+        "timestep": 5,
+        "duration_secs": 2.0,
+    }
+
+
+def test_action_feedback_pushed_on_arrival():
+    """Each feedback is pushed the moment it arrives (event-driven, not polled)."""
+    from starlette.websockets import WebSocketDisconnect
+
+    node = _ApiNode()
+    node.feedback = {
+        "status": "running",
+        "feedback": None,
+        "timestep": 1,
+        "feedback_timeout": False,
+        "duration_secs": 0.5,
+    }
+    client = _make_client(node)
+    with client.websocket_connect("/api/actions/navigate/feedback") as ws:
+        assert ws.receive_json()["timestep"] == 1  # current state on connect
+
+        # New feedback arrives -> push it.
+        node.feedback = {
+            "status": "running",
+            "feedback": None,
+            "timestep": 2,
+            "feedback_timeout": False,
+            "duration_secs": 1.0,
+        }
+        node.fire_action_feedback("navigate")
+        assert ws.receive_json()["timestep"] == 2
+
+        # Terminal feedback -> push, then the server closes the stream.
+        node.feedback = {
+            "status": "completed",
+            "feedback": None,
+            "timestep": 3,
+            "feedback_timeout": False,
+            "duration_secs": 1.5,
+        }
+        node.fire_action_feedback("navigate")
+        assert ws.receive_json()["status"] == "completed"
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
+
+
+def test_action_feedback_not_ready_closes():
+    from starlette.websockets import WebSocketDisconnect
+
+    node = _ApiNode()
+    node.feedback_ready = False  # action client not initialized yet
+    client = _make_client(node)
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/api/actions/navigate/feedback") as ws:
+            ws.receive_json()
+
+
+def test_action_feedback_unknown_closes():
+    from starlette.websockets import WebSocketDisconnect
+
+    client = _make_client(_ApiNode())
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/api/actions/nope/feedback") as ws:
+            ws.receive_json()
