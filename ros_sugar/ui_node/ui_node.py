@@ -5,7 +5,6 @@ import os
 from attr import define, field, Factory
 import json
 import importlib
-from functools import partial
 
 from ..config.base_attrs import BaseAttrs
 from ..config.base_validators import in_range
@@ -165,6 +164,38 @@ class UINode(BaseComponent):
     def get_latest_output(self, topic_name: str) -> Any:
         """Return the most recent UI content for an output topic, or ``None``."""
         return self._latest_output.get(topic_name)
+
+    def get_action_feedback(self, action_name: str) -> Optional[Dict]:
+        """Return the latest UI elements for an action client, or ``None``.
+
+        The returned dict has ``status``, ``feedback`` (a raw ROS message or
+        ``None``), ``timestep``, ``feedback_timeout`` and ``duration_secs``
+        """
+        client = self._ros_action_clients.get(action_name)
+        if client is None:
+            return None
+        return client.get_ui_elements()
+
+    def add_action_feedback_listener(
+        self, action_name: str, listener: Callable[[], None]
+    ) -> bool:
+        """Register a zero-arg ``listener`` for action feedback.
+
+        :return: ``False`` if the action client is not ready.
+        """
+        client = self._ros_action_clients.get(action_name)
+        if client is None:
+            return False
+        client.add_feedback_listener(listener)
+        return True
+
+    def remove_action_feedback_listener(
+        self, action_name: str, listener: Callable[[], None]
+    ) -> None:
+        """Remove a previously registered action feedback listener."""
+        client = self._ros_action_clients.get(action_name)
+        if client is not None:
+            client.remove_feedback_listener(listener)
 
     @property
     def _client_inputs_json(self) -> str:
@@ -388,69 +419,35 @@ class UINode(BaseComponent):
             raise RuntimeError(f"Service client '{srv_name}' is not ready")
         return client.send_request_from_dict(request_fields=srv_call_data)
 
-    def send_action_goal(self, action_goal_data: Dict) -> Tuple[bool, Any]:
-        """
-        Send a service call using the service request form data
+    def send_action_goal(self, action_goal_data: Dict) -> Optional[bool]:
+        """Send a goal to a declared action client.
+
+        ``action_goal_data`` must contain ``action_name``; the remaining keys
+        are the goal fields.
+
+        :param action_goal_data: ``{"action_name": <name>, **goal_fields}``.
+        :raises RuntimeError: If the action client is not ready.
+        :return: True if the goal was accepted by the action server.
         """
         action_name = action_goal_data.pop("action_name")
-        if action_name not in self._ros_action_clients:
-            return (False, f'Action client "{action_name}" not found!')
-
-        try:
-            sent_done = self._ros_action_clients[action_name].send_request_from_dict(
-                request_fields=action_goal_data, wait_until_first_feedback=False
-            )
-        except Exception as e:
-            return (
-                False,
-                f'Error occurred when sending service request to "{action_name}": {e}',
-            )
-
-        if sent_done:
-            # If goal is sent, start a timer to send the feedback to the websocket
-            self._ros_action_clients_feedback_timers[action_name] = self.create_timer(
-                timer_period_sec=self.config.feedback_update_period,
-                callback=partial(
-                    self._action_feedback_callback, action_name=action_name
-                ),
-            )
-            return (True, f"Starting requested action {action_name}...")
-        return (
-            False,
-            f'Server Error - Was not able to send goal for action "{action_name}"',
+        client = self._ros_action_clients.get(action_name)
+        if client is None:
+            raise RuntimeError(f"Action client '{action_name}' is not ready")
+        return client.send_request_from_dict(
+            request_fields=action_goal_data, wait_until_first_feedback=False
         )
 
-    def _action_feedback_callback(self, action_name: str):
-        """Get feedback message from action (if available)
-
-        :param action_name: Action name
-        :type action_name: str
-        :return: Feedback Info
-        :rtype: Optional[str]
-        """
-        if action_name not in self._ros_action_clients:
-            return
-        feedback_data = self._ros_action_clients[action_name].get_ui_elements()
-        if feedback_func := self._ros_action_clients_feedback_callbacks.get(
-            action_name, None
-        ):
-            # await feedback_func(feedback_data)
-            asyncio.run_coroutine_threadsafe(feedback_func(feedback_data), self.loop)
-
     def cancel_action(self, action_name: str) -> Tuple[bool, str]:
-        """Cancel ongoing action goal
+        """Cancel the ongoing goal of a declared action client.
 
-        :param action_name: Action name
-        :type action_name: str
-        :return: If action is cancelled, Log message
-        :rtype: (bool, str)
+        :param action_name: Action name.
+        :raises RuntimeError: If the action client is not ready.
+        :return: ``(cancelled, message)``.
         """
-        if action_name not in self._ros_action_clients:
-            return (
-                True,
-                f"Action cancellation is not possible: '{action_name}' is not found",
-            )
-        return self._ros_action_clients[action_name].cancel_request()
+        client = self._ros_action_clients.get(action_name)
+        if client is None:
+            raise RuntimeError(f"Action client '{action_name}' is not ready")
+        return client.cancel_request()
 
     def cleanup_action(self, action_name: str) -> None:
         """Destroy the action feedback timer. Called when the action has completed or aborted

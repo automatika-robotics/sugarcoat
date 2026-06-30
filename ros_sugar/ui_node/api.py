@@ -77,6 +77,45 @@ async def _json_body(request) -> Any:
         return {}
 
 
+async def _stream_at_rate(websocket, default_rate, max_rate, sample) -> None:
+    """Accept a websocket and push sampled JSON at the client's requested rate.
+
+    Reads an optional ``?rate=<hz>`` query param (clamped to ``max_rate``).
+    ``sample()`` returns ``(payload, done)``: ``payload`` is sent as JSON when
+    not ``None``; the loop stops when ``done`` is True or the client
+    disconnects. The caller must validate the resource before calling this
+    (it accepts the connection).
+    """
+    await websocket.accept()
+    try:
+        rate = float(websocket.query_params.get("rate", default_rate))
+    except (TypeError, ValueError):
+        rate = default_rate
+    if rate <= 0:
+        rate = default_rate
+    period = 1.0 / min(rate, max_rate)
+
+    try:
+        while True:
+            payload, done = sample()
+            if payload is not None:
+                await websocket.send_json(payload)
+            if done:
+                break
+            # Wait one period for a client message: a timeout is the normal
+            # tick (inbound messages are ignored); a disconnect ends the stream.
+            try:
+                await asyncio.wait_for(websocket.receive(), timeout=period)
+            except asyncio.TimeoutError:
+                pass
+    except (WebSocketDisconnect, RuntimeError):
+        return
+    try:
+        await websocket.close()
+    except RuntimeError:
+        pass
+
+
 def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
     """Build the discovery document describing every declared interface.
 
@@ -156,6 +195,7 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
     input_names = {topic.name for topic in (ros_node.out_topics or [])}
     service_names = {client["name"] for client in ros_node.srv_clients_inputs_dicts()}
     output_names = {topic.name for topic in (ros_node.in_topics or [])}
+    action_names = {client["name"] for client in ros_node.action_clients_inputs_dicts()}
 
     async def health(request):
         """Liveness probe for the API server."""
@@ -238,41 +278,129 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
         if name not in output_names:
             await websocket.close(code=1008)  # policy violation
             return
-        await websocket.accept()
-        try:
-            rate = float(
-                websocket.query_params.get(
-                    "rate", ros_node.config.api_stream_default_rate
-                )
+
+        def sample():
+            content = ros_node.get_latest_output(name)
+            if content is None:
+                return None, False
+            return {"topic": name, "payload": _content_to_jsonable(content)}, False
+
+        await _stream_at_rate(
+            websocket,
+            ros_node.config.api_stream_default_rate,
+            ros_node.config.api_max_stream_rate,
+            sample,
+        )
+
+    async def send_goal(request):
+        """Send a JSON goal to an action; returns 202 once the server accepts it."""
+        name = request.path_params["name"]
+        if name not in action_names:
+            return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
+        body = await _json_body(request)
+        if not isinstance(body, dict):
+            return JSONResponse(
+                {"error": "Request body must be a JSON object"}, status_code=400
             )
-        except (TypeError, ValueError):
-            rate = ros_node.config.api_stream_default_rate
-        if rate <= 0:
-            rate = ros_node.config.api_stream_default_rate
-        period = 1.0 / min(rate, ros_node.config.api_max_stream_rate)
-
-        async def _drain():
-            # receive() raises WebSocketDisconnect when the client goes away.
-            try:
-                while True:
-                    await websocket.receive()
-            except WebSocketDisconnect:
-                pass
-
-        drain = asyncio.ensure_future(_drain())
         try:
-            while not drain.done():
-                content = ros_node.get_latest_output(name)
-                if content is not None:
-                    await websocket.send_json({
-                        "topic": name,
-                        "payload": _content_to_jsonable(content),
-                    })
-                await asyncio.sleep(period)
+            # send_action_goal blocks until the goal is accepted/rejected.
+            accepted = await run_in_threadpool(
+                ros_node.send_action_goal, {"action_name": name, **body}
+            )
+        except RuntimeError as e:
+            return JSONResponse({"error": str(e)}, status_code=503)
+        except Exception as e:
+            return JSONResponse({"error": f"Failed to send goal: {e}"}, status_code=500)
+        if not accepted:
+            return JSONResponse(
+                {"error": f"Action server '{name}' rejected the goal"}, status_code=502
+            )
+        return JSONResponse(
+            {
+                "accepted": True,
+                "action": name,
+                "feedback": f"{API_BASE}/actions/{name}/feedback",
+            },
+            status_code=202,
+        )
+
+    async def cancel_goal(request):
+        """Cancel the ongoing goal of an action."""
+        name = request.path_params["name"]
+        if name not in action_names:
+            return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
+        try:
+            cancelled, message = await run_in_threadpool(ros_node.cancel_action, name)
+        except RuntimeError as e:
+            return JSONResponse({"error": str(e)}, status_code=503)
+        except Exception as e:
+            return JSONResponse({"error": f"Failed to cancel: {e}"}, status_code=500)
+        return JSONResponse({"cancelled": cancelled, "message": message})
+
+    async def stream_action_feedback(websocket):
+        """Push an action's status/feedback as JSON the moment it arrives.
+
+        The stream ends on a terminal state (completed/aborted/canceled) or when
+        the client disconnects.
+        """
+        name = websocket.path_params["name"]
+        if name not in action_names:
+            await websocket.close(code=1008)  # policy violation
+            return
+        await websocket.accept()
+
+        loop = asyncio.get_running_loop()
+        updated = asyncio.Event()
+
+        def _on_update():  # fired in the ROS executor thread by the base client
+            loop.call_soon_threadsafe(updated.set)
+
+        if not ros_node.add_action_feedback_listener(name, _on_update):
+            await websocket.close(code=1011)  # action client not ready
+            return
+
+        def _payload(fb):
+            return {
+                "status": fb["status"],
+                "feedback": _content_to_jsonable(fb["feedback"])
+                if fb.get("feedback") is not None
+                else None,
+                "timestep": fb["timestep"],
+                "duration_secs": fb["duration_secs"],
+            }
+
+        try:
+            terminal = False
+            while not terminal:
+                # Clear before reading so a feedback arriving mid-emit re-wakes us.
+                updated.clear()
+                fb = ros_node.get_action_feedback(name)
+                if fb is not None:
+                    await websocket.send_json(_payload(fb))
+                    terminal = fb["status"] in ("completed", "aborted", "canceled")
+                if terminal:
+                    break
+                # Wait for the next feedback/terminal event or a client disconnect.
+                recv = asyncio.ensure_future(websocket.receive())
+                wake = asyncio.ensure_future(updated.wait())
+                try:
+                    done, _ = await asyncio.wait(
+                        {recv, wake}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                finally:
+                    for task in (recv, wake):
+                        if not task.done():
+                            task.cancel()
+                if recv in done and recv.exception() is not None:
+                    break  # client disconnected
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:
-            drain.cancel()
+            ros_node.remove_action_feedback_listener(name, _on_update)
+            try:
+                await websocket.close()
+            except RuntimeError:
+                pass
 
     routes = [
         Route(f"{API_BASE}/health", health, methods=["GET"]),
@@ -281,6 +409,9 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
         Route(f"{API_BASE}/services/{{name}}", call_service, methods=["POST"]),
         Route(f"{API_BASE}/outputs/{{name}}/latest", output_latest, methods=["GET"]),
         WebSocketRoute(f"{API_BASE}/outputs/{{name}}", stream_output),
+        Route(f"{API_BASE}/actions/{{name}}", send_goal, methods=["POST"]),
+        Route(f"{API_BASE}/actions/{{name}}/cancel", cancel_goal, methods=["POST"]),
+        WebSocketRoute(f"{API_BASE}/actions/{{name}}/feedback", stream_action_feedback),
     ]
     # Mount the browser app last so the specific /api/* routes take precedence
     if browser_app is not None:
