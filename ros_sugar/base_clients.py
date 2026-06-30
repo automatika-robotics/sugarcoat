@@ -1,7 +1,7 @@
 """ROS Service/Action Client Wrapper"""
 
 import time
-from typing import Any, Optional, Dict, Union, Tuple
+from typing import Any, Callable, Optional, Dict, Union, Tuple
 from attrs import Factory, define, field
 
 from rclpy.action.client import ActionClient
@@ -194,6 +194,10 @@ class ActionClientHandler:
         :type config: ActionClientConfig
         """
         self._check_server_alive_timer = None
+        # Zero-arg listeners fired (in the ROS executor thread) on every feedback
+        # message and on terminal state, so feedback can be pushed to multiple
+        # consumers can push feedback as it arrives instead of polling.
+        self._feedback_listeners = set()
         self.reset()
 
         if not config and (action_name and action_type):
@@ -272,7 +276,7 @@ class ActionClientHandler:
         self,
         request_fields: Dict[str, Union[str, Dict]],
         wait_until_first_feedback: bool = False,
-    ):
+    ) -> Optional[bool]:
         """Send an action request using a serialized Dict request data
 
         :param request_fields: Request data [key, value]
@@ -393,6 +397,24 @@ class ActionClientHandler:
         """
         self.action_result = future.result().result
         self.action_returned = True
+        # Notify listeners of the terminal transition (no further feedback).
+        self._notify_feedback_listeners()
+
+    def add_feedback_listener(self, listener: Callable[[], None]) -> None:
+        """Register a zero-arg callback fired on every feedback message and on
+        terminal state (in the ROS executor thread)."""
+        self._feedback_listeners.add(listener)
+
+    def remove_feedback_listener(self, listener: Callable[[], None]) -> None:
+        """Remove a previously registered feedback listener."""
+        self._feedback_listeners.discard(listener)
+
+    def _notify_feedback_listeners(self) -> None:
+        for listener in list(self._feedback_listeners):
+            try:
+                listener()
+            except Exception:
+                pass
 
     def action_feedback_callback(self, feedback_msg: Any):
         """
@@ -404,6 +426,7 @@ class ActionClientHandler:
         self.goal_accepted = True
         self.feedback_count += 1
         self.feedback_msg = feedback_msg
+        self._notify_feedback_listeners()
 
     def _check_alive_callback(self):
         """Timed callback to check if server is sending a feedback"""
