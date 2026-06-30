@@ -1,6 +1,7 @@
 """ROS Subscribers Callback Classes"""
 
 import os
+import array
 from abc import abstractmethod
 from typing import Any, Callable, Optional, Union, Dict, List
 from socket import socket
@@ -160,7 +161,7 @@ class GenericCallback:
         :returns:   Topic content
         :rtype:     Any
         """
-        return self.get_output(clear_last=True)
+        return self.get_output()
 
     @property
     def got_msg(self):
@@ -229,7 +230,7 @@ class StdMsgArrayCallback(GenericCallback):
 
     def _get_ui_content(self, **_) -> Optional[List]:
         """Get JSON-serializable UI content for a MultiArray."""
-        output = self.get_output(clear_last=True)
+        output = self.get_output()
         return output.tolist() if output is not None else None
 
 
@@ -497,7 +498,7 @@ class OdomCallback(GenericCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        output = self.get_output(clear_last=True)
+        output = self.get_output()
         return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
 
     def _process(self, msg: Odometry) -> np.ndarray:
@@ -574,7 +575,7 @@ class PointCallback(GenericCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        output = self.get_output(clear_last=True)
+        output = self.get_output()
         return {"data": output.tolist() if output is not None else None}
 
 
@@ -609,7 +610,7 @@ class PointStampedCallback(GenericCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        output = self.get_output(clear_last=True)
+        output = self.get_output()
         return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
 
 
@@ -715,7 +716,7 @@ class PoseCallback(GenericCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        output = self.get_output(clear_last=True)
+        output = self.get_output()
         return {"data": output.tolist() if output is not None else None}
 
 
@@ -756,7 +757,7 @@ class PoseStampedCallback(PoseCallback):
         :returns:   Topic content
         :rtype:     Any
         """
-        output = self.get_output(clear_last=True)
+        output = self.get_output()
         return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
 
 
@@ -903,15 +904,25 @@ class OccupancyGridCallback(GenericCallback):
 
         return threeD_coordinates
 
-    def _get_ui_content(self, **_) -> str:
-        """Get ui content for occupancy grid"""
-        # Convert occupancy grid values to grayscale image
-        output = self.get_output(get_obstacles=False, get_three_d=False)
-        img = np.zeros_like(output, dtype=np.uint8)
-        img[output == -1] = 127  # unknown
-        img[output == 0] = 255  # free
-        img[output > 0] = 0  # occupied
+    def _get_ui_content(self, **_) -> Optional[Dict]:
+        """Get UI content for an occupancy grid.
 
-        # Flip vertically (ROS map origin is bottom-left, OpenCV image top-left)
-        img = np.flipud(img)
-        return utils.convert_img_to_jpeg_str(img, self.node_name)
+        Returns only what a map renderer needs -- frame, metadata (resolution,
+        size, origin) and the occupancy data (base64-encoded int8) -- not a
+        rendered image and not the unused header/stamp fields.
+        """
+        if not self.msg:
+            return None
+        data = self.msg.data
+        if isinstance(data, array.array):
+            raw_bytes = data.tobytes()
+        elif isinstance(data, (bytes, bytearray)):
+            raw_bytes = bytes(data)
+        else:
+            # list (or other array-like) of int8
+            raw_bytes = array.array("b", list(data)).tobytes()
+        return {
+            "frame_id": self.frame_id,
+            **self._get_output(get_metadata=True),
+            "data": base64.b64encode(raw_bytes).decode("ascii"),
+        }
