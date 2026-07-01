@@ -33,7 +33,8 @@ jobs:
           ln -s $GITHUB_WORKSPACE /ws/src/sugarcoat
           cd /ws
           pip install --ignore-installed opencv-python-headless 'attrs>=23.2.0' jinja2 \
-                      msgpack msgpack-numpy setproctitle pyyaml toml
+                      msgpack msgpack-numpy setproctitle pyyaml toml \
+                      httpx python-fasthtml MonsterUI
           colcon build --symlink-install
         shell: bash
 
