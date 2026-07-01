@@ -465,6 +465,20 @@ class UINode(BaseComponent):
         publisher._publisher.publish(msg)
         return self.count_subscribers(topic_name)
 
+    def publish_audio(self, topic_name: str, audio_b64: str) -> int:
+        """Publish base64-encoded audio to a declared Audio input topic.
+
+        :param topic_name: Name of a declared Audio input topic.
+        :param audio_b64: Base64-encoded audio bytes.
+        :raises RuntimeError: If the publisher for the topic is not ready.
+        :return: The current number of subscribers on the topic.
+        """
+        publisher = self.publishers_dict.get(topic_name)
+        if publisher is None or publisher._publisher is None:
+            raise RuntimeError(f"Publisher for input topic '{topic_name}' is not ready")
+        publisher.publish(output=audio_b64)
+        return self.count_subscribers(topic_name)
+
     def _execution_step(self):
         """
         Main execution of the component, executed at each timer tick with rate 'loop_rate' from config
