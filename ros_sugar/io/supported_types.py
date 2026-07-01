@@ -309,10 +309,6 @@ class SupportedType:
         """
         return cls._ros_type
 
-    @classmethod
-    def convert_ui_dict(cls, data: Dict, **_) -> str:
-        return data.get("data", "")
-
 
 class String(SupportedType):
     """String."""
@@ -346,11 +342,6 @@ class Bool(SupportedType):
         msg = ROSBool()
         msg.data = output
         return msg
-
-    @classmethod
-    def convert_ui_dict(cls, data: Dict, **_) -> str:
-        val = data.get("data", "")
-        return val == "on" or val == "1"
 
 
 class Float32(SupportedType):
@@ -588,17 +579,6 @@ class Point(SupportedType):
         msg.z = output[2]
         return msg
 
-    @classmethod
-    def convert_ui_dict(cls, data: Dict, **_) -> str:
-        return np.array(
-            [
-                float(data.get("x", 0.0)),
-                float(data.get("y", 0.0)),
-                float(data.get("z", 0.0)),
-            ],
-            dtype=np.float64,
-        )
-
 
 class PointStamped(Point):
     """PointStamped"""
@@ -657,23 +637,6 @@ class Pose(SupportedType):
             msg.orientation.y = output[5]
             msg.orientation.z = output[6]
         return msg
-
-    @classmethod
-    def convert_ui_dict(cls, data: Dict, **_) -> str:
-        return np.array(
-            [
-                float(data.get("x", 0.0)),
-                float(data.get("y", 0.0)),
-                float(data.get("z", 0.0)),
-                float(
-                    data.get("ori_w", 0.0) or "1.0"
-                ),  # 'or' is added to handle empty inputs (orientation is optional)
-                float(data.get("ori_x", 0.0) or "0.0"),
-                float(data.get("ori_y", 0.0) or "0.0"),
-                float(data.get("ori_z", 0.0) or "0.0"),
-            ],
-            dtype=np.float64,
-        )
 
 
 class PoseStamped(Pose):

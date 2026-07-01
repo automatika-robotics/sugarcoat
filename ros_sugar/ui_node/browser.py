@@ -55,6 +55,51 @@ def _marker_on_map(payload, **_):
         logger.error(f"Error parsing UI input from topic type {msg_type}")
 
 
+def _form_to_schema(msg_type: str, form: Dict) -> Dict:
+    """Translate a flat UI-form field dict into a schema-shaped dict for specific types
+
+    :param msg_type: The declared topic's message type name (e.g. ``"Pose"``).
+    :param form: The flat field dict submitted by the widget.
+    :return: A dict shaped for ``set_ros_msg_from_dict`` (no ``topic_name``).
+    """
+    if msg_type == "Bool":
+        return {"data": form.get("data") in ("on", "1", "true", True)}
+    if msg_type in ("Float32", "Float64"):
+        return {"data": float(form.get("data") or 0.0)}
+    if msg_type in ("Point", "PointStamped"):
+        point = {
+            "x": float(form.get("x") or 0.0),
+            "y": float(form.get("y") or 0.0),
+            "z": float(form.get("z") or 0.0),
+        }
+        return point if msg_type == "Point" else {"point": point}
+    if msg_type in ("Pose", "PoseStamped"):
+        pose = {
+            "position": {
+                "x": float(form.get("x") or 0.0),
+                "y": float(form.get("y") or 0.0),
+                "z": float(form.get("z") or 0.0),
+            },
+            "orientation": {
+                "w": float(form.get("ori_w") or 1.0),
+                "x": float(form.get("ori_x") or 0.0),
+                "y": float(form.get("ori_y") or 0.0),
+                "z": float(form.get("ori_z") or 0.0),
+            },
+        }
+        return pose if msg_type == "Pose" else {"pose": pose}
+    # String and any other single data field type
+    return {"data": form.get("data", "")}
+
+
+def _publish_from_form(ros_node, msg_type: str, form: Dict) -> None:
+    """Publish a widget form on its declared input topic."""
+    ros_node.publish_data({
+        "topic_name": form["topic_name"],
+        **_form_to_schema(msg_type, form),
+    })
+
+
 def build_browser_app(
     ros_node,
     additional_input_elements=None,
@@ -384,7 +429,7 @@ def build_browser_app(
             # The actual point data is in data.data, but it is expected in the ui node directly in data.x, etc.
             if message := data.pop("data", None):
                 data.update(message)
-                ros_node.publish_data(data)
+                _publish_from_form(ros_node, data.get("topic_type"), data)
 
     if ros_node.action_clients_inputs_dicts():
 
@@ -406,11 +451,9 @@ def build_browser_app(
                 await log_data(
                     send, data["payload"], data_type="Audio", data_src="user"
                 )
-                ros_node.publish_data({
-                    "topic_name": data["topic_name"],
-                    "topic_type": "Audio",
-                    "data": data["payload"],
-                })
+                # NOTE: Audio uses the dedicated base64 -> Audio path,
+                # not the schema-shaped publish_data.
+                ros_node.publish_audio(data["topic_name"], data["payload"])
             except RuntimeError:
                 logger.warning("Runtime error when sending audio")
 
@@ -446,13 +489,14 @@ def build_browser_app(
     async def _(data, send):
         """WS route for input/output communication with ROS UI Node"""
 
-        if (data_type := data.get("topic_type")) == "String":
+        data_type = data.get("topic_type")
+        if data_type == "String":
             # display in log for string data types
             await log_data(send, data["data"], data_type=data_type, data_src="user")
-            ros_node.publish_data(data=data)
+            _publish_from_form(ros_node, data_type, data)
             # Send the robot loading dots
             return elements.update_logging_card_with_loading(fh.outputs_log)
-        elif data.get("topic_type") in ["Point", "PointStamped"]:
+        elif data_type in ["Point", "PointStamped"]:
             # display in log for coordinates data types
             await log_data(
                 send,
@@ -460,8 +504,8 @@ def build_browser_app(
                 data_type="String",
                 data_src="user",
             )
-            ros_node.publish_data(data=data)
-        elif data.get("topic_type") in ["Pose", "PoseStamped"]:
+            _publish_from_form(ros_node, data_type, data)
+        elif data_type in ["Pose", "PoseStamped"]:
             # display in log for coordinates data types
             await log_data(
                 send,
@@ -469,8 +513,8 @@ def build_browser_app(
                 data_type="String",
                 data_src="user",
             )
-            ros_node.publish_data(data=data)
-        elif data.get("topic_type") == "Bool":
+            _publish_from_form(ros_node, data_type, data)
+        elif data_type == "Bool":
             # display in log for coordinates data types
             await log_data(
                 send,
@@ -478,8 +522,8 @@ def build_browser_app(
                 data_type="String",
                 data_src="user",
             )
-            ros_node.publish_data(data=data)
+            _publish_from_form(ros_node, data_type, data)
         else:
-            ros_node.publish_data(data=data)
+            _publish_from_form(ros_node, data_type, data)
 
     return app
