@@ -164,16 +164,19 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
     :param ros_node: The running UI node.
     :return: A JSON-serializable discovery document.
     """
-    inputs = [
-        {
+    inputs = []
+    for topic in ros_node.out_topics or []:
+        entry = {
             "name": topic.name,
             "kind": "topic",
             "msg_type": topic.msg_type.__name__,
             "schema": _topic_schema(topic),
             "publish": f"POST {API_BASE}/inputs/{topic.name}",
         }
-        for topic in (ros_node.out_topics or [])
-    ]
+        if topic.msg_type.__name__ == "Audio":
+            # Audio is uploaded over a WS (base64 frames), not a JSON POST.
+            entry["audio_stream"] = f"WS {API_BASE}/inputs/{topic.name}/audio"
+        inputs.append(entry)
 
     outputs = []
     for topic in ros_node.in_topics or []:
@@ -266,6 +269,10 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
         for t in (ros_node.in_topics or [])
         if t.msg_type.__name__ in _OVERLAY_TYPES or t.msg_type.__name__ == _PATH_TYPE
     ]
+    # Declared Audio input topics, which accept uploads over a dedicated WS.
+    audio_input_names = {
+        t.name for t in (ros_node.out_topics or []) if t.msg_type.__name__ == "Audio"
+    }
 
     async def health(request):
         """Liveness probe for the API server."""
@@ -531,10 +538,44 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
         except (WebSocketDisconnect, RuntimeError):
             return
 
+    async def stream_audio_input(websocket):
+        """Receive base64 audio frames from the client and publish them to a
+        declared Audio input topic (client -> server). Acks each frame.
+        """
+        name = websocket.path_params["name"]
+        if name not in audio_input_names:
+            await websocket.close(code=1008)  # not a declared Audio input
+            return
+        await websocket.accept()
+        try:
+            while True:
+                data = await websocket.receive_json()
+                audio_b64 = (
+                    data.get("payload") or data.get("data")
+                    if isinstance(data, dict)
+                    else None
+                )
+                if not audio_b64:
+                    continue
+                try:
+                    ros_node.publish_audio(name, audio_b64)
+                except RuntimeError as e:
+                    await websocket.send_json({"error": str(e)})
+                    continue
+                except Exception as e:
+                    await websocket.send_json({
+                        "error": f"Failed to publish audio: {e}"
+                    })
+                    continue
+                await websocket.send_json({"published": name})
+        except (WebSocketDisconnect, RuntimeError):
+            return
+
     routes = [
         Route(f"{API_BASE}/health", health, methods=["GET"]),
         Route(f"{API_BASE}/interfaces", interfaces, methods=["GET"]),
         Route(f"{API_BASE}/inputs/{{name}}", publish_input, methods=["POST"]),
+        WebSocketRoute(f"{API_BASE}/inputs/{{name}}/audio", stream_audio_input),
         Route(f"{API_BASE}/services/{{name}}", call_service, methods=["POST"]),
         Route(f"{API_BASE}/outputs/{{name}}/latest", output_latest, methods=["GET"]),
         WebSocketRoute(f"{API_BASE}/outputs/{{name}}", stream_output),
