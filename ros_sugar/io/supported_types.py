@@ -291,6 +291,13 @@ class SupportedType:
     # callback class
     callback = callbacks.GenericCallback
 
+    # Whether the UI/API output stream for this type is rate-sampled by
+    # default instead of event-pushed per message. Set True on continuous
+    # high-bandwidth types (e.g. images, occupancy grids) where clients almost
+    # never want unthrottled raw frames. Derived packages should set this on
+    # their own heavy streaming types.
+    _ui_rate_sampled: bool = False
+
     @classmethod
     def convert(cls, *output, **_) -> Any:
         """ROS message converter function for datatype
@@ -413,6 +420,7 @@ class Image(SupportedType):
 
     _ros_type = ROSImage
     callback = callbacks.ImageCallback
+    _ui_rate_sampled = True  # continuous frames; also inherited by CompressedImage
 
     @classmethod
     def convert(cls, output: Union[ROSImage, np.ndarray], **_) -> ROSImage:
@@ -516,6 +524,7 @@ class OccupancyGrid(SupportedType):
 
     _ros_type = ROSOccupancyGrid
     callback = callbacks.OccupancyGridCallback
+    _ui_rate_sampled = True  # large continuous grid
 
     @classmethod
     def convert(

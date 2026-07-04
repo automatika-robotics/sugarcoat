@@ -26,9 +26,6 @@ from .ui_node import UINode
 # All API routes are namespaced under this prefix
 API_BASE = "/api"
 
-# Output types that are rate-sampled by default.
-_SAMPLED_TYPES = frozenset({"Image", "CompressedImage", "OccupancyGrid"})
-
 # Composition of the /api/world map scene: an occupancy grid plus point-like
 # overlays and paths rendered on it
 _GRID_TYPE = "OccupancyGrid"
@@ -230,7 +227,7 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
             "msg_type": type_name,
             "schema": _topic_schema(topic),
             "stream": f"WS {API_BASE}/outputs/{topic.name}",
-            "mode": "sampled" if type_name in _SAMPLED_TYPES else "push",
+            "mode": "sampled" if topic.msg_type._ui_rate_sampled else "push",
             "latest": f"GET {API_BASE}/outputs/{topic.name}/latest",
         })
 
@@ -391,8 +388,11 @@ def _service_routes(ros_node: UINode) -> List:
 def _output_routes(ros_node: UINode) -> List:
     """Routes for reading and streaming the declared output topics."""
     output_names = {topic.name for topic in (ros_node.in_topics or [])}
-    output_types = {
-        topic.name: topic.msg_type.__name__ for topic in (ros_node.in_topics or [])
+    # Topics whose type declares its stream rate-sampled by default
+    rate_sampled_names = {
+        topic.name
+        for topic in (ros_node.in_topics or [])
+        if topic.msg_type._ui_rate_sampled
     }
 
     async def output_latest(request):
@@ -433,8 +433,8 @@ def _output_routes(ros_node: UINode) -> List:
         except (TypeError, ValueError):
             requested_rate = None
         if requested_rate is None:
-            # No override. Push by default, except for sampled types.
-            push = output_types.get(name) not in _SAMPLED_TYPES
+            # No override. Push by default, except for rate-sampled types.
+            push = name not in rate_sampled_names
         else:
             push = requested_rate == 0  # explicit ?rate=0 forces push
 
