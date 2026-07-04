@@ -1,6 +1,4 @@
 from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List
-import threading
-import asyncio
 import os
 from attr import define, field, Factory
 import json
@@ -69,20 +67,6 @@ class UINode(BaseComponent):
             str, base_clients.ServiceClientHandler
         ] = {}
 
-        # Initialize websocket callbacks
-        self.default_websocket_callback: Callable = lambda *args, **kwargs: (
-            asyncio.sleep(0)
-        )
-
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            self.loop_thread = threading.Thread(
-                target=self.loop.run_forever, daemon=True
-            )
-
         topic_inputs = (
             [inp for inp in inputs if isinstance(inp, Topic)] if inputs else []
         )
@@ -107,14 +91,15 @@ class UINode(BaseComponent):
 
         self._ros_service_clients: Dict[str, ServiceClientHandler] = {}
         self._ros_action_clients: Dict[str, ActionClientHandler] = {}
-        # Used to store callbacks for active clients
-        self._ros_action_clients_feedback_callbacks: Dict[str, Callable] = {}
-        self._ros_action_clients_feedback_timers: Dict = {}
 
         # Memoized UI content per output topic: name -> (source msg, ui content).
-        # Computed lazily from the topic's callback (self.callbacks[name]) only
-        # when a client consumes it.
+        # Computed lazily from the topic's callback only when a client
+        # consumes it.
         self._output_memo: Dict[str, Any] = {}
+
+        # Per-output-topic message listeners: name -> set of zero-arg callables
+        # fired on each received message (used to push updates to clients).
+        self._output_listeners: Dict[str, set] = {}
 
         self.config: UINodeConfig
 
@@ -155,9 +140,6 @@ class UINode(BaseComponent):
             }
             clients_configs_dicts.append(config_dict)
         return clients_configs_dicts
-
-    def get_active_action_clients(self) -> Dict[str, ActionClientHandler]:
-        return self._ros_action_clients
 
     def get_latest_output(self, topic_name: str) -> Any:
         """Return UI content for an output topic's latest message, or ``None``.
@@ -213,6 +195,49 @@ class UINode(BaseComponent):
         client = self._ros_action_clients.get(action_name)
         if client is not None:
             client.remove_feedback_listener(listener)
+
+    def _notify_output_listeners(self, topic_name: str) -> None:
+        """Fan out a new message on ``topic_name`` to its registered listeners."""
+        for listener in list(self._output_listeners.get(topic_name, ())):
+            try:
+                listener()
+            except Exception:
+                pass
+
+    def add_output_listener(
+        self, topic_name: str, listener: Callable[[], None]
+    ) -> bool:
+        """Register a zero-arg ``listener`` fired on every message received on
+        an output topic.
+
+        :return: ``False`` if the output topic has no callback.
+        """
+        callback = self.callbacks.get(topic_name)
+        if callback is None:
+            return False
+        listeners = self._output_listeners.setdefault(topic_name, set())
+        if not listeners:
+            # First listener for this topic: wire the callback's message hook.
+            callback.on_callback_execute(
+                lambda **_: self._notify_output_listeners(topic_name),
+                get_processed=False,
+            )
+        listeners.add(listener)
+        return True
+
+    def remove_output_listener(
+        self, topic_name: str, listener: Callable[[], None]
+    ) -> None:
+        """Remove a previously registered output message listener."""
+        listeners = self._output_listeners.get(topic_name)
+        if not listeners:
+            return
+        listeners.discard(listener)
+        if not listeners:
+            # No listeners left: unwire the callback's message hook.
+            callback = self.callbacks.get(topic_name)
+            if callback is not None:
+                callback.on_callback_execute(None)
 
     @property
     def _client_inputs_json(self) -> str:
@@ -331,10 +356,6 @@ class UINode(BaseComponent):
                 client_node=self, config=inp
             )
 
-        # Start loop thread if necessary
-        if hasattr(self, "loop_thread"):
-            self.loop_thread.start()
-
         return super().custom_on_activate()
 
     def custom_on_deactivate(self):
@@ -355,15 +376,6 @@ class UINode(BaseComponent):
 
         return super().custom_on_deactivate()
 
-    def attach_websocket_callback(
-        self, ws_callback: Callable, topic_type: Optional[str] = None
-    ):
-        """Adds websocket callback to listeners of outputs"""
-        if topic_type:
-            setattr(self, f"{topic_type}_callback", ws_callback)
-        else:
-            self.default_websocket_callback = ws_callback
-
     def update_configs(self, new_configs: Dict):
         self.get_logger().debug("Updating configs")
         component_name = new_configs.pop("component_name")
@@ -377,10 +389,6 @@ class UINode(BaseComponent):
             req_msg=srv_request
         )
         return result
-
-    def attach_client_feedback_callback(self, ws_callback, action_name: str):
-        if self._ros_action_clients.get(action_name, None):
-            self._ros_action_clients_feedback_callbacks[action_name] = ws_callback
 
     def send_srv_call(self, srv_call_data: Dict) -> Any:
         """Call a declared service client and return the raw ROS response.
@@ -427,14 +435,6 @@ class UINode(BaseComponent):
         if client is None:
             raise RuntimeError(f"Action client '{action_name}' is not ready")
         return client.cancel_request()
-
-    def cleanup_action(self, action_name: str) -> None:
-        """Destroy the action feedback timer. Called when the action has completed or aborted
-
-        :param action_name: _description_
-        :type action_name: str
-        """
-        self.destroy_timer(self._ros_action_clients_feedback_timers[action_name])
 
     def publish_data(self, data: Dict) -> int:
         """Publish a message on a declared input topic from a field dict.
