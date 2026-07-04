@@ -76,7 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
         frames.forEach((img) => {
             if (!img.id) return;
             if (!wsConnections.has(img.id)) {
-                const wsUrl = `${videoWsProtocol}//${window.location.host}/ws_${img.id}`;
+                const wsUrl = `${videoWsProtocol}//${window.location.host}/api/outputs/${img.id}`;
                 const conn = connectImageWebSocket(img, wsUrl, 0);
                 wsConnections.set(img.id, conn);
             }

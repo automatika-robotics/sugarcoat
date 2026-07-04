@@ -1,58 +1,15 @@
 """FastHTML browser UI for the UI node"""
 
-import array
-import base64
-from functools import partial
-from typing import Dict
+import asyncio
+from typing import Any, Dict
 
-import numpy as np
-from rosidl_runtime_py.convert import message_to_ordereddict
+from starlette.websockets import WebSocketDisconnect
 
 from fasthtml.common import *  # noqa: F401,F403 -- FT components
 
 from . import elements
 from .frontend import FHApp
 from ..supported_types import ros_msg_to_str
-from ..utils import logger
-
-
-def _marker_on_map(payload, **_):
-    """Helper callback to parse a map Maker data from point-like message"""
-    content = payload.get("payload", None)
-    if content is None:
-        return
-    msg_type = payload.get("type")
-    try:
-        if msg_type == "Path":
-            # Content data will have the filtered path points
-            return {
-                "op": "path",
-                "id": payload.get("topic", ""),
-                "frame_id": content.get("frame_id", ""),
-                "points": content.get("data"),
-            }
-        if msg_type in ["Point", "PointStamped"]:
-            # Content data will have an array of [x, y, z]
-            return {
-                "op": "overlay",
-                "id": payload.get("topic", ""),
-                "frame_id": content.get("frame_id", ""),
-                "x": content.get("data")[0],
-                "y": content.get("data")[1],
-            }
-        if msg_type in ["Pose", "PoseStamped", "Odometry"]:
-            # Content data will have an array of [x, y, z, heading] for Pose, PoseStamped
-            # and [x, y, z, heading] for Odometry
-            return {
-                "op": "overlay",
-                "id": payload.get("topic", ""),
-                "frame_id": content.get("frame_id", ""),
-                "x": content.get("data")[0],
-                "y": content.get("data")[1],
-                "theta": content.get("data")[3],
-            }
-    except Exception:
-        logger.error(f"Error parsing UI input from topic type {msg_type}")
 
 
 def _form_to_schema(msg_type: str, form: Dict) -> Dict:
@@ -207,17 +164,30 @@ def build_browser_app(
             data_type="String",
             data_src="user",
         )
-        result_code, result = ros_node.send_srv_call(data_dict)
-        if not result_code:
-            fh.toasting(result, session, "error", duration=100000)
-        else:
+        try:
+            response = ros_node.send_srv_call(data_dict)
+        except RuntimeError as e:
+            fh.toasting(str(e), session, "error", duration=100000)
+            return fh.get_main_page()
+        if response is None:
             fh.toasting(
-                f"Service returned response: {result}", session, "info", duration=100000
+                "No response received from the service",
+                session,
+                "error",
+                duration=100000,
             )
+            return fh.get_main_page()
+        response_str = ros_msg_to_str(response)
+        fh.toasting(
+            f"Service returned response: {response_str}",
+            session,
+            "info",
+            duration=100000,
+        )
         # Add response to logging card
         elements.update_logging_card(
             fh.outputs_log,
-            f"Service returned response: '{result}'",
+            f"Service returned response: '{response_str}'",
             data_type="String",
             data_src="robot",
         )
@@ -240,11 +210,20 @@ def build_browser_app(
                 duration=100000,
             )
             return fh.get_main_page()
-        result_code, result = ros_node.send_action_goal(data_dict)
-        if not result_code:
-            fh.toasting(result, session, "error", duration=100000)
+        try:
+            accepted = ros_node.send_action_goal(data_dict)
+        except RuntimeError as e:
+            fh.toasting(str(e), session, "error", duration=100000)
+            return fh.get_main_page()
+        if not accepted:
+            fh.toasting(
+                f"Action server rejected the goal for '{action_name}'",
+                session,
+                "error",
+                duration=100000,
+            )
         else:
-            fh.toasting(f"Task sent: {result}", session, "info", duration=100000)
+            fh.toasting(f"Task sent to '{action_name}'", session, "info", duration=100000)
             fh.action_clients_ft[action_name].update(
                 status="accepted",
                 duration=0,
@@ -266,7 +245,11 @@ def build_browser_app(
         form_data = await request.form()
         data_dict = dict(form_data.items())
         action_name = data_dict.get("action_name")
-        result_code, result = ros_node.cancel_action(action_name)
+        try:
+            result_code, result = ros_node.cancel_action(action_name)
+        except RuntimeError as e:
+            fh.toasting(str(e), session, "error", duration=100000)
+            return fh.get_main_page()
         if not result_code:
             fh.toasting(result, session, "error", duration=100000)
         else:
@@ -279,6 +262,22 @@ def build_browser_app(
                 data_src="user",
             )
         return fh.get_main_page()
+
+    # NOTE: Output topics shown in the running log: everything NOT routed to a
+    # dedicated video/map widget, and not a map overlay.
+    _widget_output_names = (
+        {name for name, _ in fh.get_all_stream_outputs()}
+        | {name for name, _ in fh.get_all_map_outputs()}
+        | {name for name, _ in fh.get_all_map_overlay_outputs()}
+    )
+    log_topics = [
+        (o.name, o.msg_type.__name__)
+        for o in (ros_node.in_topics or [])
+        if o.name not in _widget_output_names
+    ]
+
+    # Per-connection server-push tasks (log + actions)
+    _conn_tasks: Dict[Any, tuple] = {}
 
     # -- WS handling --
     async def log_data(send, data: str, data_type: str, data_src: str):
@@ -293,143 +292,82 @@ def build_browser_app(
             )
         )
 
-    async def on_disconn(session):
-        """Message for disconnection"""
+    async def on_disconn(ws, session):
+        """Cancel this connection's server-push task and warn the client."""
+        entry = _conn_tasks.pop(ws, None)
+        if entry is not None:
+            task, teardown = entry
+            task.cancel()
+            teardown()
         fh.toasting(
             "Disconnected from the robot. Check if the recipe is running or refresh the page",
             session,
             toast_type="error",
         )
 
-    async def on_conn_stream(ws, send, topic_type: str):
-        """When a client connects, register its callback."""
+    async def on_conn_action(ws, send):
+        """Push action task-card updates to the client as feedback arrives."""
+        loop = asyncio.get_running_loop()
+        updated = asyncio.Event()
 
-        # Callback function for ROS node
-        async def stream_callback(data: Dict, **_):
-            if data["type"] == "error":
-                await log_data(
-                    send, data["payload"], data_type=data["type"], data_src=data["type"]
-                )
-            else:
-                await ws.send_json(data)
+        def _on_update():  # fired in the ROS executor thread on each feedback
+            loop.call_soon_threadsafe(updated.set)
 
-        ros_node.attach_websocket_callback(stream_callback, topic_type)
+        names = [c["name"] for c in ros_node.action_clients_inputs_dicts()]
+        registered = [
+            n for n in names if ros_node.add_action_feedback_listener(n, _on_update)
+        ]
 
-    async def on_conn_map(ws, _, map_topic_type: str):
-        """When a client connects, register its callback."""
+        last_seen: Dict[str, tuple] = {}
 
-        # Callback function for ROS node
-        async def map_callback(payload, msg):
-            # --- CASE 1: Incoming marker data ----
-            # If the incoming data is for a marker
-            if payload.get("type", None) != "OccupancyGrid":
-                response = _marker_on_map(payload)
-                if response:
-                    await ws.send_json(response)
-                return
-
-            # --- CASE 2: Incoming MAP data ----
-            # Convert ROS message to a JSON-serializable dict
-            # Convert header and info normally (they are small)
-            msg_dict = {
-                "header": message_to_ordereddict(msg.header),
-                "info": message_to_ordereddict(msg.info),
-            }
-
-            # FAST CONVERSION of data field
-            # 'data' is typically a list of int8. We want a Base64 string.
-            data_field = msg.data
-            raw_bytes = b""
-
-            if isinstance(data_field, list):
-                # 'b' is signed char (int8), matches ROS int8[]
-                raw_bytes = array.array("b", data_field).tobytes()
-            elif isinstance(data_field, array.array):
-                raw_bytes = data_field.tobytes()
-            elif isinstance(data_field, bytes):
-                raw_bytes = data_field
-            elif isinstance(data_field, np.ndarray):
-                raw_bytes = data_field.tobytes()
-            else:
-                # Fallback (slowest)
-                raw_bytes = bytes(data_field)
-
-            msg_dict["data"] = base64.b64encode(raw_bytes).decode("utf-8")
-
-            response = {"op": "publish", "msg": msg_dict}
-            await ws.send_json(response)
-
-        ros_node.attach_websocket_callback(map_callback, map_topic_type)
-
-        # Add all point outputs to the map websocket callback
-        for _, topic_type in fh.get_all_map_overlay_outputs():
-            ros_node.attach_websocket_callback(map_callback, topic_type)
-
-    async def on_conn_action(_, send):
-        """When a client connects, register feedback callbacks for all action clients."""
-
-        for clients_config in ros_node.action_clients_inputs_dicts():
-            _action_name = clients_config["name"]
-
-            async def feedback_callback(data: Dict, *, _name=_action_name, **_):
-                """Updates an action client with new feedback from the server
-
-                :param data: UI data dict (status, feedback, etc.)
-                :type data: Dict
-                """
-                feedback = (
-                    ros_msg_to_str(data["feedback"]) if data["feedback"] else None
-                )
-                fh.action_clients_ft[_name].update(
-                    status=data["status"],
-                    feedback=feedback,
-                    duration=data["duration_secs"],
-                    timestep=data["timestep"],
-                )
-                await send(fh.action_clients_ft[_name].card)
-
-                if data["status"] in ["aborted", "completed", "canceled"]:
-                    # display action aborted as an error on the main logging card
-                    if data["status"] == "aborted":
-                        await log_data(
-                            send,
-                            f"Task '{_name}' aborted: {feedback}"
-                            if feedback
-                            else f"Task '{_name}' aborted",
-                            data_type="String",
-                            data_src="error",
+        async def _feedback_loop():
+            try:
+                while True:
+                    await updated.wait()
+                    updated.clear()
+                    for name in names:
+                        fb = ros_node.get_action_feedback(name)
+                        if fb is None:
+                            continue
+                        key = (fb["status"], fb["timestep"], fb["duration_secs"])
+                        if key == last_seen.get(name):
+                            continue
+                        last_seen[name] = key
+                        feedback = (
+                            ros_msg_to_str(fb["feedback"]) if fb["feedback"] else None
                         )
-                    ros_node.cleanup_action(action_name=_name)
-                    fh.action_clients_ft[_name].cleanup()
+                        fh.action_clients_ft[name].update(
+                            status=fb["status"],
+                            feedback=feedback,
+                            duration=fb["duration_secs"],
+                            timestep=fb["timestep"],
+                        )
+                        await send(fh.action_clients_ft[name].card)
 
-            ros_node.attach_client_feedback_callback(feedback_callback, _action_name)
+                        if fb["status"] in ("aborted", "completed", "canceled"):
+                            # display action aborted as an error on the main logging card
+                            if fb["status"] == "aborted":
+                                await log_data(
+                                    send,
+                                    f"Task '{name}' aborted: {feedback}"
+                                    if feedback
+                                    else f"Task '{name}' aborted",
+                                    data_type="String",
+                                    data_src="error",
+                                )
+                            fh.action_clients_ft[name].cleanup()
+            except (WebSocketDisconnect, RuntimeError):
+                pass
 
-    # Create websockets for streaming output topics
-    for topic_name, topic_type in fh.get_all_stream_outputs():
+        def _teardown():
+            for name in registered:
+                ros_node.remove_action_feedback_listener(name, _on_update)
 
-        @app.ws(
-            f"/ws_{topic_name}",
-            conn=partial(on_conn_stream, topic_type=topic_type),
-            disconn=on_disconn,
-        )
-        async def _():
-            pass
+        _conn_tasks[ws] = (asyncio.create_task(_feedback_loop()), _teardown)
 
-    # Create websockets for map output topics
-    for map_topic_name, map_topic_type in fh.get_all_map_outputs():
-        logger.debug(f"Starting ws for {map_topic_name}, {map_topic_type}...")
-
-        @app.ws(
-            f"/ws_{map_topic_name}",
-            conn=partial(on_conn_map, map_topic_type=map_topic_type),
-            disconn=on_disconn,
-        )
-        async def _(_, data):
-            # Map websockets send back clicked points (Point, Pose, etc.)
-            # The actual point data is in data.data, but it is expected in the ui node directly in data.x, etc.
-            if message := data.pop("data", None):
-                data.update(message)
-                _publish_from_form(ros_node, data.get("topic_type"), data)
+    # NOTE: Video (images) and maps stream over the API: video_manager.js
+    # connects to WS /api/outputs/<topic>, ros_maps.js to WS /api/world/<grid>
+    # and POST /api/inputs/<topic> (click-to-publish).
 
     if ros_node.action_clients_inputs_dicts():
 
@@ -442,48 +380,45 @@ def build_browser_app(
             """WS route for sending action feedback to ROS UI Node"""
             pass
 
-    @app.ws("/ws_audio", disconn=on_disconn)
-    async def _(data, send):
-        """WS route for sending audio to ROS UI Node"""
-        # Only handle audio data
-        if data["type"] == "audio" and len(data["payload"]) > 0:
+    async def on_conn(ws, send):
+        """Push new output messages to the running log as they arrive.
+
+        Registers a per-message listener on the log-eligible output topics
+        (event push); each message wakes the loop, which renders the latest
+        content and appends it to the log card.
+        """
+        loop = asyncio.get_running_loop()
+        updated = asyncio.Event()
+
+        def _on_update():  # fired in the ROS executor thread on each message
+            loop.call_soon_threadsafe(updated.set)
+
+        for name, _type in log_topics:
+            ros_node.add_output_listener(name, _on_update)
+
+        last_seen: Dict[str, Any] = {}
+
+        async def _log_loop():
             try:
-                await log_data(
-                    send, data["payload"], data_type="Audio", data_src="user"
-                )
-                # NOTE: Audio uses the dedicated base64 -> Audio path,
-                # not the schema-shaped publish_data.
-                ros_node.publish_audio(data["topic_name"], data["payload"])
-            except RuntimeError:
-                logger.warning("Runtime error when sending audio")
+                while True:
+                    await updated.wait()
+                    updated.clear()
+                    for name, type_name in log_topics:
+                        content = ros_node.get_latest_output(name)
+                        if not content or content is last_seen.get(name):
+                            continue
+                        last_seen[name] = content
+                        await log_data(
+                            send, content, data_type=type_name, data_src="robot"
+                        )
+            except (WebSocketDisconnect, RuntimeError):
+                pass
 
-            # Send the robot loading dots
-            return elements.update_logging_card_with_loading(fh.outputs_log)
+        def _teardown():
+            for name, _type in log_topics:
+                ros_node.remove_output_listener(name, _on_update)
 
-    async def on_conn(send):
-        """When a client connects, register its callback."""
-
-        # NOTE: Types that will be routed to the map websocket once it attaches.
-        # They are dropped from the default log callback to avoid a brief
-        # flash in the log during the startup window between the main /ws
-        # connecting and /ws_map attaching its per-type callbacks.
-        map_overlay_types = (
-            {t for _, t in fh.get_all_map_overlay_outputs()}
-            if fh.get_all_map_outputs()
-            else set()
-        )
-
-        # Callback function for ROS node
-        async def websocket_callback(data: Dict, **_):
-            # Recieve json style data from node and pass to UI with send
-            if data.get("type") in map_overlay_types:
-                return
-            if len(data["payload"]) > 0:
-                await log_data(
-                    send, data["payload"], data_type=data["type"], data_src="robot"
-                )
-
-        ros_node.attach_websocket_callback(websocket_callback)
+        _conn_tasks[ws] = (asyncio.create_task(_log_loop()), _teardown)
 
     @app.ws("/ws", conn=on_conn, disconn=on_disconn)
     async def _(data, send):

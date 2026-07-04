@@ -108,16 +108,17 @@ function closeAllMapConnections() {
     mapConnections.clear();
 }
 
-// --- EXPORTED FUNCTIONS (Called by Python Buttons) ---
-window.zoomMap = function (topicName, zoomFactor) {
+// --- GLOBAL FUNCTIONS (called from Python-generated onclick attributes) ---
+// Top-level declarations are window globals.
+function zoomMap(topicName, zoomFactor) {
     const container = document.getElementById(topicName);
     if (!container || !container.mapViewer) return;
 
     const viewer = container.mapViewer;
     applyZoom(viewer, zoomFactor, null); // Null center means zoom to center of view
-};
+}
 
-window.togglePublishPoint = function (btn) {
+function togglePublishPoint(btn) {
     const mapElements = document.getElementsByName('map-canvas');
     if (mapElements.length === 0) {
         if (typeof UIkit !== 'undefined') {
@@ -146,7 +147,7 @@ window.togglePublishPoint = function (btn) {
 
         // If click is outside map AND outside the toggle button, turn off
         if (!isClickOnMap && !isClickOnBtn) {
-            window.togglePublishPoint(btn);
+            togglePublishPoint(btn);
         }
     };
     // ----------------------------------------
@@ -220,9 +221,9 @@ window.togglePublishPoint = function (btn) {
             }
         }
     });
-};
+}
 
-window.openMapSettings = function (topicName) {
+function openMapSettings(topicName) {
     const modal = document.getElementById(`${topicName}-settings-modal`);
     if (!modal) return;
 
@@ -256,9 +257,9 @@ window.openMapSettings = function (topicName) {
             }
         }
     }
-};
+}
 
-window.saveMapSettings = function (topicName) {
+function saveMapSettings(topicName) {
     const modal = document.getElementById(`${topicName}-settings-modal`);
     const form = document.getElementById(`${topicName}-settings-form`);
 
@@ -334,14 +335,14 @@ window.saveMapSettings = function (topicName) {
     }
 
     if (modal) modal.style.display = 'none';
-};
+}
 
 
 /**
  * Toggles the visibility of markers setting blocks in the map settings modal.
  * * @param {string} mapId - The ID of the map (e.g. 'map_1')
  */
-window.updateVisualSettingsVisibility = function (target, mapId) {
+function updateVisualSettingsVisibility(target, mapId) {
     // RETRIEVE VALUE
     // Since 'target' is the custom <uk-select> wrapper (LabelSelect), we look inside it.
     // We try the hidden input first (most reliable), then fallback to direct .value
@@ -374,14 +375,14 @@ window.updateVisualSettingsVisibility = function (target, mapId) {
             el.style.display = 'none';
         }
     });
-};
+}
 
 
 /**
  * Sets up a watcher on the selector to trigger updates automatically.
  * Call this ONCE when the modal opens.
  */
-window.initVisualSettingsObserver = function (mapId) {
+function initVisualSettingsObserver(mapId) {
     const selector = document.getElementById(`visual-selector-${mapId}`);
     if (!selector || selector._hasObserver) return; // Prevent double binding
 
@@ -404,7 +405,7 @@ window.initVisualSettingsObserver = function (mapId) {
 
     // Mark as observed so we don't attach multiple times
     selector._hasObserver = true;
-};
+}
 
 function initSingleMap(container, attempt = 0) {
     const topicName = container.id;
@@ -473,7 +474,7 @@ function initSingleMap(container, attempt = 0) {
     if (cachedMapHeader) container.mapHeader = cachedMapHeader;
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws_${topicName}`;
+    const wsUrl = `${protocol}//${window.location.host}/api/world/${topicName}`;
     const ws = connectMapWebSocket(container, wsUrl, mockRos, topicName, 0);
 
     setupInteractions(viewer, container);
@@ -516,28 +517,41 @@ function connectMapWebSocket(container, wsUrl, mockRos, topicName, attempt) {
             } else {
                 msgData = JSON.parse(event.data);
             }
-            let mapMessage = msgData.msg ? msgData.msg : msgData;
-
-            if (mapMessage.info && mapMessage.header) {
-                container.mapInfo = mapMessage.info;
-                container.mapHeader = mapMessage.header;
+            // --- Handle Grid ---
+            if (msgData.op === 'publish') {
+                const g = msgData.msg;
+                // Reconstruct the nested ROS OccupancyGrid shape that ROS2D and
+                // the overlay transforms expect, from the API's flat fields.
+                const info = {
+                    resolution: g.resolution,
+                    width: g.width,
+                    height: g.height,
+                    origin: {
+                        position: { x: g.origin_x, y: g.origin_y, z: 0 },
+                        orientation: {
+                            x: 0, y: 0,
+                            z: Math.sin(g.origin_yaw / 2),
+                            w: Math.cos(g.origin_yaw / 2),
+                        },
+                    },
+                };
+                const header = { frame_id: g.frame_id };
+                container.mapInfo = info;
+                container.mapHeader = header;
                 // Persist in registry so it survives DOM swaps
                 const conn = mapConnections.get(topicName);
                 if (conn) {
-                    conn.mapInfo = mapMessage.info;
-                    conn.mapHeader = mapMessage.header;
+                    conn.mapInfo = info;
+                    conn.mapHeader = header;
                 }
-            }
-
-            if (mapMessage.data && typeof mapMessage.data === 'string') {
-                const binaryString = atob(mapMessage.data);
+                // Decode base64 int8 occupancy data
+                const binaryString = atob(g.data);
                 const len = binaryString.length;
                 const bytes = new Int8Array(len);
                 for (let i = 0; i < len; i++) {
                     bytes[i] = binaryString.charCodeAt(i);
                 }
-                mapMessage.data = bytes;
-                mockRos.emit(topicName, mapMessage);
+                mockRos.emit(topicName, { info: info, header: header, data: bytes });
             }
             // --- Handle Points ---
             else if (msgData.op === 'overlay') {
@@ -1003,33 +1017,30 @@ function applyZoom(viewer, factor, center) {
  * Helper method to publish a clicked point on a map canvas
  */
 function publishPoint(container, targetTopic, rosPoint, msgType) {
-    if (!container || !container.mapWs) {
-        console.warn("Cannot publish point: Websocket or Container missing");
+    // Build the schema-shaped body the /api/inputs contract expects
+    // then POST it like any third-party client.
+    const pos = { x: rosPoint.x, y: rosPoint.y, z: rosPoint.z };
+    let body;
+    if (msgType === 'Point') {
+        body = pos;
+    } else if (msgType === 'PointStamped') {
+        body = { point: pos };
+    } else if (msgType === 'Pose' || msgType === 'PoseStamped') {
+        const pose = { position: pos, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } };
+        body = (msgType === 'Pose') ? pose : { pose: pose };
+    } else {
+        console.warn(`Cannot publish point: unsupported type ${msgType}`);
         return;
     }
 
-    // Default Orientation
-    const defaultOrientation = { ori_x: 0.0, ori_y: 0.0, ori_z: 0.0, ori_w: 1.0 };
-    let messageData = {};
-
-    // Safely get frame_id (Default to 'map' if header is missing)
-    const frameId = (container.mapHeader && container.mapHeader.frame_id) ? container.mapHeader.frame_id : 'map';
-
-    if (msgType === 'Point' || msgType === 'PointStamped') {
-        messageData = rosPoint; // {x, y, z}
-    } else if (msgType === 'Pose' || msgType === 'PoseStamped') {
-        messageData = { ...rosPoint, ...defaultOrientation };
-    }
-
-    const payload = {
-        topic_name: targetTopic,
-        frame_id: frameId,
-        topic_type: msgType,
-        data: messageData
-    };
-
-    container.mapWs.send(JSON.stringify(payload));
-    console.log(`Published [${msgType}] to [${targetTopic}]`, payload);
+    fetch(`/api/inputs/${targetTopic}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    })
+        .then((r) => { if (!r.ok) console.error(`Publish to [${targetTopic}] failed: ${r.status}`); })
+        .catch((e) => console.error(`Publish to [${targetTopic}] error:`, e));
+    console.log(`Published [${msgType}] to [${targetTopic}]`, body);
 };
 
 
@@ -1061,7 +1072,7 @@ function setupInteractions(viewer, container) {
                 }
                 publishPoint(container, targetTopic, rosPoint, msgType);
             }
-            window.togglePublishPoint(state.btn);
+            togglePublishPoint(state.btn);
             return;
         }
 
