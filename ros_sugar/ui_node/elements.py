@@ -1469,7 +1469,8 @@ def augment_text_in_logging_card(
     new_txt: str,
     target_id="text",
 ):
-    """Update the inner text of a child in logging_card.children with a matching id."""
+    """Update the inner text of a child in logging_card.children with a
+    matching id. Used for streaming output whose payload is the delta."""
     children = logging_card.children
     target_child = None
     for i in range(len(children) - 1, -1, -1):
@@ -1483,6 +1484,31 @@ def augment_text_in_logging_card(
         if getattr(target_child.children[i], "id", None) == "inner-text":
             # Append the new text
             target_child.children[i](Span(f"{new_txt}"))
+            return logging_card
+    return logging_card
+
+
+def replace_text_in_logging_card(
+    logging_card,
+    new_txt: str,
+    target_id="text",
+):
+    """Replace the inner text of a child in logging_card.children with a
+    matching id, keeping its source prefix. Used for streamed entries whose
+    payload is the full text so far rather than a delta."""
+    children = logging_card.children
+    target_child = None
+    for i in range(len(children) - 1, -1, -1):
+        if getattr(children[i], "id", None) == target_id:
+            target_child = children[i]
+            break
+    if not target_child:
+        return logging_card
+    for i in range(len(target_child.children) - 1, -1, -1):
+        if getattr(target_child.children[i], "id", None) == "inner-text":
+            inner = target_child.children[i]
+            # Keep the source prefix (first child), replace the text
+            inner.children = (inner.children[0], f"{new_txt}")
             return logging_card
     return logging_card
 
