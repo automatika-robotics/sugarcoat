@@ -603,3 +603,44 @@ def run_external_processor(
         get_logger(logger_name).error(
             f"Error in external processor for {topic_name}: {e}"
         )
+
+
+# NOTE: Scalar ROS field type names mapped when building messages from
+# JSON-shaped dicts. Conversion goes by the DECLARED field type (not the default
+# value's Python type).
+_ROS_INT_TYPES = frozenset({
+    "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "char",
+})
+_ROS_FLOAT_TYPES = frozenset({"float", "double", "float32", "float64"})
+
+
+def _split_ros_field_type(ros_type: str) -> Tuple[str, bool]:
+    """Split a ROS field type string into (base_type, is_sequence).
+
+    Handles ``sequence<T>``, bounded ``sequence<T, N>``, static ``T[N]``
+    and plain scalars.
+    """
+    if ros_type.startswith("sequence<"):
+        inner = ros_type[len("sequence<"):].rstrip(">")
+        return inner.split(",")[0].strip(), True
+    if "[" in ros_type:
+        return ros_type.split("[")[0], True
+    return ros_type, False
+
+
+def _convert_ros_scalar(base_type: str, value: Any) -> Any:
+    """Convert a JSON value to the Python value of a scalar ROS field type."""
+    if base_type in _ROS_INT_TYPES:
+        return int(value)
+    if base_type in _ROS_FLOAT_TYPES:
+        return float(value)
+    if base_type == "boolean":
+        return bool(value)
+    if base_type == "octet":
+        # rclpy represents octet as a length-1 bytes object
+        if isinstance(value, (bytes, bytearray)) and len(value) == 1:
+            return bytes(value)
+        return bytes([int(value)])
+    if base_type.startswith(("string", "wstring")):
+        return str(value)
+    raise ValueError(f"unsupported ROS field type '{base_type}'")

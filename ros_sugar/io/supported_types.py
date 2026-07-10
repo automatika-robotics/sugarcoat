@@ -37,6 +37,7 @@ from std_msgs.msg import (
 )
 
 from . import callbacks
+from .utils import _convert_ros_scalar, _split_ros_field_type
 from .utils import numpy_to_multiarray
 
 
@@ -141,11 +142,8 @@ def get_ros_msg_fields_dict(msg_class: type) -> Dict[str, Any]:
     msg_fields = msg_class.get_fields_and_field_types()
 
     for field_name, field_type_str in msg_fields.items():
-        # Check if it is an array (dynamic '[]' or static '[3]')
-        is_array = "[" in field_type_str
-
-        # Extract base type (remove array notation)
-        base_type = field_type_str.split("[")[0]
+        # Split into base type + sequence flag
+        base_type, is_array = _split_ros_field_type(field_type_str)
 
         # Check if it is a complex type (contains slash)
         if "/" in base_type:
@@ -204,6 +202,7 @@ def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
 
     :param msg_class: The ROS message class to instantiate (e.g., geometry_msgs.msg.Point)
     :param data_dict: Dictionary containing the values (keys must match message fields)
+    :raises ValueError: If a value cannot be converted to its declared field type.
     :return: An instance of msg_class populated with data
     """
     # Instantiate the message
@@ -218,42 +217,58 @@ def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
             continue
 
         ros_type = msg_fields_types[field_name]
+        base_type, is_sequence = _split_ros_field_type(ros_type)
 
-        # Check if the field is an array/list (contains '[')
-        is_array = "[" in ros_type
-
-        # Handle Complex Types (nested messages, e.g., 'geometry_msgs/Point')
-        if "/" in ros_type:
-            # Extract base type name (remove array brackets if present)
-            base_type = ros_type.split("[")[0]
-            (module_str_name, msg_str_name) = base_type.split("/")
-
-            try:
+        try:
+            # Handle Complex Types (nested messages, e.g., 'geometry_msgs/Point')
+            if "/" in base_type:
+                (module_str_name, msg_str_name) = base_type.split("/")
                 msg_module = importlib.import_module(f"{module_str_name}.msg")
                 nested_msg_class = getattr(msg_module, msg_str_name)
 
-                if is_array:
-                    # If it's a list of complex objects, recurse for each item
+                if is_sequence:
                     # field_value is expected to be a list of dicts
-                    complex_array = []
-                    for item in field_value:
-                        complex_array.append(
+                    setattr(
+                        msg,
+                        field_name,
+                        [
                             set_ros_msg_from_dict(nested_msg_class, item)
-                        )
-                    setattr(msg, field_name, complex_array)
+                            for item in field_value
+                        ],
+                    )
                 else:
                     # Single complex object, recurse once
-                    # field_value is expected to be a dict
-                    nested_msg = set_ros_msg_from_dict(nested_msg_class, field_value)
-                    setattr(msg, field_name, nested_msg)
-
-            except (ModuleNotFoundError, ValueError, AttributeError) as e:
-                print(f"Error instantiating nested message for {field_name}: {e}")
-
-        # Handle Simple Types (int, float, string, etc.)
-        else:
-            attr_type = type(getattr(msg, field_name))
-            setattr(msg, field_name, attr_type(field_value))
+                    setattr(
+                        msg, field_name, set_ros_msg_from_dict(nested_msg_class, field_value)
+                    )
+            elif is_sequence:
+                # Require an actual list. So we don't coerce e.g a string into
+                # a list of characters which would crash native serialization
+                if isinstance(field_value, (str, bytes)) or not hasattr(
+                    field_value, "__iter__"
+                ):
+                    raise ValueError(
+                        f"expected a list of '{base_type}' values, "
+                        f"got {type(field_value).__name__}"
+                    )
+                setattr(
+                    msg,
+                    field_name,
+                    [_convert_ros_scalar(base_type, item) for item in field_value],
+                )
+            # Handle Simple Types (int, float, string, etc.)
+            else:
+                setattr(msg, field_name, _convert_ros_scalar(base_type, field_value))
+        except (
+            ValueError,
+            TypeError,
+            AttributeError,
+            ModuleNotFoundError,
+            AssertionError,
+        ) as e:
+            raise ValueError(
+                f"Invalid value for field '{field_name}' ({ros_type}): {e}"
+            ) from e
 
     return msg
 

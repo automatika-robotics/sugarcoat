@@ -374,6 +374,8 @@ def _service_routes(ros_node: UINode) -> List:
             )
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
         except Exception as e:
             return JSONResponse({"error": f"Service call failed: {e}"}, status_code=500)
         if response is None:
@@ -481,6 +483,8 @@ def _action_routes(ros_node: UINode) -> List:
             )
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
         except Exception as e:
             return JSONResponse({"error": f"Failed to send goal: {e}"}, status_code=500)
         if not accepted:
