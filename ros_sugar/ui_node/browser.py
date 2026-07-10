@@ -275,6 +275,10 @@ def build_browser_app(
         for o in (ros_node.in_topics or [])
         if o.name not in _widget_output_names
     ]
+    log_topic_names = {name for name, _ in log_topics}
+    # Topics that are ALSO declared as UI inputs carry user content their
+    # subscription echo is labeled "user"
+    ui_input_names = {t.name for t in (ros_node.out_topics or [])}
 
     # Per-connection server-push tasks (log + actions)
     _conn_tasks: Dict[Any, tuple] = {}
@@ -408,14 +412,16 @@ def build_browser_app(
                         if not content or content is last_seen.get(name):
                             continue
                         last_seen[name] = content
+                        # Topics also declared as UI inputs carry user content
+                        data_src = "user" if name in ui_input_names else "robot"
                         await log_data(
-                            send, content, data_type=type_name, data_src="robot"
+                            send, content, data_type=type_name, data_src=data_src
                         )
             except (WebSocketDisconnect, RuntimeError):
                 pass
 
         def _teardown():
-            for name, _type in log_topics:
+            for name, _ in log_topics:
                 ros_node.remove_output_listener(name, _on_update)
 
         _conn_tasks[ws] = (asyncio.create_task(_log_loop()), _teardown)
@@ -425,38 +431,48 @@ def build_browser_app(
         """WS route for input/output communication with ROS UI Node"""
 
         data_type = data.get("topic_type")
+        # NOTE: If the input topic is also subscribed (in the log topics), the
+        # subscription echo displays the message once as a user line, skip
+        # the immediate log line to avoid a double entry.
+        echoed = data.get("topic_name") in log_topic_names
         if data_type == "String":
             # display in log for string data types
-            await log_data(send, data["data"], data_type=data_type, data_src="user")
+            if not echoed:
+                await log_data(
+                    send, data["data"], data_type=data_type, data_src="user"
+                )
             _publish_from_form(ros_node, data_type, data)
             # Send the robot loading dots
             return elements.update_logging_card_with_loading(fh.outputs_log)
         elif data_type in ["Point", "PointStamped"]:
             # display in log for coordinates data types
-            await log_data(
-                send,
-                f"Published to topic /{data.get('topic_name')} using coordinates: x={data['x']}, y={data['y']}, z={data['z']}",
-                data_type="String",
-                data_src="user",
-            )
+            if not echoed:
+                await log_data(
+                    send,
+                    f"Published to topic /{data.get('topic_name')} using coordinates: x={data['x']}, y={data['y']}, z={data['z']}",
+                    data_type="String",
+                    data_src="user",
+                )
             _publish_from_form(ros_node, data_type, data)
         elif data_type in ["Pose", "PoseStamped"]:
             # display in log for coordinates data types
-            await log_data(
-                send,
-                f"Published to topic /{data.get('topic_name')} using coordinates: (Position: x={data['x']}, y={data['y']}, z={data['z']}), (Orientation: w={data['ori_w'] or '1'}, x={data['ori_x'] or '0'}, y={data['ori_y'] or '0'}, z={data['ori_z'] or '0'})",
-                data_type="String",
-                data_src="user",
-            )
+            if not echoed:
+                await log_data(
+                    send,
+                    f"Published to topic /{data.get('topic_name')} using coordinates: (Position: x={data['x']}, y={data['y']}, z={data['z']}), (Orientation: w={data['ori_w'] or '1'}, x={data['ori_x'] or '0'}, y={data['ori_y'] or '0'}, z={data['ori_z'] or '0'})",
+                    data_type="String",
+                    data_src="user",
+                )
             _publish_from_form(ros_node, data_type, data)
         elif data_type == "Bool":
             # display in log for coordinates data types
-            await log_data(
-                send,
-                f"Published to topic /{data.get('topic_name')}: {data.get('data', 'off')}",
-                data_type="String",
-                data_src="user",
-            )
+            if not echoed:
+                await log_data(
+                    send,
+                    f"Published to topic /{data.get('topic_name')}: {data.get('data', 'off')}",
+                    data_type="String",
+                    data_src="user",
+                )
             _publish_from_form(ros_node, data_type, data)
         else:
             _publish_from_form(ros_node, data_type, data)

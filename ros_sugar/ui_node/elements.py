@@ -1455,13 +1455,15 @@ def initial_logging_card():
 
 
 def remove_child_from_logging_card(logging_card, target_id="loading-dots"):
-    """Remove the last child in logging_card.children with a matching id."""
+    """Remove and return the last child in logging_card.children with a
+    matching id (or ``None`` if not found)."""
     children = logging_card.children
 
     for i in range(len(children) - 1, -1, -1):
         if getattr(children[i], "id", None) == target_id:
             logging_card.children = children[:i] + children[i + 1 :]
-            break
+            return children[i]
+    return None
 
 
 def augment_text_in_logging_card(
@@ -1529,13 +1531,17 @@ def update_logging_card(
     :return: Updated logging card
     :rtype: FT
     """
-    # Remove any previous loading that exists on the card
-    remove_child_from_logging_card(logging_card)
     # Handle errors originating from ROS node
     if data_type == "error":
         data_type = "String"
         data_src = "error"
-    return _OUTPUT_ELEMENTS[data_type](logging_card, output, data_src)
+    # The loading indicator means "waiting for the robot": robot/error output
+    # clears it
+    dots = remove_child_from_logging_card(logging_card)
+    card = _OUTPUT_ELEMENTS[data_type](logging_card, output, data_src)
+    if data_src == "user" and dots is not None:
+        logging_card(dots)
+    return card
 
 
 def update_logging_card_with_loading(logging_card):
