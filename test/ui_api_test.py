@@ -446,6 +446,46 @@ def test_interfaces_advertises_stream_mode():
     assert outputs["map"]["mode"] == "sampled"  # OccupancyGrid -> sampled default
 
 
+def test_set_ros_msg_from_dict_converts_by_declared_type():
+    from std_msgs.msg import ByteMultiArray, Float32MultiArray, String as ROSString
+
+    from ros_sugar.io.supported_types import set_ros_msg_from_dict
+
+    # octet sequences become length-1 bytes elements (native-serializable)
+    msg = set_ros_msg_from_dict(ByteMultiArray, {"data": [1, 2, 255]})
+    assert msg.data == [b"\x01", b"\x02", b"\xff"]
+    # numeric sequences coerce per element
+    msg = set_ros_msg_from_dict(Float32MultiArray, {"data": [1, "2.5"]})
+    assert msg.data == pytest.approx([1.0, 2.5])
+    # scalar strings still coerce leniently
+    assert set_ros_msg_from_dict(ROSString, {"data": 42}).data == "42"
+    # nested complex sequences ('sequence<pkg/Type>') recurse correctly
+    msg = set_ros_msg_from_dict(
+        ByteMultiArray,
+        {"layout": {"dim": [{"label": "x", "size": 1, "stride": 1}], "data_offset": 0}, "data": [7]},
+    )
+    assert msg.layout.dim[0].label == "x" and msg.layout.dim[0].size == 1
+
+
+def test_set_ros_msg_from_dict_rejects_native_fatal_values():
+    """Values that would build a Python-plausible but rmw-fatal message must
+    raise ValueError (-> HTTP 400) instead of reaching the serializer."""
+    from std_msgs.msg import ByteMultiArray, Float32MultiArray
+
+    from ros_sugar.io.supported_types import set_ros_msg_from_dict
+
+    # a string is NOT a valid octet sequence (this exact payload used to
+    # crash the UI node process in the C typesupport layer)
+    with pytest.raises(ValueError, match="data"):
+        set_ros_msg_from_dict(ByteMultiArray, {"data": "zzz"})
+    # a scalar is not a sequence
+    with pytest.raises(ValueError, match="data"):
+        set_ros_msg_from_dict(ByteMultiArray, {"data": 42})
+    # unconvertible element
+    with pytest.raises(ValueError, match="data"):
+        set_ros_msg_from_dict(Float32MultiArray, {"data": ["abc"]})
+
+
 def test_content_to_jsonable_passes_through_and_converts():
     pytest.importorskip("starlette")
     from sensor_msgs.msg import LaserScan
