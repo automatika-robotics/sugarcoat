@@ -1016,6 +1016,21 @@ function applyZoom(viewer, factor, center) {
 /**
  * Helper method to publish a clicked point on a map canvas
  */
+function notifyMapPublishError(topic, detail) {
+    // Surface publish failures in the UI
+    const message = `Failed to publish map point to '${topic}': ${detail}`;
+    if (typeof UIkit !== 'undefined') {
+        UIkit.notification({
+            message: `<span uk-icon='icon: warning'></span> ${message}`,
+            status: 'danger',
+            pos: 'top-center',
+            timeout: 6000
+        });
+    } else {
+        console.error(message);
+    }
+}
+
 function publishPoint(container, targetTopic, rosPoint, msgType) {
     // Build the schema-shaped body the /api/inputs contract expects
     // then POST it like any third-party client.
@@ -1038,9 +1053,18 @@ function publishPoint(container, targetTopic, rosPoint, msgType) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     })
-        .then((r) => { if (!r.ok) console.error(`Publish to [${targetTopic}] failed: ${r.status}`); })
-        .catch((e) => console.error(`Publish to [${targetTopic}] error:`, e));
-    console.log(`Published [${msgType}] to [${targetTopic}]`, body);
+        .then(async (r) => {
+            if (r.ok) {
+                console.log(`Published [${msgType}] to [${targetTopic}]`, body);
+                return;
+            }
+            let detail = `HTTP ${r.status}`;
+            try {
+                detail = (await r.json()).error || detail;
+            } catch (e) { /* keep the status text */ }
+            notifyMapPublishError(targetTopic, detail);
+        })
+        .catch((e) => notifyMapPublishError(targetTopic, e.message || 'network error'));
 };
 
 
