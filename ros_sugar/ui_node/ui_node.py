@@ -462,6 +462,13 @@ class UINode(BaseComponent):
                 f"Cannot build a {publisher.output_topic.msg_type.__name__} "
                 f"message from {data}: {e}"
             ) from e
+        # Stamp headers the client left unset because clients cant know ROS time
+        if (
+            hasattr(msg, "header")
+            and msg.header.stamp.sec == 0
+            and msg.header.stamp.nanosec == 0
+        ):
+            msg.header.stamp = self.get_clock().now().to_msg()
         publisher._publisher.publish(msg)
         return self.count_subscribers(topic_name)
 

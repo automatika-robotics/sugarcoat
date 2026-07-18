@@ -119,9 +119,12 @@ function zoomMap(topicName, zoomFactor) {
 }
 
 function readClickedPointTarget(form) {
-    // The target topic dropdown lists declared point-like UI inputs
-    // the value may live on a hidden input (uk-select) or the native select
-    const valueEl = form.querySelector('[name="clicked_point_topic"]');
+    // The target topic dropdown lists declared point-like UI inputs. Read the
+    // LIVE control the uk-select component keeps in sync (its hidden input or
+    // the native select).
+    const valueEl = form.querySelector(
+        'input[name="clicked_point_topic"], select[name="clicked_point_topic"]'
+    );
     if (!valueEl || !valueEl.value) return null;
     const topic = valueEl.value;
     // The declared msg type rides on the selected option's data-type attribute
@@ -208,21 +211,13 @@ function togglePublishPoint(btn) {
         }
         container.style.cursor = isTurningOn ? 'crosshair' : 'default';
 
-        // Determine Settings if Turning On
-        if (isTurningOn) {
-            if (btn.id === `${topicName}-publish-btn`) {
-                const settingsForm = document.getElementById(`${topicName}-settings-form`);
-                let target = state.settings || null;
-                if (!target && settingsForm) {
-                    target = readClickedPointTarget(settingsForm);
-                    if (target) state.settings = target;
-                }
-                if (target) state[btn.id] = { topic: target.topic, type: target.type };
-            } else {
-                const customTopic = btn.getAttribute('data-topic') || 'clicked_point';
-                const customType = btn.getAttribute('data-type') || 'PointStamped';
-                state[btn.id] = { topic: customTopic, type: customType };
-            }
+        // Custom buttons carry a fixed target on data attributes. The standard
+        // publish button has NO cached target: the settings dropdown is read
+        // live at click time so a changed selection is always respected.
+        if (isTurningOn && btn.id !== `${topicName}-publish-btn`) {
+            const customTopic = btn.getAttribute('data-topic') || 'clicked_point';
+            const customType = btn.getAttribute('data-type') || 'PointStamped';
+            state[btn.id] = { topic: customTopic, type: customType };
         }
     });
 }
@@ -234,24 +229,9 @@ function openMapSettings(topicName) {
     // Show Modal
     modal.style.display = 'grid';
 
-    // Restore Saved Values (if they exist)
-    const state = mapInteractionState[topicName];
-    if (state && state.settings) {
-        const form = document.getElementById(`${topicName}-settings-form`);
-        if (form) {
-            // Restore the target-topic dropdown (custom uk-select or native).
-            // Must find the HIDDEN NATIVE SELECT inside the custom component
-            const selectContainer = form.querySelector(`uk-select[name="clicked_point_topic"]`);
-            const nativeSelect = selectContainer
-                ? selectContainer.querySelector('select')
-                : form.querySelector(`select[name="clicked_point_topic"]`);
-            if (nativeSelect) {
-                nativeSelect.value = state.settings.topic;
-                // Dispatch change event so the Custom UI updates its text
-                nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }
-    }
+    // NOTE: The target-topic dropdown needs no restore: the modal is only
+    // hidden/shown, so the DOM select keeps the user's selection, and the
+    // publish flow reads it live at click time.
 }
 
 function saveMapSettings(topicName) {
@@ -261,14 +241,6 @@ function saveMapSettings(topicName) {
     if (form) {
         // Initialize State
         if (!mapInteractionState[topicName]) mapInteractionState[topicName] = {};
-
-        // Save Publishing Settings (the section only exists when point-like
-        // inputs are declared in the UI)
-        const target = readClickedPointTarget(form);
-        if (target) {
-            mapInteractionState[topicName].settings = target;
-        }
-
         // Save Visual Settings
         if (!mapInteractionState[topicName].visuals) mapInteractionState[topicName].visuals = {};
 
@@ -1022,14 +994,17 @@ function publishPoint(container, targetTopic, rosPoint, msgType) {
     // Build the schema-shaped body the /api/inputs contract expects
     // then POST it like any third-party client.
     const pos = { x: rosPoint.x, y: rosPoint.y, z: rosPoint.z };
+    // Stamped messages carry the map's frame (the clicked coordinates are in
+    // it); the server fills the timestamp on publish.
+    const header = { frame_id: (container.mapHeader && container.mapHeader.frame_id) || '' };
     let body;
     if (msgType === 'Point') {
         body = pos;
     } else if (msgType === 'PointStamped') {
-        body = { point: pos };
+        body = { header: header, point: pos };
     } else if (msgType === 'Pose' || msgType === 'PoseStamped') {
         const pose = { position: pos, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } };
-        body = (msgType === 'Pose') ? pose : { pose: pose };
+        body = (msgType === 'Pose') ? pose : { header: header, pose: pose };
     } else {
         console.warn(`Cannot publish point: unsupported type ${msgType}`);
         return;
@@ -1075,13 +1050,21 @@ function setupInteractions(viewer, container) {
             const rosPoint = transformScreenToRos(container, mouseX, mouseY);
 
             if (rosPoint) {
-                let targetTopic = 'clicked_point';
-                let msgType = 'PointStamped';
-                if (state.btn && state[state.btn.id]) {
-                    targetTopic = state[state.btn.id].topic;
-                    msgType = state[state.btn.id].type;
+                // Standard button reads the settings dropdown LIVE so the
+                // latest selection always wins. Custom buttons keep their
+                // fixed data-attribute target.
+                let target = null;
+                if (state.btn && state.btn.id === `${topicName}-publish-btn`) {
+                    const form = document.getElementById(`${topicName}-settings-form`);
+                    if (form) target = readClickedPointTarget(form);
+                } else if (state.btn && state[state.btn.id]) {
+                    target = state[state.btn.id];
                 }
-                publishPoint(container, targetTopic, rosPoint, msgType);
+                if (target) {
+                    publishPoint(container, target.topic, rosPoint, target.type);
+                } else {
+                    notifyMapPublishError(topicName, 'no target topic selected in map settings');
+                }
             }
             togglePublishPoint(state.btn);
             return;
