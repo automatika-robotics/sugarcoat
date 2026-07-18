@@ -86,6 +86,12 @@ class FHApp:
         # Inputs and Outputs
         self.in_topics = in_topics
         self.out_topics = out_topics
+        # Declared point-like input topics (button hidden when there are none)
+        self.point_input_topics = [
+            (t.name, t.msg_type.__name__)
+            for t in (in_topics or [])
+            if t.msg_type.__name__ in ("Point", "PointStamped", "Pose", "PoseStamped")
+        ]
         self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
         self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
 
@@ -272,6 +278,7 @@ class FHApp:
                     out.msg_type.__name__,
                     outputs_columns_cls[idx],
                     map_output_markers=map_outputs,
+                    point_inputs=self.point_input_topics,
                 )
             )
         return outputs_container(output_grid(*output_divs, id=grid_id))
