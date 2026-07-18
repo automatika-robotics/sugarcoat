@@ -106,6 +106,13 @@ def _marker_from_content(
     }
 
 
+def _name_param(conn) -> str:
+    """Interface name from the URL path, normalized like ``Topic`` names.
+    Routes use ``{name:path}`` so namespaced names (ns/topic) stay
+    addressable."""
+    return conn.path_params["name"].lstrip("/")
+
+
 async def _json_body(request) -> Any:
     """Parse a request's JSON body, returning ``{}`` on an empty/invalid body."""
     try:
@@ -294,7 +301,7 @@ def _input_routes(ros_node: UINode) -> List:
 
     async def publish_input(request):
         """Publish a JSON message (matching the topic schema) to an input topic."""
-        name = request.path_params["name"]
+        name = _name_param(request)
         if name not in input_names:
             return JSONResponse(
                 {"error": f"Unknown input topic '{name}'"}, status_code=404
@@ -317,7 +324,7 @@ def _input_routes(ros_node: UINode) -> List:
     async def stream_audio_input(websocket):
         """Receive base64 audio frames from the client and publish them to a
         declared Audio input topic. Acks each frame"""
-        name = websocket.path_params["name"]
+        name = _name_param(websocket)
         if name not in audio_input_names:
             await websocket.close(code=1008)  # not a declared Audio input
             return
@@ -347,8 +354,8 @@ def _input_routes(ros_node: UINode) -> List:
             return
 
     return [
-        Route(f"{API_BASE}/inputs/{{name}}", publish_input, methods=["POST"]),
-        WebSocketRoute(f"{API_BASE}/inputs/{{name}}/audio", stream_audio_input),
+        Route(f"{API_BASE}/inputs/{{name:path}}", publish_input, methods=["POST"]),
+        WebSocketRoute(f"{API_BASE}/inputs/{{name:path}}/audio", stream_audio_input),
     ]
 
 
@@ -358,7 +365,7 @@ def _service_routes(ros_node: UINode) -> List:
 
     async def call_service(request):
         """Call a service with a JSON request body and return its JSON response."""
-        name = request.path_params["name"]
+        name = _name_param(request)
         if name not in service_names:
             return JSONResponse({"error": f"Unknown service '{name}'"}, status_code=404)
         body = await _json_body(request)
@@ -384,7 +391,7 @@ def _service_routes(ros_node: UINode) -> List:
             )
         return JSONResponse({"service": name, "response": _msg_to_jsonable(response)})
 
-    return [Route(f"{API_BASE}/services/{{name}}", call_service, methods=["POST"])]
+    return [Route(f"{API_BASE}/services/{{name:path}}", call_service, methods=["POST"])]
 
 
 def _output_routes(ros_node: UINode) -> List:
@@ -399,7 +406,7 @@ def _output_routes(ros_node: UINode) -> List:
 
     async def output_latest(request):
         """Return the most recent value of an output topic as JSON."""
-        name = request.path_params["name"]
+        name = _name_param(request)
         if name not in output_names:
             return JSONResponse(
                 {"error": f"Unknown output topic '{name}'"}, status_code=404
@@ -419,7 +426,7 @@ def _output_routes(ros_node: UINode) -> List:
         rate (clamped to the max), ``?rate=0`` forces push. Multiple clients can
         stream the same topic independently.
         """
-        name = websocket.path_params["name"]
+        name = _name_param(websocket)
         if name not in output_names:
             await websocket.close(code=1008)  # policy violation
             return
@@ -457,8 +464,10 @@ def _output_routes(ros_node: UINode) -> List:
             )
 
     return [
-        Route(f"{API_BASE}/outputs/{{name}}/latest", output_latest, methods=["GET"]),
-        WebSocketRoute(f"{API_BASE}/outputs/{{name}}", stream_output),
+        Route(
+            f"{API_BASE}/outputs/{{name:path}}/latest", output_latest, methods=["GET"]
+        ),
+        WebSocketRoute(f"{API_BASE}/outputs/{{name:path}}", stream_output),
     ]
 
 
@@ -468,7 +477,7 @@ def _action_routes(ros_node: UINode) -> List:
 
     async def send_goal(request):
         """Send a JSON goal to an action; returns 202 once the server accepts it."""
-        name = request.path_params["name"]
+        name = _name_param(request)
         if name not in action_names:
             return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
         body = await _json_body(request)
@@ -502,7 +511,7 @@ def _action_routes(ros_node: UINode) -> List:
 
     async def cancel_goal(request):
         """Cancel the ongoing goal of an action."""
-        name = request.path_params["name"]
+        name = _name_param(request)
         if name not in action_names:
             return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
         try:
@@ -519,7 +528,7 @@ def _action_routes(ros_node: UINode) -> List:
         The stream ends on a terminal state (completed/aborted/canceled) or when
         the client disconnects.
         """
-        name = websocket.path_params["name"]
+        name = _name_param(websocket)
         if name not in action_names:
             await websocket.close(code=1008)  # policy violation
             return
@@ -546,9 +555,15 @@ def _action_routes(ros_node: UINode) -> List:
         )
 
     return [
-        Route(f"{API_BASE}/actions/{{name}}", send_goal, methods=["POST"]),
-        Route(f"{API_BASE}/actions/{{name}}/cancel", cancel_goal, methods=["POST"]),
-        WebSocketRoute(f"{API_BASE}/actions/{{name}}/feedback", stream_action_feedback),
+        # NOTE: /cancel must be registered before the goal route. The greedy
+        # {name:path} goal pattern would otherwise swallow ".../cancel" URLs.
+        Route(
+            f"{API_BASE}/actions/{{name:path}}/cancel", cancel_goal, methods=["POST"]
+        ),
+        Route(f"{API_BASE}/actions/{{name:path}}", send_goal, methods=["POST"]),
+        WebSocketRoute(
+            f"{API_BASE}/actions/{{name:path}}/feedback", stream_action_feedback
+        ),
     ]
 
 
@@ -570,7 +585,7 @@ def _world_routes(ros_node: UINode) -> List:
         The ``?rate`` query param caps the grid rate. Markers are checked at
         the max rate so they stay responsive.
         """
-        name = websocket.path_params["name"]
+        name = _name_param(websocket)
         if name not in grid_names:
             await websocket.close(code=1008)  # not an occupancy-grid output
             return
@@ -623,7 +638,7 @@ def _world_routes(ros_node: UINode) -> List:
         except (WebSocketDisconnect, RuntimeError):
             return
 
-    return [WebSocketRoute(f"{API_BASE}/world/{{name}}", stream_world)]
+    return [WebSocketRoute(f"{API_BASE}/world/{{name:path}}", stream_world)]
 
 
 def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starlette:

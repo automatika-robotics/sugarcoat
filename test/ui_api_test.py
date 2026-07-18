@@ -446,6 +446,41 @@ def test_interfaces_advertises_stream_mode():
     assert outputs["map"]["mode"] == "sampled"  # OccupancyGrid -> sampled default
 
 
+def test_namespaced_topic_names_are_addressable():
+    """Topics with interior slashes (ns/topic) resolve through the {name:path}
+    routes; a leading slash in the URL is normalized like Topic names."""
+    node = _ApiNode()
+    node.out_topics.append(Topic(name="/ns/cmd", msg_type="String"))  # -> "ns/cmd"
+    node.in_topics.append(Topic(name="ns/status", msg_type="String"))
+    client = _make_client(node)
+
+    resp = client.post("/api/inputs/ns/cmd", json={"data": "hi"})
+    assert resp.status_code == 200
+    assert node.published[-1]["topic_name"] == "ns/cmd"
+
+    # A client that naively prepends the ROS-style leading slash still resolves
+    resp = client.post("/api/inputs//ns/cmd", json={"data": "again"})
+    assert resp.status_code == 200
+    assert node.published[-1]["topic_name"] == "ns/cmd"
+
+    node.latest["ns/status"] = "ok"
+    resp = client.get("/api/outputs/ns/status/latest")
+    assert resp.status_code == 200
+    assert resp.json() == {"topic": "ns/status", "payload": "ok"}
+    with client.websocket_connect("/api/outputs/ns/status?rate=50") as ws:
+        assert ws.receive_json()["topic"] == "ns/status"
+
+
+def test_action_cancel_not_swallowed_by_goal_route():
+    """/actions/{name:path} is greedy: the cancel route must win for .../cancel."""
+    node = _ApiNode()
+    client = _make_client(node)
+    resp = client.post("/api/actions/navigate/cancel")
+    assert resp.status_code == 200
+    assert resp.json()["cancelled"] is True
+    assert node.goals == []  # the goal handler never ran
+
+
 def test_set_ros_msg_from_dict_converts_by_declared_type():
     from std_msgs.msg import ByteMultiArray, Float32MultiArray, String as ROSString
 
