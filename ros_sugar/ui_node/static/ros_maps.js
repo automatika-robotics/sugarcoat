@@ -108,16 +108,34 @@ function closeAllMapConnections() {
     mapConnections.clear();
 }
 
-// --- EXPORTED FUNCTIONS (Called by Python Buttons) ---
-window.zoomMap = function (topicName, zoomFactor) {
+// --- GLOBAL FUNCTIONS (called from Python-generated onclick attributes) ---
+// Top-level declarations are window globals.
+function zoomMap(topicName, zoomFactor) {
     const container = document.getElementById(topicName);
     if (!container || !container.mapViewer) return;
 
     const viewer = container.mapViewer;
     applyZoom(viewer, zoomFactor, null); // Null center means zoom to center of view
-};
+}
 
-window.togglePublishPoint = function (btn) {
+function readClickedPointTarget(form) {
+    // The target topic dropdown lists declared point-like UI inputs. Read the
+    // LIVE control the uk-select component keeps in sync (its hidden input or
+    // the native select).
+    const valueEl = form.querySelector(
+        'input[name="clicked_point_topic"], select[name="clicked_point_topic"]'
+    );
+    if (!valueEl || !valueEl.value) return null;
+    const topic = valueEl.value;
+    // The declared msg type rides on the selected option's data-type attribute
+    let type = 'PointStamped';
+    for (const opt of form.querySelectorAll('option[data-type]')) {
+        if (opt.value === topic) { type = opt.dataset.type; break; }
+    }
+    return { topic: topic, type: type };
+}
+
+function togglePublishPoint(btn) {
     const mapElements = document.getElementsByName('map-canvas');
     if (mapElements.length === 0) {
         if (typeof UIkit !== 'undefined') {
@@ -146,7 +164,7 @@ window.togglePublishPoint = function (btn) {
 
         // If click is outside map AND outside the toggle button, turn off
         if (!isClickOnMap && !isClickOnBtn) {
-            window.togglePublishPoint(btn);
+            togglePublishPoint(btn);
         }
     };
     // ----------------------------------------
@@ -193,94 +211,36 @@ window.togglePublishPoint = function (btn) {
         }
         container.style.cursor = isTurningOn ? 'crosshair' : 'default';
 
-        // Determine Settings if Turning On
-        if (isTurningOn) {
-            if (btn.id === `${topicName}-publish-btn`) {
-                const settingsForm = document.getElementById(`${topicName}-settings-form`);
-                let targetTopic = 'clicked_point';
-                let msgType = 'PointStamped';
-
-                if (state.settings) {
-                    targetTopic = state.settings.topic;
-                    msgType = state.settings.type;
-                } else if (settingsForm) {
-                    const tInput = settingsForm.querySelector('[name="clicked_point_topic"]');
-                    let mInput = settingsForm.querySelector('input[name="clicked_point_type"]');
-                    if (!mInput) mInput = settingsForm.querySelector('select[name="clicked_point_type"]');
-
-                    if (tInput && tInput.value) targetTopic = tInput.value;
-                    if (mInput && mInput.value) msgType = mInput.value;
-                    state.settings = { topic: targetTopic, type: msgType };
-                }
-                state[btn.id] = { topic: targetTopic, type: msgType };
-            } else {
-                const customTopic = btn.getAttribute('data-topic') || 'clicked_point';
-                const customType = btn.getAttribute('data-type') || 'PointStamped';
-                state[btn.id] = { topic: customTopic, type: customType };
-            }
+        // Custom buttons carry a fixed target on data attributes. The standard
+        // publish button has NO cached target: the settings dropdown is read
+        // live at click time so a changed selection is always respected.
+        if (isTurningOn && btn.id !== `${topicName}-publish-btn`) {
+            const customTopic = btn.getAttribute('data-topic') || 'clicked_point';
+            const customType = btn.getAttribute('data-type') || 'PointStamped';
+            state[btn.id] = { topic: customTopic, type: customType };
         }
     });
-};
+}
 
-window.openMapSettings = function (topicName) {
+function openMapSettings(topicName) {
     const modal = document.getElementById(`${topicName}-settings-modal`);
     if (!modal) return;
 
     // Show Modal
     modal.style.display = 'grid';
 
-    // Restore Saved Values (if they exist)
-    const state = mapInteractionState[topicName];
-    if (state && state.settings) {
-        const form = document.getElementById(`${topicName}-settings-form`);
-        if (form) {
-            // A. Restore Text Input
-            const tInput = form.querySelector('input[name="clicked_point_topic"]');
-            if (tInput) tInput.value = state.settings.topic;
+    // NOTE: The target-topic dropdown needs no restore: the modal is only
+    // hidden/shown, so the DOM select keeps the user's selection, and the
+    // publish flow reads it live at click time.
+}
 
-            // B. Restore Dropdown (Complex Component)
-            // We must find the HIDDEN NATIVE SELECT inside the custom component to update the UI
-            // Selector: Find the uk-select with this name, then find the native select inside it
-            const selectContainer = form.querySelector(`uk-select[name="clicked_point_type"]`);
-            if (selectContainer) {
-                const nativeSelect = selectContainer.querySelector('select');
-                if (nativeSelect) {
-                    nativeSelect.value = state.settings.type;
-                    // Dispatch change event so the Custom UI updates its text
-                    nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            } else {
-                // Fallback: try finding any select with that name
-                const simpleSelect = form.querySelector(`select[name="clicked_point_type"]`);
-                if (simpleSelect) simpleSelect.value = state.settings.type;
-            }
-        }
-    }
-};
-
-window.saveMapSettings = function (topicName) {
+function saveMapSettings(topicName) {
     const modal = document.getElementById(`${topicName}-settings-modal`);
     const form = document.getElementById(`${topicName}-settings-form`);
 
     if (form) {
         // Initialize State
         if (!mapInteractionState[topicName]) mapInteractionState[topicName] = {};
-
-        // Save Publishing Settings
-        const pubTopic = form.querySelector('[name="clicked_point_topic"]').value;
-
-        // Handle Custom Select for Message Type
-        let typeValue = 'PointStamped';
-        const mInput = form.querySelector('input[name="clicked_point_type"]');
-        if (mInput) {
-            typeValue = mInput.value;
-        } else {
-            const sInput = form.querySelector('select[name="clicked_point_type"]');
-            if (sInput) typeValue = sInput.value;
-        }
-
-        mapInteractionState[topicName].settings = { topic: pubTopic, type: typeValue };
-
         // Save Visual Settings
         if (!mapInteractionState[topicName].visuals) mapInteractionState[topicName].visuals = {};
 
@@ -334,14 +294,14 @@ window.saveMapSettings = function (topicName) {
     }
 
     if (modal) modal.style.display = 'none';
-};
+}
 
 
 /**
  * Toggles the visibility of markers setting blocks in the map settings modal.
  * * @param {string} mapId - The ID of the map (e.g. 'map_1')
  */
-window.updateVisualSettingsVisibility = function (target, mapId) {
+function updateVisualSettingsVisibility(target, mapId) {
     // RETRIEVE VALUE
     // Since 'target' is the custom <uk-select> wrapper (LabelSelect), we look inside it.
     // We try the hidden input first (most reliable), then fallback to direct .value
@@ -374,14 +334,14 @@ window.updateVisualSettingsVisibility = function (target, mapId) {
             el.style.display = 'none';
         }
     });
-};
+}
 
 
 /**
  * Sets up a watcher on the selector to trigger updates automatically.
  * Call this ONCE when the modal opens.
  */
-window.initVisualSettingsObserver = function (mapId) {
+function initVisualSettingsObserver(mapId) {
     const selector = document.getElementById(`visual-selector-${mapId}`);
     if (!selector || selector._hasObserver) return; // Prevent double binding
 
@@ -404,7 +364,7 @@ window.initVisualSettingsObserver = function (mapId) {
 
     // Mark as observed so we don't attach multiple times
     selector._hasObserver = true;
-};
+}
 
 function initSingleMap(container, attempt = 0) {
     const topicName = container.id;
@@ -473,7 +433,7 @@ function initSingleMap(container, attempt = 0) {
     if (cachedMapHeader) container.mapHeader = cachedMapHeader;
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws_${topicName}`;
+    const wsUrl = `${protocol}//${window.location.host}/api/world/${topicName}`;
     const ws = connectMapWebSocket(container, wsUrl, mockRos, topicName, 0);
 
     setupInteractions(viewer, container);
@@ -516,28 +476,41 @@ function connectMapWebSocket(container, wsUrl, mockRos, topicName, attempt) {
             } else {
                 msgData = JSON.parse(event.data);
             }
-            let mapMessage = msgData.msg ? msgData.msg : msgData;
-
-            if (mapMessage.info && mapMessage.header) {
-                container.mapInfo = mapMessage.info;
-                container.mapHeader = mapMessage.header;
+            // --- Handle Grid ---
+            if (msgData.op === 'publish') {
+                const g = msgData.msg;
+                // Reconstruct the nested ROS OccupancyGrid shape that ROS2D and
+                // the overlay transforms expect, from the API's flat fields.
+                const info = {
+                    resolution: g.resolution,
+                    width: g.width,
+                    height: g.height,
+                    origin: {
+                        position: { x: g.origin_x, y: g.origin_y, z: 0 },
+                        orientation: {
+                            x: 0, y: 0,
+                            z: Math.sin(g.origin_yaw / 2),
+                            w: Math.cos(g.origin_yaw / 2),
+                        },
+                    },
+                };
+                const header = { frame_id: g.frame_id };
+                container.mapInfo = info;
+                container.mapHeader = header;
                 // Persist in registry so it survives DOM swaps
                 const conn = mapConnections.get(topicName);
                 if (conn) {
-                    conn.mapInfo = mapMessage.info;
-                    conn.mapHeader = mapMessage.header;
+                    conn.mapInfo = info;
+                    conn.mapHeader = header;
                 }
-            }
-
-            if (mapMessage.data && typeof mapMessage.data === 'string') {
-                const binaryString = atob(mapMessage.data);
+                // Decode base64 int8 occupancy data
+                const binaryString = atob(g.data);
                 const len = binaryString.length;
                 const bytes = new Int8Array(len);
                 for (let i = 0; i < len; i++) {
                     bytes[i] = binaryString.charCodeAt(i);
                 }
-                mapMessage.data = bytes;
-                mockRos.emit(topicName, mapMessage);
+                mockRos.emit(topicName, { info: info, header: header, data: bytes });
             }
             // --- Handle Points ---
             else if (msgData.op === 'overlay') {
@@ -1002,34 +975,58 @@ function applyZoom(viewer, factor, center) {
 /**
  * Helper method to publish a clicked point on a map canvas
  */
+function notifyMapPublishError(topic, detail) {
+    // Surface publish failures in the UI
+    const message = `Failed to publish map point to '${topic}': ${detail}`;
+    if (typeof UIkit !== 'undefined') {
+        UIkit.notification({
+            message: `<span uk-icon='icon: warning'></span> ${message}`,
+            status: 'danger',
+            pos: 'top-center',
+            timeout: 6000
+        });
+    } else {
+        console.error(message);
+    }
+}
+
 function publishPoint(container, targetTopic, rosPoint, msgType) {
-    if (!container || !container.mapWs) {
-        console.warn("Cannot publish point: Websocket or Container missing");
+    // Build the schema-shaped body the /api/inputs contract expects
+    // then POST it like any third-party client.
+    const pos = { x: rosPoint.x, y: rosPoint.y, z: rosPoint.z };
+    // Stamped messages carry the map's frame (the clicked coordinates are in
+    // it); the server fills the timestamp on publish.
+    const header = { frame_id: (container.mapHeader && container.mapHeader.frame_id) || '' };
+    let body;
+    if (msgType === 'Point') {
+        body = pos;
+    } else if (msgType === 'PointStamped') {
+        body = { header: header, point: pos };
+    } else if (msgType === 'Pose' || msgType === 'PoseStamped') {
+        const pose = { position: pos, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } };
+        body = (msgType === 'Pose') ? pose : { header: header, pose: pose };
+    } else {
+        console.warn(`Cannot publish point: unsupported type ${msgType}`);
         return;
     }
 
-    // Default Orientation
-    const defaultOrientation = { ori_x: 0.0, ori_y: 0.0, ori_z: 0.0, ori_w: 1.0 };
-    let messageData = {};
-
-    // Safely get frame_id (Default to 'map' if header is missing)
-    const frameId = (container.mapHeader && container.mapHeader.frame_id) ? container.mapHeader.frame_id : 'map';
-
-    if (msgType === 'Point' || msgType === 'PointStamped') {
-        messageData = rosPoint; // {x, y, z}
-    } else if (msgType === 'Pose' || msgType === 'PoseStamped') {
-        messageData = { ...rosPoint, ...defaultOrientation };
-    }
-
-    const payload = {
-        topic_name: targetTopic,
-        frame_id: frameId,
-        topic_type: msgType,
-        data: messageData
-    };
-
-    container.mapWs.send(JSON.stringify(payload));
-    console.log(`Published [${msgType}] to [${targetTopic}]`, payload);
+    fetch(`/api/inputs/${targetTopic}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    })
+        .then(async (r) => {
+            if (r.ok) {
+                console.log(`Published [${msgType}] to [${targetTopic}]`, body);
+                return;
+            }
+            let detail = `HTTP ${r.status}`;
+            try {
+                detail = (await r.json()).error || detail;
+            } catch (e) { /* keep the status text */ }
+            notifyMapPublishError(targetTopic, detail);
+        })
+        .catch((e) => notifyMapPublishError(targetTopic, e.message || 'network error'));
 };
 
 
@@ -1053,15 +1050,23 @@ function setupInteractions(viewer, container) {
             const rosPoint = transformScreenToRos(container, mouseX, mouseY);
 
             if (rosPoint) {
-                let targetTopic = 'clicked_point';
-                let msgType = 'PointStamped';
-                if (state.btn && state[state.btn.id]) {
-                    targetTopic = state[state.btn.id].topic;
-                    msgType = state[state.btn.id].type;
+                // Standard button reads the settings dropdown LIVE so the
+                // latest selection always wins. Custom buttons keep their
+                // fixed data-attribute target.
+                let target = null;
+                if (state.btn && state.btn.id === `${topicName}-publish-btn`) {
+                    const form = document.getElementById(`${topicName}-settings-form`);
+                    if (form) target = readClickedPointTarget(form);
+                } else if (state.btn && state[state.btn.id]) {
+                    target = state[state.btn.id];
                 }
-                publishPoint(container, targetTopic, rosPoint, msgType);
+                if (target) {
+                    publishPoint(container, target.topic, rosPoint, target.type);
+                } else {
+                    notifyMapPublishError(topicName, 'no target topic selected in map settings');
+                }
             }
-            window.togglePublishPoint(state.btn);
+            togglePublishPoint(state.btn);
             return;
         }
 

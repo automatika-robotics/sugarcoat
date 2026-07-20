@@ -3,21 +3,32 @@
  * Handles Audio WebSocket connections, recording, and processing (WAV conversion).
  */
 
-// Establish WebSocket connection for audio transmission
+// Per-topic Audio WebSockets to the API. The topic name is in the URL
+// (WS /api/inputs/<topic>/audio); each recording is sent as {payload: <base64>}.
 const audioWsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const ws_stream = new WebSocket(`${audioWsProtocol}//${window.location.host}/ws_audio`);
+const audioSockets = new Map(); // topic -> WebSocket
 
-ws_stream.onopen = () => {
-    console.log("Audio Websocket connection established");
-};
+function getAudioSocket(topic) {
+    let ws = audioSockets.get(topic);
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return ws;
+    }
+    ws = new WebSocket(`${audioWsProtocol}//${window.location.host}/api/inputs/${topic}/audio`);
+    ws.onclose = () => { audioSockets.delete(topic); };
+    ws.onerror = (err) => { console.error(`Audio WebSocket error [${topic}]:`, err); };
+    audioSockets.set(topic, ws);
+    return ws;
+}
 
-ws_stream.onclose = () => {
-    console.log("Audio Websocket connection closed");
-};
-
-ws_stream.onerror = (err) => {
-    console.error(`Audio WebSocket error:`, err);
-};
+function sendAudio(topic, base64Audio) {
+    const ws = getAudioSocket(topic);
+    const frame = JSON.stringify({ payload: base64Audio });
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(frame);
+    } else {
+        ws.addEventListener("open", () => ws.send(frame), { once: true });
+    }
+}
 
 // --- Audio Recording Logic ---
 
@@ -77,8 +88,8 @@ async function startAudioRecording(button) {
                     reader.onloadend = () => {
                         const base64Audio = reader.result.split(",")[1];
                         if (base64Audio) {
-                            // topic_name matches the button ID used to trigger recording
-                            ws_stream.send(JSON.stringify({ type: "audio", payload: base64Audio, topic_name: button.id }));
+                            // topic name matches the button ID used to trigger recording
+                            sendAudio(button.id, base64Audio);
                         }
                     };
                 } catch (error) {

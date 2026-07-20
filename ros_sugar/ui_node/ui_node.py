@@ -1,17 +1,13 @@
 from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List
-import threading
-import asyncio
 import os
 from attr import define, field, Factory
 import json
 import importlib
-from functools import partial
 
 from ..config.base_attrs import BaseAttrs
 from ..config.base_validators import in_range
-from ..core.component import BaseComponent, BaseComponentConfig, Publisher
+from ..core.component import BaseComponent, BaseComponentConfig
 from .. import base_clients
-from ..io.callbacks import GenericCallback
 from ..io.topic import Topic
 from ..base_clients import (
     ServiceClientHandler,
@@ -23,7 +19,6 @@ from ..io import supported_types
 from automatika_ros_sugar.srv import ChangeParameters
 
 from rclpy.logging import get_logger
-from std_msgs.msg import Header
 
 
 @define
@@ -36,6 +31,15 @@ class UINodeConfig(BaseComponentConfig):
     feedback_update_period: float = field(
         default=1.0, validator=in_range(min_value=1e-3, max_value=1e3)
     )  # 1 second ui feedback update rate
+    # Default rate (Hz) at which the JSON API streams output topics to a
+    # connected client when it does not request one explicitly.
+    api_stream_default_rate: float = field(
+        default=10.0, validator=in_range(min_value=1e-3, max_value=1e3)
+    )
+    # Hard upper bound (Hz) for a client-requested API stream rate.
+    api_max_stream_rate: float = field(
+        default=30.0, validator=in_range(min_value=1e-3, max_value=1e3)
+    )
 
 
 class UINode(BaseComponent):
@@ -63,20 +67,6 @@ class UINode(BaseComponent):
             str, base_clients.ServiceClientHandler
         ] = {}
 
-        # Initialize websocket callbacks
-        self.default_websocket_callback: Callable = lambda *args, **kwargs: (
-            asyncio.sleep(0)
-        )
-
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            self.loop_thread = threading.Thread(
-                target=self.loop.run_forever, daemon=True
-            )
-
         topic_inputs = (
             [inp for inp in inputs if isinstance(inp, Topic)] if inputs else []
         )
@@ -101,9 +91,15 @@ class UINode(BaseComponent):
 
         self._ros_service_clients: Dict[str, ServiceClientHandler] = {}
         self._ros_action_clients: Dict[str, ActionClientHandler] = {}
-        # Used to store callbacks for active clients
-        self._ros_action_clients_feedback_callbacks: Dict[str, Callable] = {}
-        self._ros_action_clients_feedback_timers: Dict = {}
+
+        # Memoized UI content per output topic: name -> (source msg, ui content).
+        # Computed lazily from the topic's callback only when a client
+        # consumes it.
+        self._output_memo: Dict[str, Any] = {}
+
+        # Per-output-topic message listeners: name -> set of zero-arg callables
+        # fired on each received message (used to push updates to clients).
+        self._output_listeners: Dict[str, set] = {}
 
         self.config: UINodeConfig
 
@@ -145,8 +141,103 @@ class UINode(BaseComponent):
             clients_configs_dicts.append(config_dict)
         return clients_configs_dicts
 
-    def get_active_action_clients(self) -> Dict[str, ActionClientHandler]:
-        return self._ros_action_clients
+    def get_latest_output(self, topic_name: str) -> Any:
+        """Return UI content for an output topic's latest message, or ``None``.
+
+        Asks the topic's callback (which already holds the latest message) for
+        its UI content on demand, and memoizes the result per message so
+        expensive conversions only run when a client is consuming the topic.
+        """
+        callback = self.callbacks.get(topic_name)
+        if callback is None or callback.msg is None:
+            return None
+        cached_msg, cached_content = self._output_memo.get(topic_name, (None, None))
+        if cached_msg is callback.msg:
+            return cached_content
+        try:
+            content = callback._get_ui_content()
+        except Exception as e:
+            get_logger(self.node_name).error(
+                f"Error computing UI content for '{topic_name}': {e}"
+            )
+            return None
+        self._output_memo[topic_name] = (callback.msg, content)
+        return content
+
+    def get_action_feedback(self, action_name: str) -> Optional[Dict]:
+        """Return the latest UI elements for an action client, or ``None``.
+
+        The returned dict has ``status``, ``feedback`` (a raw ROS message or
+        ``None``), ``timestep``, ``feedback_timeout`` and ``duration_secs``
+        """
+        client = self._ros_action_clients.get(action_name)
+        if client is None:
+            return None
+        return client.get_ui_elements()
+
+    def add_action_feedback_listener(
+        self, action_name: str, listener: Callable[[], None]
+    ) -> bool:
+        """Register a zero-arg ``listener`` for action feedback.
+
+        :return: ``False`` if the action client is not ready.
+        """
+        client = self._ros_action_clients.get(action_name)
+        if client is None:
+            return False
+        client.add_feedback_listener(listener)
+        return True
+
+    def remove_action_feedback_listener(
+        self, action_name: str, listener: Callable[[], None]
+    ) -> None:
+        """Remove a previously registered action feedback listener."""
+        client = self._ros_action_clients.get(action_name)
+        if client is not None:
+            client.remove_feedback_listener(listener)
+
+    def _notify_output_listeners(self, topic_name: str) -> None:
+        """Fan out a new message on ``topic_name`` to its registered listeners."""
+        for listener in list(self._output_listeners.get(topic_name, ())):
+            try:
+                listener()
+            except Exception:
+                pass
+
+    def add_output_listener(
+        self, topic_name: str, listener: Callable[[], None]
+    ) -> bool:
+        """Register a zero-arg ``listener`` fired on every message received on
+        an output topic.
+
+        :return: ``False`` if the output topic has no callback.
+        """
+        callback = self.callbacks.get(topic_name)
+        if callback is None:
+            return False
+        listeners = self._output_listeners.setdefault(topic_name, set())
+        if not listeners:
+            # First listener for this topic: wire the callback's message hook.
+            callback.on_callback_execute(
+                lambda **_: self._notify_output_listeners(topic_name),
+                get_processed=False,
+            )
+        listeners.add(listener)
+        return True
+
+    def remove_output_listener(
+        self, topic_name: str, listener: Callable[[], None]
+    ) -> None:
+        """Remove a previously registered output message listener."""
+        listeners = self._output_listeners.get(topic_name)
+        if not listeners:
+            return
+        listeners.discard(listener)
+        if not listeners:
+            # No listeners left: unwire the callback's message hook.
+            callback = self.callbacks.get(topic_name)
+            if callback is not None:
+                callback.on_callback_execute(None)
 
     @property
     def _client_inputs_json(self) -> str:
@@ -240,53 +331,6 @@ class UINode(BaseComponent):
                     f"Error parsing action clients inputs: {e}"
                 )
 
-    def _return_error(self, error_msg: str):
-        """Return error msg to the UI"""
-        self.get_logger().error(error_msg)
-        payload = {"type": "error", "payload": error_msg}
-        asyncio.run_coroutine_threadsafe(
-            self.default_websocket_callback(payload), self.loop
-        )
-
-    def _add_ros_subscriber(self, callback: GenericCallback):
-        """Overrides creating subscribers to run the ui callback instead of the main callback
-        :param callback:
-        :type callback: GenericCallback
-        """
-        payload = {
-            "type": callback.input_topic.msg_type.__name__,
-            "topic": callback.input_topic.name,
-        }
-
-        setattr(self, f"{payload['type']}_callback", None)
-
-        def _ui_callback(msg) -> None:
-            ws_callback = (
-                getattr(self, f"{payload['type']}_callback")
-                or self.default_websocket_callback
-            )
-            callback.msg = msg
-            if hasattr(msg, "header") and isinstance(msg.header, Header):
-                callback._frame_id = msg.header.frame_id
-            try:
-                ui_content = callback._get_ui_content()
-                payload["payload"] = ui_content
-            except Exception as e:
-                return self._return_error(f"Topic callback error: {e}")
-            asyncio.run_coroutine_threadsafe(ws_callback(payload, msg=msg), self.loop)
-
-        _subscriber = self.create_subscription(
-            msg_type=callback.input_topic.ros_msg_type,
-            topic=callback.input_topic.name,
-            qos_profile=callback.input_topic.qos_profile.to_ros(),
-            callback=_ui_callback,
-            callback_group=self.callback_group,
-        )
-        self.get_logger().debug(
-            f"Started subscriber to topic: {callback.input_topic.name} of type {callback.input_topic.msg_type.__name__}"
-        )
-        return _subscriber
-
     def custom_on_activate(self):
         """Custom activation configuration"""
         # Setup settings updater clients
@@ -312,10 +356,6 @@ class UINode(BaseComponent):
                 client_node=self, config=inp
             )
 
-        # Start loop thread if necessary
-        if hasattr(self, "loop_thread"):
-            self.loop_thread.start()
-
         return super().custom_on_activate()
 
     def custom_on_deactivate(self):
@@ -336,15 +376,6 @@ class UINode(BaseComponent):
 
         return super().custom_on_deactivate()
 
-    def attach_websocket_callback(
-        self, ws_callback: Callable, topic_type: Optional[str] = None
-    ):
-        """Adds websocket callback to listeners of outputs"""
-        if topic_type:
-            setattr(self, f"{topic_type}_callback", ws_callback)
-        else:
-            self.default_websocket_callback = ws_callback
-
     def update_configs(self, new_configs: Dict):
         self.get_logger().debug("Updating configs")
         component_name = new_configs.pop("component_name")
@@ -359,182 +390,101 @@ class UINode(BaseComponent):
         )
         return result
 
-    def attach_client_feedback_callback(self, ws_callback, action_name: str):
-        if self._ros_action_clients.get(action_name, None):
-            self._ros_action_clients_feedback_callbacks[action_name] = ws_callback
+    def send_srv_call(self, srv_call_data: Dict) -> Any:
+        """Call a declared service client and return the raw ROS response.
 
-    def send_srv_call(self, srv_call_data: Dict) -> Tuple[bool, Any]:
-        """
-        Send a service call using the service request form data
+        ``srv_call_data`` must contain ``srv_name``; the remaining keys are the
+        request fields. The raw ROS response object or None is returned.
+
+        :param srv_call_data: ``{"srv_name": <name>, **request_fields}``.
+        :raises RuntimeError: If the service client is not ready.
+        :return: The raw ROS response message, or ``None``.
         """
         srv_name = srv_call_data.pop("srv_name")
-        if srv_name not in self._ros_service_clients:
-            return (False, f'Service client "{srv_name}" not found!')
+        client = self._ros_service_clients.get(srv_name)
+        if client is None:
+            raise RuntimeError(f"Service client '{srv_name}' is not ready")
+        return client.send_request_from_dict(request_fields=srv_call_data)
 
-        try:
-            output = self._ros_service_clients[srv_name].send_request_from_dict(
-                request_fields=srv_call_data
-            )
-        except Exception as e:
-            return (
-                False,
-                f'Error occurred when sending service request to "{srv_name}": {e}',
-            )
+    def send_action_goal(self, action_goal_data: Dict) -> Optional[bool]:
+        """Send a goal to a declared action client.
 
-        if output:
-            # Parse response to display on UI
-            response_fields = self._ros_service_clients[
-                srv_name
-            ].client.srv_type.Response.get_fields_and_field_types()
-            # Format a response string with fields dictionary keys and actual response values
-            response_str = ""
-            for key in response_fields.keys():
-                response_str += f"{key} = {getattr(output, key)}, "
-            return (True, response_str)
-        return (
-            False,
-            f'Server Error - Service "{srv_name}" request send but no service response received',
-        )
+        ``action_goal_data`` must contain ``action_name``; the remaining keys
+        are the goal fields.
 
-    def send_action_goal(self, action_goal_data: Dict) -> Tuple[bool, Any]:
-        """
-        Send a service call using the service request form data
+        :param action_goal_data: ``{"action_name": <name>, **goal_fields}``.
+        :raises RuntimeError: If the action client is not ready.
+        :return: True if the goal was accepted by the action server.
         """
         action_name = action_goal_data.pop("action_name")
-        if action_name not in self._ros_action_clients:
-            return (False, f'Action client "{action_name}" not found!')
-
-        try:
-            sent_done = self._ros_action_clients[action_name].send_request_from_dict(
-                request_fields=action_goal_data, wait_until_first_feedback=False
-            )
-        except Exception as e:
-            return (
-                False,
-                f'Error occurred when sending service request to "{action_name}": {e}',
-            )
-
-        if sent_done:
-            # If goal is sent, start a timer to send the feedback to the websocket
-            self._ros_action_clients_feedback_timers[action_name] = self.create_timer(
-                timer_period_sec=self.config.feedback_update_period,
-                callback=partial(
-                    self._action_feedback_callback, action_name=action_name
-                ),
-            )
-            return (True, f"Starting requested action {action_name}...")
-        return (
-            False,
-            f'Server Error - Was not able to send goal for action "{action_name}"',
+        client = self._ros_action_clients.get(action_name)
+        if client is None:
+            raise RuntimeError(f"Action client '{action_name}' is not ready")
+        return client.send_request_from_dict(
+            request_fields=action_goal_data, wait_until_first_feedback=False
         )
 
-    def _action_feedback_callback(self, action_name: str):
-        """Get feedback message from action (if available)
-
-        :param action_name: Action name
-        :type action_name: str
-        :return: Feedback Info
-        :rtype: Optional[str]
-        """
-        if action_name not in self._ros_action_clients:
-            return
-        feedback_data = self._ros_action_clients[action_name].get_ui_elements()
-        if feedback_func := self._ros_action_clients_feedback_callbacks.get(
-            action_name, None
-        ):
-            # await feedback_func(feedback_data)
-            asyncio.run_coroutine_threadsafe(
-                feedback_func(feedback_data), self.loop
-            )
-
     def cancel_action(self, action_name: str) -> Tuple[bool, str]:
-        """Cancel ongoing action goal
+        """Cancel the ongoing goal of a declared action client.
 
-        :param action_name: Action name
-        :type action_name: str
-        :return: If action is cancelled, Log message
-        :rtype: (bool, str)
+        :param action_name: Action name.
+        :raises RuntimeError: If the action client is not ready.
+        :return: ``(cancelled, message)``.
         """
-        if action_name not in self._ros_action_clients:
-            return (
-                True,
-                f"Action cancellation is not possible: '{action_name}' is not found",
-            )
-        return self._ros_action_clients[action_name].cancel_request()
+        client = self._ros_action_clients.get(action_name)
+        if client is None:
+            raise RuntimeError(f"Action client '{action_name}' is not ready")
+        return client.cancel_request()
 
-    def cleanup_action(self, action_name: str) -> None:
-        """Destroy the action feedback timer. Called when the action has completed or aborted
+    def publish_data(self, data: Dict) -> int:
+        """Publish a message on a declared input topic from a field dict.
 
-        :param action_name: _description_
-        :type action_name: str
-        """
-        self.destroy_timer(self._ros_action_clients_feedback_timers[action_name])
+        ``data`` must contain ``topic_name``; the remaining keys are message
+        fields matching the topic's ROS message schema (as advertised by the
+        API discovery document)
 
-    def publish_data(self, data: Any):
-        """
-        Publish data to input topics if any
+        :param data: ``{"topic_name": <name>, **message_fields}``.
+        :raises RuntimeError: If the publisher for the topic is not ready.
+        :raises ValueError: If the fields cannot be converted to the message.
+        :return: The current number of subscribers on the topic.
         """
         topic_name = data.pop("topic_name")
-        topic_type_str = data.pop("topic_type")
-        frame_id = data.pop("frame_id", None)
-        topic_type = getattr(supported_types, topic_type_str, None)
-
-        if not topic_type:
-            return self._return_error(
-                f'Data type "{topic_type_str}" not found in supported types. Make sure the UI element is created correctly'
-            )
-
-        if self.count_subscribers(topic_name) == 0:
-            return self._return_error(
-                f'No subscribers found for the topic "{topic_name}". Please check the topic name and re-send data'
-            )
-
+        data.pop("topic_type", None)  # type comes from the declared publisher
+        publisher = self.publishers_dict.get(topic_name)
+        if publisher is None or publisher._publisher is None:
+            raise RuntimeError(f"Publisher for input topic '{topic_name}' is not ready")
         try:
-            output = topic_type.convert_ui_dict(
-                data
-            )  # Convert to publisher compatible data
-        except NotImplementedError:
-            return self._return_error(
-                f'Data type "{topic_type_str}" does not implement a converter'
+            msg = supported_types.set_ros_msg_from_dict(
+                publisher.output_topic.ros_msg_type, data
             )
         except Exception as e:
-            return self._return_error(
-                f'Error occurred when converting {data} to Sugar type "{topic_type_str}": {e}'
-            )
-        kwargs = {"output": output}
+            raise ValueError(
+                f"Cannot build a {publisher.output_topic.msg_type.__name__} "
+                f"message from {data}: {e}"
+            ) from e
+        # Stamp headers the client left unset because clients cant know ROS time
+        if (
+            hasattr(msg, "header")
+            and msg.header.stamp.sec == 0
+            and msg.header.stamp.nanosec == 0
+        ):
+            msg.header.stamp = self.get_clock().now().to_msg()
+        publisher._publisher.publish(msg)
+        return self.count_subscribers(topic_name)
 
-        # Add the data frame_id if it is sent
-        if frame_id:
-            kwargs["frame_id"] = frame_id
+    def publish_audio(self, topic_name: str, audio_b64: str) -> int:
+        """Publish base64-encoded audio to a declared Audio input topic.
 
-        try:
-            if publisher := self.publishers_dict.get(topic_name, None):
-                # Confirm that the topic type was not updated dynamically in the UI
-                if publisher.output_topic.msg_type.__name__ == topic_type_str:
-                    publisher.publish(**kwargs)
-                    return
-                else:
-                    # Destroy the old publisher to create a new one
-                    self.destroy_publisher(publisher._publisher)
-                    self.get_logger().debug(
-                        f"Destroying old publisher for {topic_name} of type {publisher.output_topic.msg_type.__name__}"
-                    )
-            # Handle creating publishers for dynamically added or modified outputs in the UI
-            self.publishers_dict[topic_name] = Publisher(
-                Topic(name=topic_name, msg_type=topic_type_str),
-                node_name=self.node_name,
-            )
-            self.publishers_dict[topic_name].set_node_name(self.node_name)
-            # Set ROS publisher for each output publisher
-            self.publishers_dict[topic_name].set_publisher(
-                self._add_ros_publisher(self.publishers_dict[topic_name])
-            )
-            self.publishers_dict[topic_name].publish(**kwargs)
-            return
-        except Exception as e:
-            self.get_logger().error(
-                f"Error publishing UI input data to topic {topic_name}: {e}"
-            )
+        :param topic_name: Name of a declared Audio input topic.
+        :param audio_b64: Base64-encoded audio bytes.
+        :raises RuntimeError: If the publisher for the topic is not ready.
+        :return: The current number of subscribers on the topic.
+        """
+        publisher = self.publishers_dict.get(topic_name)
+        if publisher is None or publisher._publisher is None:
+            raise RuntimeError(f"Publisher for input topic '{topic_name}' is not ready")
+        publisher.publish(output=audio_b64)
+        return self.count_subscribers(topic_name)
 
     def _execution_step(self):
         """

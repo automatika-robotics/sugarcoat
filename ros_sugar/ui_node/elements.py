@@ -386,10 +386,15 @@ def _map_overlay_settings_panel(map_id: str, element_id: str, overlay_type: str)
     return content
 
 
-def _map_settings_modal(map_id: str, overlays: Optional[Dict] = None):
+def _map_settings_modal(
+    map_id: str,
+    overlays: Optional[Dict] = None,
+    point_inputs: Optional[List[Tuple[str, str]]] = None,
+):
     """
     Creates a popup dialog to configure Clicked Point settings and Visuals.
     overlays: dict e.g. {'robot_pose': 'overlay', 'global_plan': 'path'}
+    point_inputs: declared point-like input topics ``(name, msg_type)``
     """
     if overlays is None:
         overlays = {}
@@ -407,30 +412,36 @@ def _map_settings_modal(map_id: str, overlays: Optional[Dict] = None):
             )
         )
 
+    # --- CLICKED POINT SETTINGS (only for declared point-like inputs) ---
+    point_settings = []
+    if point_inputs:
+        point_settings.append(
+            Card(
+                H5("Published Point Settings", cls="cool-title"),
+                LabelSelect(
+                    *[
+                        # The declared message type rides on the option so the
+                        # client publishes with the right schema
+                        Option(
+                            f"{name} ({msg_type})",
+                            value=name,
+                            data_type=msg_type,
+                            selected=(index == 0),
+                        )
+                        for index, (name, msg_type) in enumerate(point_inputs)
+                    ],
+                    label="Target Topic (declared UI inputs)",
+                    name="clicked_point_topic",
+                    cls="form-input space-y-1",
+                ),
+                cls="space-y-3 mb-4 main-card",
+            )
+        )
+
     return Div(
         Div(
             Form(
-                # --- CLICKED POINT SETTINGS ---
-                Card(
-                    H5("Published Point Settings", cls="cool-title"),
-                    LabelInput(
-                        label="Topic Name",
-                        name="clicked_point_topic",
-                        value="clicked_point",
-                        placeholder="e.g. /goal_pose",
-                        cls="form-input space-y-1",
-                    ),
-                    LabelSelect(
-                        Option("PointStamped", value="PointStamped", selected=True),
-                        Option("Point", value="Point"),
-                        Option("PoseStamped", value="PoseStamped"),
-                        Option("Pose", value="Pose"),
-                        label="Message Type",
-                        name="clicked_point_type",
-                        cls="form-input space-y-1",
-                    ),
-                    cls="space-y-3 mb-4 main-card",
-                ),
+                *point_settings,
                 Card(
                     H5("Output Visuals", cls="cool-title"),
                     # 1. The ID Selector
@@ -474,11 +485,18 @@ def _map_settings_modal(map_id: str, overlays: Optional[Dict] = None):
     )
 
 
-def _map_control_buttons(map_id: str, map_output_markers: Optional[Dict] = None):
+def _map_control_buttons(
+    map_id: str,
+    map_output_markers: Optional[Dict] = None,
+    point_inputs: Optional[List[Tuple[str, str]]] = None,
+):
     """
     Overlay buttons for Zoom In/Out and Publish Point.
+
+    The Publish Point button is only rendered when at least one point-like
+    input topic is declared in the UI.
     """
-    return DivHStacked(
+    buttons = [
         # Zoom In
         Button(
             UkIcon("plus"),
@@ -495,15 +513,21 @@ def _map_control_buttons(map_id: str, map_output_markers: Optional[Dict] = None)
             type="button",
             uk_tooltip="title: Zoom Out; pos: left",
         ),
+    ]
+    if point_inputs:
         # Publish Point Button
-        Button(
-            UkIcon("mapPin"),
-            cls="glass-icon-btn",
-            onclick="togglePublishPoint(this)",  # Calls JS function
-            id=f"{map_id}-publish-btn",
-            type="button",
-            uk_tooltip="title: Publish Clicked Point; pos: left",
-        ),
+        buttons.append(
+            Button(
+                UkIcon("mapPin"),
+                cls="glass-icon-btn",
+                onclick="togglePublishPoint(this)",  # Calls JS function
+                id=f"{map_id}-publish-btn",
+                type="button",
+                uk_tooltip="title: Publish Clicked Point; pos: left",
+            )
+        )
+    return DivHStacked(
+        *buttons,
         # Settings (Gear Icon)
         Button(
             UkIcon("settings"),
@@ -514,7 +538,7 @@ def _map_control_buttons(map_id: str, map_output_markers: Optional[Dict] = None)
             uk_tooltip="title: Settings; pos: left",
         ),
         # THE SETTINGS MODAL (Hidden by default, popped up by openMapSettings)
-        _map_settings_modal(map_id, map_output_markers),
+        _map_settings_modal(map_id, map_output_markers, point_inputs),
         cls="flex flex-row space-x-2 no-drag",
     )
 
@@ -872,12 +896,17 @@ def _out_image_element(topic_name: str, **_):
     )
 
 
-def _out_map_element(topic_name: str, map_output_markers: Optional[Dict] = None, **_):
+def _out_map_element(
+    topic_name: str,
+    map_output_markers: Optional[Dict] = None,
+    point_inputs: Optional[List[Tuple[str, str]]] = None,
+    **_,
+):
     """FastHTML element for output OccupancyGrid typ"""
     return (
         Grid(
             DivHStacked(
-                _map_control_buttons(topic_name, map_output_markers),
+                _map_control_buttons(topic_name, map_output_markers, point_inputs),
             ),
             Div(
                 id=topic_name,
@@ -1314,6 +1343,7 @@ def output_topic_card(
     topic_type: str,
     column_class: str = "",
     map_output_markers: Optional[Dict] = None,
+    point_inputs: Optional[List[Tuple[str, str]]] = None,
 ) -> FT:
     """Creates a UI element for an output topic
 
@@ -1321,11 +1351,17 @@ def output_topic_card(
     :type topic_name: str
     :param topic_type: Topic message type
     :type topic_type: str
+    :param point_inputs: Declared point-like input topics ``(name, msg_type)``
+        available as map click-to-publish targets
     :return: Output topic UI element
     """
     return Card(
         DivHStacked(H4(topic_name), _fullscreen_button(f"card-{topic_name}")),
-        _OUTPUT_ELEMENTS[topic_type](topic_name, map_output_markers=map_output_markers),
+        _OUTPUT_ELEMENTS[topic_type](
+            topic_name,
+            map_output_markers=map_output_markers,
+            point_inputs=point_inputs,
+        ),
         cls=f"m-2 {column_class} inner-main-card",
         id=f"card-{topic_name}",
     )
@@ -1455,13 +1491,15 @@ def initial_logging_card():
 
 
 def remove_child_from_logging_card(logging_card, target_id="loading-dots"):
-    """Remove the last child in logging_card.children with a matching id."""
+    """Remove and return the last child in logging_card.children with a
+    matching id (or ``None`` if not found)."""
     children = logging_card.children
 
     for i in range(len(children) - 1, -1, -1):
         if getattr(children[i], "id", None) == target_id:
             logging_card.children = children[:i] + children[i + 1 :]
-            break
+            return children[i]
+    return None
 
 
 def augment_text_in_logging_card(
@@ -1469,7 +1507,8 @@ def augment_text_in_logging_card(
     new_txt: str,
     target_id="text",
 ):
-    """Update the inner text of a child in logging_card.children with a matching id."""
+    """Update the inner text of a child in logging_card.children with a
+    matching id. Used for streaming output whose payload is the delta."""
     children = logging_card.children
     target_child = None
     for i in range(len(children) - 1, -1, -1):
@@ -1483,6 +1522,31 @@ def augment_text_in_logging_card(
         if getattr(target_child.children[i], "id", None) == "inner-text":
             # Append the new text
             target_child.children[i](Span(f"{new_txt}"))
+            return logging_card
+    return logging_card
+
+
+def replace_text_in_logging_card(
+    logging_card,
+    new_txt: str,
+    target_id="text",
+):
+    """Replace the inner text of a child in logging_card.children with a
+    matching id, keeping its source prefix. Used for streamed entries whose
+    payload is the full text so far rather than a delta."""
+    children = logging_card.children
+    target_child = None
+    for i in range(len(children) - 1, -1, -1):
+        if getattr(children[i], "id", None) == target_id:
+            target_child = children[i]
+            break
+    if not target_child:
+        return logging_card
+    for i in range(len(target_child.children) - 1, -1, -1):
+        if getattr(target_child.children[i], "id", None) == "inner-text":
+            inner = target_child.children[i]
+            # Keep the source prefix (first child), replace the text
+            inner.children = (inner.children[0], f"{new_txt}")
             return logging_card
     return logging_card
 
@@ -1503,13 +1567,17 @@ def update_logging_card(
     :return: Updated logging card
     :rtype: FT
     """
-    # Remove any previous loading that exists on the card
-    remove_child_from_logging_card(logging_card)
     # Handle errors originating from ROS node
     if data_type == "error":
         data_type = "String"
         data_src = "error"
-    return _OUTPUT_ELEMENTS[data_type](logging_card, output, data_src)
+    # The loading indicator means "waiting for the robot": robot/error output
+    # clears it
+    dots = remove_child_from_logging_card(logging_card)
+    card = _OUTPUT_ELEMENTS[data_type](logging_card, output, data_src)
+    if data_src == "user" and dots is not None:
+        logging_card(dots)
+    return card
 
 
 def update_logging_card_with_loading(logging_card):

@@ -6,7 +6,6 @@ import json
 import yaml
 import toml
 import socket
-from abc import abstractmethod
 from copy import deepcopy
 from contextlib import contextmanager
 import threading
@@ -1210,7 +1209,7 @@ class BaseComponent(lifecycle.Node):
 
         # Check if all callbacks of the selected topics got input messages
         for callback in inputs_dict_to_check.values():
-            if callback._subscriber and not callback.got_msg:
+            if not callback.got_msg:
                 return False
         return True
 
@@ -1763,7 +1762,6 @@ class BaseComponent(lifecycle.Node):
     # TODO: Implement dunder methods for a more intuitive API with components
 
     # MAIN ACTION SERVER HELPER METHODS AND CALLBACKS
-    @abstractmethod
     def main_action_callback(self, goal_handle) -> Any:
         """
         Component main action server callback - used if component started with run_as_action_server=True
@@ -1863,7 +1861,6 @@ class BaseComponent(lifecycle.Node):
         """
         self._main_srv_name = value
 
-    @abstractmethod
     def main_service_callback(self, request, response):
         """
         Component main service callback - used if component started with run_as_server=True

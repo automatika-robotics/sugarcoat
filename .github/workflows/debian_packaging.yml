@@ -18,7 +18,7 @@ jobs:
 
       - uses: automatika-robotics/create-ros-debs-action@v1
         with:
-          ros-versions-matrix: 'humble iron jazzy kilted'
+          ros-versions-matrix: 'humble iron jazzy kilted lyrical'
 
       - uses: actions/upload-artifact@v4
         with:
