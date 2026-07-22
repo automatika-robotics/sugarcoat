@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.8.0 (2026-07-22)
+------------------
 * (fix) Fixes condition in input incoming data check
 * (fix) Fixes the live selection of clicked point topic from the frontend modal and adds header to stamped topics when publishing
 * (feature) Hide clicked point settings from map when topic not declared and only allow choosing between declared point like inputs
