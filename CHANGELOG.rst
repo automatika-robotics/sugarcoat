@@ -2,6 +2,43 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (fix) Fixes condition in input incoming data check
+* (fix) Fixes the live selection of clicked point topic from the frontend modal and adds header to stamped topics when publishing
+* (feature) Hide clicked point settings from map when topic not declared and only allow choosing between declared point like inputs
+* (feature) Surfaces pubslishing errors in maps as toasts
+* (feature) Handles topic names with slashes in the api endpoint creation
+* (chore) Updates tests for type errors from ui node
+* (fix) Fixes the type checking in creating ROS msgs from json style dicts to ensure ROS types are respected for the underlying RMW serialization
+* (chore) Adds lyrical to packaging and testing CI
+* (fix) Removes unused decorator from component
+* (fix) Fixes displaying user side inputs as echoed outputs with correct labels
+* (feature) Adds a function for replacing logging card text for new downstream streaming text behavior
+* (feature) Makes ui streaming an attribute of SupportedType so it can be set in daughter packages as well
+* (chore) Updates tests suite
+* (refactor) Updates browser side to call the same function pattern as the api
+* (refactor) Simplifies push vs rate sampled based on output type and refactors api creation function
+* (refactor) Adds form submission to json schema helpers at server side browser app and remove them from the supported types
+* (feature) Adds handling of audio publishing to ui node
+* (feature) Adds audio streaming endpoint in the api
+* (chore) Adds UI dependencies to CI
+* (feature) Adds websocket streaming endpoint for composed map (world)
+* (refactor) Simplifies getting ui content lazily rather than running it in callbacks
+* (feature) Adds callback for emitting raw data for occupancy grid ui and removes clear_last in other ui data functions
+* (chore) Adds tests for action feedback publishing
+* (feature) Adds feedback publishing through websocket endpoint to the api
+* (feature) Adds action feedback listeners to base client for action server
+* (chore) Adds tests for api websocket endpoints
+* (refactor) Moves fasthtml based browser app creation to its own module
+* (feature) Adds output streaming websockets and makes API app the default host
+* (chore) Adds tests for publishing ros msgs and calling services
+* (feature) Create endpoints for publishing ros msgs and calling services
+* (chore) Adds tests for the api in the ui node
+* (feature) Adds basic api structure and discovery in the ui node
+* (feature) Adds json serializable returns for ui content in certain callbacks (numpy -> list)
+* Contributors: ahr, mkabtoul
+
 0.7.1 (2026-06-05)
 ------------------
 * (fix) Fixes stale reference in logged warning
