@@ -194,7 +194,8 @@ def ros_msg_to_str(msg_object: Any) -> str:
                     lines += f"{item}, "
             lines += "]"
         else:
-            lines += f"{field_name.removeprefix('_')}: {field_value} | "
+            name = field_name[1:] if field_name.startswith("_") else field_name
+            lines += f"{name}: {field_value} | "
     return lines
 
 
