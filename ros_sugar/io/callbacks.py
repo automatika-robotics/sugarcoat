@@ -483,7 +483,7 @@ class OdomCallback(GenericCallback):
         """
         Get position data.
         """
-        if not self.msg:
+        if self.msg is None:
             return None
         # send fixed position array if it exists
         if isinstance(self.msg, np.ndarray):
