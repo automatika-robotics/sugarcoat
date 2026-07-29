@@ -12,12 +12,18 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from jinja2.environment import Template
 from nav_msgs.msg import OccupancyGrid, Odometry
+from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Header
 from rclpy.logging import get_logger
 from rclpy.subscription import Subscription
 from tf2_ros import TransformStamped
 
 from . import utils
+from .datatypes import (
+    LaserScanData,
+    PointCloudData,
+    _get_laserscan_transformed_polar_coordinates,
+)
 
 
 class GenericCallback:
@@ -761,6 +767,56 @@ class PoseStampedCallback(PoseCallback):
         return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
 
 
+class PoseArrayCallback(GenericCallback):
+    """
+    Ros PoseArray Callback Handler to get a set of poses as a numpy array
+    """
+
+    def __init__(
+        self,
+        input_topic,
+        node_name: str = "",
+    ) -> None:
+        super().__init__(input_topic, node_name)
+
+    def _get_output(self, **_) -> Optional[np.ndarray]:
+        """
+        Gets the PoseArray message as a numpy array with one row per pose.
+        The coordinates frame of the poses is available in the callback
+        `frame_id`
+
+        :returns:   Nx4 array of [x, y, z, heading] rows
+        :rtype:     Optional[np.ndarray]
+        """
+        if not self.msg:
+            return None
+
+        return np.array(
+            [
+                [
+                    pose.position.x,
+                    pose.position.y,
+                    pose.position.z,
+                    2 * np.arctan2(pose.orientation.z, pose.orientation.w),
+                ]
+                for pose in self.msg.poses
+            ]
+        )
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        output = self.get_output()
+        return {
+            "frame_id": self.frame_id,
+            "data": output.tolist() if output is not None else None,
+        }
+
+
 class PathCallback(GenericCallback):
     """
     Ros PoseStamped Callback Handler to get the robot state in 2D
@@ -925,4 +981,213 @@ class OccupancyGridCallback(GenericCallback):
             "frame_id": self.frame_id,
             **self._get_output(get_metadata=True),
             "data": base64.b64encode(raw_bytes).decode("ascii"),
+        }
+
+
+class LaserScanCallback(GenericCallback):
+    """ROS2 LaserScan Callback Handler to process and transform sensor_msgs/LaserScan data"""
+
+    def __init__(
+        self,
+        input_topic,
+        node_name: str = "",
+        transformation: Optional[TransformStamped] = None,
+    ) -> None:
+        super().__init__(input_topic, node_name)
+        self.__tf = transformation
+
+    @property
+    def transformation(self) -> Optional[TransformStamped]:
+        """Getter of the laserscan transformation
+
+        :return: Detected transform from source to desired goal frame
+        :rtype: Optional[TransformStamped]
+        """
+        return self.__tf
+
+    @transformation.setter
+    def transformation(self, transform: TransformStamped) -> None:
+        """
+        Sets a new transformation value
+
+        :param transform: Detected transform from source to desired goal frame
+        :type transform: TransformStamped
+        """
+        self.__tf = transform
+
+    def _get_output(
+        self,
+        transformation: Optional[TransformStamped] = None,
+        **_,
+    ) -> Optional[LaserScanData]:
+        """
+        Gets the laserscan data by applying the transformation if given.
+
+        :returns:   Topic content
+        :rtype:     Optional[LaserScanData]
+        """
+        if not self.msg:
+            return None
+        if transformation or self.transformation:
+            laser_scan_data = self._transform(
+                self.msg, transformation or self.transformation
+            )
+        else:
+            laser_scan_data = self._process(self.msg)
+
+        laser_scan_data.frame_id = self.msg.header.frame_id
+        laser_scan_data.timestamp = (
+            self.msg.header.stamp.sec + self.msg.header.stamp.nanosec * 1e-9
+        )
+        return laser_scan_data
+
+    def __clipped_ranges(self, msg: LaserScan) -> np.ndarray:
+        """Replaces NaN values and clips the ranges of a scan to [0, range_max]
+
+        :param msg: Input ROS LaserScan message
+        :type msg: LaserScan
+        :rtype: np.ndarray
+        """
+        _no_nan_ranges = np.nan_to_num(msg.ranges, nan=msg.range_max)
+        return _no_nan_ranges.clip(min=0.0, max=msg.range_max)
+
+    def _process(self, msg: LaserScan) -> LaserScanData:
+        """
+        Takes LaserScan ROS message and converts it to LaserScanData
+        :return: LaserScanData
+        """
+        return LaserScanData(
+            angle_min=msg.angle_min,
+            angle_max=msg.angle_max,
+            angle_increment=msg.angle_increment,
+            time_increment=msg.time_increment,
+            scan_time=msg.scan_time,
+            range_min=msg.range_min,
+            range_max=max(msg.range_max, 1e-3),
+            ranges=self.__clipped_ranges(msg),
+            intensities=np.array(msg.intensities),
+        )
+
+    def _transform(self, msg: LaserScan, transform: TransformStamped) -> LaserScanData:
+        """
+        Applies a transform to a given LaserScan message and converts it to LaserScanData
+
+        :param msg: LaserScan message in source frame
+        :type msg: LaserScan
+        :param transform: LaserScan transform from current to goal frame
+        :type transform: TransformStamped
+
+        :return: LaserScanData in goal frame
+        :rtype: LaserScanData
+        """
+        trans = transform.transform.translation
+        quat = transform.transform.rotation
+
+        # Get the transformed laser scan data
+        laserscan_transformed = _get_laserscan_transformed_polar_coordinates(
+            angle_min=msg.angle_min,
+            angle_max=msg.angle_max,
+            angle_increment=msg.angle_increment,
+            laser_scan_ranges=self.__clipped_ranges(msg),
+            max_scan_range=msg.range_max,
+            translation=[trans.x, trans.y, trans.z],
+            rotation=[quat.x, quat.y, quat.z, quat.w],
+            intensities=np.array(msg.intensities),
+        )
+
+        laserscan_transformed.time_increment = msg.time_increment
+        laserscan_transformed.scan_time = msg.scan_time
+
+        return laserscan_transformed
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        # NOTE: Only sending metadata until browser front-end has a consumer
+        if not self.msg:
+            return {"frame_id": self.frame_id, "data": None}
+        return {
+            "frame_id": self.frame_id,
+            "data": {
+                "angle_min": self.msg.angle_min,
+                "angle_max": self.msg.angle_max,
+                "num_points": len(self.msg.ranges),
+            },
+        }
+
+
+class PointCloudCallback(GenericCallback):
+    """ROS2 PointCloud2 Callback Handler to process sensor_msgs/PointCloud2 data"""
+
+    def __init__(
+        self,
+        input_topic,
+        node_name: str = "",
+    ) -> None:
+        super().__init__(input_topic, node_name)
+
+    def _get_output(self, **_) -> Optional[PointCloudData]:
+        """Gets the PointCloud2 message data as a PointCloudData container
+        with the raw buffer, layout metadata and lazy cartesian decoding.
+
+        :return: Return PointCloudData
+        :rtype: Optional[PointCloudData]
+        """
+        if not self.msg:
+            return None
+
+        # Empty clouds
+        if self.msg.width == 0 or self.msg.height == 0:
+            return None
+
+        pc = PointCloudData(
+            data=np.frombuffer(self.msg.data, dtype=np.uint8),
+            point_step=self.msg.point_step,
+            row_step=self.msg.row_step,
+            height=self.msg.height,
+            width=self.msg.width,
+            is_bigendian=self.msg.is_bigendian,
+            frame_id=self.msg.header.frame_id,
+            timestamp=self.msg.header.stamp.sec
+            + self.msg.header.stamp.nanosec * 1e-9,
+        )
+
+        for msg_field in self.msg.fields:
+            if msg_field.name == "x":
+                pc.x_offset = msg_field.offset
+                pc.x_field_datatype = msg_field.datatype
+            elif msg_field.name == "y":
+                pc.y_offset = msg_field.offset
+            elif msg_field.name == "z":
+                pc.z_offset = msg_field.offset
+
+        if pc.x_offset is None or pc.y_offset is None or pc.z_offset is None:
+            get_logger(self.node_name or "PointCloudCallback").warning(
+                "Offsets for x, y, z are not found, point cloud data is null"
+            )
+            return None
+
+        return pc
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        # NOTE: Only sending metadata until browser front-end has a consumer
+        if not self.msg:
+            return {"frame_id": self.frame_id, "data": None}
+        return {
+            "frame_id": self.frame_id,
+            "data": {
+                "width": self.msg.width,
+                "height": self.msg.height,
+                "point_step": self.msg.point_step,
+            },
         }
