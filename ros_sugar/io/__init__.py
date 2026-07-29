@@ -7,6 +7,7 @@ from .topic import (
     get_all_msg_types,
     get_msg_type,
 )
+from .datatypes import LaserScanData, PointCloudData
 from .callbacks import *
 
 
@@ -16,4 +17,6 @@ __all__ = [
     "AllowedTopics",
     "get_all_msg_types",
     "get_msg_type",
+    "LaserScanData",
+    "PointCloudData",
 ]
