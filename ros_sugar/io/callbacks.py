@@ -514,7 +514,7 @@ class OdomCallback(GenericCallback):
             msg.pose.pose.orientation.z, msg.pose.pose.orientation.w
         )
 
-        speed = np.sqrt(msg.twist.twist.linear.y**2 + msg.twist.twist.linear.y**2)
+        speed = np.sqrt(msg.twist.twist.linear.x**2 + msg.twist.twist.linear.y**2)
 
         position = msg.pose.pose.position
 
