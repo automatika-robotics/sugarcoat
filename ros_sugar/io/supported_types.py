@@ -9,6 +9,7 @@ import importlib
 from geometry_msgs.msg import Point as ROSPoint
 from geometry_msgs.msg import PointStamped as ROSPointStamped
 from geometry_msgs.msg import Pose as ROSPose
+from geometry_msgs.msg import PoseArray as ROSPoseArray
 from geometry_msgs.msg import PoseStamped as ROSPoseStamped
 from geometry_msgs.msg import Twist as ROSTwist
 
@@ -22,6 +23,7 @@ from automatika_ros_sugar.msg import ComponentStatus as ROSComponentStatus
 # SENSOR_MSGS SUPPORTED ROS TYPES
 from sensor_msgs.msg import Image as ROSImage, CompressedImage as ROSCompressedImage
 from sensor_msgs.msg import LaserScan as ROSLaserScan
+from sensor_msgs.msg import PointCloud2 as ROSPointCloud2
 
 # STD_MSGS SUPPORTED ROS TYPES
 from std_msgs.msg import ByteMultiArray
@@ -515,7 +517,16 @@ class LaserScan(SupportedType):
     """LaserScan"""
 
     _ros_type = ROSLaserScan
-    callback = callbacks.GenericCallback
+    callback = callbacks.LaserScanCallback
+    _ui_rate_sampled = True  # dense sensor stream
+
+
+class PointCloud2(SupportedType):
+    """PointCloud2"""
+
+    _ros_type = ROSPointCloud2
+    callback = callbacks.PointCloudCallback
+    _ui_rate_sampled = True  # dense sensor stream
 
 
 class Path(SupportedType):
@@ -692,6 +703,43 @@ class PoseStamped(Pose):
             msg.pose.orientation.x = output[4]
             msg.pose.orientation.y = output[5]
             msg.pose.orientation.z = output[6]
+        return msg
+
+
+class PoseArray(SupportedType):
+    """PoseArray"""
+
+    _ros_type = ROSPoseArray
+    callback = callbacks.PoseArrayCallback
+
+    @classmethod
+    def convert(cls, output: Union[np.ndarray, List], **_) -> ROSPoseArray:
+        """ROS message converter function for datatype PoseArray.
+
+        Each element of the given set is a single pose as [x, y, z],
+        [x, y, z, heading] or [x, y, z, qw, qx, qy, qz]
+
+        :param output: Set of poses
+        :type output: Union[np.ndarray, List]
+        :param _:
+        :rtype: ROSPoseArray
+        """
+        msg = ROSPoseArray()
+        poses = []
+        for pose_data in output:
+            pose_data = np.asarray(pose_data, dtype=np.float64)
+            if pose_data.shape[0] == 4:
+                pose = ROSPose()
+                pose.position.x = pose_data[0]
+                pose.position.y = pose_data[1]
+                pose.position.z = pose_data[2]
+                # heading to quaternion around z
+                pose.orientation.z = np.sin(pose_data[3] / 2)
+                pose.orientation.w = np.cos(pose_data[3] / 2)
+            else:
+                pose = Pose.convert(pose_data)
+            poses.append(pose)
+        msg.poses = poses
         return msg
 
 
