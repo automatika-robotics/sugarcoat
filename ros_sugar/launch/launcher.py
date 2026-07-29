@@ -353,6 +353,9 @@ class Launcher:
         ssl_keyfile_path: str = "key.pem",
         ssl_certificate_path: str = "cert.pem",
         hide_settings_panel: bool = False,
+        serve_browser: bool = True,
+        api_stream_default_rate: float = 10.0,
+        api_max_stream_rate: float = 30.0,
     ):
         """
         Enables the user interface (UI) subsystem for recipes, initializing all UI extensions
@@ -390,13 +393,42 @@ class Launcher:
         :param hide_settings_panel:
             Disable the components settings panel in the UI.
         :type hide_settings_panel: bool, default False
+
+        :param serve_browser:
+            Serve the browser front-end alongside the JSON/WebSocket API.
+            Set to ``False`` to serve the API only, which requires just
+            ``starlette`` and ``uvicorn`` instead of the browser dependencies
+            (FastHTML/MonsterUI).
+        :type serve_browser: bool, default True
+
+        :param api_stream_default_rate:
+            Rate (Hz) at which the JSON API streams rate-sampled output topics
+            to a connected client that does not request a rate explicitly.
+        :type api_stream_default_rate: float, default 10.0
+
+        :param api_max_stream_rate:
+            Hard upper bound (Hz) for a client-requested API stream rate.
+        :type api_max_stream_rate: float, default 30.0
         """
 
         self._ui_input_elements = []
         self._ui_output_elements = []
-        for ext in UI_EXTENSIONS:
-            input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
-            # Additional input/output elements are used for UI elements coming from derived packages
+
+        # NOTE: UI extensions provide browser widgets. They are skipped
+        # entirely in API-only mode, and a missing browser stack degrades to
+        # API-only instead of failing the recipe
+        extensions = UI_EXTENSIONS if serve_browser else {}
+        for ext in extensions:
+            try:
+                input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
+            except ModuleNotFoundError as e:
+                logger.warning(
+                    f"Skipping UI extension '{ext}': browser dependencies not "
+                    f"installed ({e}). The recipe UI will serve the API only."
+                )
+                continue
+            # Additional input/output elements are used for UI elements coming
+            # from derived packages
             for key, element in input_elements_dict.items():
                 self._ui_input_elements.append((
                     f"{key.__module__}.{key.__qualname__}",
@@ -418,6 +450,9 @@ class Launcher:
             ssl_keyfile=ssl_keyfile_path,
             ssl_certificate=ssl_certificate_path,
             hide_settings=hide_settings_panel,
+            serve_browser=serve_browser,
+            api_stream_default_rate=api_stream_default_rate,
+            api_max_stream_rate=api_max_stream_rate,
         )
 
     @property

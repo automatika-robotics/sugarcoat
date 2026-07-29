@@ -4,12 +4,14 @@ import json
 import threading
 from pathlib import Path
 
-import uvicorn
-
 from ros_sugar.launch.executable import setup_component, run_component
 from ros_sugar.ui_node import UINode, UINodeConfig
 from ros_sugar.ui_node.api import build_api_app
 from ros_sugar.utils import logger
+
+# NOTE: Imported after build_api_app so a missing web stack surfaces the
+# install hint error from api.py rather than a bare import error
+import uvicorn
 
 
 def main():
@@ -54,23 +56,27 @@ def main():
     ros_thread.start()
 
     # Build the optional FastHTML browser app. Mounts under "/"
-    try:
-        from ros_sugar.ui_node.browser import build_browser_app
-
-        browser_app = build_browser_app(
-            ros_node,
-            additional_input_elements=additional_input_elements,
-            additional_output_elements=additional_output_elements,
-            system_info=system_info,
-        )
-    except ModuleNotFoundError as e:
-        logger.warning(
-            f"Browser UI dependencies not installed ({e}). "
-            "Serving the JSON/WebSocket API only. "
-            " For browser UI please install FastHTML and MonsterUI with: "
-            "`pip install python-fasthtml monsterui`"
-        )
+    if not ros_node_config.serve_browser:
+        logger.info("Browser UI disabled. Serving the JSON/WebSocket API only.")
         browser_app = None
+    else:
+        try:
+            from ros_sugar.ui_node.browser import build_browser_app
+
+            browser_app = build_browser_app(
+                ros_node,
+                additional_input_elements=additional_input_elements,
+                additional_output_elements=additional_output_elements,
+                system_info=system_info,
+            )
+        except ModuleNotFoundError as e:
+            logger.warning(
+                f"Browser UI dependencies not installed ({e}). "
+                "Serving the JSON/WebSocket API only. "
+                " For browser UI please install FastHTML and MonsterUI with: "
+                "`pip install python-fasthtml monsterui`"
+            )
+            browser_app = None
 
     # Create the JSON/WebSocket API is the server host, server host
     api_app = build_api_app(ros_node, browser_app=browser_app)
