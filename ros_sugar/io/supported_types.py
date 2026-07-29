@@ -581,7 +581,7 @@ class OccupancyGrid(SupportedType):
         msg.info.width = output.shape[0]
         msg.info.height = output.shape[1]
         msg.info.resolution = resolution
-        msg.info.origin = origin if origin else Pose()
+        msg.info.origin = origin if origin else ROSPose()
 
         # flatten by column
         # index (0,0) is the lower right corner of the grid in ROS
