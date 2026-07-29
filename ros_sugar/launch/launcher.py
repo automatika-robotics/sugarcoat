@@ -411,22 +411,41 @@ class Launcher:
         :type api_max_stream_rate: float, default 30.0
         """
 
+        # Fail fast if dependencies of the requested UI mode are missing
+        from importlib.util import find_spec
+
+        # import name -> pip name
+        required = {"starlette": "starlette", "uvicorn": "uvicorn"}
+        if serve_browser:
+            required["fasthtml"] = "python-fasthtml"
+            required["monsterui"] = "monsterui"
+        missing = [pip for mod, pip in required.items() if find_spec(mod) is None]
+        if missing:
+            message = (
+                "enable_ui requires packages that are not installed: "
+                f"{', '.join(missing)}.\n"
+            )
+            if serve_browser:
+                message += (
+                    "Install the browser UI stack (includes starlette and "
+                    "uvicorn) with:\n"
+                    "    pip install python-fasthtml monsterui\n"
+                    "Or serve only the JSON/WebSocket API (no browser) with "
+                    "enable_ui(serve_browser=False), which requires just:\n"
+                    "    pip install starlette uvicorn"
+                )
+            else:
+                message += "Install with: pip install starlette uvicorn"
+            raise ModuleNotFoundError(message)
+
         self._ui_input_elements = []
         self._ui_output_elements = []
 
         # NOTE: UI extensions provide browser widgets. They are skipped
-        # entirely in API-only mode, and a missing browser stack degrades to
-        # API-only instead of failing the recipe
+        # entirely in API-only mode
         extensions = UI_EXTENSIONS if serve_browser else {}
         for ext in extensions:
-            try:
-                input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
-            except ModuleNotFoundError as e:
-                logger.warning(
-                    f"Skipping UI extension '{ext}': browser dependencies not "
-                    f"installed ({e}). The recipe UI will serve the API only."
-                )
-                continue
+            input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
             # Additional input/output elements are used for UI elements coming
             # from derived packages
             for key, element in input_elements_dict.items():
