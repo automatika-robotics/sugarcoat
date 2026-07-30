@@ -2,8 +2,22 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-0.8.0 (2026-07-22)
+0.8.0 (2026-07-30)
 ------------------
+* (feature) Adds failing fast when ui dependancies are not available and enable ui is requested
+* (feature) Adds option for disabling browser ui and only serve api when enabling UI
+  - Also surfaces api options in the enable ui function.
+  - Makes fasthtml/monster-ui optional dependancies when serving UI (only
+  required for broswer based UI).
+* (fix) Removes unused ui node config param
+* (fix) Fix for python3.8 compatibility
+* (chore) Adds tests for io types
+* (fix) Fixes creation of empty pose as origin in occupancy grid sender
+* (fix) Fixes check for null msg in odom callback
+* (feature) Adds posearray datatype for sending multiple stamped poses and updates laserscan and pointcloud datatypes
+* (feature) Upstreams callbacks for laserscan and pointcloud data
+* (feature) Adds pointcloud and laserscan data datatypes to upstream their callbacks in sugarcoat
+* (fix) Fixes type in speed calculation in odom callback
 * (fix) Fixes condition in input incoming data check
 * (fix) Fixes the live selection of clicked point topic from the frontend modal and adds header to stamped topics when publishing
 * (feature) Hide clicked point settings from map when topic not declared and only allow choosing between declared point like inputs
