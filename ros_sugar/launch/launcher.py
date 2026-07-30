@@ -353,6 +353,9 @@ class Launcher:
         ssl_keyfile_path: str = "key.pem",
         ssl_certificate_path: str = "cert.pem",
         hide_settings_panel: bool = False,
+        serve_browser: bool = True,
+        api_stream_default_rate: float = 10.0,
+        api_max_stream_rate: float = 30.0,
     ):
         """
         Enables the user interface (UI) subsystem for recipes, initializing all UI extensions
@@ -390,13 +393,61 @@ class Launcher:
         :param hide_settings_panel:
             Disable the components settings panel in the UI.
         :type hide_settings_panel: bool, default False
+
+        :param serve_browser:
+            Serve the browser front-end alongside the JSON/WebSocket API.
+            Set to ``False`` to serve the API only, which requires just
+            ``starlette`` and ``uvicorn`` instead of the browser dependencies
+            (FastHTML/MonsterUI).
+        :type serve_browser: bool, default True
+
+        :param api_stream_default_rate:
+            Rate (Hz) at which the JSON API streams rate-sampled output topics
+            to a connected client that does not request a rate explicitly.
+        :type api_stream_default_rate: float, default 10.0
+
+        :param api_max_stream_rate:
+            Hard upper bound (Hz) for a client-requested API stream rate.
+        :type api_max_stream_rate: float, default 30.0
         """
+
+        # Fail fast if dependencies of the requested UI mode are missing
+        from importlib.util import find_spec
+
+        # import name -> pip name
+        required = {"starlette": "starlette", "uvicorn": "uvicorn"}
+        if serve_browser:
+            required["fasthtml"] = "python-fasthtml"
+            required["monsterui"] = "monsterui"
+        missing = [pip for mod, pip in required.items() if find_spec(mod) is None]
+        if missing:
+            message = (
+                "enable_ui requires packages that are not installed: "
+                f"{', '.join(missing)}.\n"
+            )
+            if serve_browser:
+                message += (
+                    "Install the browser UI stack (includes starlette and "
+                    "uvicorn) with:\n"
+                    "    pip install python-fasthtml monsterui\n"
+                    "Or serve only the JSON/WebSocket API (no browser) with "
+                    "enable_ui(serve_browser=False), which requires just:\n"
+                    "    pip install starlette uvicorn"
+                )
+            else:
+                message += "Install with: pip install starlette uvicorn"
+            raise ModuleNotFoundError(message)
 
         self._ui_input_elements = []
         self._ui_output_elements = []
-        for ext in UI_EXTENSIONS:
+
+        # NOTE: UI extensions provide browser widgets. They are skipped
+        # entirely in API-only mode
+        extensions = UI_EXTENSIONS if serve_browser else {}
+        for ext in extensions:
             input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
-            # Additional input/output elements are used for UI elements coming from derived packages
+            # Additional input/output elements are used for UI elements coming
+            # from derived packages
             for key, element in input_elements_dict.items():
                 self._ui_input_elements.append((
                     f"{key.__module__}.{key.__qualname__}",
@@ -418,6 +469,9 @@ class Launcher:
             ssl_keyfile=ssl_keyfile_path,
             ssl_certificate=ssl_certificate_path,
             hide_settings=hide_settings_panel,
+            serve_browser=serve_browser,
+            api_stream_default_rate=api_stream_default_rate,
+            api_max_stream_rate=api_max_stream_rate,
         )
 
     @property

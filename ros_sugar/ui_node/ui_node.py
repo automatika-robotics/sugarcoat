@@ -28,9 +28,8 @@ class UINodeConfig(BaseComponentConfig):
     ssl_keyfile: str = field(default="key.pem")
     ssl_certificate: str = field(default="cert.pem")
     hide_settings: bool = field(default=False)
-    feedback_update_period: float = field(
-        default=1.0, validator=in_range(min_value=1e-3, max_value=1e3)
-    )  # 1 second ui feedback update rate
+    # Serve the browser front-end alongside the API
+    serve_browser: bool = field(default=True)
     # Default rate (Hz) at which the JSON API streams output topics to a
     # connected client when it does not request one explicitly.
     api_stream_default_rate: float = field(
