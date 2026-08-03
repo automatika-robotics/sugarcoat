@@ -12,7 +12,7 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from jinja2.environment import Template
 from nav_msgs.msg import OccupancyGrid, Odometry
-from sensor_msgs.msg import JointState, LaserScan
+from sensor_msgs.msg import Imu, JointState, LaserScan, NavSatFix
 from std_msgs.msg import Header
 from rclpy.logging import get_logger
 from rclpy.subscription import Subscription
@@ -629,6 +629,77 @@ class JointStateCallback(GenericCallback):
             return None
 
         return np.array(self.msg.position, dtype=np.float64)
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        output = self.get_output()
+        return {"data": output.tolist() if output is not None else None}
+
+
+class ImuCallback(GenericCallback):
+    """
+    sensor_msgs/Imu callback.
+
+    Returns the IMU state as a flat numpy array
+    ``[qx, qy, qz, qw, wx, wy, wz, ax, ay, az]`` -- orientation quaternion,
+    angular velocity (rad/s) and linear acceleration (m/s^2).
+    """
+
+    def _get_output(self, **_) -> Optional[np.ndarray]:
+        """
+        Gets the IMU state as a numpy array.
+
+        :returns:   [qx, qy, qz, qw, wx, wy, wz, ax, ay, az]
+        :rtype:     Optional[np.ndarray]
+        """
+        if not self.msg:
+            return None
+
+        o = self.msg.orientation
+        w = self.msg.angular_velocity
+        a = self.msg.linear_acceleration
+        return np.array(
+            [o.x, o.y, o.z, o.w, w.x, w.y, w.z, a.x, a.y, a.z], dtype=np.float64
+        )
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        output = self.get_output()
+        return {"data": output.tolist() if output is not None else None}
+
+
+class NavSatFixCallback(GenericCallback):
+    """
+    sensor_msgs/NavSatFix callback.
+
+    Returns the satellite fix as a numpy array ``[latitude, longitude,
+    altitude]`` (degrees, degrees, metres).
+    """
+
+    def _get_output(self, **_) -> Optional[np.ndarray]:
+        """
+        Gets the satellite fix as a numpy array.
+
+        :returns:   [latitude, longitude, altitude]
+        :rtype:     Optional[np.ndarray]
+        """
+        if not self.msg:
+            return None
+
+        return np.array(
+            [self.msg.latitude, self.msg.longitude, self.msg.altitude],
+            dtype=np.float64,
+        )
 
     def _get_ui_content(self, **_) -> Dict:
         """

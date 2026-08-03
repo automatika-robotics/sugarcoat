@@ -22,8 +22,10 @@ from automatika_ros_sugar.msg import ComponentStatus as ROSComponentStatus
 
 # SENSOR_MSGS SUPPORTED ROS TYPES
 from sensor_msgs.msg import Image as ROSImage, CompressedImage as ROSCompressedImage
+from sensor_msgs.msg import Imu as ROSImu
 from sensor_msgs.msg import JointState as ROSJointState
 from sensor_msgs.msg import LaserScan as ROSLaserScan
+from sensor_msgs.msg import NavSatFix as ROSNavSatFix
 from sensor_msgs.msg import PointCloud2 as ROSPointCloud2
 
 # STD_MSGS SUPPORTED ROS TYPES
@@ -551,6 +553,20 @@ class JointState(SupportedType):
         msg = ROSJointState()
         msg.position = [float(v) for v in np.asarray(output, dtype=np.float64).ravel()]
         return msg
+
+
+class Imu(SupportedType):
+    """Imu"""
+
+    _ros_type = ROSImu
+    callback = callbacks.ImuCallback
+
+
+class NavSatFix(SupportedType):
+    """NavSatFix"""
+
+    _ros_type = ROSNavSatFix
+    callback = callbacks.NavSatFixCallback
 
 
 class Path(SupportedType):
