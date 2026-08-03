@@ -12,7 +12,7 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from jinja2.environment import Template
 from nav_msgs.msg import OccupancyGrid, Odometry
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import JointState, LaserScan
 from std_msgs.msg import Header
 from rclpy.logging import get_logger
 from rclpy.subscription import Subscription
@@ -598,6 +598,37 @@ class PointCallback(GenericCallback):
             return None
 
         return np.array([self.msg.x, self.msg.y, self.msg.z])
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        output = self.get_output()
+        return {"data": output.tolist() if output is not None else None}
+
+
+class JointStateCallback(GenericCallback):
+    """
+    sensor_msgs/JointState callback.
+
+    Returns the joint positions as a numpy array, ordered as the incoming
+    message's ``name`` field.
+    """
+
+    def _get_output(self, **_) -> Optional[np.ndarray]:
+        """
+        Gets the joint positions as a numpy array.
+
+        :returns:   joint positions (rad or m), ordered as ``msg.name``
+        :rtype:     Optional[np.ndarray]
+        """
+        if not self.msg:
+            return None
+
+        return np.array(self.msg.position, dtype=np.float64)
 
     def _get_ui_content(self, **_) -> Dict:
         """
