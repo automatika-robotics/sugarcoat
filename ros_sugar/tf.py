@@ -6,7 +6,7 @@ from attrs import define, field
 from rclpy.logging import get_logger
 from rclpy.time import Time
 from rclpy.timer import Timer
-from tf2_ros import ConnectivityException, LookupException
+from tf2_ros import ConnectivityException, ExtrapolationException, LookupException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
@@ -37,6 +37,7 @@ class TFListener:
         self,
         tf_config: Optional[TFListenerConfig] = None,
         node_name: str = "",
+        buffer: Optional[Buffer] = None,
     ) -> None:
         """
         Sets up a transform listener in ros
@@ -45,11 +46,19 @@ class TFListener:
         :type node: Node
         :param tf_config: Lookup config, defaults to TFListenerConfig()
         :type tf_config: TFListenerConfig, optional
+        :param buffer: Existing TF buffer to look the transform up in. Passing
+            the node's shared buffer avoids paying for another `/tf` and
+            `/tf_static` subscription per frame pair, which matters once a
+            component tracks several sensors. Defaults to a private buffer.
+        :type buffer: Buffer, optional
         """
         if not tf_config:
             tf_config = TFListenerConfig()
 
-        self._tf_buffer = Buffer()
+        self._tf_buffer = buffer if buffer is not None else Buffer()
+        # A shared buffer is fed by a listener owned by whoever created it, so
+        # this listener must not be treated as unset (see ``timer_callback``).
+        self._shared_buffer = buffer is not None
         self.node_name = node_name
         self.config = tf_config
 
@@ -132,10 +141,10 @@ class TFListener:
 
     def timer_callback(self):
         """
-        Timer callback to performe the requested transformation lookup
+        Timer callback to perform the requested transformation lookup
         """
         # Lookup transform if the listener is set
-        if self._tf_listener:
+        if self._tf_listener or self._shared_buffer:
             try:
                 # update the transform if found
                 self.transform = self._tf_buffer.lookup_transform(
@@ -143,7 +152,12 @@ class TFListener:
                 )
                 self.got_transform = True
 
-            except (LookupException, ConnectivityException):
+                # A static transform never changes, so stop paying for the
+                # lookup once it has been acquired.
+                if self.config.static_tf and self._timer is not None:
+                    self._timer.cancel()
+
+            except (LookupException, ConnectivityException, ExtrapolationException):
                 get_logger(self.node_name).debug(
                     f"Failed to get transform from {self.config.source_frame} to {self.config.goal_frame}"
                 )
