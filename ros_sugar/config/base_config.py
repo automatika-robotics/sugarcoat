@@ -300,7 +300,9 @@ class BaseComponentConfig(BaseConfig):
     :type wait_for_restart_time: float
 
     :param robot: Physical description of the robot (motion model, geometry, control limits).
-    :type robot: RobotConfig
+        Defaults to None: components that do not reason about the robot's body never need it,
+        and those that do should fail loudly rather than assume a robot that does not exist.
+    :type robot: Optional[RobotConfig]
 
     :param frames: Robot coordinate frames incoming data is transformed into.
     :type frames: RobotFrames
@@ -308,7 +310,7 @@ class BaseComponentConfig(BaseConfig):
 
     _use_without_launcher: bool = field(default=False, init=False)
 
-    robot: RobotConfig = field(default=Factory(RobotConfig))
+    robot: Optional[RobotConfig] = field(default=None)
 
     frames: RobotFrames = field(default=Factory(RobotFrames))
 

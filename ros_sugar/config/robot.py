@@ -1,11 +1,10 @@
 """Robot description primitives shared by all Sugarcoat components"""
 
-import math
 from enum import Enum
 from typing import Dict, List, Optional, TypeVar, Union
 
 import numpy as np
-from attrs import define, field, validators
+from attrs import Factory, define, field, validators
 
 from .base_attrs import BaseAttrs
 
@@ -208,33 +207,29 @@ class RobotConfig(BaseAttrs):
     ```
     """
 
+    # NOTE: every field is mandatory on purpose. Silently defaulting a robot's
+    # size or velocity envelope means collision checking and control run
+    # against a robot that does not exist, so it must be declared in the recipe.
+
     # Robot Motion Model Type
     model_type: Union[str, RobotType] = field(
-        default=RobotType.ACKERMANN,
-        converter=lambda value: _to_enum(RobotType, value),
+        converter=lambda value: _to_enum(RobotType, value)
     )
 
     # Geometry
     geometry_type: Union[str, RobotGeometryType] = field(
-        default=RobotGeometryType.CYLINDER,
-        converter=lambda value: _to_enum(RobotGeometryType, value),
+        converter=lambda value: _to_enum(RobotGeometryType, value)
     )
-    geometry_params: np.ndarray = field(
-        default=np.array([0.2, 1.0]), converter=np.asarray
-    )
+    # np.array (unlike np.asarray) copies, so a caller keeping a reference to
+    # the array it passed in cannot mutate this config through it
+    geometry_params: np.ndarray = field(converter=np.array)
 
     # Control limits
-    ctrl_vx_limits: LinearCtrlLimits = field(
-        default=LinearCtrlLimits(max_vel=1.0, max_acc=3.0, max_decel=5.0)
-    )
-    ctrl_omega_limits: AngularCtrlLimits = field(
-        default=AngularCtrlLimits(
-            max_vel=5.0, max_steer=math.pi, max_acc=10.0, max_decel=10.0
-        )
-    )
+    ctrl_vx_limits: LinearCtrlLimits = field()
+    ctrl_omega_limits: AngularCtrlLimits = field()
     ctrl_vy_limits: LinearCtrlLimits = field(
-        default=LinearCtrlLimits(max_vel=0.0, max_acc=0.0, max_decel=0.0)
-    )  # Default to ackermann robot
+        default=Factory(lambda: LinearCtrlLimits(max_vel=0.0, max_acc=0.0, max_decel=0.0))
+    )  # Lateral motion is zero unless the robot is omnidirectional
 
     @geometry_params.validator
     def validate_params(self, _, value):
