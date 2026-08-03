@@ -4,6 +4,26 @@ Changelog for package automatika_ros_sugar
 
 0.8.0 (2026-07-30)
 ------------------
+* (fix) Ensure components are destroyed after test is done
+* (fix) Improves TF tests coverage
+* (fix) Adds extra check to avoid errors if deactivationg is called when component is not fully active
+* (fix) Ensures TF listeners are paused/resumed when deactivating/activating a component
+* (feature) Adds TF tests
+* (fix) Fixes handling optional nested attrs in base config
+* (fix) Removes RobotConfig attributes defaults and makes it an optional attr in a component config
+* (chore) Adds note for not throttling ui rate on high rate imu and jointstate
+* (fix) Implements StrEnum class locally for Python 3.8 compatibility
+* (tests) Adds RobotConfig test file
+* (refactor) Upstreams RobotConfig from child package
+* (feature) Adds new supported types (navsatfix and imu)
+* (feature) Adds jointstate as supported type in sugarcoat
+* (feature) Adds method for creating additional datatypes in plugins that correctly attribute the package
+* (refactor) Drops intermediate 'odom' frame from declared frames
+* (feature) Update TFListener to use the component's shared buffer if available
+* (feature) Adds transformation handling to GenericCallback and removes implementations in child callbacks
+* (feature) Adds properties to handle transformation lookup for any input
+* (feature) Creates one TF buffer per component to avoid a per-topic tf subscription
+* (refactor) Upstreams RobotFrames from child package
 * (feature) Adds failing fast when ui dependancies are not available and enable ui is requested
 * (feature) Adds option for disabling browser ui and only serve api when enabling UI
   - Also surfaces api options in the enable ui function.
