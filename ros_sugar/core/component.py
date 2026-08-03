@@ -805,6 +805,9 @@ class BaseComponent(lifecycle.Node):
         self.get_logger().info("STARTING ALL SUBSCRIBERS")
         # Create subscribers
         for topic_name, callback in self.callbacks.items():
+            # Frame handling applies to plugin-fed inputs too, so it is wired up
+            # before the external-topic check below
+            self._attach_transform_provider(topic_name, callback)
             # Inputs bound to a non-ROS robot plugin transport are fed through
             # the feedback bus, not a ROS subscription
             if topic_name in self._external_topics:
@@ -1048,6 +1051,123 @@ class BaseComponent(lifecycle.Node):
         )  # timer to lookup the transform with given rate
         tf_handler.timer = transform_timer
         return tf_handler
+
+    # TRANSFORMS
+    @property
+    def tf_buffer(self) -> Buffer:
+        """The node's shared TF buffer, created on first use.
+
+        All frame pairs the component looks up share this buffer, so the node
+        subscribes to `/tf` and `/tf_static` exactly once however many sensors
+        it tracks.
+
+        :return: Shared TF buffer
+        :rtype: Buffer
+        """
+        if self._tf_buffer is None:
+            self._tf_buffer = Buffer()
+            self._tf_transform_listener = TransformListener(
+                buffer=self._tf_buffer, node=self
+            )
+        return self._tf_buffer
+
+    def get_transform_listener(
+        self, source_frame: str, goal_frame: str, static_tf: bool = False
+    ) -> TFListener:
+        """Get (or create) a listener polling the transform between two frames.
+
+        Listeners are cached per frame pair, so asking repeatedly - for
+        instance once per incoming message - is cheap.
+
+        :param source_frame: Frame the data is currently expressed in
+        :type source_frame: str
+        :param goal_frame: Frame the data should be expressed in
+        :type goal_frame: str
+        :param static_tf: Whether the transform is fixed, in which case polling
+            stops once it has been acquired
+        :type static_tf: bool
+
+        :return: Transform lookup handler for the pair
+        :rtype: TFListener
+        """
+        key = (source_frame, goal_frame)
+        if listener := self._tf_listeners.get(key):
+            return listener
+
+        tf_config = TFListenerConfig(
+            source_frame=source_frame, goal_frame=goal_frame, static_tf=static_tf
+        )
+        listener = TFListener(
+            tf_config=tf_config, node_name=self.node_name, buffer=self.tf_buffer
+        )
+        listener.timer = self.create_timer(
+            1 / tf_config.lookup_rate,
+            listener.timer_callback,
+            callback_group=MutuallyExclusiveCallbackGroup(),
+        )
+        self._tf_listeners[key] = listener
+        return listener
+
+    def get_transform(
+        self, source_frame: str, goal_frame: str, static_tf: bool = False
+    ) -> Optional[TransformStamped]:
+        """Get the transform between two frames, if it has been resolved yet.
+
+        :param source_frame: Frame the data is currently expressed in
+        :type source_frame: str
+        :param goal_frame: Frame the data should be expressed in
+        :type goal_frame: str
+        :param static_tf: Whether the transform is fixed
+        :type static_tf: bool
+
+        :return: The transform, or None while it is still unavailable
+        :rtype: Optional[TransformStamped]
+        """
+        if not source_frame or not goal_frame or source_frame == goal_frame:
+            return None
+        return self.get_transform_listener(source_frame, goal_frame, static_tf).transform
+
+    def transform_input_to(
+        self, topic_name: str, goal_frame: str, static_tf: bool = False
+    ) -> None:
+        """Ask for an input's data expressed in a given frame.
+
+        The source frame is taken from each message's `header.frame_id`, so no
+        sensor frame has to be configured anywhere: the component states which
+        frame its algorithm needs, and the data is transformed on arrival.
+
+        Call this from `init_variables`, before subscribers are created.
+
+        :param topic_name: Name of the component input topic
+        :type topic_name: str
+        :param goal_frame: Frame the data should be expressed in, usually one
+            of the component's `config.frames`
+        :type goal_frame: str
+        :param static_tf: Whether the sensor is rigidly mounted, in which case
+            the transform is looked up once instead of continuously. Leave
+            False for anything on a moving mount, such as a pan-tilt camera.
+        :type static_tf: bool
+        """
+        self._input_frame_targets[topic_name] = (goal_frame, static_tf)
+
+    def _attach_transform_provider(self, topic_name: str, callback) -> None:
+        """Wire a callback up to resolve its own transform on every message.
+
+        The transform cannot be resolved ahead of time because the source frame
+        is only known once a message arrives, so the callback is handed a
+        resolver instead of a fixed transform.
+        """
+        target = self._input_frame_targets.get(topic_name)
+        if target is None:
+            return
+        goal_frame, static_tf = target
+
+        def _provider(cb) -> Optional[TransformStamped]:
+            if not cb.frame_id:
+                return None
+            return self.get_transform(cb.frame_id, goal_frame, static_tf=static_tf)
+
+        callback.set_transform_provider(_provider)
 
     def create_client(self, *args, **kwargs) -> Client:
         """
