@@ -7,6 +7,7 @@
 """
 
 import inspect
+import sys
 from typing import Callable, Optional, Type
 
 from ..io.callbacks import GenericCallback
