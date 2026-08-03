@@ -23,8 +23,10 @@ from rclpy.lifecycle.node import TransitionCallbackReturn, LifecycleState
 from rclpy.publisher import Publisher as ROSPublisher
 from rclpy.subscription import Subscription
 from rclpy.client import Client
+from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from builtin_interfaces.msg import Time
+from geometry_msgs.msg import TransformStamped
 from lifecycle_msgs.msg import State as LifecycleStateMsg
 
 from automatika_ros_sugar.srv import (
@@ -182,6 +184,15 @@ class BaseComponent(lifecycle.Node):
         self._external_topics: set = set()
         # Feedback-bus subscription handles to release on deactivation
         self._robot_plugin_bus_handles: List = []
+
+        # TF lookup: one buffer (and so one /tf + /tf_static subscription) per
+        # node, shared by every frame pair the component looks up
+        self._tf_buffer: Optional[Buffer] = None
+        self._tf_transform_listener: Optional[TransformListener] = None
+        self._tf_listeners: Dict[Tuple[str, str], TFListener] = {}
+        # Input topic name -> (goal frame, is the mount rigid). Declared by the
+        # component (usually in init_variables)
+        self._input_frame_targets: Dict[str, Tuple[str, bool]] = {}
 
         # To use without launcher -> Init the ROS2 node directly
         if self.config._use_without_launcher:
