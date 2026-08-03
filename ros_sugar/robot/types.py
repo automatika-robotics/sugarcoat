@@ -7,6 +7,7 @@
 """
 
 import inspect
+import sys
 from typing import Callable, Optional, Type
 
 from ..io.callbacks import GenericCallback
@@ -17,6 +18,7 @@ def create_supported_type(
     ros_msg_type: type,
     converter: Optional[Callable] = None,
     callback: Optional[Callable] = None,
+    module: Optional[str] = None,
 ) -> Type[SupportedType]:
     """Add a new ``SupportedType`` derived class wrapping ``ros_msg_type``.
 
@@ -26,6 +28,9 @@ def create_supported_type(
     :param callback: ``callback(msg: ros_msg_type) -> <python type>`` — ROS
         message to python value; its first-arg annotation must equal
         ``ros_msg_type`` and its return annotation must be a non-ROS python type.
+    :param module: Module path the type is registered under. Defaults to the
+        caller's module. Together with ``name`` this forms the registry key, so
+        it must be the module the bound variable actually lives in.
     :return: The newly registered ``SupportedType`` subclass.
     """
     if not hasattr(ros_msg_type, "SLOT_TYPES"):
@@ -33,9 +38,17 @@ def create_supported_type(
 
     # Dynamically create the new class
     class_name = f"{ros_msg_type.__name__}"
+
+    # NOTE: Stamp the new class with the *caller's* module rather than this one (where
+    # ``type()`` actually runs). The type registers under
+    # ``f"{__module__}.{__qualname__}"``.
+    if module is None:
+        module = sys._getframe(1).f_globals.get("__name__", __name__)
+
     class_bases = (SupportedType,)
     class_attrs = {
         "_ros_type": ros_msg_type,
+        "__module__": module,
     }
 
     if converter:

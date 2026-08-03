@@ -22,7 +22,10 @@ from automatika_ros_sugar.msg import ComponentStatus as ROSComponentStatus
 
 # SENSOR_MSGS SUPPORTED ROS TYPES
 from sensor_msgs.msg import Image as ROSImage, CompressedImage as ROSCompressedImage
+from sensor_msgs.msg import Imu as ROSImu
+from sensor_msgs.msg import JointState as ROSJointState
 from sensor_msgs.msg import LaserScan as ROSLaserScan
+from sensor_msgs.msg import NavSatFix as ROSNavSatFix
 from sensor_msgs.msg import PointCloud2 as ROSPointCloud2
 
 # STD_MSGS SUPPORTED ROS TYPES
@@ -528,6 +531,48 @@ class PointCloud2(SupportedType):
     _ros_type = ROSPointCloud2
     callback = callbacks.PointCloudCallback
     _ui_rate_sampled = True  # dense sensor stream
+
+
+class JointState(SupportedType):
+    """JointState"""
+
+    _ros_type = ROSJointState
+    callback = callbacks.JointStateCallback
+
+    # NOTE: Deliberately push-default (no _ui_rate_sampled): API consumers
+    # may need full-rate state data; dashboards can throttle with ?rate=<hz>
+
+    @classmethod
+    def convert(cls, output: Union[np.ndarray, List], **_) -> ROSJointState:
+        """ROS message converter for datatype JointState.
+
+        Takes an array of joint positions and produces a
+        ``sensor_msgs/JointState`` with its ``position`` field populated.
+
+        :param output: joint positions
+        :type output: Union[np.ndarray, List]
+        :rtype: ROSJointState
+        """
+        msg = ROSJointState()
+        msg.position = [float(v) for v in np.asarray(output, dtype=np.float64).ravel()]
+        return msg
+
+
+class Imu(SupportedType):
+    """Imu"""
+
+    _ros_type = ROSImu
+    callback = callbacks.ImuCallback
+
+    # NOTE: Deliberately push-default (no _ui_rate_sampled): API consumers
+    # may need full-rate inertial data; dashboards can throttle with ?rate=<hz>
+
+
+class NavSatFix(SupportedType):
+    """NavSatFix"""
+
+    _ros_type = ROSNavSatFix
+    callback = callbacks.NavSatFixCallback
 
 
 class Path(SupportedType):

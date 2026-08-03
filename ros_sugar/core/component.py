@@ -23,8 +23,10 @@ from rclpy.lifecycle.node import TransitionCallbackReturn, LifecycleState
 from rclpy.publisher import Publisher as ROSPublisher
 from rclpy.subscription import Subscription
 from rclpy.client import Client
+from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from builtin_interfaces.msg import Time
+from geometry_msgs.msg import TransformStamped
 from lifecycle_msgs.msg import State as LifecycleStateMsg
 
 from automatika_ros_sugar.srv import (
@@ -141,6 +143,11 @@ class BaseComponent(lifecycle.Node):
         self._fallbacks_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
         self._fallbacks_topics_timeout: Dict[str, float] = {}
 
+        # Created on activation, but declared here so that tearing the component
+        # down is safe whatever state it reached
+        self._default_services: List = []
+        self.health_status_publisher: Optional[ROSPublisher] = None
+
         if self.config._use_without_launcher:
             # Create default services for changing config/inputs/outputs during runtime
             self._create_default_services()
@@ -182,6 +189,15 @@ class BaseComponent(lifecycle.Node):
         self._external_topics: set = set()
         # Feedback-bus subscription handles to release on deactivation
         self._robot_plugin_bus_handles: List = []
+
+        # TF lookup: one buffer (and so one /tf + /tf_static subscription) per
+        # node, shared by every frame pair the component looks up
+        self._tf_buffer: Optional[Buffer] = None
+        self._tf_transform_listener: Optional[TransformListener] = None
+        self._tf_listeners: Dict[Tuple[str, str], TFListener] = {}
+        # Input topic name -> (goal frame, is the mount rigid). Declared by the
+        # component (usually in init_variables)
+        self._input_frame_targets: Dict[str, Tuple[str, bool]] = {}
 
         # To use without launcher -> Init the ROS2 node directly
         if self.config._use_without_launcher:
@@ -751,6 +767,9 @@ class BaseComponent(lifecycle.Node):
         # Setup node timers
         self.create_all_timers()
 
+        # Restart any TF lookups paused by a previous deactivation
+        self._resume_tf_listeners()
+
     def deactivate(self):
         """
         Destroy all declared subscriptions, publications, timers, ... etc. to deactivate the node
@@ -768,6 +787,9 @@ class BaseComponent(lifecycle.Node):
         self.destroy_all_subscribers()
 
         self.destroy_all_publishers()
+
+        # Stop TF lookups too: destroy_all_timers only owns the execution timer
+        self._pause_tf_listeners()
 
     def configure(self, config_file: Optional[str] = None):
         """
@@ -794,6 +816,8 @@ class BaseComponent(lifecycle.Node):
         self.get_logger().info("STARTING ALL SUBSCRIBERS")
         # Create subscribers
         for topic_name, callback in self.callbacks.items():
+            # Frame handling applies to plugin-fed non-ROS inputs too
+            self._attach_transform_provider(topic_name, callback)
             # Inputs bound to a non-ROS robot plugin transport are fed through
             # the feedback bus, not a ROS subscription
             if topic_name in self._external_topics:
@@ -937,8 +961,9 @@ class BaseComponent(lifecycle.Node):
         """
         self.get_logger().info("DESTROYING ALL PUBLISHERS")
         # Destroy health status publisher
-        self.destroy_publisher(self.health_status_publisher)
-        self.health_status_publisher = None
+        if self.health_status_publisher:
+            self.destroy_publisher(self.health_status_publisher)
+            self.health_status_publisher = None
 
         for publisher in self.publishers_dict.values():
             if publisher._publisher:
@@ -950,7 +975,7 @@ class BaseComponent(lifecycle.Node):
         Destroys all node services
         """
         # Destroy node main Server if runtype is server
-        if self.run_type == ComponentRunType.SERVER:
+        if self.run_type == ComponentRunType.SERVER and hasattr(self, "server"):
             self.destroy_service(self.server)
         if (
             hasattr(self, "_maintain_default_services")
@@ -1037,6 +1062,147 @@ class BaseComponent(lifecycle.Node):
         )  # timer to lookup the transform with given rate
         tf_handler.timer = transform_timer
         return tf_handler
+
+    # TRANSFORMS
+    @property
+    def tf_buffer(self) -> Buffer:
+        """The node's shared TF buffer, created on first use.
+
+        All frame pairs the component looks up share this buffer, so the node
+        subscribes to `/tf` and `/tf_static` exactly once however many sensors
+        it tracks.
+
+        :return: Shared TF buffer
+        :rtype: Buffer
+        """
+        if self._tf_buffer is None:
+            self._tf_buffer = Buffer()
+            self._tf_transform_listener = TransformListener(
+                buffer=self._tf_buffer, node=self
+            )
+        return self._tf_buffer
+
+    def get_transform_listener(
+        self, source_frame: str, goal_frame: str, static_tf: bool = False
+    ) -> TFListener:
+        """Get (or create) a listener polling the transform between two frames.
+
+        Listeners are cached per frame pair, so asking repeatedly - for
+        instance once per incoming message - is cheap.
+
+        :param source_frame: Frame the data is currently expressed in
+        :type source_frame: str
+        :param goal_frame: Frame the data should be expressed in
+        :type goal_frame: str
+        :param static_tf: Whether the transform is fixed, in which case polling
+            stops once it has been acquired
+        :type static_tf: bool
+
+        :return: Transform lookup handler for the pair
+        :rtype: TFListener
+        """
+        key = (source_frame, goal_frame)
+        if listener := self._tf_listeners.get(key):
+            return listener
+
+        tf_config = TFListenerConfig(
+            source_frame=source_frame, goal_frame=goal_frame, static_tf=static_tf
+        )
+        listener = TFListener(
+            tf_config=tf_config, node_name=self.node_name, buffer=self.tf_buffer
+        )
+        listener.timer = self.create_timer(
+            1 / tf_config.lookup_rate,
+            listener.timer_callback,
+            callback_group=MutuallyExclusiveCallbackGroup(),
+        )
+        self._tf_listeners[key] = listener
+        return listener
+
+    def _pause_tf_listeners(self) -> None:
+        """Stop the TF lookup timers while the component is inactive.
+
+        The buffer and the listeners themselves are kept, so a transform that
+        was already resolved survives a deactivate/activate cycle instead of
+        having to be looked up again.
+        """
+        for listener in self._tf_listeners.values():
+            if listener.timer is not None:
+                listener.timer.cancel()
+
+    def _resume_tf_listeners(self) -> None:
+        """Restart the TF lookup timers paused by deactivation.
+
+        A static transform that has already been acquired stays cancelled: it
+        stopped its own timer on purpose and there is nothing left to look up.
+        """
+        for listener in self._tf_listeners.values():
+            if listener.timer is None:
+                continue
+            if listener.config.static_tf and listener.got_transform:
+                continue
+            listener.timer.reset()
+
+    def get_transform(
+        self, source_frame: str, goal_frame: str, static_tf: bool = False
+    ) -> Optional[TransformStamped]:
+        """Get the transform between two frames, if it has been resolved yet.
+
+        :param source_frame: Frame the data is currently expressed in
+        :type source_frame: str
+        :param goal_frame: Frame the data should be expressed in
+        :type goal_frame: str
+        :param static_tf: Whether the transform is fixed
+        :type static_tf: bool
+
+        :return: The transform, or None while it is still unavailable
+        :rtype: Optional[TransformStamped]
+        """
+        if not source_frame or not goal_frame or source_frame == goal_frame:
+            return None
+        return self.get_transform_listener(source_frame, goal_frame, static_tf).transform
+
+    def transform_input_to(
+        self, topic_name: str, goal_frame: str, static_tf: bool = False
+    ) -> None:
+        """Ask for an input's data expressed in a given frame.
+
+        The source frame is taken from each message's `header.frame_id`, so no
+        sensor frame has to be configured anywhere: the component states which
+        frame its algorithm needs, and the data is transformed on arrival.
+
+        Call this from `init_variables`, before subscribers are created.
+
+        :param topic_name: Name of the component input topic
+        :type topic_name: str
+        :param goal_frame: Frame the data should be expressed in, usually one
+            of the component's `config.frames`
+        :type goal_frame: str
+        :param static_tf: Whether the sensor is rigidly mounted, in which case
+            the transform is looked up once instead of continuously. Leave
+            False for anything on a moving mount, such as a pan-tilt camera.
+        :type static_tf: bool
+        """
+        self._input_frame_targets[topic_name] = (goal_frame, static_tf)
+
+    def _attach_transform_provider(self, topic_name: str, callback) -> None:
+        """Wire a callback up to resolve its own transform on every message.
+
+        The transform cannot be resolved ahead of time because the source frame
+        is only known once a message arrives, so the callback is handed a
+        resolver instead of a fixed transform.
+        """
+        target = self._input_frame_targets.get(topic_name)
+        if target is None:
+            return
+        goal_frame, static_tf = target
+
+        def _provider(cb) -> Optional[TransformStamped]:
+            if not cb.frame_id:
+                return None
+            return self.get_transform(cb.frame_id, goal_frame, static_tf=static_tf)
+
+        callback.set_transform_provider(_provider)
 
     def create_client(self, *args, **kwargs) -> Client:
         """

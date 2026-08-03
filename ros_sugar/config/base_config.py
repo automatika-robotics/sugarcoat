@@ -2,12 +2,13 @@
 
 from enum import Enum
 from typing import List, Union, Optional
-from attrs import define, field
+from attrs import define, field, Factory
 from rclpy import qos
 from rclpy.logging import LoggingSeverity
 
 from . import base_validators
 from .base_attrs import BaseAttrs
+from .robot import RobotFrames, RobotConfig
 
 __all__ = ["QoSConfig", "BaseComponentConfig", "BaseConfig", "ComponentRunType"]
 
@@ -297,14 +298,21 @@ class BaseComponentConfig(BaseConfig):
 
     :param wait_for_restart_time: Time (in seconds) the component waits for a node to come back online after restart. Used to avoid infinite restart loops. Recommended to use a high value.
     :type wait_for_restart_time: float
+
+    :param robot: Physical description of the robot (motion model, geometry, control limits).
+        Defaults to None: components that do not reason about the robot's body never need it,
+        and those that do should fail loudly rather than assume a robot that does not exist.
+    :type robot: Optional[RobotConfig]
+
+    :param frames: Robot coordinate frames incoming data is transformed into.
+    :type frames: RobotFrames
     """
 
     _use_without_launcher: bool = field(default=False, init=False)
 
-    # NOTE: Layer ID to be added in coming updates
-    # layer_id: int = field(
-    #     default=0, validator=base_validators.in_range(min_value=0, max_value=1e3)
-    # )
+    robot: Optional[RobotConfig] = field(default=None)
+
+    frames: RobotFrames = field(default=Factory(RobotFrames))
 
     fallback_rate: float = field(
         default=100.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)

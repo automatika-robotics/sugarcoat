@@ -12,7 +12,7 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from jinja2.environment import Template
 from nav_msgs.msg import OccupancyGrid, Odometry
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Imu, JointState, LaserScan, NavSatFix
 from std_msgs.msg import Header
 from rclpy.logging import get_logger
 from rclpy.subscription import Subscription
@@ -49,6 +49,14 @@ class GenericCallback:
         # Coordinates frame of the message data (if available)
         self._frame_id: Optional[str] = None
 
+        # Transform applied to the data before it is handed to the component.
+        # Populated from `_transform_provider` on every message when the
+        # component asked for this input in a specific frame.
+        self._transformation: Optional[TransformStamped] = None
+        self._transform_provider: Optional[
+            Callable[["GenericCallback"], Optional[TransformStamped]]
+        ] = None
+
         self._extra_callback: Optional[Callable] = None
         self._get_processed: bool = True  # utilized only if extra callback is set
         self._subscriber: Optional[Subscription] = None
@@ -62,6 +70,39 @@ class GenericCallback:
         :rtype: Optional[str]
         """
         return self._frame_id
+
+    @property
+    def transformation(self) -> Optional[TransformStamped]:
+        """Getter of the transformation applied to the data
+
+        :return: Transformation from the message frame to the requested frame
+        :rtype: Optional[TransformStamped]
+        """
+        return self._transformation
+
+    @transformation.setter
+    def transformation(self, transform: Optional[TransformStamped]) -> None:
+        """
+        Sets a new transformation value
+
+        :param transform: Transformation to apply to the data
+        :type transform: Optional[TransformStamped]
+        """
+        self._transformation = transform
+
+    def set_transform_provider(
+        self, provider: Optional[Callable[["GenericCallback"], Optional[TransformStamped]]]
+    ) -> None:
+        """Attach a resolver called on every message to refresh `transformation`.
+
+        The provider is given this callback (so it can read `frame_id`, which is
+        only known once data arrives) and returns the transform to apply, or
+        None if it is not available yet.
+
+        :param provider: Transform resolver
+        :type provider: Optional[Callable[[GenericCallback], Optional[TransformStamped]]]
+        """
+        self._transform_provider = provider
 
     def set_node_name(self, node_name: str) -> None:
         """Set node name.
@@ -102,6 +143,11 @@ class GenericCallback:
         # Get the frame if available
         if hasattr(msg, "header") and isinstance(msg.header, Header):
             self._frame_id = msg.header.frame_id
+
+        # Refresh the transform before any output is produced below, since the
+        # source frame is only known now that a message has arrived
+        if self._transform_provider is not None:
+            self._transformation = self._transform_provider(self)
 
         if self._extra_callback:
             if self._get_processed:
@@ -457,27 +503,6 @@ class OdomCallback(GenericCallback):
         node_name: str = "",
     ) -> None:
         super().__init__(input_topic, node_name)
-        self.__tf: Optional[TransformStamped] = None
-
-    @property
-    def transformation(self) -> Optional[TransformStamped]:
-        """
-        Sets a new transformation value
-
-        :return:  Detected transform from source to desired goal frame
-        :rtype: TransformStamped
-        """
-        return self.__tf
-
-    @transformation.setter
-    def transformation(self, transform: TransformStamped) -> None:
-        """
-        Sets a new transformation value
-
-        :param transform: Detected transform from source to desired goal frame
-        :type transform: TransformStamped
-        """
-        self.__tf = transform
 
     def _get_output(self, **_) -> Optional[np.ndarray]:
         """
@@ -585,6 +610,108 @@ class PointCallback(GenericCallback):
         return {"data": output.tolist() if output is not None else None}
 
 
+class JointStateCallback(GenericCallback):
+    """
+    sensor_msgs/JointState callback.
+
+    Returns the joint positions as a numpy array, ordered as the incoming
+    message's ``name`` field.
+    """
+
+    def _get_output(self, **_) -> Optional[np.ndarray]:
+        """
+        Gets the joint positions as a numpy array.
+
+        :returns:   joint positions (rad or m), ordered as ``msg.name``
+        :rtype:     Optional[np.ndarray]
+        """
+        if not self.msg:
+            return None
+
+        return np.array(self.msg.position, dtype=np.float64)
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        output = self.get_output()
+        return {"data": output.tolist() if output is not None else None}
+
+
+class ImuCallback(GenericCallback):
+    """
+    sensor_msgs/Imu callback.
+
+    Returns the IMU state as a flat numpy array
+    ``[qx, qy, qz, qw, wx, wy, wz, ax, ay, az]`` -- orientation quaternion,
+    angular velocity (rad/s) and linear acceleration (m/s^2).
+    """
+
+    def _get_output(self, **_) -> Optional[np.ndarray]:
+        """
+        Gets the IMU state as a numpy array.
+
+        :returns:   [qx, qy, qz, qw, wx, wy, wz, ax, ay, az]
+        :rtype:     Optional[np.ndarray]
+        """
+        if not self.msg:
+            return None
+
+        o = self.msg.orientation
+        w = self.msg.angular_velocity
+        a = self.msg.linear_acceleration
+        return np.array(
+            [o.x, o.y, o.z, o.w, w.x, w.y, w.z, a.x, a.y, a.z], dtype=np.float64
+        )
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        output = self.get_output()
+        return {"data": output.tolist() if output is not None else None}
+
+
+class NavSatFixCallback(GenericCallback):
+    """
+    sensor_msgs/NavSatFix callback.
+
+    Returns the satellite fix as a numpy array ``[latitude, longitude,
+    altitude]`` (degrees, degrees, metres).
+    """
+
+    def _get_output(self, **_) -> Optional[np.ndarray]:
+        """
+        Gets the satellite fix as a numpy array.
+
+        :returns:   [latitude, longitude, altitude]
+        :rtype:     Optional[np.ndarray]
+        """
+        if not self.msg:
+            return None
+
+        return np.array(
+            [self.msg.latitude, self.msg.longitude, self.msg.altitude],
+            dtype=np.float64,
+        )
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        output = self.get_output()
+        return {"data": output.tolist() if output is not None else None}
+
+
 class PointStampedCallback(GenericCallback):
     """
     Ros Pose Callback Handler to get the robot state in 2D
@@ -631,27 +758,6 @@ class PoseCallback(GenericCallback):
         node_name: str = '',
     ) -> None:
         super().__init__(input_topic, node_name)
-        self.__tf: Optional[TransformStamped] = None
-
-    @property
-    def transformation(self) -> Optional[TransformStamped]:
-        """
-        Sets a new transformation value
-
-        :return:  Detected transform from source to desired goal frame
-        :rtype: TransformStamped
-        """
-        return self.__tf
-
-    @transformation.setter
-    def transformation(self, transform: TransformStamped) -> None:
-        """
-        Sets a new transformation value
-
-        :param transform: Detected transform from source to desired goal frame
-        :type transform: TransformStamped
-        """
-        self.__tf = transform
 
     def _process(self, msg: Pose) -> np.ndarray:
         """Takes Pose ROS object and converts it to a numpy array with [x, y, z, heading]
@@ -994,26 +1100,7 @@ class LaserScanCallback(GenericCallback):
         transformation: Optional[TransformStamped] = None,
     ) -> None:
         super().__init__(input_topic, node_name)
-        self.__tf = transformation
-
-    @property
-    def transformation(self) -> Optional[TransformStamped]:
-        """Getter of the laserscan transformation
-
-        :return: Detected transform from source to desired goal frame
-        :rtype: Optional[TransformStamped]
-        """
-        return self.__tf
-
-    @transformation.setter
-    def transformation(self, transform: TransformStamped) -> None:
-        """
-        Sets a new transformation value
-
-        :param transform: Detected transform from source to desired goal frame
-        :type transform: TransformStamped
-        """
-        self.__tf = transform
+        self._transformation = transformation
 
     def _get_output(
         self,
