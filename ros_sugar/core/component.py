@@ -143,6 +143,12 @@ class BaseComponent(lifecycle.Node):
         self._fallbacks_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
         self._fallbacks_topics_timeout: Dict[str, float] = {}
 
+        # Created on activation, but declared here so that tearing the component
+        # down is safe whatever state it reached -- a failed or skipped
+        # activation must not turn into an AttributeError during cleanup
+        self._default_services: List = []
+        self.health_status_publisher: Optional[ROSPublisher] = None
+
         if self.config._use_without_launcher:
             # Create default services for changing config/inputs/outputs during runtime
             self._create_default_services()
@@ -957,8 +963,9 @@ class BaseComponent(lifecycle.Node):
         """
         self.get_logger().info("DESTROYING ALL PUBLISHERS")
         # Destroy health status publisher
-        self.destroy_publisher(self.health_status_publisher)
-        self.health_status_publisher = None
+        if self.health_status_publisher:
+            self.destroy_publisher(self.health_status_publisher)
+            self.health_status_publisher = None
 
         for publisher in self.publishers_dict.values():
             if publisher._publisher:
@@ -970,7 +977,7 @@ class BaseComponent(lifecycle.Node):
         Destroys all node services
         """
         # Destroy node main Server if runtype is server
-        if self.run_type == ComponentRunType.SERVER:
+        if self.run_type == ComponentRunType.SERVER and hasattr(self, "server"):
             self.destroy_service(self.server)
         if (
             hasattr(self, "_maintain_default_services")
