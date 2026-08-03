@@ -3,6 +3,7 @@
 from .base_config import BaseConfig, BaseComponentConfig, QoSConfig, ComponentRunType
 from . import base_validators
 from .base_attrs import BaseAttrs
+from .robot import RobotFrames
 
 __all__ = [
     "BaseAttrs",
@@ -11,4 +12,5 @@ __all__ = [
     "BaseComponentConfig",
     "BaseConfig",
     "ComponentRunType",
+    "RobotFrames",
 ]
