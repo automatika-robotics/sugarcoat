@@ -314,11 +314,6 @@ class BaseComponentConfig(BaseConfig):
 
     frames: RobotFrames = field(default=Factory(RobotFrames))
 
-    # NOTE: Layer ID to be added in coming updates
-    # layer_id: int = field(
-    #     default=0, validator=base_validators.in_range(min_value=0, max_value=1e3)
-    # )
-
     fallback_rate: float = field(
         default=100.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
     )
