@@ -144,8 +144,7 @@ class BaseComponent(lifecycle.Node):
         self._fallbacks_topics_timeout: Dict[str, float] = {}
 
         # Created on activation, but declared here so that tearing the component
-        # down is safe whatever state it reached -- a failed or skipped
-        # activation must not turn into an AttributeError during cleanup
+        # down is safe whatever state it reached
         self._default_services: List = []
         self.health_status_publisher: Optional[ROSPublisher] = None
 
@@ -817,8 +816,7 @@ class BaseComponent(lifecycle.Node):
         self.get_logger().info("STARTING ALL SUBSCRIBERS")
         # Create subscribers
         for topic_name, callback in self.callbacks.items():
-            # Frame handling applies to plugin-fed inputs too, so it is wired up
-            # before the external-topic check below
+            # Frame handling applies to plugin-fed non-ROS inputs too
             self._attach_transform_provider(topic_name, callback)
             # Inputs bound to a non-ROS robot plugin transport are fed through
             # the feedback bus, not a ROS subscription
