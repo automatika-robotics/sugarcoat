@@ -10,7 +10,7 @@ import pytest
 import rclpy
 from geometry_msgs.msg import TransformStamped
 
-from ros_sugar.config import BaseComponentConfig, RobotFrames
+from ros_sugar.config import BaseComponentConfig, ComponentRunType, RobotFrames
 from ros_sugar.core.component import BaseComponent
 from ros_sugar.io.topic import Topic
 
@@ -110,3 +110,32 @@ def test_no_tf_machinery_is_created_when_unused(component):
     assert component._tf_buffer is None
     component.deactivate()  # must not blow up with nothing to pause
     assert component._tf_buffer is None
+
+
+@pytest.mark.parametrize(
+    "run_type",
+    [ComponentRunType.TIMED, ComponentRunType.SERVER, ComponentRunType.ACTION_SERVER],
+)
+def test_teardown_is_safe_without_a_prior_activation(run_type):
+    """Cleanup must tolerate whatever state the component reached: an
+    activation that failed part-way, or a lifecycle transition that never
+    activated at all, should not turn into an AttributeError on the way down.
+    """
+    config = BaseComponentConfig()
+    comp = BaseComponent(
+        component_name=f"never_activated_{run_type.value.lower()}",
+        inputs=[Topic(name="/scan", msg_type="LaserScan")],
+        config=config,
+    )
+    comp.rclpy_init_node()
+    comp.run_type = run_type
+
+    comp.deactivate()  # never activated
+
+
+def test_teardown_is_idempotent(component):
+    component.deactivate()
+    component.deactivate()
+
+    component.activate()
+    component.deactivate()
