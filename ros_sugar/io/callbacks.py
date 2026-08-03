@@ -49,6 +49,14 @@ class GenericCallback:
         # Coordinates frame of the message data (if available)
         self._frame_id: Optional[str] = None
 
+        # Transform applied to the data before it is handed to the component.
+        # Populated from `_transform_provider` on every message when the
+        # component asked for this input in a specific frame.
+        self._transformation: Optional[TransformStamped] = None
+        self._transform_provider: Optional[
+            Callable[["GenericCallback"], Optional[TransformStamped]]
+        ] = None
+
         self._extra_callback: Optional[Callable] = None
         self._get_processed: bool = True  # utilized only if extra callback is set
         self._subscriber: Optional[Subscription] = None
@@ -62,6 +70,39 @@ class GenericCallback:
         :rtype: Optional[str]
         """
         return self._frame_id
+
+    @property
+    def transformation(self) -> Optional[TransformStamped]:
+        """Getter of the transformation applied to the data
+
+        :return: Transformation from the message frame to the requested frame
+        :rtype: Optional[TransformStamped]
+        """
+        return self._transformation
+
+    @transformation.setter
+    def transformation(self, transform: Optional[TransformStamped]) -> None:
+        """
+        Sets a new transformation value
+
+        :param transform: Transformation to apply to the data
+        :type transform: Optional[TransformStamped]
+        """
+        self._transformation = transform
+
+    def set_transform_provider(
+        self, provider: Optional[Callable[["GenericCallback"], Optional[TransformStamped]]]
+    ) -> None:
+        """Attach a resolver called on every message to refresh `transformation`.
+
+        The provider is given this callback (so it can read `frame_id`, which is
+        only known once data arrives) and returns the transform to apply, or
+        None if it is not available yet.
+
+        :param provider: Transform resolver
+        :type provider: Optional[Callable[[GenericCallback], Optional[TransformStamped]]]
+        """
+        self._transform_provider = provider
 
     def set_node_name(self, node_name: str) -> None:
         """Set node name.
@@ -102,6 +143,11 @@ class GenericCallback:
         # Get the frame if available
         if hasattr(msg, "header") and isinstance(msg.header, Header):
             self._frame_id = msg.header.frame_id
+
+        # Refresh the transform before any output is produced below, since the
+        # source frame is only known now that a message has arrived
+        if self._transform_provider is not None:
+            self._transformation = self._transform_provider(self)
 
         if self._extra_callback:
             if self._get_processed:
@@ -457,27 +503,6 @@ class OdomCallback(GenericCallback):
         node_name: str = "",
     ) -> None:
         super().__init__(input_topic, node_name)
-        self.__tf: Optional[TransformStamped] = None
-
-    @property
-    def transformation(self) -> Optional[TransformStamped]:
-        """
-        Sets a new transformation value
-
-        :return:  Detected transform from source to desired goal frame
-        :rtype: TransformStamped
-        """
-        return self.__tf
-
-    @transformation.setter
-    def transformation(self, transform: TransformStamped) -> None:
-        """
-        Sets a new transformation value
-
-        :param transform: Detected transform from source to desired goal frame
-        :type transform: TransformStamped
-        """
-        self.__tf = transform
 
     def _get_output(self, **_) -> Optional[np.ndarray]:
         """
@@ -631,27 +656,6 @@ class PoseCallback(GenericCallback):
         node_name: str = '',
     ) -> None:
         super().__init__(input_topic, node_name)
-        self.__tf: Optional[TransformStamped] = None
-
-    @property
-    def transformation(self) -> Optional[TransformStamped]:
-        """
-        Sets a new transformation value
-
-        :return:  Detected transform from source to desired goal frame
-        :rtype: TransformStamped
-        """
-        return self.__tf
-
-    @transformation.setter
-    def transformation(self, transform: TransformStamped) -> None:
-        """
-        Sets a new transformation value
-
-        :param transform: Detected transform from source to desired goal frame
-        :type transform: TransformStamped
-        """
-        self.__tf = transform
 
     def _process(self, msg: Pose) -> np.ndarray:
         """Takes Pose ROS object and converts it to a numpy array with [x, y, z, heading]
@@ -994,26 +998,7 @@ class LaserScanCallback(GenericCallback):
         transformation: Optional[TransformStamped] = None,
     ) -> None:
         super().__init__(input_topic, node_name)
-        self.__tf = transformation
-
-    @property
-    def transformation(self) -> Optional[TransformStamped]:
-        """Getter of the laserscan transformation
-
-        :return: Detected transform from source to desired goal frame
-        :rtype: Optional[TransformStamped]
-        """
-        return self.__tf
-
-    @transformation.setter
-    def transformation(self, transform: TransformStamped) -> None:
-        """
-        Sets a new transformation value
-
-        :param transform: Detected transform from source to desired goal frame
-        :type transform: TransformStamped
-        """
-        self.__tf = transform
+        self._transformation = transformation
 
     def _get_output(
         self,
