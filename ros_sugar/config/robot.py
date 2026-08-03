@@ -1,13 +1,63 @@
 """Robot description primitives shared by all Sugarcoat components"""
 
 import math
-from enum import StrEnum
-from typing import Dict, Union
+from enum import Enum
+from typing import Dict, List, Optional, TypeVar, Union
 
 import numpy as np
 from attrs import define, field, validators
 
 from .base_attrs import BaseAttrs
+
+T = TypeVar("T", bound="StrEnum")
+
+
+class StrEnum(str, Enum):
+    """A string-valued enum whose members behave like their own value.
+
+    ``enum.StrEnum`` only exists on Python 3.11+, so it is implemented here to
+    keep the package usable on older interpreters.
+
+    The ``str`` mixin is the load-bearing part: it makes a member compare equal
+    to its name across package boundaries, so a consumer holding an equivalent
+    enum of its own (or a plain string read from a config file) still matches.
+    Overriding ``__str__`` keeps serialization emitting ``"CYLINDER"`` rather
+    than the ``"RobotGeometryType.CYLINDER"`` repr that a bare mixin produces.
+    """
+
+    def __str__(self) -> str:
+        """
+        Gets value of enum
+
+        :return: Enum value
+        :rtype: str
+        """
+        return self.value
+
+    # Without this, f-strings fall back to Enum.__format__ on some versions
+    __format__ = str.__format__
+
+    @classmethod
+    def get_enum(cls: type, __value: str) -> Optional[T]:
+        """
+        Get Enum member equal to the given value
+
+        :param __value: Reference value
+        :type __value: str
+        :return: Enum member
+        :rtype: StrEnum | None
+        """
+        for enum_member in cls:
+            if enum_member.value == __value:
+                return enum_member
+        return None
+
+    @classmethod
+    def values(cls) -> List[str]:
+        """
+        Get all enum values
+        """
+        return [member.value for member in cls]
 
 
 class RobotType(StrEnum):

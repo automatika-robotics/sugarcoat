@@ -4,6 +4,7 @@ from .base_config import BaseConfig, BaseComponentConfig, QoSConfig, ComponentRu
 from . import base_validators
 from .base_attrs import BaseAttrs
 from .robot import (
+    StrEnum,
     RobotFrames,
     RobotConfig,
     RobotType,
@@ -20,6 +21,7 @@ __all__ = [
     "BaseComponentConfig",
     "BaseConfig",
     "ComponentRunType",
+    "StrEnum",
     "RobotFrames",
     "RobotConfig",
     "RobotType",
