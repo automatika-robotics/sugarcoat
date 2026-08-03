@@ -32,16 +32,43 @@ def make_tf(parent: str, child: str, x: float = 0.0) -> TransformStamped:
     return transform
 
 
-@pytest.fixture
-def component(request):
+def _make_component(name: str) -> BaseComponent:
     config = BaseComponentConfig()
     config.frames = RobotFrames(robot_base="base_link", world="map")
     comp = BaseComponent(
-        component_name=request.node.name.replace("[", "_").replace("]", "_"),
+        component_name=name,
         inputs=[Topic(name="/scan", msg_type="LaserScan")],
         config=config,
     )
     comp.rclpy_init_node()
+    return comp
+
+
+@pytest.fixture
+def make_component(request):
+    """Build components and tear them down with the test.
+
+    Nodes must not outlive their test: these suites share one rclpy context
+    with the launch_testing integration tests that run later in the session,
+    and leaked live nodes destabilise it.
+    """
+    created = []
+
+    def _factory(suffix: str = "") -> BaseComponent:
+        name = request.node.name.replace("[", "_").replace("]", "_") + suffix
+        comp = _make_component(name)
+        created.append(comp)
+        return comp
+
+    yield _factory
+
+    for comp in created:
+        comp.destroy_node()
+
+
+@pytest.fixture
+def component(make_component):
+    comp = make_component()
     comp.activate()
     return comp
 
@@ -116,18 +143,12 @@ def test_no_tf_machinery_is_created_when_unused(component):
     "run_type",
     [ComponentRunType.TIMED, ComponentRunType.SERVER, ComponentRunType.ACTION_SERVER],
 )
-def test_teardown_is_safe_without_a_prior_activation(run_type):
+def test_teardown_is_safe_without_a_prior_activation(make_component, run_type):
     """Cleanup must tolerate whatever state the component reached: an
     activation that failed part-way, or a lifecycle transition that never
     activated at all, should not turn into an AttributeError on the way down.
     """
-    config = BaseComponentConfig()
-    comp = BaseComponent(
-        component_name=f"never_activated_{run_type.value.lower()}",
-        inputs=[Topic(name="/scan", msg_type="LaserScan")],
-        config=config,
-    )
-    comp.rclpy_init_node()
+    comp = make_component()
     comp.run_type = run_type
 
     comp.deactivate()  # never activated
