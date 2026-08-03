@@ -1,7 +1,7 @@
 """Robot description primitives shared by all Sugarcoat components"""
 
 from enum import Enum
-from typing import Dict, List, Optional, TypeVar, Union
+from typing import Dict, List, Optional, TypeVar, Union, Type
 
 import numpy as np
 from attrs import Factory, define, field, validators
@@ -37,7 +37,7 @@ class StrEnum(str, Enum):
     __format__ = str.__format__
 
     @classmethod
-    def get_enum(cls: type, __value: str) -> Optional[T]:
+    def get_enum(cls: Type[T], __value: str) -> Optional[T]:
         """
         Get Enum member equal to the given value
 

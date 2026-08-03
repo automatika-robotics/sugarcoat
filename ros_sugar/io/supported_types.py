@@ -540,7 +540,7 @@ class JointState(SupportedType):
     callback = callbacks.JointStateCallback
 
     # NOTE: Deliberately push-default (no _ui_rate_sampled): API consumers
-    # may need full-rate inertial data; dashboards can throttle with ?rate=<hz>
+    # may need full-rate state data; dashboards can throttle with ?rate=<hz>
 
     @classmethod
     def convert(cls, output: Union[np.ndarray, List], **_) -> ROSJointState:
