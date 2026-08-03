@@ -85,6 +85,53 @@ class BaseAttrs:
         return getattr(some_type, "__origin__", None)
 
     @classmethod
+    def __nested_attrs_type(cls, attribute_type) -> Optional[type]:
+        """Get the attrs class an attribute can hold, if any.
+
+        Used for optional nested configs: when the attribute is currently None
+        there is no instance to deserialize into, so the declared type is the
+        only thing that says what to rebuild.
+
+        :param attribute_type: Declared type of the attribute
+        :return: The attrs class, or None if the attribute holds no attrs class
+        :rtype: Optional[type]
+        """
+        candidates = (
+            cls.__get_subscribed_generic_simple_types(attribute_type)
+            if cls.__is_subscripted_generic(attribute_type)
+            else [attribute_type]
+        )
+        for candidate in candidates:
+            if hasattr(candidate, "__attrs_attrs__"):
+                return candidate
+        return None
+
+    @classmethod
+    def __build_nested(cls, target_cls: type, value: Dict):
+        """Construct an attrs class from a serialized dict.
+
+        Recurses so that nested configs arrive as their own class rather than
+        as raw dictionaries, which would otherwise be stored as-is and blow up
+        at first use.
+
+        :param target_cls: The attrs class to construct
+        :param value: Serialized attribute values
+        :return: An instance of ``target_cls``
+        """
+        target_fields = fields_dict(target_cls)
+        kwargs = {}
+        for key, item in value.items():
+            attribute = target_fields.get(key)
+            if attribute is None or not attribute.init:
+                continue
+            nested_cls = cls.__nested_attrs_type(attribute.type)
+            if nested_cls is not None and isinstance(item, Dict):
+                item = cls.__build_nested(nested_cls, item)
+            # attrs strips the leading underscore of private fields for __init__
+            kwargs[attribute.alias] = item
+        return target_cls(**kwargs)
+
+    @classmethod
     def __get_subscribed_generic_simple_types(cls, sg_type) -> List:
         _types = get_args(sg_type)
         _parsed_types = []
@@ -198,6 +245,15 @@ class BaseAttrs:
                         f"Trying to set with incompatible type. Attribute {key} expecting dictionary got '{type(value)}'"
                     )
                 attribute_to_set.from_dict(value)
+            elif (
+                isinstance(value, Dict)
+                and attribute_to_set is None
+                and attribute_type
+                and (nested_cls := self.__nested_attrs_type(attribute_type))
+            ):
+                # An optional nested config that is currently unset: there is no
+                # instance to deserialize into, so build one from the declared type
+                setattr(self, key, self.__build_nested(nested_cls, value))
             elif isinstance(attribute_to_set, List) and attribute_to_set:
                 setattr(
                     self,
