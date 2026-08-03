@@ -762,6 +762,9 @@ class BaseComponent(lifecycle.Node):
         # Setup node timers
         self.create_all_timers()
 
+        # Restart any TF lookups paused by a previous deactivation
+        self._resume_tf_listeners()
+
     def deactivate(self):
         """
         Destroy all declared subscriptions, publications, timers, ... etc. to deactivate the node
@@ -779,6 +782,9 @@ class BaseComponent(lifecycle.Node):
         self.destroy_all_subscribers()
 
         self.destroy_all_publishers()
+
+        # Stop TF lookups too: destroy_all_timers only owns the execution timer
+        self._pause_tf_listeners()
 
     def configure(self, config_file: Optional[str] = None):
         """
@@ -1107,6 +1113,30 @@ class BaseComponent(lifecycle.Node):
         )
         self._tf_listeners[key] = listener
         return listener
+
+    def _pause_tf_listeners(self) -> None:
+        """Stop the TF lookup timers while the component is inactive.
+
+        The buffer and the listeners themselves are kept, so a transform that
+        was already resolved survives a deactivate/activate cycle instead of
+        having to be looked up again.
+        """
+        for listener in self._tf_listeners.values():
+            if listener.timer is not None:
+                listener.timer.cancel()
+
+    def _resume_tf_listeners(self) -> None:
+        """Restart the TF lookup timers paused by deactivation.
+
+        A static transform that has already been acquired stays cancelled: it
+        stopped its own timer on purpose and there is nothing left to look up.
+        """
+        for listener in self._tf_listeners.values():
+            if listener.timer is None:
+                continue
+            if listener.config.static_tf and listener.got_transform:
+                continue
+            listener.timer.reset()
 
     def get_transform(
         self, source_frame: str, goal_frame: str, static_tf: bool = False
