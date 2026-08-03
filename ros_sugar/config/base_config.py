@@ -8,7 +8,7 @@ from rclpy.logging import LoggingSeverity
 
 from . import base_validators
 from .base_attrs import BaseAttrs
-from .robot import RobotFrames
+from .robot import RobotFrames, RobotConfig
 
 __all__ = ["QoSConfig", "BaseComponentConfig", "BaseConfig", "ComponentRunType"]
 
@@ -299,11 +299,16 @@ class BaseComponentConfig(BaseConfig):
     :param wait_for_restart_time: Time (in seconds) the component waits for a node to come back online after restart. Used to avoid infinite restart loops. Recommended to use a high value.
     :type wait_for_restart_time: float
 
-    :param frames: Robot coordinate frames used to resolve the symbolic targets of `Topic.transform_to`.
+    :param robot: Physical description of the robot (motion model, geometry, control limits).
+    :type robot: RobotConfig
+
+    :param frames: Robot coordinate frames incoming data is transformed into.
     :type frames: RobotFrames
     """
 
     _use_without_launcher: bool = field(default=False, init=False)
+
+    robot: RobotConfig = field(default=Factory(RobotConfig))
 
     frames: RobotFrames = field(default=Factory(RobotFrames))
 

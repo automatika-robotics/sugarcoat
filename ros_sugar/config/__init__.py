@@ -3,7 +3,15 @@
 from .base_config import BaseConfig, BaseComponentConfig, QoSConfig, ComponentRunType
 from . import base_validators
 from .base_attrs import BaseAttrs
-from .robot import RobotFrames
+from .robot import (
+    RobotFrames,
+    RobotConfig,
+    RobotType,
+    RobotGeometryType,
+    LinearCtrlLimits,
+    AngularCtrlLimits,
+    GEOMETRY_PARAMS_LENGTH,
+)
 
 __all__ = [
     "BaseAttrs",
@@ -13,4 +21,10 @@ __all__ = [
     "BaseConfig",
     "ComponentRunType",
     "RobotFrames",
+    "RobotConfig",
+    "RobotType",
+    "RobotGeometryType",
+    "LinearCtrlLimits",
+    "AngularCtrlLimits",
+    "GEOMETRY_PARAMS_LENGTH",
 ]
