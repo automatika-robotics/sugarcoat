@@ -946,10 +946,13 @@ def test_use_robot_plugin_mismatch_is_contained(rclpy_context):
 
 
 class _FakeComponentConfig:
-    """Bare component config with a duck-typed ``robot`` slot."""
+    """Bare component config with the two slots the launcher broadcasts into."""
 
     def __init__(self):
+        from ros_sugar.config import RobotFrames
+
         self.robot = None
+        self.frames = RobotFrames()
 
 
 class _FakeComponent:
@@ -1000,13 +1003,13 @@ def test_recipe_override_wins_over_plugin():
     assert comp.config.robot == {"sentinel": "from_recipe"}  # untouched
 
 
-def test_plugin_without_robot_config_attr_is_noop():
-    """A plugin that doesn't expose ``robot_config`` causes no broadcast and
-    no error -- the auto-apply path is fully opt-in."""
+def test_plugin_that_describes_no_robot_is_noop():
+    """Every plugin declares ``robot_config``, but one that describes no robot
+    leaves it None -- the auto-apply path stays opt-in."""
     from ros_sugar import Launcher
 
     plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
-    assert not hasattr(plugin, "robot_config")
+    assert plugin.robot_config is None
 
     launcher = Launcher(robot_plugin=plugin)
     comp = _FakeComponent("d")
@@ -1026,3 +1029,162 @@ def test_no_plugin_attached_is_noop():
 
     launcher._apply_plugin_robot_config()
     assert comp.config.robot is None
+
+
+# ---------------------------------------------------------------------------
+# component events on plugin-fed topics
+# ---------------------------------------------------------------------------
+
+
+def _event_component(plugin, topic, name):
+    """A component whose event watches a topic served by the plugin."""
+    from ros_sugar.core.action import Action
+    from ros_sugar.core.component import BaseComponent
+    from ros_sugar.core.event import Event
+
+    component = BaseComponent(component_name=name, inputs=[topic])
+    component.rclpy_init_node()
+    component._robot_plugin = plugin
+    component._use_robot_plugin()
+    component._add_event_action_pair(
+        Event(topic.msg.data > 10), Action(method=lambda: None)
+    )
+    return component
+
+
+def test_event_on_plugin_topic_creates_no_ros_subscription(rclpy_context):
+    """The data never travels over ROS, so a ROS subscription would sit empty."""
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    host = RobotPluginHost(plugin, node=None, bus=InProcessFeedbackBus())
+    host.open()
+
+    topic = Topic(name="robot_state", msg_type="Int32", use_plugin=True)
+    component = _event_component(plugin, topic, "plugin_event_no_sub")
+    try:
+        component._turn_on_events_management()
+        assert component._external_topics == {"robot_state"}
+        assert component._BaseComponent__event_listeners == [], (
+            "a plugin-fed event topic must not get a dead ROS subscription"
+        )
+    finally:
+        host.close()
+        component.destroy_node()
+
+
+def test_event_on_plugin_topic_fires_from_feedback_bus(rclpy_context):
+    """Regression: events on plugin feedback never fired, because the component
+    only ever subscribed to ROS."""
+    state_port = _free_port()
+    plugin = MockPlugin(state_port=state_port, cmd_port=_free_port())
+    host = RobotPluginHost(plugin, node=None, bus=InProcessFeedbackBus())
+    host.open()
+
+    topic = Topic(name="robot_state", msg_type="Int32", use_plugin=True)
+    component = _event_component(plugin, topic, "plugin_event_bus")
+    try:
+        component._turn_on_events_management()
+
+        robot_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        robot_tx.sendto(b"55", ("127.0.0.1", state_port))
+        deadline = time.time() + 2.0
+        while (
+            "robot_state" not in component._events_topics_blackboard
+            and time.time() < deadline
+        ):
+            time.sleep(0.02)
+        robot_tx.close()
+
+        entry = component._events_topics_blackboard.get("robot_state")
+        assert entry is not None, "plugin feedback never reached the event handler"
+        assert entry.msg.data == 55
+    finally:
+        host.close()
+        component.destroy_node()
+
+
+# ---------------------------------------------------------------------------
+# plugin-supplied robot description
+# ---------------------------------------------------------------------------
+
+
+class _DescribingPlugin(RobotPlugin):
+    """A plugin that knows the robot it drives."""
+
+    def __init__(self):
+        from ros_sugar.config import (
+            AngularCtrlLimits,
+            LinearCtrlLimits,
+            RobotConfig,
+            RobotGeometryType,
+            RobotType,
+        )
+        import numpy as np
+
+        self.metadata = PluginMetadata(name="DescribingPlugin")
+        self.robot_config = RobotConfig(
+            model_type=RobotType.DIFFERENTIAL_DRIVE,
+            geometry_type=RobotGeometryType.BOX,
+            geometry_params=np.array([0.61, 0.37, 0.4]),
+            ctrl_vx_limits=LinearCtrlLimits(max_vel=1.0, max_acc=2.5, max_decel=7.5),
+            ctrl_omega_limits=AngularCtrlLimits(
+                max_vel=1.5, max_acc=2.5, max_decel=4.0, max_steer=1.57
+            ),
+        )
+        self.base_frame = "lite3_base"
+
+
+def test_plugin_describes_robot_via_declared_fields():
+    """Both are declared members, so a plugin author has something to populate
+    and the launcher has something to type against."""
+    plugin = _DescribingPlugin()
+    assert plugin.robot_config is not None
+    assert plugin.base_frame == "lite3_base"
+
+    bare = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    assert bare.robot_config is None and bare.base_frame is None
+
+
+def test_plugin_base_frame_applied_but_not_world_frame():
+    """A robot knows its own body frame; where it has been placed is not its
+    call, so the world frame must be left alone."""
+    from ros_sugar import Launcher
+
+    launcher = Launcher(robot_plugin=_DescribingPlugin())
+    comp = _FakeComponent("base_frame_component")
+    launcher._components = [comp]
+
+    launcher._apply_plugin_robot_config()
+    launcher._apply_plugin_base_frame()
+
+    assert comp.config.robot is not None
+    assert comp.config.frames.robot_base == "lite3_base"
+    assert comp.config.frames.world == "map", "world frame is not the robot's to set"
+
+
+def test_recipe_frames_win_over_plugin_base_frame():
+    from ros_sugar import Launcher
+    from ros_sugar.config import RobotFrames
+
+    launcher = Launcher(robot_plugin=_DescribingPlugin())
+    comp = _FakeComponent("recipe_wins_component")
+    launcher._components = [comp]
+
+    launcher.frames = RobotFrames(robot_base="from_recipe", world="office")
+    launcher._apply_plugin_base_frame()  # would normally fire at bringup
+
+    assert comp.config.frames.robot_base == "from_recipe"
+    assert comp.config.frames.world == "office"
+
+
+def test_plugin_without_base_frame_leaves_frames_untouched():
+    from ros_sugar import Launcher
+
+    launcher = Launcher(robot_plugin=MockPlugin(
+        state_port=_free_port(), cmd_port=_free_port()
+    ))
+    comp = _FakeComponent("no_base_frame_component")
+    launcher._components = [comp]
+
+    launcher._apply_plugin_base_frame()
+
+    assert comp.config.frames.robot_base == "base_link"
