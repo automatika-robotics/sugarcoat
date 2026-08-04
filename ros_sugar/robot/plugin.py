@@ -23,7 +23,7 @@ from attrs import define, field
 from rclpy.logging import get_logger
 from rclpy.serialization import deserialize_message, serialize_message
 
-from ..config import BaseAttrs
+from ..config import BaseAttrs, RobotConfig
 from .bus import LOGGER_NAME, BusHandle, FeedbackBus, SocketFeedbackBus
 from .command import CommandSpec, RobotCommand
 from .feedback import Feedback, FeedbackSpec
@@ -110,6 +110,10 @@ class RobotPlugin:
         self.commands: Dict[str, RobotCommand] = {}
         self.actions: ActionRegistry = ActionRegistry({})
         self.events: EventRegistry = EventRegistry({})
+        # Robot geometry and kinematic description
+        self.robot_config: Optional[RobotConfig] = None
+        # Name of the rigid frame attached to the robot body
+        self.base_frame: Optional[str] = None
         self.metadata: PluginMetadata = getattr(
             cls, "metadata", None
         ) or PluginMetadata(name=cls.__name__)

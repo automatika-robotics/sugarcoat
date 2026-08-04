@@ -176,6 +176,7 @@ class Launcher:
         # Tracks whether the recipe explicitly set robot config. If not config
         # is pulled from a plugin. In case both present, recipe wins.
         self._robot_explicitly_set: bool = False
+        self._frames_explicitly_set: bool = False
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
@@ -521,13 +522,37 @@ class Launcher:
             return
         if self._robot_plugin is None:
             return
-        robot_config = getattr(self._robot_plugin, "robot_config", None)
+        robot_config = self._robot_plugin.robot_config
         if robot_config is None:
             return
         logger.info(
             f"Applying robot config from plugin '{self._robot_plugin.metadata.name}'"
         )
         self._broadcast_robot_config(robot_config)
+
+    def _apply_plugin_base_frame(self) -> None:
+        """Pull the robot's base frame from the attached plugin and apply it to
+        every component, unless the recipe already set frames explicitly.
+
+        Only ``robot_base`` is taken from the robot plugin: it is the one frame
+        the robot itself defines. The world frame describes where the robot has
+        been placed, so it stays with the recipe (or, later, an environment
+        plugin) rather than being dictated by the robot.
+        """
+        if self._frames_explicitly_set:
+            return
+        if self._robot_plugin is None:
+            return
+        base_frame = self._robot_plugin.base_frame
+        if base_frame is None:
+            return
+        logger.info(
+            f"Applying robot base frame '{base_frame}' from plugin "
+            f"'{self._robot_plugin.metadata.name}'"
+        )
+        for component in self._components:
+            if hasattr(component.config, "frames"):
+                component.config.frames.robot_base = base_frame
 
     @property
     def frames(self) -> Dict[str, Any]:
@@ -551,6 +576,7 @@ class Launcher:
         :param frames_config: Robot frames configuration
         :type frames_config: RobotFrames
         """
+        self._frames_explicitly_set = True
         for component in self._components:
             if hasattr(component.config, "frames"):
                 try:
@@ -1603,6 +1629,8 @@ class Launcher:
         # If the attached plugin carries a robot_config and the recipe didn't
         # set one, broadcast it to every component
         self._apply_plugin_robot_config()
+
+        self._apply_plugin_base_frame()
 
         if config_file:
             self.configure(config_file)
