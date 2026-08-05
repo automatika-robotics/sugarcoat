@@ -16,6 +16,7 @@ import functools
 import importlib
 import inspect
 import json
+import re
 import threading
 from typing import Any, Callable, Dict, List, Optional
 
@@ -23,7 +24,7 @@ from attrs import define, field
 from rclpy.logging import get_logger
 from rclpy.serialization import deserialize_message, serialize_message
 
-from ..config import BaseAttrs, RobotConfig
+from ..config import BaseAttrs, RobotConfig, StrEnum
 from .bus import LOGGER_NAME, BusHandle, FeedbackBus, SocketFeedbackBus
 from .command import CommandSpec, RobotCommand
 from .feedback import Feedback, FeedbackSpec
@@ -56,22 +57,77 @@ class PluginMetadata(BaseAttrs):
     description: str = field(default="")
 
 
+#: Plugin ids end up inside ROS topic names, which reject hyphens, dots and
+#: leading digits -- and would do so at activation, long after the recipe ran.
+_VALID_PLUGIN_ID = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _slug(name: str) -> str:
+    """Turn a plugin's display name into a usable id.
+
+    ``"Name Version-2"`` becomes ``"name_version_2"``.
+
+    :param name: Plugin display name
+    :type name: str
+    :return: A valid plugin id
+    :rtype: str
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").lower()
+    if not cleaned:
+        raise ValueError(f"Cannot derive a plugin id from '{name}'")
+    # A leading digit is not a valid ROS name start
+    if cleaned[0].isdigit():
+        cleaned = f"_{cleaned}"
+    return cleaned
+
+
 def _is_ros_transport(transport: Transport) -> bool:
     return isinstance(transport, (RosTopicTransport, RosServiceTransport))
 
 
-class RobotPlugin:
-    """Base class for robot plugins.
+class PluginRole(StrEnum):
+    """What a plugin represents in a recipe.
 
-    Subclass and populate the registries in a declarative ``init``. Keep
-    ``init`` free of I/O and accept only JSON-serializable keyword
-    arguments - the launcher serializes those into a spec so each component
-    subprocess can rebuild the plugin. Open sockets, start threads and bind
-    nodes through `RobotPluginHost`, not from ``init``.
+    The role is intrinsic to the plugin, to determine its type: a robot or a sensor. The launcher uses it to
+    enforce that a recipe describes exactly one robot, and to decide what each
+    plugin is allowed to contribute to the components.
+
     """
+
+    ROBOT = "robot"
+    SENSOR = "sensor"
+
+
+class Plugin:
+    """Base class for plugins.
+
+    Subclass `RobotPlugin` or `SensorPlugin` rather than this class directly,
+    so the plugin carries the right `PluginRole`.
+    """
+
+    #: Overridden by each role base class below. A plugin that subclasses
+    #: ``Plugin`` directly is treated as a sensor: something that contributes
+    #: feedback and commands but describes no robot.
+    _role: PluginRole = PluginRole.SENSOR
+
+    @property
+    def role(self) -> PluginRole:
+        """What this plugin represents -- read-only.
+
+        A plugin *is* a robot or a sensor by construction, so the role follows
+        from the base class the author subclassed and cannot be reassigned by
+        a recipe.
+        """
+        return self._role
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
+        # The role base classes in this module are part of the framework, not
+        # user plugins. Leaving their __init__ unwrapped means a user subclass
+        # that defines no __init__ of its own still gets wrapped against
+        # itself, and so reports its own name rather than its base's.
+        if cls.__module__ == __name__:
+            return
         orig_init = cls.__init__
         if getattr(orig_init, "_robotplugin_wrapped", False):
             return
@@ -85,6 +141,8 @@ class RobotPlugin:
             # they would clobber the outer subclass's ``_init_kwargs`` and
             # reset the registries to their base defaults.
             if not hasattr(self, "_init_kwargs"):
+                explicit_id = kw.pop("id", None)
+                explicit_frame = kw.pop("frame_id", None)
                 try:
                     bound = sig.bind(self, *args, **kw)
                     bound.apply_defaults()
@@ -95,6 +153,10 @@ class RobotPlugin:
                     init_kwargs = dict(kw)
                 object.__setattr__(self, "_init_kwargs", init_kwargs)
                 self._base_init(cls)
+                if explicit_id is not None:
+                    self._set_id(explicit_id)
+                if explicit_frame is not None:
+                    self._set_frame_id(explicit_frame)
             orig_init(self, *args, **kw)
 
         _wrapped_init._robotplugin_wrapped = True
@@ -110,13 +172,69 @@ class RobotPlugin:
         self.commands: Dict[str, RobotCommand] = {}
         self.actions: ActionRegistry = ActionRegistry({})
         self.events: EventRegistry = EventRegistry({})
-        # Robot geometry and kinematic description
-        self.robot_config: Optional[RobotConfig] = None
-        # Name of the rigid frame attached to the robot body
-        self.base_frame: Optional[str] = None
         self.metadata: PluginMetadata = getattr(
             cls, "metadata", None
         ) or PluginMetadata(name=cls.__name__)
+        # Explicit identity, if the recipe passed ``id=``; otherwise ``id``
+        # derives from the metadata name (see the property below).
+        self._id: str = ""
+
+    # identity
+    @property
+    def id(self) -> str:
+        """Identity of this plugin within a recipe.
+
+        A recipe addresses a plugin from a topic by this id
+        (``Topic(..., use_plugin=cam.id)``), so it is available from the moment
+        the plugin is constructed.
+
+        Defaults to a slug of the plugin's metadata name, which is enough
+        unless two plugins of the same kind are used; those are told apart by
+        passing ``id=`` to the constructor.
+        """
+        return self._id or _slug(self.metadata.name)
+
+    def _set_id(self, plugin_id: str) -> None:
+        """Set an explicit identity. Called from ``__init__`` via ``id=``.
+
+        :param plugin_id: Identity to use, unique within the recipe.
+        :type plugin_id: str
+        :raises ValueError: If the id is not a usable ROS name token.
+        """
+        if not isinstance(plugin_id, str) or not _VALID_PLUGIN_ID.match(plugin_id):
+            raise ValueError(
+                f"'{plugin_id}' is not a usable plugin id. Plugin ids become part "
+                "of ROS topic names, so they must start with a letter or "
+                "underscore and contain only letters, digits and underscores."
+            )
+        self._id = plugin_id
+
+    def _bind_identity(self) -> None:
+        """Namespace this plugin's channels by its id, once it is attached.
+
+        Channels stay in their un-namespaced form until this runs, so a plugin
+        used standalone behaves exactly as it did before ids existed.
+
+        :raises ValueError: If a feedback topic was already handed out under a
+            different id.
+        """
+        for feedback in self.feedbacks.values():
+            if (
+                feedback._topic is not None
+                and not feedback.is_ros_topic
+                and feedback.owner_id != self.id
+            ):
+                raise ValueError(
+                    f"Plugin '{self.metadata.name}' cannot be attached as "
+                    f"'{self.id}': its feedback '{feedback.key}' has already "
+                    "been referenced (usually by building an event from it) and "
+                    f"is bound to channel '{feedback.channel}'. Attach the "
+                    "plugin to the launcher before building events from it."
+                )
+        for feedback in self.feedbacks.values():
+            feedback.owner_id = self.id
+        for command in self.commands.values():
+            command.owner_id = self.id
 
     # spec serialization
     def to_spec(self) -> Dict[str, Any]:
@@ -132,13 +250,18 @@ class RobotPlugin:
                 f"constructor arguments {list(kwargs)}: {e}. Plugin __init__ "
                 "must accept only JSON-serializable keyword arguments."
             ) from e
-        return {"class": f"{cls.__module__}:{cls.__qualname__}", "kwargs": kwargs}
+        return {
+            "class": f"{cls.__module__}:{cls.__qualname__}",
+            "kwargs": kwargs,
+            "id": self._id,
+            "frame_id": getattr(self, "_frame_id", ""),
+        }
 
     @staticmethod
     def from_spec(
         spec: Dict[str, Any],
         bus_endpoint: Optional[Any] = None,
-    ) -> "RobotPlugin":
+    ) -> "Plugin":
         """Rebuild a plugin from a `to_spec` dict.
 
         :param spec: The spec dict produced by `to_spec`.
@@ -152,7 +275,15 @@ class RobotPlugin:
         obj: Any = module
         for part in qualname.split("."):
             obj = getattr(obj, part)
-        plugin: RobotPlugin = obj(**spec.get("kwargs", {}))
+        plugin: Plugin = obj(**spec.get("kwargs", {}))
+        # Rebind the identity the launcher assigned, so the channels this
+        # plugin subscribes to in the component process match the ones the
+        # host publishes on
+        if plugin_id := spec.get("id"):
+            plugin._set_id(plugin_id)
+        if frame_id := spec.get("frame_id"):
+            plugin._set_frame_id(frame_id)
+        plugin._bind_identity()
         if bus_endpoint is not None:
             bus = SocketFeedbackBus(bus_endpoint)
             bus.connect()
@@ -334,7 +465,68 @@ class RobotPlugin:
             "commands": [s.asdict() for s in self.list_commands()],
             "actions": [s.asdict() for s in self.list_actions()],
             "events": [s.asdict() for s in self.list_events()],
+            "role": str(self.role),
         }
+
+
+class RobotPlugin(Plugin):
+    """A plugin for the robot itself: what moves, and what drives it.
+
+    Exactly one robot plugin may be attached to a recipe. Beyond the transports
+    and registries every plugin carries, a robot plugin can describe the robot
+    it drives, and every component is configured from that description unless
+    the recipe overrides it.
+    """
+
+    _role: PluginRole = PluginRole.ROBOT
+
+    def _base_init(self, cls: type) -> None:
+        super()._base_init(cls)
+        # Robot geometry and kinematic description
+        self.robot_config: Optional[RobotConfig] = None
+        # Name of the rigid frame attached to the robot body. The world frame
+        # is deliberately absent: where the robot has been placed is described
+        # by the environment, not by the robot.
+        self.base_frame: Optional[str] = None
+
+
+class SensorPlugin(Plugin):
+    """A plugin for a sensor that is not part of the robot's own hardware.
+
+    An inspection camera bolted onto a robot, or a fixed camera watching a
+    room. Several may be attached to one recipe.
+
+    A sensor sits somewhere, so it has a frame. Where that frame sits relative
+    to the robot is the recipe's business (see ``Mount``); the plugin only
+    names it. A sensor with moving parts publishes the dynamic transform from
+    this base frame to the moving one itself -- the recipe then only has to
+    describe the static mount, and the two compose in the TF tree.
+    """
+
+    _role: PluginRole = PluginRole.SENSOR
+
+    def _base_init(self, cls: type) -> None:
+        super()._base_init(cls)
+        # Explicit frame, if the recipe passed ``frame_id=``; otherwise derived
+        # from the plugin id (see the property below).
+        self._frame_id: str = ""
+
+    @property
+    def frame_id(self) -> str:
+        """Name of the frame this sensor's data is expressed in.
+
+        Defaults to ``<id>_frame``, so two instances of the same sensor get
+        distinct frames without the plugin author doing anything.
+        """
+        return self._frame_id or f"{self.id}_frame"
+
+    def _set_frame_id(self, frame_id: str) -> None:
+        """Set an explicit frame. Called from ``__init__`` via ``frame_id=``."""
+        if not isinstance(frame_id, str) or not frame_id:
+            raise ValueError(
+                f"'{frame_id}' is not a usable frame id for plugin '{self.id}'."
+            )
+        self._frame_id = frame_id
 
 
 class RobotPluginHost:
@@ -356,19 +548,27 @@ class RobotPluginHost:
         receives every decoded feedback message — the launcher wires this to
         ``Monitor.feed_external_topic`` so plugin events fire on the same
         machinery as ROS-topic events.
+    :param owns_bus: Whether this host is responsible for starting and closing
+        the bus. Several plugins share one bus, and a shared bus outlives any
+        single host: the second host to open would re-bind the same address,
+        and the first to close would tear the bus down for everyone. The
+        launcher therefore owns the shared bus and passes ``False``. Defaults
+        to ``True`` so a lone host still works standalone.
     """
 
     def __init__(
         self,
-        plugin: RobotPlugin,
+        plugin: Plugin,
         node: Any,
         bus: FeedbackBus,
         monitor_feed: Optional[Callable[[str, Any], None]] = None,
+        owns_bus: bool = True,
     ) -> None:
         self.plugin = plugin
         self.node = node
         self.bus = bus
         self.monitor_feed = monitor_feed
+        self._owns_bus = owns_bus
         self._active = False
         self._keep_alive_threads: List[threading.Thread] = []
         self._keep_alive_stop: Optional[threading.Event] = None
@@ -386,7 +586,8 @@ class RobotPluginHost:
         if self._active:
             return
         self.plugin.set_bus(self.bus)
-        self.bus.start()
+        if self._owns_bus:
+            self.bus.start()
 
         # Open every non-ROS transport (ROS transports are handled by the
         # component's own pub/sub machinery).
@@ -441,7 +642,8 @@ class RobotPluginHost:
                     get_logger(LOGGER_NAME).error(
                         f"Error closing transport '{transport.name}': {e}"
                     )
-        self.bus.close()
+        if self._owns_bus:
+            self.bus.close()
         self._active = False
 
     # internals
@@ -461,9 +663,30 @@ class RobotPluginHost:
             return
         if msg is None:
             return
+        self._stamp_frame(feedback, msg)
         self.bus.publish(feedback.channel, serialize_message(msg))
         if self.monitor_feed is not None:
             self.monitor_feed(feedback.channel, msg)
+
+    def _stamp_frame(self, feedback: Feedback, msg: Any) -> None:
+        """Stamp a decoded message with the frame its data is in.
+
+        Components look up ``header.frame_id -> robot base`` to place incoming
+        data, so an unstamped message is silently never transformed. Rather
+        than making every plugin author hard-code frame names in their
+        decoders, the frame is taken from the feedback (or the plugin) and
+        applied here.
+
+        An author who stamps the message themselves is never overridden: a
+        robot's odometry is in the localization frame, not in a frame attached
+        to the robot's body, and only the decoder knows that.
+        """
+        header = getattr(msg, "header", None)
+        if header is None or getattr(header, "frame_id", None):
+            return
+        frame_id = feedback.frame_id or getattr(self.plugin, "frame_id", "")
+        if frame_id:
+            header.frame_id = frame_id
 
     def _forward_command(self, command: RobotCommand, payload: bytes) -> None:
         """Host-side handler for ``route_via_host`` commands."""
