@@ -12,7 +12,7 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from jinja2.environment import Template
 from nav_msgs.msg import OccupancyGrid, Odometry
-from sensor_msgs.msg import Imu, JointState, LaserScan, NavSatFix
+from sensor_msgs.msg import Imu, JointState, LaserScan, NavSatFix, Range
 from std_msgs.msg import Header
 from rclpy.logging import get_logger
 from rclpy.subscription import Subscription
@@ -710,6 +710,35 @@ class NavSatFixCallback(GenericCallback):
         """
         output = self.get_output()
         return {"data": output.tolist() if output is not None else None}
+
+
+class RangeCallback(GenericCallback):
+    """
+    sensor_msgs/Range callback.
+
+    Returns the measured distance in metres (the message's ``range`` field).
+    """
+
+    def _get_output(self, **_) -> Optional[float]:
+        """
+        Gets the measured range as a float.
+
+        :returns:   distance in metres
+        :rtype:     Optional[float]
+        """
+        if not self.msg:
+            return None
+
+        return float(self.msg.range)
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"data": self.get_output()}
 
 
 class PointStampedCallback(GenericCallback):
