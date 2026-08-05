@@ -65,7 +65,11 @@ from ..base_clients import ServiceClientConfig, ActionClientConfig
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
 from ..ui_node import UINode, UINodeConfig
 from ..robot import (
+    FeedbackBus,
+    Mount,
     InProcessFeedbackBus,
+    Plugin,
+    PluginRole,
     RobotPlugin,
     RobotPluginHost,
     SocketFeedbackBus,
@@ -171,8 +175,13 @@ class Launcher:
         self._config_file: Optional[str] = config_file
         self._launch_group = []
         self._enable_ui = False
-        self._robot_plugin = robot_plugin
-        self._robot_plugin_host: Optional[RobotPluginHost] = None
+        self._plugins: Dict[str, Plugin] = {}
+        self._plugin_hosts: List[RobotPluginHost] = []
+        self._mounts: List[Mount] = []
+        if robot_plugin is not None:
+            self.add_plugin(robot_plugin)
+        # Shared by every attached plugin host, so the launcher owns it
+        self._plugin_bus: Optional[FeedbackBus] = None
         # Tracks whether the recipe explicitly set robot config. If not config
         # is pulled from a plugin. In case both present, recipe wins.
         self._robot_explicitly_set: bool = False
@@ -306,11 +315,9 @@ class Launcher:
 
         # Configure components from config_file
         for component in components:
-            # Hand each component the robot plugin instance.
-            # NOTE: In multithreaded launch the component thread uses this HOST
-            # instance directly; in multiprocess launch it is only used to
-            # serialize the plugin spec into the component's launch args
-            component._robot_plugin = self._robot_plugin
+            # NOTE: plugins are handed out at bringup by `_distribute_plugins`,
+            # not here, so that a recipe may call add_pkg and add_plugin in
+            # either order and still have every component receive every plugin
             if rclpy_log_level:
                 self._rclpy_log_level[component.node_name] = rclpy_log_level
             if ros_log_level:
@@ -513,6 +520,155 @@ class Launcher:
                     logger.error(
                         f"Cannot set component {component.node_name} 'robot' configuration parameter of type '{type(component.config.robot)}' to provided value of type '{type(robot_config)}'. Skipping setting robot configuration for '{component.node_name}'"
                     )
+
+    @property
+    def _robot_plugin(self) -> Optional[RobotPlugin]:
+        """The attached plugin describing the robot, if any."""
+        for plugin in self._plugins.values():
+            if plugin.role is PluginRole.ROBOT:
+                return plugin
+        return None
+
+    @_robot_plugin.setter
+    def _robot_plugin(self, plugin: Optional[RobotPlugin]) -> None:
+        """Attach (or clear) the robot plugin, leaving other plugins alone."""
+        for key, attached in list(self._plugins.items()):
+            if attached.role is PluginRole.ROBOT:
+                del self._plugins[key]
+        if plugin is not None:
+            self.add_plugin(plugin)
+
+    def add_plugin(self, plugin: Plugin, mount: Optional[Mount] = None) -> None:
+        """Attach a plugin to the recipe.
+
+        Every component in the recipe is given every attached plugin, whatever
+        order ``add_pkg`` and ``add_plugin`` are called in.
+
+        :param plugin: The plugin to attach. Its ``id`` -- set with ``id=`` at
+            construction, or derived from its name -- is how a topic addresses
+            it and how its channels are namespaced.
+        :type plugin: Plugin
+
+        :param mount: Where this sensor sits, when nothing else publishes its
+            frame into TF. Omit it if a URDF, a ``robot_state_publisher`` or
+            the sensor's own driver already does.
+        :type mount: Optional[Mount]
+
+        :raises ValueError: If a second robot plugin is attached, or if the id
+            is already taken by another plugin.
+        """
+        plugin_id = plugin.id
+
+        if plugin.role is PluginRole.ROBOT and (existing := self._robot_plugin):
+            raise ValueError(
+                f"Cannot attach robot plugin '{plugin.metadata.name}': a recipe "
+                f"describes one robot and '{existing.metadata.name}' is already "
+                "attached."
+            )
+        if plugin_id in self._plugins:
+            raise ValueError(
+                f"Cannot attach plugin as '{plugin_id}': that id is already taken "
+                f"by '{self._plugins[plugin_id].metadata.name}'. Give one of them "
+                "a distinct id at construction, e.g. "
+                f"{type(plugin).__name__}(id='front_cam')."
+            )
+        # Identity has to be final now, not at bringup: events are built from
+        # plugins in the recipe, and their topic names are frozen before plugin
+        # setup runs
+        plugin._bind_identity()
+        self._plugins[plugin_id] = plugin
+        if mount is not None:
+            mount.child = plugin
+            self._mounts.append(mount)
+
+    def _publish_mounts(self) -> None:
+        """Broadcast every declared mount as a static transform.
+
+        Published in-process from the Monitor node, which is a live node for
+        the whole run, rather than as one ``static_transform_publisher`` per
+        mount: those would land under the recipe's namespace (the launch
+        description pushes one), and their positional CLI form is deprecated.
+        """
+        if not self._mounts:
+            return
+        from tf2_ros import StaticTransformBroadcaster
+        from geometry_msgs.msg import TransformStamped
+        from ..robot.mount import quaternion_from_euler
+
+        transforms = []
+        for mount in self._mounts:
+            transform = TransformStamped()
+            transform.header.stamp = self.monitor_node.get_clock().now().to_msg()
+            transform.header.frame_id = mount.parent_frame
+            transform.child_frame_id = mount.child_frame
+            (
+                transform.transform.translation.x,
+                transform.transform.translation.y,
+                transform.transform.translation.z,
+            ) = (float(v) for v in mount.xyz)
+            (
+                transform.transform.rotation.x,
+                transform.transform.rotation.y,
+                transform.transform.rotation.z,
+                transform.transform.rotation.w,
+            ) = quaternion_from_euler(*(float(v) for v in mount.rpy))
+            transforms.append(transform)
+            logger.info(
+                f"Mounting '{transform.child_frame_id}' on "
+                f"'{transform.header.frame_id}'"
+            )
+
+        # Held on the launcher: a StaticTransformBroadcaster that goes out of
+        # scope takes its latched publisher with it
+        self._static_tf_broadcaster = StaticTransformBroadcaster(self.monitor_node)
+        self._static_tf_broadcaster.sendTransform(transforms)
+
+    def _validate_plugin_references(self) -> None:
+        """Check every topic's ``use_plugin`` against the attached plugins.
+
+        A topic naming a plugin that is not attached would otherwise fall back
+        to an ordinary ROS topic that nothing publishes: the component comes up
+        looking healthy and simply receives nothing. Catch it here, where both
+        the components and the plugins are known, and say what is available.
+
+        :raises ValueError: If a topic names a plugin that is not attached, or
+            asks for the robot plugin when none is.
+        """
+        for component in self._components:
+            # A component declares outputs only if it has any
+            topics = list(getattr(component, "in_topics", None) or []) + list(
+                getattr(component, "out_topics", None) or []
+            )
+            for topic in topics:
+                if not topic.use_plugin:
+                    continue
+                if topic.use_plugin is True:
+                    if self._robot_plugin is None:
+                        raise ValueError(
+                            f"Component '{component.node_name}' topic "
+                            f"'{topic.name}' asks for the robot plugin "
+                            "(use_plugin=True) but no robot plugin is attached "
+                            "to this recipe."
+                        )
+                    continue
+                if topic.use_plugin not in self._plugins:
+                    raise ValueError(
+                        f"Component '{component.node_name}' topic '{topic.name}' "
+                        f"is bound to plugin '{topic.use_plugin}', which is not "
+                        "attached to this recipe. Attached plugins: "
+                        f"{', '.join(self._plugins) or 'none'}."
+                    )
+
+    def _distribute_plugins(self) -> None:
+        """Hand every attached plugin to every component.
+
+        NOTE: In multithreaded launch the component thread uses these HOST
+        instances directly; in multiprocess launch they are only used to
+        serialize the plugin specs into each component's launch args.
+        """
+        for component in self._components:
+            for plugin in self._plugins.values():
+                component.add_plugin(plugin)
 
     def _apply_plugin_robot_config(self) -> None:
         """Pull ``robot_config`` from the attached plugin and broadcast it to
@@ -1526,40 +1682,48 @@ class Launcher:
             RegisterEventHandler(OnShutdown(on_shutdown=_mark_shutting_down))
         )
 
-    def _setup_robot_plugin(self) -> None:
-        """Bring up the robot plugin HOST in the launcher process.
+    def _setup_plugins(self) -> None:
+        """Bring every attached plugin up HOST-side in the launcher process.
 
-        Opens the plugin's transports, starts its feedback bus and heartbeats,
-        and wires decoded feedback into the Monitor's event blackboard. Must run
-        after `_setup_monitor_node` (the Monitor must exist) and before the
-        component group is built, so multiprocess components serialize a plugin
-        spec that points at an already-started feedback bus.
+        Opens each plugin's transports, starts the shared feedback bus and the
+        plugins' heartbeats, and wires decoded feedback into the Monitor's
+        event blackboard. Must run after `_setup_monitor_node` (the Monitor
+        must exist) and before the component group is built, so multiprocess
+        components serialize plugin specs that point at an already-started
+        feedback bus.
         """
-        if self._robot_plugin is None:
+        if not self._plugins:
             return
-        plugin = self._robot_plugin
         # A socket feedback bus is needed when any component runs as its own
         # process; otherwise an in-process bus avoids the socket round trip.
         use_socket_bus = bool(self._pkg_executable)
         bus = SocketFeedbackBus() if use_socket_bus else InProcessFeedbackBus()
-        self._robot_plugin_host = RobotPluginHost(
-            plugin,
-            node=self.monitor_node,
-            bus=bus,
-            monitor_feed=self.monitor_node.feed_external_topic,
-        )
-        self._robot_plugin_host.open()
-        # Register every non-ROS feedback's synthetic topic with the Monitor so
-        # events over it are tracked without a ROS subscription. ROS-topic
-        # feedbacks keep a normal ROS subscription (their as_topic() is the real
-        # robot topic), so they are NOT registered as external.
-        for feedback in plugin.feedbacks.values():
-            if not feedback.is_ros_topic:
-                self.monitor_node.register_external_topic(feedback.as_topic())
-        logger.info(
-            f"Robot plugin '{plugin.metadata.name}' active "
-            f"({'socket' if use_socket_bus else 'in-process'} feedback bus)"
-        )
+        # The launcher owns the bus, not the hosts: one bus is shared by every
+        # attached plugin, so it has to outlive any single host
+        self._plugin_bus = bus
+        bus.start()
+
+        for plugin in self._plugins.values():
+            host = RobotPluginHost(
+                plugin,
+                node=self.monitor_node,
+                bus=bus,
+                monitor_feed=self.monitor_node.feed_external_topic,
+                owns_bus=False,
+            )
+            host.open()
+            self._plugin_hosts.append(host)
+            # Register every non-ROS feedback's synthetic topic with the Monitor
+            # so events over it are tracked without a ROS subscription.
+            # ROS-topic feedbacks keep a normal ROS subscription (their
+            # as_topic() is the real robot topic), so they are NOT external.
+            for feedback in plugin.feedbacks.values():
+                if not feedback.is_ros_topic:
+                    self.monitor_node.register_external_topic(feedback.as_topic())
+            logger.info(
+                f"Plugin '{plugin.metadata.name}' active as '{plugin.id}' "
+                f"({'socket' if use_socket_bus else 'in-process'} feedback bus)"
+            )
 
     def setup_launch_description(
         self,
@@ -1591,7 +1755,9 @@ class Launcher:
 
         # Bring up the robot plugin HOST after the Monitor exists and before the
         # component group is built
-        self._setup_robot_plugin()
+        self._setup_plugins()
+
+        self._publish_mounts()
 
         # Add configured components to launcher
         for component in self._components:
@@ -1628,6 +1794,10 @@ class Launcher:
 
         # If the attached plugin carries a robot_config and the recipe didn't
         # set one, broadcast it to every component
+        self._validate_plugin_references()
+
+        self._distribute_plugins()
+
         self._apply_plugin_robot_config()
 
         self._apply_plugin_base_frame()
@@ -1639,9 +1809,13 @@ class Launcher:
 
         self._start_ros_launch(introspect, launch_debug)
 
-        # Tear down the robot plugin HOST
-        if self._robot_plugin_host is not None:
-            self._robot_plugin_host.close()
+        # Tear down every plugin HOST, then the bus they shared
+        for host in self._plugin_hosts:
+            host.close()
+        self._plugin_hosts.clear()
+        if self._plugin_bus is not None:
+            self._plugin_bus.close()
+            self._plugin_bus = None
 
         if self._thread_pool:
             self._thread_pool.shutdown()

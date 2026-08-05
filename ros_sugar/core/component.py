@@ -182,9 +182,10 @@ class BaseComponent(lifecycle.Node):
         # Additional types from derived packages
         self._additional_types: List[Type[SupportedType]] = []
 
-        # Robot plugin (set by the Launcher; a HOST instance in multithreaded
-        # launch or a reconstructed CLIENT instance in multiprocess launch)
-        self._robot_plugin = None
+        # Plugins attached by the Launcher, keyed by plugin id (HOST instances
+        # in multithreaded launch, reconstructed CLIENT instances in
+        # multiprocess launch)
+        self._plugins: Dict[str, Any] = {}
         # Names of input/output topics bound to non-ROS robot plugin transports
         self._external_topics: set = set()
         # Feedback-bus subscription handles to release on deactivation
@@ -298,6 +299,77 @@ class BaseComponent(lifecycle.Node):
                 "behave as ordinary ROS topics."
             )
 
+    @property
+    def _robot_plugin(self) -> Optional[Any]:
+        """The attached plugin that describes the robot, if any.
+
+        A recipe has at most one, so this stays a convenient shortcut into
+        `_plugins` for the code and tests that only care about the robot.
+        """
+        from ..robot.plugin import PluginRole
+
+        for plugin in self._plugins.values():
+            if plugin.role is PluginRole.ROBOT:
+                return plugin
+        return None
+
+    @_robot_plugin.setter
+    def _robot_plugin(self, plugin: Optional[Any]) -> None:
+        """Attach (or clear) the robot plugin, leaving other plugins alone."""
+        from ..robot.plugin import PluginRole
+
+        for key, attached in list(self._plugins.items()):
+            if attached.role is PluginRole.ROBOT:
+                del self._plugins[key]
+        if plugin is not None:
+            self.add_plugin(plugin)
+
+    def add_plugin(self, plugin: Any) -> None:
+        """Attach a plugin to this component.
+
+        :param plugin: The plugin instance to attach
+        :type plugin: Plugin
+        """
+        from ..robot.plugin import _slug
+
+        # An unattached plugin has no id yet; key it by its name so it is still
+        # addressable, without binding an identity the launcher hasn't assigned
+        self._plugins[plugin.id or _slug(plugin.metadata.name)] = plugin
+
+    def _plugin_for_topic(self, topic) -> Optional[Any]:
+        """Resolve which attached plugin serves a topic.
+
+        ``use_plugin=True`` means the robot plugin, the only one a recipe could
+        address before several could be attached. A string names a plugin by
+        its id.
+
+        :param topic: The topic to resolve
+        :type topic: Topic
+
+        :return: The plugin serving this topic, or None if it is not
+            plugin-backed or the named plugin is not attached
+        :rtype: Optional[Plugin]
+        """
+        if not topic.use_plugin:
+            return None
+        if topic.use_plugin is True:
+            plugin = self._robot_plugin
+            if plugin is None:
+                self.get_logger().error(
+                    f"Topic '{topic.name}' asks for the robot plugin but none is "
+                    "attached. Falling back to an ordinary ROS topic."
+                )
+            return plugin
+        plugin = self._plugins.get(topic.use_plugin)
+        if plugin is None:
+            self.get_logger().error(
+                f"Topic '{topic.name}' is bound to plugin '{topic.use_plugin}', "
+                f"which is not attached to this component. Attached plugins: "
+                f"{', '.join(self._plugins) or 'none'}. Falling back to an "
+                "ordinary ROS topic."
+            )
+        return plugin
+
     def _use_robot_plugin(self):
         """Adapt the component's inputs/outputs to the robot plugin.
 
@@ -316,10 +388,9 @@ class BaseComponent(lifecycle.Node):
         from ..robot.plugin import AmbiguousPluginEntryError
         from ..robot.transports.ros import RosTopicTransport
 
-        plugin = self._robot_plugin
         self.get_logger().info(
-            f"Adapting component '{self.node_name}' to robot plugin "
-            f"'{plugin.metadata.name}'"
+            f"Adapting component '{self.node_name}' to plugins: "
+            f"{', '.join(self._plugins) or 'none'}"
         )
 
         # Handle Robot Feedback (System Input Topics). Snapshot the topics
@@ -328,7 +399,8 @@ class BaseComponent(lifecycle.Node):
         for topic in [cb.input_topic for cb in list(self.callbacks.values())]:
             if topic.name in self._external_topics:
                 continue
-            if not topic.use_plugin:
+            plugin = self._plugin_for_topic(topic)
+            if plugin is None:
                 continue
             try:
                 feedback = plugin.resolve_feedback(topic.name, topic.msg_type.__name__)
@@ -361,14 +433,15 @@ class BaseComponent(lifecycle.Node):
                 if error:
                     self.get_logger().error(error)
             else:
-                self._attach_external_feedback(topic, feedback)
+                self._attach_external_feedback(topic, feedback, plugin)
 
         # Handle Robot Commands (System Output Topics). Snapshot first, as
         # _replace_output_by_transport mutates publishers_dict as we go.
         for topic in [pub.output_topic for pub in list(self.publishers_dict.values())]:
             if topic.name in self._external_topics:
                 continue
-            if not topic.use_plugin:
+            plugin = self._plugin_for_topic(topic)
+            if plugin is None:
                 continue
             try:
                 command = plugin.resolve_command(topic.name, topic.msg_type.__name__)
@@ -401,9 +474,9 @@ class BaseComponent(lifecycle.Node):
                 if error:
                     self.get_logger().error(error)
             else:
-                self._replace_output_by_transport(topic, command)
+                self._replace_output_by_transport(topic, command, plugin)
 
-    def _attach_external_feedback(self, topic: Topic, feedback) -> None:
+    def _attach_external_feedback(self, topic: Topic, feedback, plugin) -> None:
         """Bind a non-ROS robot feedback stream into the component's callback slot.
 
         No ROS subscription is created for ``topic``; instead the component
@@ -440,7 +513,7 @@ class BaseComponent(lifecycle.Node):
             self.destroy_subscription(old_callback._subscriber)
         self.callbacks[topic.name] = new_callback
         self._update_inactive_input_topic(old_callback.input_topic, new_topic)
-        handle = self._robot_plugin.subscribe_feedback(feedback, new_callback.callback)
+        handle = plugin.subscribe_feedback(feedback, new_callback.callback)
         self._robot_plugin_bus_handles.append(handle)
         self._external_topics.add(topic.name)
         self.get_logger().info(
@@ -448,7 +521,7 @@ class BaseComponent(lifecycle.Node):
             f"'{feedback.key}' via {feedback.transport.kind}"
         )
 
-    def _replace_output_by_transport(self, topic: Topic, command) -> None:
+    def _replace_output_by_transport(self, topic: Topic, command, plugin) -> None:
         """Replace a component output publisher with a robot plugin command adapter.
 
         ``Publisher`` in ``publishers_dict`` is swapped (under the same key) for
@@ -472,10 +545,10 @@ class BaseComponent(lifecycle.Node):
         if isinstance(transport, RosServiceTransport):
             transport.bind_node(self)
         # Prepare the command transport for sending
-        self._robot_plugin.open_command(command)
+        plugin.open_command(command)
 
         adapter = RobotCommandPublisher(
-            self._robot_plugin, command, topic, node_name=self.node_name
+            plugin, command, topic, node_name=self.node_name
         )
         # Preserve the original publisher's pre-processor chain
         if old_publisher is not None:
@@ -743,7 +816,7 @@ class BaseComponent(lifecycle.Node):
         # Update the component topics using the robot plugin if provided.
         # When no plugin is attached, topics that opted in with use_plugin=True
         # issue a warning and keep working
-        if self._robot_plugin is not None:
+        if self._plugins:
             self._use_robot_plugin()
         else:
             self._warn_orphaned_plugin_topics()
@@ -1312,8 +1385,11 @@ class BaseComponent(lifecycle.Node):
                 f"'{topic_obj.msg_type.__name__}'."
             )
             return
+        # The event handler is the bus subscriber: decoded messages land in
+        # __event_topic_callback exactly as they would from a ROS subscription
         handle = plugin.subscribe_feedback(
-            feedback=feedback, callback=partial(self.__event_topic_callback, topic_name)
+            feedback=feedback,
+            on_ros_msg=partial(self.__event_topic_callback, topic_name),
         )
         self._robot_plugin_bus_handles.append(handle)
         self.get_logger().info(
@@ -1642,46 +1718,95 @@ class BaseComponent(lifecycle.Node):
                 self._external_processors_json,
             ]
 
-        if self._robot_plugin is not None:
-            self.launch_cmd_args = ["--robot_plugin", self._robot_plugin_json]
+        if self._plugins:
+            self.launch_cmd_args = ["--plugins", self._plugins_json]
+            # Emitted alongside for one release: an executable built against an
+            # older ros_sugar drops the unknown --plugins arg silently (the
+            # parser uses parse_known_args), which would demote every plugin
+            # topic to a plain ROS topic with no warning.
+            self.launch_cmd_args = ["--plugins", self._plugins_json]
 
     @property
-    def _robot_plugin_json(self) -> str:
-        """Getter of the serialized robot plugin spec + feedback-bus endpoint.
+    def _plugins_json(self) -> str:
+        """Getter of every attached plugin's spec + the shared bus endpoint.
 
-        Used to carry the robot plugin across the multiprocess launch boundary:
-        each component subprocess rebuilds a CLIENT plugin from this spec and
-        connects to the HOST feedback bus at ``bus_endpoint``.
+        Carries the plugins across the multiprocess launch boundary: each
+        component subprocess rebuilds CLIENT plugins from these specs and
+        connects them to the HOST feedback bus at ``bus_endpoint``.
 
-        :return: JSON ``{"spec": <plugin spec>, "bus_endpoint": <name>}``
+        :return: JSON ``{"plugins": [<spec>, ...], "bus_endpoint": <name>}``
         :rtype: str
         """
-        if self._robot_plugin is None:
+        if not self._plugins:
             return "{}"
-        bus = self._robot_plugin.bus
-        endpoint = bus.endpoint if bus is not None else None
+        # Every plugin shares one bus, so the endpoint is taken once
+        endpoint = None
+        for plugin in self._plugins.values():
+            if plugin.bus is not None:
+                endpoint = plugin.bus.endpoint
+                break
         return json.dumps({
-            "spec": self._robot_plugin.to_spec(),
+            "plugins": [plugin.to_spec() for plugin in self._plugins.values()],
             "bus_endpoint": endpoint,
         })
 
-    @_robot_plugin_json.setter
-    def _robot_plugin_json(self, value: Union[str, bytes]):
-        """Setter that rebuilds a CLIENT robot plugin from a serialized spec.
+    @_plugins_json.setter
+    def _plugins_json(self, value: Union[str, bytes]):
+        """Setter that rebuilds CLIENT plugins from serialized specs.
 
-        :param value: JSON produced by the :attr:`_robot_plugin_json` getter
+        :param value: JSON produced by the :attr:`_plugins_json` getter
         :type value: Union[str, bytes]
         """
-        from ..robot.plugin import RobotPlugin
+        from ..robot.plugin import Plugin
 
         data = json.loads(value)
+        self._plugins = {}
         if not data:
-            self._robot_plugin = None
             return
-        self._robot_plugin = RobotPlugin.from_spec(
-            data["spec"],
-            bus_endpoint=data.get("bus_endpoint"),
-        )
+        endpoint = data.get("bus_endpoint")
+        for spec in data.get("plugins", []):
+            self.add_plugin(Plugin.from_spec(spec, bus_endpoint=endpoint))
+
+    @property
+    def _plugins_json(self) -> str:
+        """Getter of the serialized plugin specs + shared feedback-bus endpoint.
+
+        Used to carry every attached plugin across the multiprocess launch
+        boundary: each component subprocess rebuilds CLIENT plugins from these
+        specs and connects to the HOST feedback bus at ``bus_endpoint``. The
+        specs carry each plugin's id, so the channels a subprocess subscribes
+        to are the ones the hosts publish on.
+
+        :return: JSON ``{"plugins": [<spec>, ...], "bus_endpoint": <name>}``
+        :rtype: str
+        """
+        if not self._plugins:
+            return "{}"
+        # Every plugin shares one bus, so any of them carries the endpoint
+        bus = next(iter(self._plugins.values())).bus
+        endpoint = bus.endpoint if bus is not None else None
+        return json.dumps({
+            "plugins": [plugin.to_spec() for plugin in self._plugins.values()],
+            "bus_endpoint": endpoint,
+        })
+
+    @_plugins_json.setter
+    def _plugins_json(self, value: Union[str, bytes]):
+        """Setter that rebuilds CLIENT plugins from serialized specs.
+
+        :param value: JSON produced by the :attr:`_plugins_json` getter
+        :type value: Union[str, bytes]
+        """
+        from ..robot.plugin import Plugin
+
+        data = json.loads(value)
+        self._plugins = {}
+        if not data:
+            return
+        endpoint = data.get("bus_endpoint")
+        for spec in data.get("plugins", []):
+            plugin = Plugin.from_spec(spec, bus_endpoint=endpoint)
+            self._plugins[plugin.id] = plugin
 
     @property
     def _events_json(self) -> Union[str, bytes]:

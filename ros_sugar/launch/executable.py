@@ -61,7 +61,12 @@ def _parse_args() -> Tuple[argparse.Namespace, List[str]]:
     parser.add_argument(
         "--robot_plugin",
         type=str,
-        help="Serialized robot plugin spec and feedback-bus endpoint",
+        help="Serialized robot plugin spec and feedback-bus endpoint (legacy)",
+    )
+    parser.add_argument(
+        "--plugins",
+        type=str,
+        help="Serialized plugin specs and shared feedback-bus endpoint",
     )
     return parser.parse_known_args()
 
@@ -227,9 +232,12 @@ def setup_component(
     if args.external_processors:
         component._external_processors_json = args.external_processors
 
-    # Rebuild the robot plugin as a CLIENT and connect it to the HOST
-    # feedback bus running in the launcher process
-    if args.robot_plugin:
+    # Rebuild plugins as CLIENTs and connect them to the HOST feedback bus
+    # running in the launcher process. --robot_plugin is the older single-plugin
+    # form, still accepted so a mixed-version workspace keeps working.
+    if getattr(args, "plugins", None):
+        component._plugins_json = args.plugins
+    elif args.robot_plugin:
         component._robot_plugin_json = args.robot_plugin
 
     return component
