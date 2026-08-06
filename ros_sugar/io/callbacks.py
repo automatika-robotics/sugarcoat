@@ -1074,26 +1074,26 @@ class OccupancyGridCallback(GenericCallback):
             np.array(np.where(grid_data != 0), dtype=np.float32) + 0.5
         ) * self.msg.info.resolution
 
-        rotation_matrix = np.array([
-            [np.cos(origin_yaw), -np.sin(origin_yaw)],
-            [np.sin(origin_yaw), np.cos(origin_yaw)],
-        ])
-
-        transformed_coordinates = np.array([origin_x, origin_y]) + np.transpose(
-            rotation_matrix @ occupied_coordinates
+        # create a flaot32 rotation matrix
+        rotation_matrix = np.array(
+            [
+                [np.cos(origin_yaw), -np.sin(origin_yaw)],
+                [np.sin(origin_yaw), np.cos(origin_yaw)],
+            ],
+            dtype=np.float32,
         )
 
-        if not get_three_d:
-            return transformed_coordinates
+        # Build the output C-contiguous
+        num_points = occupied_coordinates.shape[1]
+        num_coordinates = 2 if not get_three_d else 3
+        coordinates = np.empty((num_points, num_coordinates), dtype=np.float32)
+        coordinates[:, :2] = (rotation_matrix @ occupied_coordinates).T
+        coordinates[:, 0] += origin_x
+        coordinates[:, 1] += origin_y
+        if get_three_d:
+            coordinates[:, 2] = self.__twoD_to_threeD_conversion_height
 
-        threeD_coordinates = np.pad(
-            transformed_coordinates,
-            ((0, 0), (0, 1)),
-            mode="constant",
-            constant_values=self.__twoD_to_threeD_conversion_height,
-        )
-
-        return threeD_coordinates
+        return coordinates
 
     def _get_ui_content(self, **_) -> Optional[Dict]:
         """Get UI content for an occupancy grid.
