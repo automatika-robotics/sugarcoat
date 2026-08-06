@@ -582,23 +582,17 @@ class Launcher:
             self._mounts.append(mount)
 
     def _publish_mounts(self) -> None:
-        """Broadcast every declared mount as a static transform.
-
-        Published in-process from the Monitor node, which is a live node for
-        the whole run, rather than as one ``static_transform_publisher`` per
-        mount: those would land under the recipe's namespace (the launch
-        description pushes one), and their positional CLI form is deprecated.
+        """Hand every declared mount to the Monitor as a static transform to be published to /tf_static.
         """
         if not self._mounts:
             return
-        from tf2_ros import StaticTransformBroadcaster
         from geometry_msgs.msg import TransformStamped
+
         from ..robot.mount import quaternion_from_euler
 
         transforms = []
         for mount in self._mounts:
             transform = TransformStamped()
-            transform.header.stamp = self.monitor_node.get_clock().now().to_msg()
             transform.header.frame_id = mount.parent_frame
             transform.child_frame_id = mount.child_frame
             (
@@ -618,10 +612,7 @@ class Launcher:
                 f"'{transform.header.frame_id}'"
             )
 
-        # Held on the launcher: a StaticTransformBroadcaster that goes out of
-        # scope takes its latched publisher with it
-        self._static_tf_broadcaster = StaticTransformBroadcaster(self.monitor_node)
-        self._static_tf_broadcaster.sendTransform(transforms)
+        self.monitor_node.set_static_transforms(transforms)
 
     def _validate_plugin_references(self) -> None:
         """Check every topic's ``use_plugin`` against the attached plugins.
