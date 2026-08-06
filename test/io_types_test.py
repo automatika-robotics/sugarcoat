@@ -757,6 +757,96 @@ def test_grid_obstacles_in_world_frame():
     )
 
 
+def _occupied_grid_at(x: int, y: int, **kwargs) -> OccupancyGrid:
+    """A 3x2 grid whose only occupied cell sits at grid position (x, y)."""
+    data = [0] * 6
+    data[y * 3 + x] = 100
+    return _make_grid(data, width=3, height=2, **kwargs)
+
+
+def test_grid_without_a_transform_stays_in_the_map_frame():
+    callback = _fed_callback(
+        OccupancyGridCallback, "OccupancyGrid", _occupied_grid_at(2, 1)
+    )
+    np.testing.assert_allclose(callback.get_output(get_three_d=False), [[2.5, 1.5]])
+
+
+def test_grid_already_in_the_goal_frame_is_not_transformed():
+    """The origin still applies -- it is the message's own geometry -- but a
+    transform onto the frame the grid is already in must be a no-op."""
+    callback = _fed_callback(
+        OccupancyGridCallback, "OccupancyGrid", _occupied_grid_at(2, 1)
+    )
+    np.testing.assert_allclose(
+        callback.get_output(get_three_d=False, transformation=_tf((9.0, 9.0, 9.0),
+                                                                 frame_id="map")),
+        [[2.5, 1.5]],
+    )
+
+
+def test_grid_transform_is_applied_after_the_origin():
+    # origin puts the cell at (3.5, 3.5); the transform then shifts it
+    msg = _occupied_grid_at(2, 1, origin_x=1.0, origin_y=2.0)
+    callback = _fed_callback(OccupancyGridCallback, "OccupancyGrid", msg)
+    np.testing.assert_allclose(
+        callback.get_output(get_three_d=False, transformation=_tf((0.5, -1.0, 0.0))),
+        [[4.0, 2.5]],
+    )
+
+
+def test_grid_transform_rotation_is_applied():
+    quarter_turn = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
+    callback = _fed_callback(
+        OccupancyGridCallback, "OccupancyGrid", _occupied_grid_at(2, 1)
+    )
+    # origin leaves the cell at (2.5, 1.5); a quarter turn sends it to (-1.5, 2.5)
+    np.testing.assert_allclose(
+        callback.get_output(
+            get_three_d=False, transformation=_tf((0.0, 0.0, 0.0), quarter_turn)
+        ),
+        [[-1.5, 2.5]],
+        atol=1e-6,
+    )
+
+
+def test_grid_transform_carries_the_padded_height_in_3d():
+    callback = _fed_callback(
+        OccupancyGridCallback, "OccupancyGrid", _occupied_grid_at(2, 1)
+    )
+    output = callback.get_output(transformation=_tf((0.0, 0.0, 0.25)))
+    np.testing.assert_allclose(output, [[2.5, 1.5, 0.26]])
+    assert output.flags["C_CONTIGUOUS"]
+
+
+def test_grid_transform_set_on_the_callback_is_used():
+    """A component calling transform_input_to sets it on the callback, not per
+    get_output call."""
+    callback = _fed_callback(
+        OccupancyGridCallback, "OccupancyGrid", _occupied_grid_at(2, 1)
+    )
+    callback.transformation = _tf((0.0, 4.0, 0.0))
+    np.testing.assert_allclose(callback.get_output(get_three_d=False), [[2.5, 5.5]])
+
+
+def test_grid_transform_leaves_metadata_and_raw_grid_alone():
+    msg = _occupied_grid_at(2, 1, origin_x=1.0, origin_y=2.0)
+    callback = _fed_callback(OccupancyGridCallback, "OccupancyGrid", msg)
+    callback.transformation = _tf((5.0, 5.0, 0.0))
+    metadata = callback.get_output(get_metadata=True)
+    assert metadata["origin_x"] == pytest.approx(1.0)
+    assert metadata["origin_y"] == pytest.approx(2.0)
+    assert callback.get_output(get_obstacles=False).shape == (3, 2)
+
+
+def test_grid_rejects_unknown_kwargs():
+    """A misspelled filter must not quietly return an untransformed grid."""
+    callback = _fed_callback(
+        OccupancyGridCallback, "OccupancyGrid", _occupied_grid_at(2, 1)
+    )
+    with pytest.raises(TypeError):
+        callback.get_output(get_threed=False)
+
+
 def test_grid_ui_content():
     data = [0, 100, 50, 0, -1, 0]
     msg = _make_grid(data, width=3, height=2, resolution=0.5)

@@ -131,6 +131,41 @@ def test_resolved_transforms_survive_a_restart(component):
     assert dynamic.transform.transform.translation.x == 5.0
 
 
+def test_same_frame_lookup_resolves_to_identity_without_polling(component):
+    """Source and goal being the same frame is a normal configuration -- data
+    that already arrives where it is wanted -- not a missing transform. It must
+    not spin a timer or leave callers waiting on a lookup that could only ever
+    return the identity."""
+    listener = component.get_transform_listener("map", "map")
+
+    assert listener.is_identity
+    assert listener.got_transform, "callers poll this and would wait forever"
+    assert listener.timer is None, "nothing to look up, so nothing to poll"
+    assert listener.transform.header.frame_id == "map"
+    assert listener.translation == pytest.approx([0.0, 0.0, 0.0])
+    assert listener.rotation == pytest.approx([0.0, 0.0, 0.0, 1.0])
+
+
+def test_same_frame_listener_survives_the_lifecycle(component):
+    """It has no timer, so pause/resume must step over it rather than trip."""
+    listener = component.get_transform_listener("map", "map")
+
+    component.deactivate()
+    component.activate()
+
+    assert listener.got_transform
+    assert component.get_transform_listener("map", "map") is listener
+
+
+def test_distinct_frames_still_poll(component):
+    """The identity shortcut must not swallow a real lookup."""
+    listener = component.get_transform_listener("odom", "map")
+
+    assert not listener.is_identity
+    assert not listener.got_transform
+    assert listener.timer is not None
+
+
 def test_no_tf_machinery_is_created_when_unused(component):
     """A component that never asks for a transform should not pay for a buffer
     or the /tf and /tf_static subscriptions that come with it."""
