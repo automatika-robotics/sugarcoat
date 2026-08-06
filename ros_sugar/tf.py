@@ -6,7 +6,12 @@ from attrs import define, field
 from rclpy.logging import get_logger
 from rclpy.time import Time
 from rclpy.timer import Timer
-from tf2_ros import ConnectivityException, ExtrapolationException, LookupException
+from tf2_ros import (
+    ConnectivityException,
+    ExtrapolationException,
+    LookupException,
+    TransformStamped,
+)
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
@@ -69,6 +74,32 @@ class TFListener:
         # result
         self.transform = None
         self.got_transform = False
+
+        # Source and goal being the same frame is a normal configuration, not a
+        # missing transform: it means the data already arrives where it is
+        # wanted. Resolve it to the identity up front so nothing waits on, or
+        # warns about, a lookup that would only ever return the identity.
+        if self.is_identity:
+            self.transform = TransformStamped()
+            self.transform.header.frame_id = tf_config.goal_frame
+            self.transform.child_frame_id = tf_config.source_frame
+            self.transform.transform.rotation.w = 1.0
+            self.got_transform = True
+
+    @property
+    def is_identity(self) -> bool:
+        """Whether this listener resolves without any TF lookup.
+
+        True when source and goal are the same frame, in which case the
+        transform is the identity and no timer needs to run.
+
+        :return: Whether the lookup is a no-op
+        :rtype: bool
+        """
+        return bool(
+            self.config.source_frame
+            and self.config.source_frame == self.config.goal_frame
+        )
 
     @property
     def translation(self) -> Optional[np.ndarray]:

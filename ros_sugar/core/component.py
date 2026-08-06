@@ -1171,7 +1171,9 @@ class BaseComponent(lifecycle.Node):
             stops once it has been acquired
         :type static_tf: bool
 
-        :return: Transform lookup handler for the pair
+        :return: Transform lookup handler for the pair. A listener whose source
+            and goal are the same frame is already resolved to the identity and
+            runs no lookup at all
         :rtype: TFListener
         """
         key = (source_frame, goal_frame)
@@ -1184,11 +1186,14 @@ class BaseComponent(lifecycle.Node):
         listener = TFListener(
             tf_config=tf_config, node_name=self.node_name, buffer=self.tf_buffer
         )
-        listener.timer = self.create_timer(
-            1 / tf_config.lookup_rate,
-            listener.timer_callback,
-            callback_group=MutuallyExclusiveCallbackGroup(),
-        )
+        # Same source and goal resolves to the identity without any lookup, so
+        # it needs no polling timer
+        if not listener.is_identity:
+            listener.timer = self.create_timer(
+                1 / tf_config.lookup_rate,
+                listener.timer_callback,
+                callback_group=MutuallyExclusiveCallbackGroup(),
+            )
         self._tf_listeners[key] = listener
         return listener
 
