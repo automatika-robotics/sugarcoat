@@ -1188,19 +1188,94 @@ def test_plugin_base_frame_applied_but_not_world_frame():
     assert comp.config.frames.world == "map", "world frame is not the robot's to set"
 
 
-def test_recipe_frames_win_over_plugin_base_frame():
+def test_plugin_base_frame_wins_over_recipe():
+    """The plugin stamps its telemetry in its own body frame and mounts are
+    parented on it, so a recipe cannot rename it from the outside."""
     from ros_sugar import Launcher
     from ros_sugar.config import RobotFrames
 
     launcher = Launcher(robot_plugin=_DescribingPlugin())
-    comp = _FakeComponent("recipe_wins_component")
+    comp = _FakeComponent("plugin_wins_component")
     launcher._components = [comp]
 
     launcher.frames = RobotFrames(robot_base="from_recipe", world="office")
     launcher._apply_plugin_base_frame()  # would normally fire at bringup
 
-    assert comp.config.frames.robot_base == "from_recipe"
-    assert comp.config.frames.world == "office"
+    assert comp.config.frames.robot_base == "lite3_base"
+    assert comp.config.frames.world == "office", "world is still the recipe's"
+
+
+def test_naming_only_the_world_frame_keeps_the_plugin_base_frame():
+    """The regression this precedence exists for: a recipe that assigns
+    `frames` to choose a world frame used to silently drop the plugin's body
+    frame, leaving mounts parented on a frame nothing looked up."""
+    from ros_sugar import Launcher
+    from ros_sugar.config import RobotFrames
+
+    launcher = Launcher(robot_plugin=_DescribingPlugin())
+    comp = _FakeComponent("world_only_component")
+    launcher._components = [comp]
+
+    launcher.frames = RobotFrames(world="odom")
+    launcher._apply_plugin_base_frame()
+
+    assert comp.config.frames.robot_base == "lite3_base"
+    assert comp.config.frames.world == "odom"
+
+
+def test_renaming_the_frame_on_the_plugin_is_the_way_to_override():
+    """The escape hatch: rename it where telemetry and mounts both read it."""
+    from ros_sugar import Launcher
+
+    plugin = _DescribingPlugin()
+    plugin.base_frame = "base_link"
+    launcher = Launcher(robot_plugin=plugin)
+    comp = _FakeComponent("renamed_frame_component")
+    launcher._components = [comp]
+
+    launcher._apply_plugin_base_frame()
+
+    assert comp.config.frames.robot_base == "base_link"
+
+
+def test_world_frame_setter_leaves_the_robot_frame_alone():
+    from ros_sugar import Launcher
+
+    launcher = Launcher(robot_plugin=_DescribingPlugin())
+    comp = _FakeComponent("world_setter_component")
+    launcher._components = [comp]
+
+    launcher.world_frame = "odom"
+    launcher._apply_plugin_base_frame()
+
+    assert comp.config.frames.world == "odom"
+    assert comp.config.frames.robot_base == "lite3_base"
+    assert launcher.world_frame == {"world_setter_component": "odom"}
+
+
+def test_robot_frame_setter_applies_without_a_plugin():
+    from ros_sugar import Launcher
+
+    launcher = Launcher()
+    comp = _FakeComponent("robot_setter_component")
+    launcher._components = [comp]
+
+    launcher.robot_frame = "chassis"
+    launcher._apply_plugin_base_frame()  # no plugin attached, so a no-op
+
+    assert comp.config.frames.robot_base == "chassis"
+    assert launcher.robot_frame == {"robot_setter_component": "chassis"}
+
+
+@pytest.mark.parametrize("bad", ["", None, 3])
+def test_frame_setters_reject_non_frame_names(bad):
+    from ros_sugar import Launcher
+
+    launcher = Launcher()
+    launcher._components = [_FakeComponent("bad_frame_component")]
+
+    with pytest.raises(ValueError):
+        launcher.world_frame = bad
 
 
 def test_plugin_without_base_frame_leaves_frames_untouched():
@@ -2083,7 +2158,12 @@ def test_mounts_are_published_as_static_transforms(rclpy_context):
     )
 
     launcher = _launcher_with([])
+    # The real Monitor is not rclpy-initialized when mounts are registered, so
+    # it only holds them; a live node stands in for the broadcast half here.
     launcher.monitor_node = publisher_node
+    publisher_node.set_static_transforms = lambda t: setattr(
+        publisher_node, "_pending", t
+    )
 
     robot = MockPlugin(state_port=_free_port(), cmd_port=_free_port(), id="lite3")
     robot.base_frame = "base_link"
@@ -2096,6 +2176,15 @@ def test_mounts_are_published_as_static_transforms(rclpy_context):
 
     try:
         launcher._publish_mounts()
+
+        # what Monitor.activate() does once the node is up
+        from tf2_ros import StaticTransformBroadcaster
+
+        stamp = publisher_node.get_clock().now().to_msg()
+        for transform in publisher_node._pending:
+            transform.header.stamp = stamp
+        broadcaster = StaticTransformBroadcaster(publisher_node)
+        broadcaster.sendTransform(publisher_node._pending)
 
         deadline = time.time() + 3.0
         while not received and time.time() < deadline:
@@ -2122,8 +2211,9 @@ def test_publishing_mounts_is_a_noop_without_any(rclpy_context):
     node = Node("no_mounts")
     launcher = _launcher_with([])
     launcher.monitor_node = node
+    node.set_static_transforms = lambda t: setattr(node, "_pending", t)
     try:
-        launcher._publish_mounts()  # must not create a broadcaster or raise
-        assert not hasattr(launcher, "_static_tf_broadcaster")
+        launcher._publish_mounts()  # must not register anything or raise
+        assert not hasattr(node, "_pending")
     finally:
         node.destroy_node()
