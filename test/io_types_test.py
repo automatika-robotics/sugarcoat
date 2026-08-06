@@ -16,6 +16,7 @@ Sections, one per message type:
 
 from typing import List, Optional, Tuple
 
+import math
 import base64
 import numpy as np
 import pytest
@@ -206,6 +207,190 @@ def test_cloud_ui_content():
 
 
 # ---------------------------------------------------------------------------
+# PointCloud2 filtering and transformation (issue #59)
+# ---------------------------------------------------------------------------
+
+
+def _tf(
+    translation=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0, 1.0), frame_id="base_link"
+) -> TransformStamped:
+    transform = TransformStamped()
+    transform.header.frame_id = frame_id
+    (
+        transform.transform.translation.x,
+        transform.transform.translation.y,
+        transform.transform.translation.z,
+    ) = translation
+    (
+        transform.transform.rotation.x,
+        transform.transform.rotation.y,
+        transform.transform.rotation.z,
+        transform.transform.rotation.w,
+    ) = rotation
+    return transform
+
+
+def _filtered(msg, **kwargs) -> Optional[PointCloudData]:
+    return _fed_callback(PointCloudCallback, "PointCloud2", msg).get_output(**kwargs)
+
+
+def test_cloud_rejects_unknown_kwargs():
+    """The silent-swallow this issue is about: an unrecognised filter name must
+    not quietly return an unfiltered cloud."""
+    with pytest.raises(TypeError):
+        _filtered(_make_cloud(CLOUD_POINTS), not_a_filter=True)
+
+
+def test_cloud_unfiltered_request_returns_the_raw_buffer():
+    """Asking for nothing must stay free: same buffer, nothing decoded."""
+    msg = _make_cloud(CLOUD_POINTS)
+    pc = _filtered(msg)
+    assert pc is not None
+    assert pc.width == 4 and pc.height == 1
+    assert pc.frame_id == "lidar_link"
+    assert bytes(pc.data) == bytes(msg.data)
+
+
+def test_cloud_z_band_filter():
+    points = [(1.0, 0.0, -0.5), (1.0, 0.0, 0.1), (1.0, 0.0, 0.9), (1.0, 0.0, 5.0)]
+    pc = _filtered(_make_cloud(points), min_z=0.0, max_z=1.0)
+    assert pc is not None
+    assert pc.width == 2
+    np.testing.assert_allclose(pc.xyz[:, 2], [0.1, 0.9], atol=1e-6)
+
+
+def test_cloud_filtering_rewrites_the_raw_buffer():
+    """Raw-buffer consumers (collision checking) must see the filtered cloud,
+    not just users of the decoded `xyz`."""
+    points = [(1.0, 0.0, -0.5), (2.0, 0.0, 0.5), (3.0, 0.0, 9.0)]
+    pc = _filtered(_make_cloud(points), min_z=0.0, max_z=1.0)
+    assert pc is not None
+    assert pc.width == 1 and pc.height == 1
+    assert pc.row_step == pc.width * pc.point_step
+    assert len(pc.data) == pc.width * pc.point_step
+    # decoded straight from the rebuilt buffer, bypassing the cache
+    rebuilt = PointCloudData(
+        data=pc.data,
+        point_step=pc.point_step,
+        row_step=pc.row_step,
+        height=pc.height,
+        width=pc.width,
+        x_offset=pc.x_offset,
+        y_offset=pc.y_offset,
+        z_offset=pc.z_offset,
+        x_field_datatype=pc.x_field_datatype,
+    )
+    np.testing.assert_allclose(rebuilt.xyz, [[2.0, 0.0, 0.5]], atol=1e-6)
+
+
+def test_cloud_filtering_preserves_other_fields():
+    """Whole records are kept, so padding/intensity bytes survive intact."""
+    points = [(1.0, 0.0, 0.5), (2.0, 0.0, 9.0)]
+    msg = _make_cloud(points, point_padding=4)
+    original = bytes(msg.data)
+    pc = _filtered(msg, max_z=1.0)
+    assert pc is not None and pc.width == 1
+    assert pc.point_step == 16
+    # trailing 4 padding bytes of the surviving record are carried over
+    assert bytes(pc.data)[12:16] == original[12:16]
+
+
+def test_cloud_translation_is_applied():
+    pc = _filtered(_make_cloud([(1.0, 2.0, 3.0)]), transformation=_tf((0.5, 0.0, 0.25)))
+    assert pc is not None
+    np.testing.assert_allclose(pc.xyz, [[1.5, 2.0, 3.25]], atol=1e-6)
+    assert pc.frame_id == "base_link", "cloud must report the frame it now sits in"
+
+
+def test_cloud_rotation_is_applied():
+    """90 degrees about z: (1, 0, 0) -> (0, 1, 0)."""
+    quarter_turn = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
+    pc = _filtered(
+        _make_cloud([(1.0, 0.0, 0.0)]), transformation=_tf(rotation=quarter_turn)
+    )
+    assert pc is not None
+    np.testing.assert_allclose(pc.xyz, [[0.0, 1.0, 0.0]], atol=1e-6)
+
+
+def test_cloud_transform_set_on_the_callback_is_used():
+    """A component calling transform_input_to sets it on the callback, not per
+    call -- that path was the silent no-op."""
+    callback = _fed_callback(
+        PointCloudCallback, "PointCloud2", _make_cloud([(1.0, 2.0, 3.0)])
+    )
+    callback.transformation = _tf((0.0, 0.0, 1.0))
+    pc = callback.get_output()
+    assert pc is not None
+    np.testing.assert_allclose(pc.xyz, [[1.0, 2.0, 4.0]], atol=1e-6)
+
+
+def test_cloud_discard_underground_uses_the_mount_height():
+    """The sensor sits 0.2 above the body, so ground is z = -0.2 in the sensor
+    frame and z = 0 once transformed."""
+    points = [(1.0, 0.0, -0.25), (1.0, 0.0, -0.15), (1.0, 0.0, 0.5)]
+    pc = _filtered(
+        _make_cloud(points),
+        transformation=_tf((0.0, 0.0, 0.2)),
+        discard_underground=True,
+    )
+    assert pc is not None
+    assert pc.width == 2, "only the point below the ground plane is dropped"
+    np.testing.assert_allclose(pc.xyz[:, 2], [0.05, 0.7], atol=1e-6)
+
+
+def test_cloud_discard_underground_without_a_transform_is_ignored():
+    points = [(1.0, 0.0, -0.5), (1.0, 0.0, 0.5)]
+    pc = _filtered(_make_cloud(points), discard_underground=True)
+    assert pc is not None
+    assert pc.width == 2, "the ground cannot be located, so nothing is dropped"
+
+
+def test_cloud_get_2d_flattens_after_filtering():
+    points = [(1.0, 0.0, 0.9), (2.0, 0.0, 5.0)]
+    pc = _filtered(_make_cloud(points), max_z=1.0, get_2d=True)
+    assert pc is not None
+    assert pc.width == 1, "the height filter still sees the real z"
+    np.testing.assert_allclose(pc.xyz, [[1.0, 0.0, 0.0]], atol=1e-6)
+
+
+def test_cloud_filtering_everything_out_returns_none():
+    pc = _filtered(_make_cloud([(1.0, 0.0, 5.0)]), max_z=1.0)
+    assert pc is None
+
+
+def test_cloud_filter_drops_non_finite_points():
+    points = [(1.0, 0.0, 0.5), (float("nan"), 0.0, 0.5), (float("inf"), 0.0, 0.5)]
+    pc = _filtered(_make_cloud(points), max_z=1.0)
+    assert pc is not None
+    assert pc.width == 1
+
+
+def test_cloud_filter_handles_row_padding():
+    """Organized clouds pad each row; the mask must still line up with records."""
+    points = [(1.0, 0.0, 0.5), (2.0, 0.0, 9.0), (3.0, 0.0, 0.7), (4.0, 0.0, 9.0)]
+    pc = _filtered(_make_cloud(points, height=2, row_padding=8), max_z=1.0)
+    assert pc is not None
+    np.testing.assert_allclose(pc.xyz[:, 0], [1.0, 3.0], atol=1e-6)
+
+
+def test_cloud_filter_handles_big_endian_and_float64():
+    points = [(1.0, 0.0, 0.5), (2.0, 0.0, 9.0)]
+    pc = _filtered(
+        _make_cloud(points, np_type=np.float64, bigendian=True),
+        transformation=_tf((1.0, 0.0, 0.0)),
+        max_z=1.0,
+    )
+    assert pc is not None
+    assert pc.is_bigendian
+    np.testing.assert_allclose(pc.xyz, [[2.0, 0.0, 0.5]], atol=1e-6)
+
+
+def test_cloud_filter_without_xyz_fields_returns_none():
+    msg = _make_cloud(CLOUD_POINTS, drop_fields=["z"])
+    assert _filtered(msg, max_z=1.0) is None
+
+
+# ---------------------------------------------------------------------------
 # LaserScan
 # ---------------------------------------------------------------------------
 
@@ -307,6 +492,14 @@ def test_scan_transform_via_get_output_kwarg():
         [1.0, 2.0, 3.0],
         rtol=1e-6,
     )
+
+
+def test_scan_rejects_unknown_kwargs():
+    """Same contract as the point cloud: an unrecognised argument is a caller
+    bug, not something to swallow and return unprocessed data for."""
+    callback = _scan_callback(_make_scan([1.0, 2.0, 3.0]))
+    with pytest.raises(TypeError):
+        callback.get_output(min_z=0.0)
 
 
 def test_scan_degenerate():
@@ -648,3 +841,78 @@ def test_path_ui_content_downsampling():
     content = _fed_callback(PathCallback, "Path", msg)._get_ui_content()
     assert content["frame_id"] == "map"
     assert content["data"] == [0.0, 0.0, 0.2, 0.0, 1.0, 0.0]
+
+
+def _make_path(poses: List[Tuple[float, float]], frame_id="odom") -> Path:
+    msg = Path()
+    msg.header.frame_id = frame_id
+    for x, y in poses:
+        pose = PoseStamped()
+        pose.header.frame_id = frame_id
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        pose.pose.orientation.w = 1.0
+        msg.poses.append(pose)
+    return msg
+
+
+def _transformed_path(msg, **kwargs) -> Optional[Path]:
+    return _fed_callback(PathCallback, "Path", msg).get_output(**kwargs)
+
+
+def test_path_without_a_transform_is_handed_back_untouched():
+    """No transform asked for must stay free: the same message, not a copy."""
+    msg = _make_path([(1.0, 2.0)])
+    assert _transformed_path(msg) is msg
+
+
+def test_path_already_in_the_goal_frame_is_not_rebuilt():
+    """A transform onto the frame the path is already in is an identity, so
+    rebuilding hundreds of poses would be pure waste."""
+    msg = _make_path([(1.0, 2.0)], frame_id="map")
+    assert _transformed_path(msg, transformation=_tf(frame_id="map")) is msg
+
+
+def test_path_translation_is_applied():
+    path = _transformed_path(
+        _make_path([(1.0, 2.0), (3.0, 4.0)]), transformation=_tf((0.5, -1.0, 0.0))
+    )
+    positions = [(p.pose.position.x, p.pose.position.y) for p in path.poses]
+    assert positions == pytest.approx([(1.5, 1.0), (3.5, 3.0)])
+
+
+def test_path_rotation_is_applied_to_positions_and_headings():
+    quarter_turn = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
+    path = _transformed_path(
+        _make_path([(1.0, 0.0), (2.0, 0.0)]),
+        transformation=_tf((5.0, 1.0, 0.0), quarter_turn),
+    )
+    positions = [(p.pose.position.x, p.pose.position.y) for p in path.poses]
+    assert positions == pytest.approx([(5.0, 2.0), (5.0, 3.0)])
+    # a pose facing +x in the source frame must face +y after a quarter turn
+    heading = 2 * math.atan2(
+        path.poses[0].pose.orientation.z, path.poses[0].pose.orientation.w
+    )
+    assert heading == pytest.approx(math.pi / 2)
+
+
+def test_path_transform_relabels_every_frame_to_the_goal():
+    path = _transformed_path(
+        _make_path([(1.0, 0.0)]), transformation=_tf(frame_id="map")
+    )
+    assert path.header.frame_id == "map"
+    assert all(pose.header.frame_id == "map" for pose in path.poses)
+
+
+def test_path_transform_set_on_the_callback_is_used():
+    """A component calling transform_input_to sets it on the callback, not per
+    get_output call."""
+    callback = _fed_callback(PathCallback, "Path", _make_path([(1.0, 0.0)]))
+    callback.transformation = _tf((0.0, 3.0, 0.0))
+    assert callback.get_output().poses[0].pose.position.y == pytest.approx(3.0)
+
+
+def test_empty_path_transform_returns_an_empty_path():
+    path = _transformed_path(_make_path([]), transformation=_tf((1.0, 1.0, 0.0)))
+    assert path.poses == []
+    assert path.header.frame_id == "base_link"
