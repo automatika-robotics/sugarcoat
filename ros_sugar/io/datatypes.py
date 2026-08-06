@@ -238,10 +238,12 @@ class LaserScanData(BaseAttrs):
 
     def __attrs_post_init__(self):
         if self.angles.size == 0:
+            # float32 is a downstream zero-copy fast path
             self.angles = np.arange(
                 self.angle_min,
                 self.angle_max + self.angle_increment,
                 self.angle_increment,
+                dtype=np.float32,
             )
 
         if self.ranges.size == 0:
@@ -336,8 +338,8 @@ def _get_laserscan_transformed_polar_coordinates(
     :rtype: LaserScanData
     """
     angles: np.ndarray = np.arange(
-        angle_min, angle_max + angle_increment, angle_increment
-    )  # create list of angles
+        angle_min, angle_max + angle_increment, angle_increment, dtype=np.float32
+    )  # create list of angles, float32 to keep transformed ranges float32
 
     if len(angles) < len(laser_scan_ranges):
         raise ValueError(
