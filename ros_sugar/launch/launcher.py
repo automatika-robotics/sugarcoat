@@ -678,25 +678,49 @@ class Launcher:
         self._broadcast_robot_config(robot_config)
 
     def _apply_plugin_base_frame(self) -> None:
-        """Pull the robot's base frame from the attached plugin and apply it to
-        every component, unless the recipe already set frames explicitly.
+        """Apply the attached robot plugin's body frame to every component.
 
         Only ``robot_base`` is taken from the robot plugin: it is the one frame
         the robot itself defines. The world frame describes where the robot has
         been placed, so it stays with the recipe (or, later, an environment
         plugin) rather than being dictated by the robot.
+
+        The plugin's frame wins over whatever the recipe holds. `RobotFrames`
+        carries a default body frame, so a recipe that only wanted to name the
+        world frame would otherwise silently discard the plugin's -- leaving
+        anything mounted on the plugin parented to a frame no component looks
+        up. To publish under a different name, rename it on the plugin, which
+        keeps its telemetry and its mounts in agreement::
+
+            lite3.base_frame = "base_link"
         """
-        if self._frames_explicitly_set:
-            return
         if self._robot_plugin is None:
             return
         base_frame = self._robot_plugin.base_frame
         if base_frame is None:
             return
-        logger.info(
-            f"Applying robot base frame '{base_frame}' from plugin "
-            f"'{self._robot_plugin.metadata.name}'"
-        )
+        replaced = {
+            component.config.frames.robot_base
+            for component in self._components
+            if hasattr(component.config, "frames")
+            and component.config.frames.robot_base != base_frame
+        }
+        if not replaced:
+            return
+        plugin_name = self._robot_plugin.metadata.name
+        if self._frames_explicitly_set:
+            named = ", ".join(f"'{frame}'" for frame in sorted(replaced))
+            logger.warning(
+                f"The recipe set the robot body frame to {named}, but plugin "
+                f"'{plugin_name}' reports '{base_frame}'. Using the plugin frame name."
+                "To publish under a different name, set it on the plugin "
+                "itself before bringup."
+            )
+        else:
+            logger.info(
+                f"Applying robot base frame '{base_frame}' from plugin "
+                f"'{plugin_name}'"
+            )
         for component in self._components:
             if hasattr(component.config, "frames"):
                 component.config.frames.robot_base = base_frame
@@ -732,6 +756,74 @@ class Launcher:
                     logger.error(
                         f"Cannot set component {component.node_name} 'frames' configuration parameter of type '{type(component.config.frames)}' to provided value of type '{type(frames_config)}' Skipping setting frames configuration for '{component.node_name}'"
                     )
+
+    def _set_frame(self, attribute: str, frame: str) -> None:
+        """Set one frame on every component that has a frames configuration."""
+        if not isinstance(frame, str) or not frame:
+            raise ValueError(
+                f"Frame name must be a non-empty string, got {frame!r}"
+            )
+        for component in self._components:
+            if hasattr(component.config, "frames"):
+                setattr(component.config.frames, attribute, frame)
+
+    @property
+    def robot_frame(self) -> Dict[str, str]:
+        """
+        Getter of the robot body frame of all components
+
+        :return: Robot body frame per component
+        :rtype: Dict[str, str]
+        """
+        return {
+            component.node_name: component.config.frames.robot_base
+            for component in self._components
+            if hasattr(component.config, "frames")
+        }
+
+    @robot_frame.setter
+    def robot_frame(self, frame: str) -> None:
+        """
+        Setter of the robot body frame for all components
+
+        Sets that one frame, so naming it does not disturb the world frame.
+        An attached robot plugin reports the frame its own telemetry is
+        stamped in and that takes precedence at bringup -- rename the frame on
+        the plugin rather than here when one is attached.
+
+        :param frame: Frame rigidly attached to the robot body
+        :type frame: str
+        """
+        self._frames_explicitly_set = True
+        self._set_frame("robot_base", frame)
+
+    @property
+    def world_frame(self) -> Dict[str, str]:
+        """
+        Getter of the world frame of all components
+
+        :return: World frame per component
+        :rtype: Dict[str, str]
+        """
+        return {
+            component.node_name: component.config.frames.world
+            for component in self._components
+            if hasattr(component.config, "frames")
+        }
+
+    @world_frame.setter
+    def world_frame(self, frame: str) -> None:
+        """
+        Setter of the world frame for all components
+
+        Sets that one frame, so naming it does not disturb the robot body
+        frame -- which is what lets a recipe take the body frame from a plugin
+        while still choosing where the robot has been placed.
+
+        :param frame: Global reference frame the robot operates in
+        :type frame: str
+        """
+        self._set_frame("world", frame)
 
     def inputs(self, **kwargs):
         """
