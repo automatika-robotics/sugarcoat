@@ -1102,20 +1102,39 @@ class OccupancyGridCallback(GenericCallback):
         node_name: str = '',
         to_numpy: bool = True,
         twoD_to_threeD_conversion_height: float = 0.01,
+        transformation: Optional[TransformStamped] = None,
     ) -> None:
         super().__init__(input_topic, node_name)
         self.__to_numpy = to_numpy
         self.__twoD_to_threeD_conversion_height = twoD_to_threeD_conversion_height
+        self._transformation = transformation
 
     def _get_output(
         self,
         get_metadata: bool = False,
         get_obstacles: bool = True,
         get_three_d: bool = True,
-        **_,
+        transformation: Optional[TransformStamped] = None,
     ) -> Optional[Union[OccupancyGrid, np.ndarray, Dict]]:
         """
         Gets the OccupancyGrid message raw or as a numpy array
+
+        The grid's own `info.origin` is always applied to the obstacle
+        coordinates: cell indices mean nothing without it, and it is what
+        places them in the frame the message declares. `transformation` is
+        applied on top of that, to carry them into a different frame.
+
+        :param get_metadata: Return the grid metadata instead of its content.
+            The origin it reports is the message's own, never transformed
+        :type get_metadata: bool
+        :param get_obstacles: Return the occupied cells' coordinates rather
+            than the raw 2D grid. Only these are transformed
+        :type get_obstacles: bool
+        :param get_three_d: Pad the coordinates to 3D at a fixed height
+        :type get_three_d: bool
+        :param transformation: Transform to the goal frame, overriding the one
+            set on the callback
+        :type transformation: Optional[TransformStamped]
 
         :returns:   Map as an OccupancyGrid or numpy array
         :rtype:     Optional[Union[OccupancyGrid, np.ndarray]]
@@ -1178,6 +1197,25 @@ class OccupancyGridCallback(GenericCallback):
         coordinates[:, 1] += origin_y
         if get_three_d:
             coordinates[:, 2] = self.__twoD_to_threeD_conversion_height
+
+        transform = transformation or self.transformation
+        if transform and transform.header.frame_id != self.msg.header.frame_id:
+            trans = transform.transform.translation
+            quat = transform.transform.rotation
+            # A 2D request has already dropped z, so it can only carry the
+            # planar block of the rotation
+            goal_rotation = _rotation_matrix_from_quaternion([
+                quat.x,
+                quat.y,
+                quat.z,
+                quat.w,
+            ])[:num_coordinates, :num_coordinates]
+            # Written back in place so the output stays C-contiguous
+            coordinates[:] = coordinates @ goal_rotation.T
+            coordinates[:, 0] += trans.x
+            coordinates[:, 1] += trans.y
+            if get_three_d:
+                coordinates[:, 2] += trans.z
 
         return coordinates
 
