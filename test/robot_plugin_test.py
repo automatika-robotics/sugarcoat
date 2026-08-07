@@ -579,6 +579,62 @@ def test_route_via_host_command_forwarding():
         robot_cmd_sock.close()
 
 
+def test_lifecycle_hooks_fire_around_the_transports(monkeypatch):
+    """`on_detached` has to run while the transports are still open, so a
+    plugin can leave hardware in a safe state -- a spinning motor is not
+    stopped by closing the port."""
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    events = []
+
+    monkeypatch.setattr(
+        type(plugin),
+        "on_attached",
+        lambda self, node, bus: events.append("attached"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        type(plugin),
+        "on_detached",
+        lambda self, node, bus: events.append(
+            # every transport must still be usable at this point
+            f"detached:{all(t._open for t in self.transports.values())}"
+        ),
+        raising=False,
+    )
+
+    host = RobotPluginHost(plugin, node=None, bus=InProcessFeedbackBus())
+    host.open()
+    assert events == ["attached"]
+    host.close()
+    assert events == ["attached", "detached:True"]
+
+    # Both hooks are idempotent, since close() is
+    host.close()
+    assert events == ["attached", "detached:True"]
+
+
+def test_a_raising_detach_hook_does_not_block_teardown():
+    """Teardown must finish even if the device has already gone away."""
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+
+    def _boom(self, node, bus):
+        raise RuntimeError("device unplugged")
+
+    monkeypatch_target = type(plugin)
+    original = getattr(monkeypatch_target, "on_detached", None)
+    monkeypatch_target.on_detached = _boom
+    try:
+        host = RobotPluginHost(plugin, node=None, bus=InProcessFeedbackBus())
+        host.open()
+        host.close()  # must not raise
+        assert all(not t._open for t in plugin.transports.values())
+    finally:
+        if original is not None:
+            monkeypatch_target.on_detached = original
+        else:
+            del monkeypatch_target.on_detached
+
+
 # ---------------------------------------------------------------------------
 # Component integration
 # ---------------------------------------------------------------------------
