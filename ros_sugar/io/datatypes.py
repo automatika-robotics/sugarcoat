@@ -290,9 +290,13 @@ def _get_polar_transformation_vector(
     :return: Polar transformation [radius, angle]
     :rtype: list
     """
-    r_tr = np.sqrt(translation_x**2 + translation_y**2)
+    # Plain floats, not numpy scalars: numpy treats its own scalars as strong
+    # types, so a np.float64 here would promote the float32 ranges it is
+    # combined with to float64 and cost the zero-copy path downstream. A
+    # Python float is weak and leaves the array dtype alone.
+    r_tr = float(np.sqrt(translation_x**2 + translation_y**2))
     if r_tr > 0:
-        ang_tr = np.arccos(translation_x / r_tr)
+        ang_tr = float(np.arccos(translation_x / r_tr))
         return [r_tr, ang_tr]
     return [0.0, 0.0]
 
