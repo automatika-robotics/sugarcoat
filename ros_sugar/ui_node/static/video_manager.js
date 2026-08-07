@@ -10,6 +10,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Create connection for a given <img> element
     function connectImageWebSocket(img, wsUrl, attempt = 0) {
+        // Stamp the element so the ensure-pass can detect DOM swaps: a
+        // replacement node (same id, e.g. after an htmx panel update) won't
+        // carry this property.
+        img._videoStreamBound = true;
         const ws = new WebSocket(wsUrl);
         ws.binaryType = "arraybuffer";
 
@@ -77,14 +81,29 @@ document.addEventListener("DOMContentLoaded", () => {
         const frames = Array.from(document.getElementsByName("video-frame"));
         const presentIds = new Set(frames.map(f => f.id));
 
-        // Add missing connections
+        // Add missing connections; re-init swapped elements (same id, new
+        // node — the element won't carry the _videoStreamBound stamp)
         frames.forEach((img) => {
             if (!img.id) return;
-            if (!wsConnections.has(img.id)) {
-                const wsUrl = `${videoWsProtocol}//${window.location.host}/api/outputs/${img.id}`;
-                const conn = connectImageWebSocket(img, wsUrl, 0);
-                wsConnections.set(img.id, conn);
+            const tracked = wsConnections.has(img.id);
+            if (tracked && img._videoStreamBound) return; // same element, connected
+            if (tracked) {
+                // A swap happened: clean up the old connection and re-init on
+                // the new element
+                const entry = wsConnections.get(img.id);
+                try {
+                    if (entry.timer) clearTimeout(entry.timer);
+                    if (entry.ws) {
+                        entry.ws.onclose = null;
+                        entry.ws.close();
+                    }
+                } catch (e) { }
+                wsConnections.delete(img.id);
+                console.log(`[${img.id}] Element swapped; rebinding stream to new node`);
             }
+            const wsUrl = `${videoWsProtocol}//${window.location.host}/api/outputs/${img.id}`;
+            const conn = connectImageWebSocket(img, wsUrl, 0);
+            wsConnections.set(img.id, conn);
         });
 
         // Remove connections whose elements are gone
