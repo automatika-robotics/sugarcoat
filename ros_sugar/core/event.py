@@ -516,7 +516,7 @@ class Event:
                 time.sleep(self._keep_event_delay)
 
         except Exception as e:
-            logger.error(f"Error executing actions for event '{self.name}': {e}")
+            logger.error(f"Error executing actions for event '{self}': {e}")
         finally:
             # Reset the flag only after work + delay are done
             self.under_processing = False

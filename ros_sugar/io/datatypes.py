@@ -401,8 +401,8 @@ class LaserScanData(BaseAttrs):
             )
 
         if self.ranges.size == 0:
-            # default to max range
-            self.ranges = np.full(self.angles.size, self.range_max)
+            # default to max range; float32 is a downstream zero-copy fast path
+            self.ranges = np.full(self.angles.size, self.range_max, dtype=np.float32)
 
         if self.angles.size != self.ranges.size:
             minimum_size = min(self.angles.size, self.ranges.size)

@@ -12,6 +12,8 @@ Sections, one per message type:
 - MultiArray: layout-driven reshaping
 - Image: raw buffer decoding
 - Path: UI downsampling
+- Zero-copy contract: dtype/contiguity the kompass-core bindings map
+  without copying
 """
 
 from typing import List, Optional, Tuple
@@ -1006,3 +1008,99 @@ def test_empty_path_transform_returns_an_empty_path():
     path = _transformed_path(_make_path([]), transformation=_tf((1.0, 1.0, 0.0)))
     assert path.poses == []
     assert path.header.frame_id == "base_link"
+
+
+# ---------------------------------------------------------------------------
+# Zero-copy contract
+# ---------------------------------------------------------------------------
+# kompass-core's bindings map these arrays without copying only when they
+# arrive as float32 (scan vectors, Nx3 cartesian points) or uint8 (raw cloud
+# buffers), C-contiguous. Anything else is converted silently with a per-call
+# copy, so a dtype drift here never fails downstream -- it just quietly costs
+# the optimization. These tests pin the contract on the producer side.
+
+
+def _assert_scan_hot_arrays(data: LaserScanData):
+    for name in ("ranges", "angles"):
+        array = getattr(data, name)
+        assert array.dtype == np.float32, f"{name} must stay float32"
+        assert array.flags["C_CONTIGUOUS"], f"{name} must stay contiguous"
+
+
+def _assert_cartesian_points(xyz: np.ndarray):
+    assert xyz.dtype == np.float32, "points must stay float32"
+    assert xyz.ndim == 2 and xyz.shape[1] == 3, "points must be an Nx3 array"
+    assert xyz.flags["C_CONTIGUOUS"], "points must stay row-major contiguous"
+
+
+def _assert_raw_cloud_buffer(data: np.ndarray):
+    assert data.dtype == np.uint8, "raw cloud buffer must stay uint8"
+    assert data.ndim == 1, "raw cloud buffer must stay flat"
+    assert data.flags["C_CONTIGUOUS"], "raw cloud buffer must stay contiguous"
+
+
+def test_zero_copy_scan_from_message():
+    output = _scan_callback(_make_scan([1.0, np.nan, 2.5])).get_output()
+    _assert_scan_hot_arrays(output)
+
+
+def test_zero_copy_scan_survives_polar_transform():
+    output = _scan_callback(
+        _make_scan([1.0, 2.0, 3.0]),
+        transformation=_make_transform(x=0.5, yaw=np.pi / 3),
+    ).get_output()
+    _assert_scan_hot_arrays(output)
+
+
+def test_zero_copy_scan_container_generated_arrays():
+    # Both the generated angles and the default max-range fill
+    data = LaserScanData(angle_min=0.0, angle_max=np.pi, angle_increment=np.pi / 4)
+    _assert_scan_hot_arrays(data)
+
+
+def test_zero_copy_cloud_raw_buffer():
+    output = _cloud_output(_make_cloud(CLOUD_POINTS, point_padding=4))
+    _assert_raw_cloud_buffer(output.data)
+
+
+def test_zero_copy_cloud_filtered_buffer():
+    # The rebuilt buffer feeds the same raw-buffer consumers as the original
+    output = _filtered(_make_cloud([(1.0, 0.0, 0.5), (2.0, 0.0, 9.0)]), max_z=1.0)
+    _assert_raw_cloud_buffer(output.data)
+
+
+def test_zero_copy_cloud_xyz():
+    _assert_cartesian_points(_cloud_output(_make_cloud(CLOUD_POINTS)).xyz)
+
+
+def test_zero_copy_cloud_xyz_from_float64_source():
+    # A float64 cloud decodes once into the float32 the bindings map
+    output = _cloud_output(_make_cloud(CLOUD_POINTS, np_type=np.float64))
+    _assert_cartesian_points(output.xyz)
+
+
+def test_zero_copy_cloud_xyz_survives_transform():
+    quarter_turn = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
+    output = _filtered(
+        _make_cloud(CLOUD_POINTS),
+        transformation=_tf((0.5, -1.0, 0.25), quarter_turn),
+    )
+    _assert_cartesian_points(output.xyz)
+
+
+def test_zero_copy_grid_obstacles():
+    callback = _fed_callback(
+        OccupancyGridCallback, "OccupancyGrid", _occupied_grid_at(2, 1)
+    )
+    _assert_cartesian_points(callback.get_output())
+
+
+def test_zero_copy_grid_obstacles_survive_transform():
+    quarter_turn = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
+    callback = _fed_callback(
+        OccupancyGridCallback, "OccupancyGrid", _occupied_grid_at(2, 1)
+    )
+    output = callback.get_output(
+        transformation=_tf((1.0, 2.0, 0.0), quarter_turn)
+    )
+    _assert_cartesian_points(output)
