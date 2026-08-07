@@ -3,8 +3,6 @@
 import os
 import time
 import json
-import yaml
-import toml
 import socket
 from copy import deepcopy
 from contextlib import contextmanager
@@ -40,6 +38,7 @@ from automatika_ros_sugar.srv import (
 from .action import Action
 from .event import Event, EventBlackboardEntry
 from ..io.callbacks import GenericCallback
+from ..config.base_attrs import explicit_fields
 from ..config.base_config import (
     BaseComponentConfig,
     ComponentRunType,
@@ -586,11 +585,20 @@ class BaseComponent(lifecycle.Node):
         if not isinstance(configs, List):
             configs = [configs]
         for config in configs:
-            # Add new config
-            self._algorithms_config[config.__class__.__name__] = config.asdict()
+            # Only the fields actually set, not a full snapshot: a snapshot
+            # cannot be told apart from the class defaults, so applying it
+            # would write defaults over anything the component set for itself
+            self._algorithms_config[config.__class__.__name__] = explicit_fields(
+                config
+            )
 
     def _configure_algorithm(self, algo_config: BaseAttrs) -> BaseAttrs:
         """Configure an algorithm from the user defined configuration classes
+
+        Applied in increasing order of precedence: whatever the caller passed
+        in, then the configuration set on the component in code, then the
+        configuration file. The file wins, so a deployment can retune an
+        algorithm without editing the code that launched it.
 
         :param algo_config: Algorithm base configuration class
         :type algo_config: BaseAttrs
@@ -598,11 +606,11 @@ class BaseComponent(lifecycle.Node):
         :rtype: BaseAttrs
         """
         algo_config_name = algo_config.__class__.__name__
-        if algo_config_name in self.algorithms_config.keys():
-            config_dict = self.algorithms_config[algo_config_name]
+        if config_dict := self.algorithms_config.get(algo_config_name):
             algo_config.from_dict(config_dict)
-        elif self._config_file:
-            # configure directly from file if available
+        if self._config_file:
+            # Overlaid on top rather than instead: `from_file` only writes the
+            # keys the file actually declares
             algo_config.from_file(
                 self._config_file,
                 nested_root_name=f"{self.node_name}.{algo_config_name.partition('Config')[0]}",
@@ -1090,30 +1098,6 @@ class BaseComponent(lifecycle.Node):
         self.config.from_file(
             config_file, nested_root_name=self.node_name, get_common=True
         )
-        # Update algorithms config from file
-        if self.algorithms_config:
-            # Load the file
-            ext: str = os.path.splitext(config_file)[1].lower()
-
-            with open(config_file, "r", encoding="utf-8") as f:
-                if ext in [".yaml", ".yml"]:
-                    raw_config: Dict[str, Any] = yaml.safe_load(f)
-                elif ext == ".json":
-                    raw_config = json.load(f)
-                elif ext == ".toml":
-                    raw_config = toml.load(f)
-                else:
-                    raise ValueError(f"Unsupported config format: {ext}")
-
-            for algo_name, algo_conf in self._algorithms_config.items():
-                config = raw_config
-                for key in [self.node_name, algo_name.partition("Config")[0]]:
-                    config = config.get(key, {})
-                if not config:
-                    continue
-                for item_key in algo_conf.keys():
-                    if hasattr(config, item_key):
-                        algo_conf[item_key] = getattr(config, item_key)
 
     def create_tf_listener(self, tf_config: TFListenerConfig) -> TFListener:
         """
