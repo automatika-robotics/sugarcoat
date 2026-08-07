@@ -19,10 +19,15 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         ws.onmessage = (event) => {
+            // NOTE: Resolve the target element by id at message time: a DOM swap
+            // (e.g. an htmx panel re-render on goal send) can replace the
+            // node while keeping its id — the connect-time `img` reference
+            // then points at a detached node and frames render into the void.
+            const el = document.getElementById(img.id) || img;
             try {
                 const data = JSON.parse(event.data);
                 if (data.payload) {
-                    img.src = "data:image/jpeg;base64," + data.payload;
+                    el.src = "data:image/jpeg;base64," + data.payload;
                     return;
                 }
             } catch {
@@ -33,7 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const bytes = new Uint8Array(event.data);
                 let binary = '';
                 bytes.forEach(b => binary += String.fromCharCode(b));
-                img.src = "data:image/jpeg;base64," + btoa(binary);
+                el.src = "data:image/jpeg;base64," + btoa(binary);
             }
         };
 
