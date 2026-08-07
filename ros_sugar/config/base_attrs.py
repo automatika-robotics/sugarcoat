@@ -13,7 +13,7 @@ from typing import (
 import functools
 from copy import deepcopy
 import numpy as np
-from attrs import asdict, define, fields_dict
+from attrs import asdict, define, fields, fields_dict, has
 from attrs import Attribute
 import yaml
 import toml
@@ -34,6 +34,93 @@ FUNC_NAME_MAP = {
 
 def skip_no_init(a: Attribute, _) -> bool:
     return a.init
+
+
+def _json_safe_value(_inst, _field, value: Any) -> Any:
+    """`attrs.asdict` value serializer turning numpy arrays into plain lists."""
+    return value.tolist() if isinstance(value, np.ndarray) else value
+
+
+def _equal_values(value: Any, other: Any) -> bool:
+    """Compare two serialized field values, tolerating numpy arrays.
+
+    A plain `==` on arrays returns an array rather than a bool, so comparing
+    configs field by field needs this.
+    """
+    if isinstance(value, np.ndarray) or isinstance(other, np.ndarray):
+        return np.array_equal(np.asarray(value), np.asarray(other))
+    return bool(value == other)
+
+
+def explicit_fields(config: Any) -> Dict:
+    """The fields of an attrs config that differ from its class defaults.
+
+    A full `asdict` cannot tell a value the caller chose from one that is
+    simply the class default. Anything consuming such a dict has to write
+    every key back, which reverts values its consumer set for itself. This
+    keeps only the fields that were actually changed, so the result reads as
+    "these are the overrides" rather than "this is the whole config".
+
+    Values are also made JSON-safe (numpy arrays become lists), since these
+    dicts get serialized to pass configuration to launched components.
+    `BaseAttrs.from_dict` converts them back on the way in.
+
+    Takes any attrs instance rather than a `BaseAttrs`: algorithm configs come
+    from whichever library implements the algorithm, and need not derive from
+    the base class in this package.
+
+    Note a field explicitly set to a value equal to its default is
+    indistinguishable from one never set, and is dropped. That is harmless for
+    a plain override, but means it cannot be used to defend a default against a
+    consumer that would otherwise fill the field in.
+
+    :param config: Any attrs class instance
+    :type config: Any
+    :return: Fields that differ from the defaults
+    :rtype: dict
+    """
+    try:
+        defaults = config.__class__()
+    except TypeError:
+        # Not default-constructible, so there is nothing to compare against
+        return asdict(config, value_serializer=_json_safe_value)
+    return _diff_fields(config, defaults)
+
+
+def _diff_fields(config: Any, defaults: Any) -> Dict:
+    """Fields of `config` that differ from the matching ones on `defaults`.
+
+    Descends into nested attrs instances so a single changed sub-field does
+    not drag its siblings' defaults along with it. The recursion tracks what
+    `BaseAttrs.from_dict` does: a nested attrs attribute is updated field by
+    field, so a partial dict is enough, while every other kind of value --
+    including a plain dict field or a list of configs -- is assigned whole and
+    so has to be stored whole.
+    """
+    current_serialized = asdict(config, value_serializer=_json_safe_value)
+    defaults_serialized = asdict(defaults, value_serializer=_json_safe_value)
+
+    diff = {}
+    for attribute in fields(config.__class__):
+        name = attribute.name
+        if name not in current_serialized:
+            continue
+        value = getattr(config, name)
+        default = getattr(defaults, name, None)
+        # Compare the instances, not the serialized dicts, to decide whether
+        # this is a nested config: a field can serialize to a dict without
+        # from_dict treating it as one
+        if (
+            has(value.__class__)
+            and has(default.__class__)
+            and value.__class__ is default.__class__
+        ):
+            if nested := _diff_fields(value, default):
+                diff[name] = nested
+            continue
+        if not _equal_values(current_serialized[name], defaults_serialized.get(name)):
+            diff[name] = current_serialized[name]
+    return diff
 
 
 @define
@@ -159,6 +246,16 @@ class BaseAttrs:
         """
         return self.asdict()
 
+    def asdict_explicit(self) -> Dict:
+        """Convert to dict, keeping only what differs from the class defaults.
+
+        See `explicit_fields`, which this defers to.
+
+        :return: Fields that differ from the defaults
+        :rtype: dict
+        """
+        return explicit_fields(self)
+
     def __check_value_against_attr_type(
         self, key: str, value: Any, attribute_to_set: Any, attribute_type: type
     ):
@@ -193,8 +290,10 @@ class BaseAttrs:
                         f"Trying to set a Literal attribute with incompatible value. Attribute {key} expecting '{_types}' got '{value}'"
                     )
         elif isinstance(value, List) and attribute_type is np.ndarray:
-            # Turn list into numpy array
-            value = np.array(value)
+            # Turn list into numpy array, keeping the dtype the attribute
+            # already carries.
+            dtype = getattr(attribute_to_set, "dtype", None)
+            value = np.array(value, dtype=dtype) if dtype else np.array(value)
             # NOTE: Silent failures can happen if someone passes wrong
             # datatypes in YAML/TOML/JSON config files for non-generic /
             # non-Union / non-Literal types
