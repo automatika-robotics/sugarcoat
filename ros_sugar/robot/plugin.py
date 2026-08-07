@@ -320,6 +320,25 @@ class Plugin:
         # No-op by default — see the docstring.
         pass
 
+    # host-side teardown hook
+    def on_detached(self, node: Any, bus: FeedbackBus) -> None:
+        """Optional host-side teardown hook — override in subclasses.
+
+        `RobotPluginHost` calls this once on close, **before** the transports
+        are shut, so the plugin can still talk to the device. Override it to
+        leave hardware in a safe state: a lidar has to be told to stop its
+        motor, which keeps spinning otherwise, and closing the port does not
+        do it.
+
+        Anything raised here is logged and does not stop teardown.
+
+        :param node: rclpy node owned by the launcher (may be ``None`` in
+            standalone/test contexts).
+        :param bus: the feedback bus still attached to the plugin.
+        """
+        # No-op by default — see the docstring.
+        pass
+
     # consumer API (used by components)
     def resolve_feedback(
         self, topic_name: str, msg_type_name: str
@@ -628,6 +647,14 @@ class RobotPluginHost:
         if not self._active:
             return
         self._stop_keep_alive()
+        # Before the transports go, so the plugin can still reach the device to
+        # leave it in a safe state
+        try:
+            self.plugin.on_detached(self.node, self.bus)
+        except Exception as e:  # pragma: no cover - defensive
+            get_logger(LOGGER_NAME).error(
+                f"Error in on_detached for plugin '{self.plugin.id}': {e}"
+            )
         for handle in self._transport_handles:
             handle.unsubscribe()
         self._transport_handles.clear()
