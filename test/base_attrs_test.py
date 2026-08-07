@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from attrs import define, field
 
-from ros_sugar.config.base_attrs import BaseAttrs
+from ros_sugar.config.base_attrs import BaseAttrs, explicit_fields
 from ros_sugar.config import base_validators
 
 
@@ -261,3 +261,127 @@ def test_from_file_json_happy_path(tmp_path):
     assert ok is True
     assert cfg.rate == 77.0
     assert cfg.name == "json-cfg"
+
+
+# ---- explicit_fields / asdict_explicit ------------------------------------
+
+
+def test_explicit_fields_keeps_only_what_differs_from_the_defaults():
+    """A full asdict cannot tell a caller's choice from a class default, so
+    writing it back reverts whatever its consumer set for itself."""
+    assert explicit_fields(SampleCfg()) == {}
+    assert explicit_fields(SampleCfg(rate=42.0)) == {"rate": 42.0}
+
+
+def test_explicit_fields_is_json_safe():
+    """These dicts are serialized to configure launched components, and a
+    numpy field used to make json.dumps raise."""
+    stored = explicit_fields(SampleCfg(array=np.array([1.0, 2.0])))
+    assert stored == {"array": [1.0, 2.0]}
+    json.dumps(stored)
+
+
+def test_explicit_fields_does_not_flag_an_untouched_array():
+    """np.ndarray == np.ndarray is an array, not a bool, so the default
+    comparison needs to handle it or every array field looks changed."""
+    assert "array" not in explicit_fields(SampleCfg())
+
+
+def test_explicit_fields_survives_a_json_round_trip():
+    stored = explicit_fields(SampleCfg(rate=42.0, array=np.array([1.0, 2.0])))
+    cfg = SampleCfg()
+    cfg.from_dict(json.loads(json.dumps(stored)))
+    assert cfg.rate == 42.0
+    assert isinstance(cfg.array, np.ndarray)
+    assert cfg.array.tolist() == [1.0, 2.0]
+
+
+def test_explicit_fields_does_not_overwrite_values_set_by_the_consumer():
+    """The bug this exists for: a partial dict must leave alone the fields a
+    consumer filled in for itself."""
+    stored = explicit_fields(SampleCfg(rate=42.0))
+
+    cfg = SampleCfg(array=np.array([9.0, 9.0]))  # set by the consumer
+    cfg.from_dict(stored)
+
+    assert cfg.rate == 42.0, "the caller's override must still apply"
+    assert cfg.array.tolist() == [9.0, 9.0], "consumer's value was reverted"
+
+
+def test_explicit_fields_accepts_any_attrs_class():
+    """Algorithm configs come from whichever library implements the algorithm
+    and need not derive from this package's BaseAttrs."""
+
+    @define(kw_only=True)
+    class Foreign:
+        value: int = field(default=3)
+
+    assert explicit_fields(Foreign()) == {}
+    assert explicit_fields(Foreign(value=7)) == {"value": 7}
+
+
+def test_explicit_fields_falls_back_when_not_default_constructible():
+    @define(kw_only=True)
+    class NeedsArgs:
+        required: int = field()
+
+    assert explicit_fields(NeedsArgs(required=5)) == {"required": 5}
+
+
+def test_asdict_explicit_method_matches_the_helper():
+    cfg = SampleCfg(rate=42.0)
+    assert cfg.asdict_explicit() == explicit_fields(cfg)
+
+
+def test_from_dict_preserves_the_ndarray_dtype():
+    """JSON turns a float32 array into Python floats; reading them back
+    without a dtype silently widens the field to float64."""
+
+    @define(kw_only=True)
+    class Float32Cfg(BaseAttrs):
+        array: np.ndarray = field(default=np.zeros(3, dtype=np.float32))
+
+    cfg = Float32Cfg()
+    cfg.from_dict({"array": [0.5, 0.0, 0.9]})
+    assert cfg.array.dtype == np.float32
+
+
+def test_explicit_fields_descends_into_nested_configs():
+    """One changed sub-field must not drag its siblings' defaults with it:
+    from_dict recurses into nested attrs, so a full nested dict would write
+    those defaults back over whatever the consumer set."""
+    cfg = SampleCfg()
+    cfg.nested.count = 7
+
+    assert explicit_fields(cfg) == {"nested": {"count": 7}}
+
+
+def test_explicit_fields_drops_an_untouched_nested_config():
+    assert "nested" not in explicit_fields(SampleCfg(rate=1.0))
+
+
+def test_nested_diff_does_not_overwrite_a_consumer_value():
+    cfg = SampleCfg()
+    cfg.nested.count = 7
+    stored = explicit_fields(cfg)
+
+    target = SampleCfg()
+    target.nested.label = "set-by-consumer"
+    target.from_dict(stored)
+
+    assert target.nested.count == 7, "the caller's override must still apply"
+    assert target.nested.label == "set-by-consumer", "nested value was reverted"
+
+
+def test_explicit_fields_keeps_a_plain_dict_field_whole():
+    """from_dict assigns a non-attrs dict wholesale, so diffing inside one
+    would silently drop the keys that happened to match the default."""
+
+    @define(kw_only=True)
+    class WithPlainDict(BaseAttrs):
+        mapping: dict = field(factory=lambda: {"a": 1, "b": 2})
+
+    cfg = WithPlainDict()
+    cfg.mapping = {"a": 5, "b": 2}
+
+    assert explicit_fields(cfg) == {"mapping": {"a": 5, "b": 2}}
