@@ -1709,52 +1709,6 @@ class BaseComponent(lifecycle.Node):
 
         if self._plugins:
             self.launch_cmd_args = ["--plugins", self._plugins_json]
-            # Emitted alongside for one release: an executable built against an
-            # older ros_sugar drops the unknown --plugins arg silently (the
-            # parser uses parse_known_args), which would demote every plugin
-            # topic to a plain ROS topic with no warning.
-            self.launch_cmd_args = ["--plugins", self._plugins_json]
-
-    @property
-    def _plugins_json(self) -> str:
-        """Getter of every attached plugin's spec + the shared bus endpoint.
-
-        Carries the plugins across the multiprocess launch boundary: each
-        component subprocess rebuilds CLIENT plugins from these specs and
-        connects them to the HOST feedback bus at ``bus_endpoint``.
-
-        :return: JSON ``{"plugins": [<spec>, ...], "bus_endpoint": <name>}``
-        :rtype: str
-        """
-        if not self._plugins:
-            return "{}"
-        # Every plugin shares one bus, so the endpoint is taken once
-        endpoint = None
-        for plugin in self._plugins.values():
-            if plugin.bus is not None:
-                endpoint = plugin.bus.endpoint
-                break
-        return json.dumps({
-            "plugins": [plugin.to_spec() for plugin in self._plugins.values()],
-            "bus_endpoint": endpoint,
-        })
-
-    @_plugins_json.setter
-    def _plugins_json(self, value: Union[str, bytes]):
-        """Setter that rebuilds CLIENT plugins from serialized specs.
-
-        :param value: JSON produced by the :attr:`_plugins_json` getter
-        :type value: Union[str, bytes]
-        """
-        from ..robot.plugin import Plugin
-
-        data = json.loads(value)
-        self._plugins = {}
-        if not data:
-            return
-        endpoint = data.get("bus_endpoint")
-        for spec in data.get("plugins", []):
-            self.add_plugin(Plugin.from_spec(spec, bus_endpoint=endpoint))
 
     @property
     def _plugins_json(self) -> str:
