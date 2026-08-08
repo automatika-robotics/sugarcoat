@@ -142,7 +142,14 @@ class Plugin:
             # reset the registries to their base defaults.
             if not hasattr(self, "_init_kwargs"):
                 explicit_id = kw.pop("id", None)
-                explicit_frame = kw.pop("frame_id", None)
+                # Only a sensor has a frame of its own. Leaving the kwarg in
+                # place for anything else lets the wrapped __init__ raise
+                # Python's own unexpected-keyword TypeError
+                explicit_frame = (
+                    kw.pop("frame_id", None)
+                    if isinstance(self, SensorPlugin)
+                    else None
+                )
                 try:
                     bound = sig.bind(self, *args, **kw)
                     bound.apply_defaults()
