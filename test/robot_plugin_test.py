@@ -1185,6 +1185,115 @@ def test_event_on_plugin_topic_fires_from_feedback_bus(rclpy_context):
         component.destroy_node()
 
 
+def test_event_on_a_sensor_topic_binds_to_that_sensor(rclpy_context):
+    """Regression: the event path resolved against the robot plugin whatever
+    the topic named, so a sensor's event fired on the robot's telemetry."""
+    from ros_sugar.core.action import Action
+    from ros_sugar.core.component import BaseComponent
+    from ros_sugar.core.event import Event
+
+    robot_port, cam_port = _free_port(), _free_port()
+    robot = MockPlugin(state_port=robot_port, cmd_port=_free_port(), id="lite3")
+    camera = MockUdpSensor(state_port=cam_port, id="front_cam")
+    robot._bind_identity()
+    camera._bind_identity()
+
+    bus = InProcessFeedbackBus()
+    bus.start()
+    hosts = [
+        RobotPluginHost(p, node=None, bus=bus, owns_bus=False) for p in (robot, camera)
+    ]
+    for host in hosts:
+        host.open()
+
+    topic = Topic(name="cam_state", msg_type="Int32", use_plugin=camera.id)
+    component = BaseComponent(component_name="sensor_event", inputs=[topic])
+    component.rclpy_init_node()
+    component.add_plugin(robot)
+    component.add_plugin(camera)
+    try:
+        component._use_robot_plugin()
+        component._add_event_action_pair(
+            Event(topic.msg.data > 10), Action(method=lambda: None)
+        )
+        component._turn_on_events_management()
+
+        # Only the robot transmits. Resolving against the robot plugin would
+        # deliver its telemetry to the camera's event.
+        tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        tx.sendto(b"55", ("127.0.0.1", robot_port))
+        time.sleep(0.5)
+        assert component._events_topics_blackboard.get("cam_state") is None, (
+            "the camera's event received the robot's telemetry"
+        )
+
+        # The camera's own data does reach it
+        tx.sendto(b"22", ("127.0.0.1", cam_port))
+        deadline = time.time() + 2.0
+        while (
+            "cam_state" not in component._events_topics_blackboard
+            and time.time() < deadline
+        ):
+            time.sleep(0.02)
+        tx.close()
+
+        entry = component._events_topics_blackboard.get("cam_state")
+        assert entry is not None, "the camera's feedback never reached its event"
+        assert entry.msg.data == 22
+    finally:
+        for host in hosts:
+            host.close()
+        bus.close()
+        component.destroy_node()
+
+
+def test_event_on_a_sensor_topic_binds_with_no_robot_plugin(rclpy_context):
+    """A sensor-only recipe has no robot plugin, which used to mean the event
+    path returned early and wired up nothing at all -- silently."""
+    from ros_sugar.core.action import Action
+    from ros_sugar.core.component import BaseComponent
+    from ros_sugar.core.event import Event
+
+    cam_port = _free_port()
+    camera = MockUdpSensor(state_port=cam_port, id="front_cam")
+    camera._bind_identity()
+
+    bus = InProcessFeedbackBus()
+    bus.start()
+    host = RobotPluginHost(camera, node=None, bus=bus, owns_bus=False)
+    host.open()
+
+    topic = Topic(name="cam_state", msg_type="Int32", use_plugin=camera.id)
+    component = BaseComponent(component_name="sensor_only_event", inputs=[topic])
+    component.rclpy_init_node()
+    component.add_plugin(camera)
+    try:
+        assert component._robot_plugin is None, "no robot plugin in this recipe"
+        component._use_robot_plugin()
+        component._add_event_action_pair(
+            Event(topic.msg.data > 10), Action(method=lambda: None)
+        )
+        component._turn_on_events_management()
+
+        tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        tx.sendto(b"22", ("127.0.0.1", cam_port))
+        deadline = time.time() + 2.0
+        while (
+            "cam_state" not in component._events_topics_blackboard
+            and time.time() < deadline
+        ):
+            time.sleep(0.02)
+        tx.close()
+
+        entry = component._events_topics_blackboard.get("cam_state")
+        assert entry is not None, "sensor event got no listeners at all"
+        assert entry.msg.data == 22
+    finally:
+        host.close()
+        bus.close()
+        component.destroy_node()
+
+
 # ---------------------------------------------------------------------------
 # plugin-supplied robot description
 # ---------------------------------------------------------------------------

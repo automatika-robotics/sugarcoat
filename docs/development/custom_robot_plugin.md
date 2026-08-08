@@ -137,13 +137,13 @@ knobs are part of its identity — declared as class attributes rather than
 constructor parameters. Recipe authors normally write `MyRobotPlugin()` and
 nothing more.
 
-Two keyword arguments are **reserved by the framework** and always available,
-whether or not your `__init__` declares them:
+Two keyword arguments are **reserved by the framework**, available whether or
+not your `__init__` declares them:
 
-| Argument | Purpose |
-|:--|:--|
-| `id` | Identity within a recipe. Defaults to a slug of the metadata name. Needed only when two plugins of the same kind are attached. |
-| `frame_id` | Name of the frame this hardware's data is in. Sensors default to `<id>_frame`. |
+| Argument | Available on | Purpose |
+|:--|:--|:--|
+| `id` | every plugin | Identity within a recipe. Defaults to a slug of the metadata name. Needed only when two plugins of the same kind are attached. |
+| `frame_id` | sensor plugins | Name of the frame this sensor's data is in. Defaults to `<id>_frame`. A robot names the frame attached to its body with `base_frame` instead. |
 
 ```python
 class MyRobotPlugin(RobotPlugin):
