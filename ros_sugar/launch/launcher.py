@@ -712,9 +712,9 @@ class Launcher:
             named = ", ".join(f"'{frame}'" for frame in sorted(replaced))
             logger.warning(
                 f"The recipe set the robot body frame to {named}, but plugin "
-                f"'{plugin_name}' reports '{base_frame}'. Using the plugin frame name."
-                "To publish under a different name, set it on the plugin "
-                "itself before bringup."
+                f"'{plugin_name}' reports '{base_frame}'. Using the plugin's "
+                "frame name. To publish under a different name, set it on the "
+                "plugin itself before bringup."
             )
         else:
             logger.info(

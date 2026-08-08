@@ -1179,7 +1179,7 @@ class OccupancyGridCallback(GenericCallback):
             np.array(np.where(grid_data != 0), dtype=np.float32) + 0.5
         ) * self.msg.info.resolution
 
-        # create a flaot32 rotation matrix
+        # create a float32 rotation matrix
         rotation_matrix = np.array(
             [
                 [np.cos(origin_yaw), -np.sin(origin_yaw)],
@@ -1203,7 +1203,9 @@ class OccupancyGridCallback(GenericCallback):
             trans = transform.transform.translation
             quat = transform.transform.rotation
             # A 2D request has already dropped z, so it can only carry the
-            # planar block of the rotation
+            # planar block of the rotation. That block is the whole rotation
+            # only for a yaw-only transform; roll or pitch would move points
+            # out of the plane, which a 2D map cannot represent anyway
             goal_rotation = _rotation_matrix_from_quaternion([
                 quat.x,
                 quat.y,
