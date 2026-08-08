@@ -143,6 +143,7 @@ class Condition:
         topic_name: Optional[str] = None,
         topic_msg_type: Optional[str] = None,
         topic_qos_config: Optional[Dict] = None,
+        topic_use_plugin: Union[bool, str] = False,
         attribute_path: Optional[List[str]] = None,
         operator_func: Optional[Callable] = None,
         ref_value: Any = None,
@@ -156,6 +157,9 @@ class Condition:
         self.topic_name = topic_name
         self.topic_msg_type = topic_msg_type
         self.topic_qos_config = topic_qos_config
+        # Carried so an event on a plugin-served topic resolves against the same
+        # plugin its input did
+        self.topic_use_plugin = topic_use_plugin
         self.attribute_path = attribute_path if attribute_path is not None else []
         self.operator_func = operator_func
         self.ref_value = ref_value
@@ -194,6 +198,7 @@ class Condition:
                 "topic_name": self.topic_name,
                 "topic_msg_type": self.topic_msg_type,
                 "topic_qos_config": self.topic_qos_config,
+                "topic_use_plugin": self.topic_use_plugin,
                 "attribute_path": self.attribute_path,
                 "operator": self._serialized_operator(),
                 "ref_value": self.ref_value,
@@ -220,6 +225,7 @@ class Condition:
                 topic_name=data.get("topic_name"),
                 topic_msg_type=data.get("topic_msg_type"),
                 topic_qos_config=data.get("topic_qos_config"),
+                topic_use_plugin=data.get("topic_use_plugin", False),
                 attribute_path=data.get("attribute_path", []),
                 ref_value=data.get("ref_value", None),
                 operator_func=cls._deserialized_operator(data.get("operator", "none")),
@@ -261,6 +267,7 @@ class Condition:
             self.topic_name: {
                 "msg_type": self.topic_msg_type,
                 "qos_profile": self.topic_qos_config,
+                "use_plugin": self.topic_use_plugin,
             }
         }
 
@@ -316,6 +323,7 @@ class Condition:
                     topic_name=other.name,
                     topic_msg_type=other.msg_type.__name__,
                     topic_qos_config=other.qos_profile.to_dict(),
+                    topic_use_plugin=other.use_plugin,
                     attribute_path=[],
                 )
                 return Condition(
@@ -344,6 +352,7 @@ class Condition:
                     topic_name=other.name,
                     topic_msg_type=other.msg_type.__name__,
                     topic_qos_config=other.qos_profile.to_dict(),
+                    topic_use_plugin=other.use_plugin,
                     attribute_path=[],
                 )
                 return Condition(
@@ -620,6 +629,7 @@ class MsgConditionBuilder:
             topic_name=self._topic.name,
             topic_msg_type=self._topic.msg_type.__name__,
             topic_qos_config=self._topic.qos_profile.to_dict(),
+            topic_use_plugin=self._topic.use_plugin,
             attribute_path=self._base,
             operator_func=op,
             ref_value=value,
