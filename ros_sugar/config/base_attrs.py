@@ -103,7 +103,10 @@ def _diff_fields(config: Any, defaults: Any) -> Dict:
     diff = {}
     for attribute in fields(config.__class__):
         name = attribute.name
-        if name not in current_serialized:
+        # `from_dict` only ever writes back init fields, so a computed one that
+        # happens to differ from its default would be carried and then silently
+        # dropped on the way in
+        if not attribute.init or name not in current_serialized:
             continue
         value = getattr(config, name)
         default = getattr(defaults, name, None)
