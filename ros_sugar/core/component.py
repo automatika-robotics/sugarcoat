@@ -285,17 +285,21 @@ class BaseComponent(lifecycle.Node):
         return outputs
 
     def _warn_orphaned_plugin_topics(self):
-        """Emit a warning for any ``use_plugin`` flagged topic when no robot
-        plugin is attached."""
+        """Emit a warning for any ``use_plugin`` topic with no plugin to serve it.
+
+        A recipe cannot reach here: `Launcher._validate_plugin_references`
+        raises at bringup, where both the components and the plugins are known.
+        This covers a component run on its own, which is already up by the time
+        it finds out and can only carry on as plain ROS.
+        """
         in_topics = [cb.input_topic for cb in self.callbacks.values()]
         out_topics = [pub.output_topic for pub in self.publishers_dict.values()]
         orphaned = [t.name for t in in_topics + out_topics if t.use_plugin]
         if orphaned:
             self.get_logger().warning(
                 f"Component '{self.node_name}' has {len(orphaned)} topic(s) "
-                f"flagged use_plugin=True but no robot plugin "
-                f"is attached to the launcher: {orphaned}. Those topics will "
-                "behave as ordinary ROS topics."
+                f"asking for a plugin, but none is attached: {orphaned}. "
+                "Those topics will behave as ordinary ROS topics."
             )
 
     @property
@@ -329,11 +333,9 @@ class BaseComponent(lifecycle.Node):
         :param plugin: The plugin instance to attach
         :type plugin: Plugin
         """
-        from ..robot.plugin import _slug
-
-        # An unattached plugin has no id yet; key it by its name so it is still
-        # addressable, without binding an identity the launcher hasn't assigned
-        self._plugins[plugin.id or _slug(plugin.metadata.name)] = plugin
+        # `id` falls back to a slug of the plugin's name, so it is addressable
+        # whether or not the recipe named it
+        self._plugins[plugin.id] = plugin
 
     def _plugin_for_topic(self, topic) -> Optional[Any]:
         """Resolve which attached plugin serves a topic.
@@ -821,9 +823,10 @@ class BaseComponent(lifecycle.Node):
         # Init any global node variables
         self.init_variables()
 
-        # Update the component topics using the robot plugin if provided.
-        # When no plugin is attached, topics that opted in with use_plugin=True
-        # issue a warning and keep working
+        # Adapt the component's topics to whichever plugins are attached. A
+        # recipe with none never gets here -- the launcher fails at bringup --
+        # so this warns and keeps working for a standalone component, which is
+        # already running by the time it can tell.
         if self._plugins:
             self._use_robot_plugin()
         else:
@@ -1347,15 +1350,22 @@ class BaseComponent(lifecycle.Node):
         """
         from ..robot.plugin import AmbiguousPluginEntryError
 
-        plugin = self._robot_plugin
+        # Whichever plugin the topic names -- not the robot plugin. A sensor's
+        # event would otherwise resolve against the robot and fire on its
+        # telemetry, or find nothing at all in a sensor-only recipe.
+        plugin = self._plugin_for_topic(topic_obj)
         if plugin is None:
+            self.get_logger().error(
+                f"Events on '{topic_name}' will never trigger: no attached "
+                f"plugin serves it (use_plugin={topic_obj.use_plugin!r})."
+            )
             return
         try:
             feedback = plugin.resolve_feedback(topic_name, topic_obj.msg_type.__name__)
         except (TypeError, AmbiguousPluginEntryError) as e:
             self.get_logger().error(
                 f"Events on '{topic_name}' will never trigger: the topic could not "
-                f"be bound to the robot plugin: {e}"
+                f"be bound to plugin '{plugin.id}': {e}"
             )
             return
         if feedback is None:
@@ -1725,9 +1735,14 @@ class BaseComponent(lifecycle.Node):
         """
         if not self._plugins:
             return "{}"
-        # Every plugin shares one bus, so any of them carries the endpoint
-        bus = next(iter(self._plugins.values())).bus
-        endpoint = bus.endpoint if bus is not None else None
+        # Every plugin shares one bus, so the first one carrying it answers for
+        # all of them -- looked up rather than taken from an arbitrary plugin,
+        # which may not have been given the bus yet
+        endpoint = None
+        for plugin in self._plugins.values():
+            if plugin.bus is not None:
+                endpoint = plugin.bus.endpoint
+                break
         return json.dumps({
             "plugins": [plugin.to_spec() for plugin in self._plugins.values()],
             "bus_endpoint": endpoint,
@@ -1748,8 +1763,7 @@ class BaseComponent(lifecycle.Node):
             return
         endpoint = data.get("bus_endpoint")
         for spec in data.get("plugins", []):
-            plugin = Plugin.from_spec(spec, bus_endpoint=endpoint)
-            self._plugins[plugin.id] = plugin
+            self.add_plugin(Plugin.from_spec(spec, bus_endpoint=endpoint))
 
     @property
     def _events_json(self) -> Union[str, bytes]:
