@@ -14,8 +14,14 @@ from ..io.supported_types import SupportedType
 from .transports import Transport
 
 
-def _command_channel(key: str) -> str:
-    """Bus channel for a command routed through the plugin HOST."""
+def _command_channel(key: str, owner_id: str = "") -> str:
+    """Bus channel for a command routed through the plugin HOST.
+
+    Namespaced by the owning plugin's id once attached; an unattached plugin
+    keeps the bare form.
+    """
+    if owner_id:
+        return f"plugin/{owner_id}/command/{key}"
     return f"robot/command/{key}"
 
 
@@ -46,11 +52,13 @@ class RobotCommand(BaseAttrs):
     encoder: Callable[[Any], Any] = field()
     msg_type: Optional[Type[SupportedType]] = field(default=None)
     description: str = field(default="")
+    #: Id of the owning plugin, stamped by ``Plugin._bind_identity``.
+    owner_id: str = field(default="", init=False, repr=False)
 
     @property
     def channel(self) -> str:
         """Command bus channel, used when ``transport.route_via_host`` is set."""
-        return _command_channel(self.key)
+        return _command_channel(self.key, self.owner_id)
 
     def spec(self) -> "CommandSpec":
         """Return the introspection spec for this command."""

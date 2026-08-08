@@ -293,6 +293,7 @@ class Event:
                 topic_name=event_condition.name,
                 topic_msg_type=event_condition.msg_type.__name__,
                 topic_qos_config=event_condition.qos_profile.to_dict(),
+                topic_use_plugin=event_condition.use_plugin,
                 attribute_path=[],
                 operator_func=None,
                 ref_value=None,
@@ -516,7 +517,7 @@ class Event:
                 time.sleep(self._keep_event_delay)
 
         except Exception as e:
-            logger.error(f"Error executing actions for event '{self.name}': {e}")
+            logger.error(f"Error executing actions for event '{self}': {e}")
         finally:
             # Reset the flag only after work + delay are done
             self.under_processing = False

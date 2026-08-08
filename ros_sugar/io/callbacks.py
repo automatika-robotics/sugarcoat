@@ -9,10 +9,10 @@ import base64
 
 import cv2
 import numpy as np
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, PoseStamped
 from jinja2.environment import Template
-from nav_msgs.msg import OccupancyGrid, Odometry
-from sensor_msgs.msg import Imu, JointState, LaserScan, NavSatFix
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from sensor_msgs.msg import Imu, JointState, LaserScan, NavSatFix, Range
 from std_msgs.msg import Header
 from rclpy.logging import get_logger
 from rclpy.subscription import Subscription
@@ -23,6 +23,8 @@ from .datatypes import (
     LaserScanData,
     PointCloudData,
     _get_laserscan_transformed_polar_coordinates,
+    _quaternion_multiply,
+    _rotation_matrix_from_quaternion,
 )
 
 
@@ -712,6 +714,35 @@ class NavSatFixCallback(GenericCallback):
         return {"data": output.tolist() if output is not None else None}
 
 
+class RangeCallback(GenericCallback):
+    """
+    sensor_msgs/Range callback.
+
+    Returns the measured distance in metres (the message's ``range`` field).
+    """
+
+    def _get_output(self, **_) -> Optional[float]:
+        """
+        Gets the measured range as a float.
+
+        :returns:   distance in metres
+        :rtype:     Optional[float]
+        """
+        if not self.msg:
+            return None
+
+        return float(self.msg.range)
+
+    def _get_ui_content(self, **_) -> Dict:
+        """
+        Utility method to get UI compatible content.
+        To be used with external callbacks in UI Node
+        :returns:   Topic content
+        :rtype:     Any
+        """
+        return {"data": self.get_output()}
+
+
 class PointStampedCallback(GenericCallback):
     """
     Ros Pose Callback Handler to get the robot state in 2D
@@ -925,15 +956,99 @@ class PoseArrayCallback(GenericCallback):
 
 class PathCallback(GenericCallback):
     """
-    Ros PoseStamped Callback Handler to get the robot state in 2D
+    Ros Path Callback Handler to get a navigation path
     """
 
     def __init__(
         self,
         input_topic,
-        node_name: str = '',
+        node_name: str = "",
+        transformation: Optional[TransformStamped] = None,
     ) -> None:
         super().__init__(input_topic, node_name)
+        self._transformation = transformation
+
+    def _get_output(
+        self,
+        transformation: Optional[TransformStamped] = None,
+    ) -> Optional[Path]:
+        """
+        Gets the path by applying the transformation if given.
+
+        :param transformation: Transform to the goal frame, overriding the one
+            set on the callback
+        :type transformation: Optional[TransformStamped]
+
+        :returns:   Topic content
+        :rtype:     Optional[Path]
+        """
+        if not self.msg:
+            return None
+        transform = transformation or self.transformation
+        if not transform or transform.header.frame_id == self.msg.header.frame_id:
+            # Nothing asked for, or the path is already in the goal frame and
+            # rebuilding every pose would be an expensive no-op
+            return self.msg
+        return self._transform(self.msg, transform)
+
+    def _transform(self, msg: Path, transform: TransformStamped) -> Path:
+        """
+        Applies a transform to every pose of a given Path message
+
+        A path can carry hundreds of poses, so the positions are transformed
+        as one array rather than pose by pose. Orientations are composed with
+        the transform's rotation so headings stay consistent with positions.
+
+        :param msg: Path message in source frame
+        :type msg: Path
+        :param transform: Path transform from current to goal frame
+        :type transform: TransformStamped
+
+        :return: Path in goal frame
+        :rtype: Path
+        """
+        trans = transform.transform.translation
+        quat = transform.transform.rotation
+        rotation = [quat.x, quat.y, quat.z, quat.w]
+
+        positions = (
+            np.array(
+                [
+                    [pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]
+                    for pose in msg.poses
+                ],
+                dtype=np.float32,
+            ).reshape(-1, 3)
+            @ _rotation_matrix_from_quaternion(rotation).T
+            + np.array([trans.x, trans.y, trans.z], dtype=np.float32)
+        )
+
+        transformed = Path()
+        transformed.header.stamp = msg.header.stamp
+        transformed.header.frame_id = transform.header.frame_id
+        for pose_in, position in zip(msg.poses, positions):
+            pose_out = PoseStamped()
+            pose_out.header.stamp = pose_in.header.stamp
+            pose_out.header.frame_id = transform.header.frame_id
+            pose_out.pose.position.x = float(position[0])
+            pose_out.pose.position.y = float(position[1])
+            pose_out.pose.position.z = float(position[2])
+            orientation = _quaternion_multiply(
+                rotation,
+                [
+                    pose_in.pose.orientation.x,
+                    pose_in.pose.orientation.y,
+                    pose_in.pose.orientation.z,
+                    pose_in.pose.orientation.w,
+                ],
+            )
+            pose_out.pose.orientation.x = float(orientation[0])
+            pose_out.pose.orientation.y = float(orientation[1])
+            pose_out.pose.orientation.z = float(orientation[2])
+            pose_out.pose.orientation.w = float(orientation[3])
+            transformed.poses.append(pose_out)
+
+        return transformed
 
     def _get_ui_content(self, **_) -> Dict:
         """
@@ -987,20 +1102,39 @@ class OccupancyGridCallback(GenericCallback):
         node_name: str = '',
         to_numpy: bool = True,
         twoD_to_threeD_conversion_height: float = 0.01,
+        transformation: Optional[TransformStamped] = None,
     ) -> None:
         super().__init__(input_topic, node_name)
         self.__to_numpy = to_numpy
         self.__twoD_to_threeD_conversion_height = twoD_to_threeD_conversion_height
+        self._transformation = transformation
 
     def _get_output(
         self,
         get_metadata: bool = False,
         get_obstacles: bool = True,
         get_three_d: bool = True,
-        **_,
+        transformation: Optional[TransformStamped] = None,
     ) -> Optional[Union[OccupancyGrid, np.ndarray, Dict]]:
         """
         Gets the OccupancyGrid message raw or as a numpy array
+
+        The grid's own `info.origin` is always applied to the obstacle
+        coordinates: cell indices mean nothing without it, and it is what
+        places them in the frame the message declares. `transformation` is
+        applied on top of that, to carry them into a different frame.
+
+        :param get_metadata: Return the grid metadata instead of its content.
+            The origin it reports is the message's own, never transformed
+        :type get_metadata: bool
+        :param get_obstacles: Return the occupied cells' coordinates rather
+            than the raw 2D grid. Only these are transformed
+        :type get_obstacles: bool
+        :param get_three_d: Pad the coordinates to 3D at a fixed height
+        :type get_three_d: bool
+        :param transformation: Transform to the goal frame, overriding the one
+            set on the callback
+        :type transformation: Optional[TransformStamped]
 
         :returns:   Map as an OccupancyGrid or numpy array
         :rtype:     Optional[Union[OccupancyGrid, np.ndarray]]
@@ -1045,26 +1179,47 @@ class OccupancyGridCallback(GenericCallback):
             np.array(np.where(grid_data != 0), dtype=np.float32) + 0.5
         ) * self.msg.info.resolution
 
-        rotation_matrix = np.array([
-            [np.cos(origin_yaw), -np.sin(origin_yaw)],
-            [np.sin(origin_yaw), np.cos(origin_yaw)],
-        ])
-
-        transformed_coordinates = np.array([origin_x, origin_y]) + np.transpose(
-            rotation_matrix @ occupied_coordinates
+        # create a float32 rotation matrix
+        rotation_matrix = np.array(
+            [
+                [np.cos(origin_yaw), -np.sin(origin_yaw)],
+                [np.sin(origin_yaw), np.cos(origin_yaw)],
+            ],
+            dtype=np.float32,
         )
 
-        if not get_three_d:
-            return transformed_coordinates
+        # Build the output C-contiguous
+        num_points = occupied_coordinates.shape[1]
+        num_coordinates = 2 if not get_three_d else 3
+        coordinates = np.empty((num_points, num_coordinates), dtype=np.float32)
+        coordinates[:, :2] = (rotation_matrix @ occupied_coordinates).T
+        coordinates[:, 0] += origin_x
+        coordinates[:, 1] += origin_y
+        if get_three_d:
+            coordinates[:, 2] = self.__twoD_to_threeD_conversion_height
 
-        threeD_coordinates = np.pad(
-            transformed_coordinates,
-            ((0, 0), (0, 1)),
-            mode="constant",
-            constant_values=self.__twoD_to_threeD_conversion_height,
-        )
+        transform = transformation or self.transformation
+        if transform and transform.header.frame_id != self.msg.header.frame_id:
+            trans = transform.transform.translation
+            quat = transform.transform.rotation
+            # A 2D request has already dropped z, so it can only carry the
+            # planar block of the rotation. That block is the whole rotation
+            # only for a yaw-only transform; roll or pitch would move points
+            # out of the plane, which a 2D map cannot represent anyway
+            goal_rotation = _rotation_matrix_from_quaternion([
+                quat.x,
+                quat.y,
+                quat.z,
+                quat.w,
+            ])[:num_coordinates, :num_coordinates]
+            # Written back in place so the output stays C-contiguous
+            coordinates[:] = coordinates @ goal_rotation.T
+            coordinates[:, 0] += trans.x
+            coordinates[:, 1] += trans.y
+            if get_three_d:
+                coordinates[:, 2] += trans.z
 
-        return threeD_coordinates
+        return coordinates
 
     def _get_ui_content(self, **_) -> Optional[Dict]:
         """Get UI content for an occupancy grid.
@@ -1105,10 +1260,13 @@ class LaserScanCallback(GenericCallback):
     def _get_output(
         self,
         transformation: Optional[TransformStamped] = None,
-        **_,
     ) -> Optional[LaserScanData]:
         """
         Gets the laserscan data by applying the transformation if given.
+
+        :param transformation: Transform to the goal frame, overriding the one
+            set on the callback
+        :type transformation: Optional[TransformStamped]
 
         :returns:   Topic content
         :rtype:     Optional[LaserScanData]
@@ -1214,21 +1372,89 @@ class PointCloudCallback(GenericCallback):
         self,
         input_topic,
         node_name: str = "",
+        transformation: Optional[TransformStamped] = None,
     ) -> None:
         super().__init__(input_topic, node_name)
+        self._transformation = transformation
 
-    def _get_output(self, **_) -> Optional[PointCloudData]:
+    def _get_output(
+        self,
+        transformation: Optional[TransformStamped] = None,
+        min_z: Optional[float] = None,
+        max_z: Optional[float] = None,
+        discard_underground: bool = False,
+        get_2d: bool = False,
+    ) -> Optional[PointCloudData]:
         """Gets the PointCloud2 message data as a PointCloudData container
         with the raw buffer, layout metadata and lazy cartesian decoding.
+
+
+        :param transformation: Transform to the goal frame, overriding the one
+            set on the callback
+        :type transformation: Optional[TransformStamped]
+        :param min_z: Drop points below this height, in the goal frame
+        :type min_z: Optional[float]
+        :param max_z: Drop points above this height, in the goal frame
+        :type max_z: Optional[float]
+        :param discard_underground: Drop points below the ground plane, which
+            the transform's z translation locates
+        :type discard_underground: bool
+        :param get_2d: Flatten the surviving points onto z = 0
+        :type get_2d: bool
 
         :return: Return PointCloudData
         :rtype: Optional[PointCloudData]
         """
-        if not self.msg:
+        pc = self._container()
+        if pc is None:
             return None
 
-        # Empty clouds
-        if self.msg.width == 0 or self.msg.height == 0:
+        transform = transformation or self.transformation
+        if not (
+            transform
+            or min_z is not None
+            or max_z is not None
+            or discard_underground
+            or get_2d
+        ):
+            # Nothing asked for: hand back the raw buffer, decoding nothing
+            return pc
+
+        if discard_underground and transform is None:
+            get_logger(self.node_name or "PointCloudCallback").warning(
+                f"'discard_underground' was requested for topic "
+                f"'{self.input_topic.name}' but no transform to the robot body "
+                "is set, so the ground plane cannot be located. Ignoring it. "
+                "Call 'transform_input_to' on the component to provide one.",
+                once=True,
+            )
+
+        translation = rotation = goal_frame = None
+        if transform:
+            trans = transform.transform.translation
+            quat = transform.transform.rotation
+            translation = [trans.x, trans.y, trans.z]
+            rotation = [quat.x, quat.y, quat.z, quat.w]
+            goal_frame = transform.header.frame_id
+
+        return pc.filtered(
+            translation=translation,
+            rotation=rotation,
+            frame_id=goal_frame,
+            min_z=min_z,
+            max_z=max_z,
+            discard_underground=discard_underground,
+            get_2d=get_2d,
+        )
+
+    def _container(self) -> Optional[PointCloudData]:
+        """Wrap the current message's raw buffer and layout, without decoding.
+
+        :return: The cloud as received, or None if it is empty or has no
+            x/y/z fields
+        :rtype: Optional[PointCloudData]
+        """
+        if not self.msg or self.msg.width == 0 or self.msg.height == 0:
             return None
 
         pc = PointCloudData(

@@ -27,6 +27,7 @@ from sensor_msgs.msg import JointState as ROSJointState
 from sensor_msgs.msg import LaserScan as ROSLaserScan
 from sensor_msgs.msg import NavSatFix as ROSNavSatFix
 from sensor_msgs.msg import PointCloud2 as ROSPointCloud2
+from sensor_msgs.msg import Range as ROSRange
 
 # STD_MSGS SUPPORTED ROS TYPES
 from std_msgs.msg import ByteMultiArray
@@ -573,6 +574,13 @@ class NavSatFix(SupportedType):
 
     _ros_type = ROSNavSatFix
     callback = callbacks.NavSatFixCallback
+
+
+class Range(SupportedType):
+    """Range"""
+
+    _ros_type = ROSRange
+    callback = callbacks.RangeCallback
 
 
 class Path(SupportedType):

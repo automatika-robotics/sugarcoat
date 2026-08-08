@@ -1,7 +1,7 @@
 """Data containers for ROS message payloads processed by callbacks."""
 
 import math
-from typing import List, Optional, Union
+from typing import List, Optional, Sequence, Union
 
 import numpy as np
 from attrs import Factory, define, field
@@ -21,6 +21,54 @@ _POINTFIELD_NP_FORMATS = {
     PointField.FLOAT32: "f4",
     PointField.FLOAT64: "f8",
 }
+
+
+def _rotation_matrix_from_quaternion(quaternion: Sequence[float]) -> np.ndarray:
+    """Rotation matrix for a ROS quaternion.
+
+    :param quaternion: Quaternion as [x, y, z, w]
+    :type quaternion: Sequence[float]
+    :return: 3x3 rotation matrix
+    :rtype: np.ndarray
+    """
+    x, y, z, w = (float(value) for value in quaternion)
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    if norm == 0.0:
+        return np.eye(3, dtype=np.float32)
+    x, y, z, w = x / norm, y / norm, z / norm, w / norm
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ],
+        dtype=np.float32,
+    )
+
+
+def _quaternion_multiply(
+    quaternion_1: Sequence[float], quaternion_2: Sequence[float]
+) -> np.ndarray:
+    """Compose two ROS quaternions, applying the first after the second.
+
+    :param quaternion_1: Left hand quaternion as [x, y, z, w]
+    :type quaternion_1: Sequence[float]
+    :param quaternion_2: Right hand quaternion as [x, y, z, w]
+    :type quaternion_2: Sequence[float]
+    :return: Composed quaternion as [x, y, z, w]
+    :rtype: np.ndarray
+    """
+    x1, y1, z1, w1 = (float(value) for value in quaternion_1)
+    x2, y2, z2, w2 = (float(value) for value in quaternion_2)
+    return np.array(
+        [
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        ],
+        dtype=np.float32,
+    )
 
 
 @define
@@ -63,6 +111,49 @@ class PointCloudData(BaseAttrs):
         default=None, init=False, repr=False, eq=False
     )
 
+    def _point_dtype(self) -> np.dtype:
+        """Structured dtype addressing the x/y/z fields inside a point record."""
+        np_format = _POINTFIELD_NP_FORMATS.get(self.x_field_datatype, "f4")
+        endianness = ">" if self.is_bigendian else "<"
+        return np.dtype(
+            {
+                "names": ["x", "y", "z"],
+                "formats": [endianness + np_format] * 3,
+                "offsets": [self.x_offset, self.y_offset, self.z_offset],
+                "itemsize": self.point_step,
+            }
+        )
+
+    def _unpadded(self) -> np.ndarray:
+        """The raw buffer with row padding removed, so records sit contiguously."""
+        raw = self.data
+        row_bytes = self.width * self.point_step
+        if self.row_step != row_bytes and self.height > 1:
+            raw = np.ascontiguousarray(
+                raw[: self.height * self.row_step].reshape(self.height, self.row_step)[
+                    :, :row_bytes
+                ]
+            ).reshape(-1)
+        return raw
+
+    def _decode_all(self) -> Optional[np.ndarray]:
+        """Every point in the buffer, in order, non-finite ones included.
+
+        Row ``i`` is point record ``i``, which is what lets a mask computed
+        from these coordinates be applied back to the raw buffer.
+
+        :return: Nx3 float32 array, or None if the cloud has no x/y/z fields
+        :rtype: Optional[np.ndarray]
+        """
+        if self.x_offset is None or self.y_offset is None or self.z_offset is None:
+            return None
+        points = np.frombuffer(
+            self._unpadded(), dtype=self._point_dtype(), count=self.height * self.width
+        )
+        return np.column_stack((points["x"], points["y"], points["z"])).astype(
+            np.float32, copy=False
+        )
+
     @property
     def xyz(self) -> Optional[np.ndarray]:
         """Cartesian points decoded from the raw buffer, lazily and cached.
@@ -75,36 +166,99 @@ class PointCloudData(BaseAttrs):
         """
         if self._xyz_cache is not None:
             return self._xyz_cache
-        if self.x_offset is None or self.y_offset is None or self.z_offset is None:
+        xyz = self._decode_all()
+        if xyz is None:
             return None
-
-        np_format = _POINTFIELD_NP_FORMATS.get(self.x_field_datatype, "f4")
-        endianness = ">" if self.is_bigendian else "<"
-        point_dtype = np.dtype(
-            {
-                "names": ["x", "y", "z"],
-                "formats": [endianness + np_format] * 3,
-                "offsets": [self.x_offset, self.y_offset, self.z_offset],
-                "itemsize": self.point_step,
-            }
-        )
-
-        raw = self.data
-        row_bytes = self.width * self.point_step
-        if self.row_step != row_bytes and self.height > 1:
-            # drop row padding to get a contiguous array of points
-            raw = np.ascontiguousarray(
-                raw[: self.height * self.row_step].reshape(self.height, self.row_step)[
-                    :, :row_bytes
-                ]
-            ).reshape(-1)
-
-        points = np.frombuffer(raw, dtype=point_dtype, count=self.height * self.width)
-        xyz = np.column_stack((points["x"], points["y"], points["z"])).astype(
-            np.float32, copy=False
-        )
         self._xyz_cache = xyz[np.isfinite(xyz).all(axis=1)]
         return self._xyz_cache
+
+    def filtered(
+        self,
+        translation: Optional[Sequence[float]] = None,
+        rotation: Optional[Sequence[float]] = None,
+        frame_id: Optional[str] = None,
+        min_z: Optional[float] = None,
+        max_z: Optional[float] = None,
+        discard_underground: bool = False,
+        get_2d: bool = False,
+    ) -> Optional["PointCloudData"]:
+        """A new cloud with the transform and the height filters applied.
+
+        The raw buffer is rebuilt rather than only the decoded `xyz`, because
+        consumers that read `data` directly -- collision checking, mapping --
+        would otherwise still be handed sensor-frame, unfiltered points while
+        believing they had been transformed.
+
+        Whole point records are kept or dropped and only x/y/z are rewritten,
+        so every other field (intensity, rgb, ...) survives intact.
+
+        :param translation: Sensor-to-target translation [x, y, z]
+        :param rotation: Sensor-to-target rotation quaternion [x, y, z, w]
+        :param frame_id: Frame the points end up in once transformed
+        :param min_z: Drop points below this height, in the target frame
+        :param max_z: Drop points above this height, in the target frame
+        :param discard_underground: Drop points below the ground plane. The
+            transform's z translation is the sensor's height above the target
+            frame, so the ground sits at z = 0 once transformed. Without a
+            transform the ground cannot be located and this is ignored.
+        :param get_2d: Flatten the surviving points onto z = 0
+        :return: A new container, or None if no point survives
+        :rtype: Optional[PointCloudData]
+        """
+        xyz = self._decode_all()
+        if xyz is None:
+            return None
+
+        # Organized clouds pad with NaN/inf; those are never real returns
+        keep = np.isfinite(xyz).all(axis=1)
+
+        if rotation is not None:
+            xyz = xyz @ _rotation_matrix_from_quaternion(rotation).T
+        if translation is not None:
+            xyz = xyz + np.asarray(translation, dtype=np.float32)
+
+        if min_z is not None:
+            keep &= xyz[:, 2] >= min_z
+        if max_z is not None:
+            keep &= xyz[:, 2] <= max_z
+        if discard_underground and translation is not None:
+            keep &= xyz[:, 2] >= 0.0
+
+        # After the height filters, so the band is judged on the real heights
+        if get_2d:
+            xyz[:, 2] = 0.0
+
+        n_kept = int(np.count_nonzero(keep))
+        if not n_kept:
+            return None
+
+        records = self._unpadded()[: self.height * self.width * self.point_step]
+        kept = np.ascontiguousarray(
+            records.reshape(-1, self.point_step)[keep]
+        ).reshape(-1)
+
+        # Write the transformed coordinates back into the surviving records
+        struct = kept.view(self._point_dtype())
+        struct["x"] = xyz[keep, 0]
+        struct["y"] = xyz[keep, 1]
+        struct["z"] = xyz[keep, 2]
+
+        out = PointCloudData(
+            data=kept,
+            point_step=self.point_step,
+            row_step=n_kept * self.point_step,
+            height=1,  # filtering cannot preserve the row layout
+            width=n_kept,
+            x_offset=self.x_offset,
+            y_offset=self.y_offset,
+            z_offset=self.z_offset,
+            x_field_datatype=self.x_field_datatype,
+            is_bigendian=self.is_bigendian,
+            frame_id=frame_id or self.frame_id,
+            timestamp=self.timestamp,
+        )
+        out._xyz_cache = xyz[keep]
+        return out
 
 
 def _convert_to_0_2pi(value: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
@@ -136,9 +290,13 @@ def _get_polar_transformation_vector(
     :return: Polar transformation [radius, angle]
     :rtype: list
     """
-    r_tr = np.sqrt(translation_x**2 + translation_y**2)
+    # NOTE: numpy treats its own scalars as strong types, so a np.float64 here
+    # would promote the float32 ranges it is combined with to float64 and cost
+    # the zero-copy path downstream. A Python float is weak and leaves the array
+    # dtype alone.
+    r_tr = float(np.sqrt(translation_x**2 + translation_y**2))
     if r_tr > 0:
-        ang_tr = np.arccos(translation_x / r_tr)
+        ang_tr = float(np.arccos(translation_x / r_tr))
         return [r_tr, ang_tr]
     return [0.0, 0.0]
 
@@ -238,15 +396,17 @@ class LaserScanData(BaseAttrs):
 
     def __attrs_post_init__(self):
         if self.angles.size == 0:
+            # float32 is a downstream zero-copy fast path
             self.angles = np.arange(
                 self.angle_min,
                 self.angle_max + self.angle_increment,
                 self.angle_increment,
+                dtype=np.float32,
             )
 
         if self.ranges.size == 0:
-            # default to max range
-            self.ranges = np.full(self.angles.size, self.range_max)
+            # default to max range; float32 is a downstream zero-copy fast path
+            self.ranges = np.full(self.angles.size, self.range_max, dtype=np.float32)
 
         if self.angles.size != self.ranges.size:
             minimum_size = min(self.angles.size, self.ranges.size)
@@ -336,8 +496,8 @@ def _get_laserscan_transformed_polar_coordinates(
     :rtype: LaserScanData
     """
     angles: np.ndarray = np.arange(
-        angle_min, angle_max + angle_increment, angle_increment
-    )  # create list of angles
+        angle_min, angle_max + angle_increment, angle_increment, dtype=np.float32
+    )  # create list of angles, float32 to keep transformed ranges float32
 
     if len(angles) < len(laser_scan_ranges):
         raise ValueError(

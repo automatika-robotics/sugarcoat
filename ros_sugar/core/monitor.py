@@ -128,6 +128,9 @@ class Monitor(Node):
         # downstream API
         self._additional_internal_actions = {}
 
+        # Static transforms coming from mounted plugins, to be broadcast once the node is up.
+        self._static_transforms: Optional[List] = None
+
         # Emit exit all to the launcher
         self._emit_exit_to_launcher: Optional[Callable] = None
 
@@ -159,6 +162,33 @@ class Monitor(Node):
         self._pure_internal_events.append(event_id)
         self._additional_internal_actions[event_id] = action
 
+    def set_static_transforms(self, transforms) -> None:
+        """Static transforms to broadcast once this node is up.
+
+        The Monitor is constructed while the launch description is still being
+        built, before ``rclpy_init_node``, so it has no clock to stamp with and
+        no publisher to send on yet. They are held here and sent from
+        :meth:`activate`. ``/tf_static`` is latched, so arriving late costs
+        nothing -- subscribers that come up afterwards still receive them.
+
+        :param transforms: ``TransformStamped`` list, stamped on broadcast
+        """
+        self._static_transforms = list(transforms)
+
+    def _broadcast_static_transforms(self) -> None:
+        """Send the registered static transforms, stamped with the node clock."""
+        if not self._static_transforms:
+            return
+        from tf2_ros import StaticTransformBroadcaster
+
+        stamp = self.get_clock().now().to_msg()
+        for transform in self._static_transforms:
+            transform.header.stamp = stamp
+        # Held on the node: a broadcaster that goes out of scope takes its
+        # latched publisher, and the transform, with it
+        self._static_tf_broadcaster = StaticTransformBroadcaster(self)
+        self._static_tf_broadcaster.sendTransform(self._static_transforms)
+
     def rclpy_init_node(self, *args, **kwargs):
         """
         To init the node with rclpy and activate default services
@@ -171,6 +201,8 @@ class Monitor(Node):
 
     def activate(self):
         """Activate all subscribers/publishers/etc..."""
+        self._broadcast_static_transforms()
+
         # Poll the ROS graph for all components to activate and emit
         # activate_all once they are up, as a single atomic barrier.
         if self._components_to_activate_on_start:

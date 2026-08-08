@@ -10,6 +10,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Create connection for a given <img> element
     function connectImageWebSocket(img, wsUrl, attempt = 0) {
+        // Stamp the element so the ensure-pass can detect DOM swaps: a
+        // replacement node (same id, e.g. after an htmx panel update) won't
+        // carry this property.
+        img._videoStreamBound = true;
         const ws = new WebSocket(wsUrl);
         ws.binaryType = "arraybuffer";
 
@@ -19,10 +23,15 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         ws.onmessage = (event) => {
+            // NOTE: Resolve the target element by id at message time: a DOM swap
+            // (e.g. an htmx panel re-render on goal send) can replace the
+            // node while keeping its id — the connect-time `img` reference
+            // then points at a detached node and frames render into the void.
+            const el = document.getElementById(img.id) || img;
             try {
                 const data = JSON.parse(event.data);
                 if (data.payload) {
-                    img.src = "data:image/jpeg;base64," + data.payload;
+                    el.src = "data:image/jpeg;base64," + data.payload;
                     return;
                 }
             } catch {
@@ -33,7 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const bytes = new Uint8Array(event.data);
                 let binary = '';
                 bytes.forEach(b => binary += String.fromCharCode(b));
-                img.src = "data:image/jpeg;base64," + btoa(binary);
+                el.src = "data:image/jpeg;base64," + btoa(binary);
             }
         };
 
@@ -72,14 +81,29 @@ document.addEventListener("DOMContentLoaded", () => {
         const frames = Array.from(document.getElementsByName("video-frame"));
         const presentIds = new Set(frames.map(f => f.id));
 
-        // Add missing connections
+        // Add missing connections; re-init swapped elements (same id, new
+        // node — the element won't carry the _videoStreamBound stamp)
         frames.forEach((img) => {
             if (!img.id) return;
-            if (!wsConnections.has(img.id)) {
-                const wsUrl = `${videoWsProtocol}//${window.location.host}/api/outputs/${img.id}`;
-                const conn = connectImageWebSocket(img, wsUrl, 0);
-                wsConnections.set(img.id, conn);
+            const tracked = wsConnections.has(img.id);
+            if (tracked && img._videoStreamBound) return; // same element, connected
+            if (tracked) {
+                // A swap happened: clean up the old connection and re-init on
+                // the new element
+                const entry = wsConnections.get(img.id);
+                try {
+                    if (entry.timer) clearTimeout(entry.timer);
+                    if (entry.ws) {
+                        entry.ws.onclose = null;
+                        entry.ws.close();
+                    }
+                } catch (e) { }
+                wsConnections.delete(img.id);
+                console.log(`[${img.id}] Element swapped; rebinding stream to new node`);
             }
+            const wsUrl = `${videoWsProtocol}//${window.location.host}/api/outputs/${img.id}`;
+            const conn = connectImageWebSocket(img, wsUrl, 0);
+            wsConnections.set(img.id, conn);
         });
 
         // Remove connections whose elements are gone

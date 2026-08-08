@@ -118,6 +118,20 @@ def _make_qos_config(qos_profile: Union[Dict, QoSConfig]) -> QoSConfig:
     return QoSConfig(**qos_profile)
 
 
+def _validate_use_plugin(_, __, value) -> None:
+    """Reject an empty plugin id.
+
+    ``use_plugin`` is tested for truthiness throughout the component, so an
+    empty string would silently mean "not plugin-backed" rather than failing.
+    """
+    if isinstance(value, str) and not isinstance(value, bool) and not value:
+        raise ValueError(
+            "Topic 'use_plugin' cannot be an empty string. Pass the id of an "
+            "attached plugin (e.g. use_plugin=my_camera.id), True for the "
+            "robot plugin, or False."
+        )
+
+
 @define(kw_only=True)
 class Topic(BaseAttrs, Generic[MsgT]):
     """
@@ -157,7 +171,9 @@ class Topic(BaseAttrs, Generic[MsgT]):
         default=Factory(QoSConfig), converter=_make_qos_config
     )
     data_timeout: float = field(default=1.0, validator=base_validators.gt(0.0))
-    use_plugin: bool = field(default=False)
+    use_plugin: Union[bool, str] = field(
+        default=False, validator=_validate_use_plugin
+    )
     ros_msg_type: Type[MsgT] = field(init=False)
     additional_types: List[Type[supported_types.SupportedType]] = field(
         default=Factory(list)
