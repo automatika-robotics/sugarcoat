@@ -49,6 +49,11 @@ class ActionClientConfig(BaseAttrs):
     feedback_check_timeout: float = field(
         default=60.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
     )  # timeout if feedback is not received after x seconds
+    cancel_on_feedback_timeout: bool = field(
+        default=True
+    )  # cancel the goal when no new feedback arrives within feedback_check_timeout.
+    # Set False for action servers that legitimately publish no feedback, whose
+    # goals would otherwise be cancelled mid-execution
     callback_group: CallbackGroup = field(
         default=Factory(ReentrantCallbackGroup)
     )  # callback group for the feedback callback of the action
@@ -165,9 +170,17 @@ class ServiceClientHandler:
         self.request = req_msg
         self.future = self.client.call_async(self.request)
 
-        # Wait for service response
-        while not self.future.result():
+        # Wait for service response, bounded by the configured timeout.s
+        _response_wait: float = 0.0
+        while not self.future.done():
+            if _response_wait > self.config.timeout_secs:
+                self.node.get_logger().error(
+                    f"Service {self.config.name} did not respond within {self.config.timeout_secs} secs, Cancelling"
+                )
+                self.future.cancel()
+                return None
             time.sleep(0.01)
+            _response_wait += 0.01
 
         # return response
         return self.future.result()
@@ -233,6 +246,7 @@ class ActionClientHandler:
         self.goal_rejected = False
         self.goal_accepted = False
         self.action_returned = False
+        self.action_result = None
         self._feedback_timeout = False
         self._goal_handle = None
         self._old_status = self._status
@@ -435,8 +449,9 @@ class ActionClientHandler:
             self.old_feedback_count = self.feedback_count
         else:
             # No feedback is received
-            self.cancel_request()
             self._feedback_timeout = True
+            if self.config.cancel_on_feedback_timeout:
+                self.cancel_request()
 
     def got_new_feedback(self) -> bool:
         """
