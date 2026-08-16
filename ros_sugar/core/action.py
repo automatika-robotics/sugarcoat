@@ -336,10 +336,13 @@ class Action:
                 else:
                     self._kwargs[key] = value
 
-    def __call__(self, **kwargs):
+    def _prepare_call(self, **kwargs) -> Tuple[List, Dict]:
         """
-        Execute the action.
+        Resolve the dynamic arguments for one execution.
         Iterates through all parsers to prepare dynamic arguments based on the event (kwargs).
+
+        :return: The positional and keyword arguments to invoke the executable with
+        :rtype: Tuple[List, Dict]
         """
         # This now supports topic inputs to be the same as the event topic
         # Create mutable copies of args and kwargs for this specific execution
@@ -369,6 +372,13 @@ class Action:
         for key, (name, conv_func) in self.__prepared_events_conversions.items():
             if msg := topics.get(name, None):
                 call_kwargs[key] = conv_func(msg)
+        return call_args, call_kwargs
+
+    def __call__(self, **kwargs):
+        """
+        Execute the action.
+        """
+        call_args, call_kwargs = self._prepare_call(**kwargs)
         try:
             return self.executable(*call_args, **call_kwargs)
         except Exception as e:
@@ -529,6 +539,14 @@ class Action:
         return self._description
 
     @property
+    def _dynamic_input_topics(self) -> Dict:
+        """Args/kwargs that are resolved from topic data at call time
+
+        :rtype: Dict
+        """
+        return self.__input_topics
+
+    @property
     def dictionary(self) -> Dict:
         """
         Property to get/set the event using a dictionary
@@ -548,7 +566,7 @@ class Action:
         if self.__event_topic_conversions:
             dict_value["event_conversions"] = {
                 key: value.__class__.__name__
-                for key, value in self.__event_topic_conversions
+                for key, value in self.__event_topic_conversions.items()
             }
         return dict_value
 
@@ -568,7 +586,9 @@ class Action:
         :rtype: Action
         """
         # Reconstruct the Action: executable and names
-        reconstructed_action = Action(method=deserialized_method)
+        # NOTE: cls (not Action) so that subclasses such as MonitoredAction
+        # deserialize back into their own type
+        reconstructed_action = cls(method=deserialized_method)
         reconstructed_action.action_name = serialized_action_dict["action_name"]
         reconstructed_action.parent_component = serialized_action_dict["parent_name"]
 
