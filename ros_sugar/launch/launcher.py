@@ -61,6 +61,7 @@ from ..core.action import LogInfo
 from ..actions import publish_message
 from ..config.base_config import ComponentRunType
 from ..core.action import Action
+from ..core.monitored_action import MonitoredAction
 from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
@@ -1049,6 +1050,17 @@ class Launcher:
         :param action: Action
         :type action: Action
         """
+        if isinstance(action, MonitoredAction):
+            # Anything still routed here is run by the launch system as a launch
+            # entity rather than as a callable, so there is nowhere to put a
+            # watch and retry loop. Recipe methods are diverted to the Monitor
+            # before reaching this point; lifecycle transitions cannot be
+            raise InvalidAction(
+                f"Action '{action.action_name}' cannot be a MonitoredAction. It is "
+                "executed by the launch system as a launch entity, so its outcome "
+                "cannot be watched. Monitor a component, system-level or recipe "
+                "action instead."
+            )
         self.__update_dict_list(self._ros_events_actions, event.id, action)
         if not self._internal_events:
             self._internal_events = [event]
@@ -1108,6 +1120,13 @@ class Launcher:
                 elif isinstance(action, Action) and action._is_monitor_action:
                     # Action to execute through the monitor
                     self.__update_dict_list(self._monitor_events_actions, event, action)
+                elif isinstance(action, MonitoredAction):
+                    # A recipe method would otherwise run in the launch context,
+                    # where its return value is discarded and a blocking watch
+                    # would stall the launch loop. The Monitor runs it on its own
+                    # thread instead, which is what the launch context does anyway
+                    # (the LaunchContext handed to an OpaqueFunction is unused)
+                    self.__update_dict_list(self._monitor_events_actions, event, action)
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
                     self._update_ros_events_actions(event, action)
@@ -1152,6 +1171,11 @@ class Launcher:
             )
             if isinstance(action, Action) and action._is_monitor_action:
                 # Action to execute through the monitor
+                self.__update_dict_list(self._monitor_events_actions, event, action)
+            elif isinstance(action, MonitoredAction):
+                # Runs in the Monitor rather than the launch context, so its
+                # return value stays visible and a blocking watch cannot stall
+                # the launch loop
                 self.__update_dict_list(self._monitor_events_actions, event, action)
             elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                 # If it is a valid ROS launch action -> nothing is required
