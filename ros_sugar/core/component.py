@@ -185,6 +185,10 @@ class BaseComponent(lifecycle.Node):
         # TODO: add config parameter (one goal vs goal queue)
         self._main_goal_handle = None
         self._main_goal_lock = threading.Lock()
+        # Guards the event blackboard and the per topic event index, which a
+        # MonitoredAction can extend at runtime from a worker thread when it
+        # starts watching its success condition
+        self._events_lock = threading.Lock()
         self._main_action_name: Optional[str] = None
         self._main_srv_name: Optional[str] = None
 
@@ -1482,31 +1486,37 @@ class BaseComponent(lifecycle.Node):
         1. Updates Cache of all required events topics
         2. Re-evaluates all events that depend on this topic
         """
-        # Update Blackboard with stamped entry
-        self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
-            msg=msg, timestamp=time.time()
-        )
+        # Guarded so that a MonitoredAction registering its success event from a
+        # worker thread cannot mutate the index while it is iterated here, nor
+        # the blackboard while it is lazily cleaned below.
+        # NOTE: check_condition only submits actions to a thread pool, so the
+        # lock is never held across an action's execution
+        with self._events_lock:
+            # Update Blackboard with stamped entry
+            self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
+                msg=msg, timestamp=time.time()
+            )
 
-        # READ & CLEAN: Identify events dependent on this topic
-        relevant_events = self.__events_per_topic.get(topic_name, [])
+            # READ & CLEAN: Identify events dependent on this topic
+            relevant_events = self.__events_per_topic.get(topic_name, [])
 
-        for event in relevant_events:
-            # Instead of passing the raw blackboard
-            # we perform a lazy cleanup right here for the topics THIS event needs.
+            for event in relevant_events:
+                # Instead of passing the raw blackboard
+                # we perform a lazy cleanup right here for the topics THIS event needs.
 
-            clean_cache_subset = {}
-            for topic in event.get_involved_topics():
-                # This call performs the check and DELETES expired data if necessary
-                valid_entry = EventBlackboardEntry.get(
-                    self._events_topics_blackboard,
-                    topic.name,
-                    topic.data_timeout,
-                    event.get_last_processed_id(topic.name),
-                )
-                if valid_entry:
-                    clean_cache_subset[topic.name] = valid_entry
-            # Pass the clean subset to the event
-            event.check_condition(clean_cache_subset)
+                clean_cache_subset = {}
+                for topic in event.get_involved_topics():
+                    # This call performs the check and DELETES expired data if necessary
+                    valid_entry = EventBlackboardEntry.get(
+                        self._events_topics_blackboard,
+                        topic.name,
+                        topic.data_timeout,
+                        event.get_last_processed_id(topic.name),
+                    )
+                    if valid_entry:
+                        clean_cache_subset[topic.name] = valid_entry
+                # Pass the clean subset to the event
+                event.check_condition(clean_cache_subset)
 
     def _add_event_action_pair(self, event: Event, action: Union[Action, List[Action]]):
         """Add an event/action pair.
