@@ -46,6 +46,10 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
 from ..base_clients import ActionClientConfig
+from .action import Action
+from .event import Event, EventBlackboardEntry
+from .monitored_action import MonitoredAction, bind_monitored_actions
+from ..io.callbacks import GenericCallback
 from ..config.base_attrs import explicit_fields
 from ..config.base_config import (
     BaseAttrs,
@@ -1384,21 +1388,51 @@ class BaseComponent(lifecycle.Node):
             # Register action to event to get executed on trigger when calling event.check_condition
             event.register_actions(actions)
 
+        # A monitored action watches its success condition as an event of its
+        # own, registered on first dispatch rather than here so that this
+        # component never subscribes to a success topic for an action that is
+        # never triggered
+        bind_monitored_actions(self.__actions, self)
+
         # Create ONE subscription per Topic
         self.__event_listeners = []
         for name, topic_obj in unique_topics.items():
-            # Handle events for non-ROS inputs served by the robot plugin
-            if name in self._external_topics:
-                self._subscribe_event_to_plugin_feedback(name, topic_obj)
-                continue
-            listener = self.create_subscription(
-                msg_type=topic_obj.ros_msg_type,
-                topic=topic_obj.name,
-                callback=partial(self.__event_topic_callback, name),
-                qos_profile=topic_obj.qos_profile.to_ros(),
-                callback_group=MutuallyExclusiveCallbackGroup(),
-            )
-            self.__event_listeners.append(listener)
+            self.__create_event_listener(name, topic_obj)
+
+    def __create_event_listener(self, name: str, topic_obj: Topic) -> None:
+        """Create the single subscription backing all events on a topic"""
+        # Handle events for non-ROS inputs served by the robot plugin
+        if name in self._external_topics:
+            self._subscribe_event_to_plugin_feedback(name, topic_obj)
+            return
+        listener = self.create_subscription(
+            msg_type=topic_obj.ros_msg_type,
+            topic=topic_obj.name,
+            callback=partial(self.__event_topic_callback, name),
+            qos_profile=topic_obj.qos_profile.to_ros(),
+            callback_group=MutuallyExclusiveCallbackGroup(),
+        )
+        self.__event_listeners.append(listener)
+
+    def add_runtime_event_listener(self, event: Event) -> None:
+        """Start monitoring an event that was not known at activation.
+
+        Unlike the events wired up in `_turn_on_events_management`, this is
+        called while the component is already running, from a worker thread.
+        Used by `MonitoredAction` to begin watching its success condition on
+        first dispatch. Subscriptions created here live until the component is
+        deactivated, so repeat triggers and retries do not churn them.
+
+        :param event: Event to start monitoring
+        :type event: Event
+        """
+        with self._events_lock:
+            for topic in event.get_involved_topics():
+                if topic.name in self.__events_per_topic:
+                    self.__events_per_topic[topic.name].append(event)
+                    continue
+                self.__events_per_topic[topic.name] = [event]
+                self.__create_event_listener(topic.name, topic)
 
     def _subscribe_event_to_plugin_feedback(self, topic_name: str, topic_obj) -> None:
         """Drive an event from the robot plugin's feedback bus.
@@ -1891,7 +1925,10 @@ class BaseComponent(lifecycle.Node):
                     )
                 # reparse the method using the given action name
                 method = getattr(self, action_dict["action_name"])
-                reconstructed_action = Action.deserialize_action(
+                action_class = (
+                    MonitoredAction if action_dict.get("monitored") else Action
+                )
+                reconstructed_action = action_class.deserialize_action(
                     serialized_action_dict=action_dict,
                     deserialized_method=method,
                 )

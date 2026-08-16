@@ -6,6 +6,7 @@ from .status import Status
 from .monitor import Monitor
 from .event import Event
 from .action import Action
+from .monitored_action import MonitoredAction
 
 __all__ = [
     "BaseComponent",
@@ -15,4 +16,5 @@ __all__ = [
     "Monitor",
     "Event",
     "Action",
+    "MonitoredAction",
 ]

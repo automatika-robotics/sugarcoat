@@ -26,6 +26,7 @@ from ..config import BaseConfig
 from ..io.topic import Topic
 from .event import Event, EventBlackboardEntry
 from .action import Action
+from .monitored_action import bind_monitored_actions
 from ..launch import logger
 
 
@@ -984,15 +985,27 @@ class Monitor(Node):
         if self._monitor_events_actions:
             for event, actions in self._monitor_events_actions.items():
                 for action in actions:
-                    method = getattr(self, action.action_name)
+                    # Stack actions carry a placeholder method and are resolved
+                    # by name against the Monitor. Anything else already holds
+                    # the callable it is meant to run
+                    if action._is_monitor_action:
+                        method = getattr(self, action.action_name)
+                        action.executable = partial(
+                            method, *action._args, **action._kwargs
+                        )
                     # register action to the event
-                    action.executable = partial(method, *action._args, **action._kwargs)
                     event.register_actions(action)
                 self.__events.append(event)
 
         if self._internal_events:
             # Add internal events (to emit back to launcher)
             self.__events.extend(self._internal_events)
+
+        # A monitored action watches its success condition as an event of its
+        # own, registered on first dispatch rather than here so that a success
+        # topic is never subscribed for an action that is never triggered
+        if self._monitor_events_actions:
+            bind_monitored_actions(self._monitor_events_actions.values(), self)
 
     def _activate_event_monitoring(self) -> None:
         """
@@ -1026,19 +1039,42 @@ class Monitor(Node):
         # in via feed_external_topic() instead.
         self.__event_listeners = []
         for name, topic_obj in unique_topics.items():
-            if name in self._external_topics:
-                self.get_logger().info(
-                    f"Event topic '{name}' is fed by a robot plugin; "
-                    "no ROS subscription created"
-                )
-                continue
-            listener = self.create_subscription(
-                msg_type=topic_obj.ros_msg_type,
-                topic=topic_obj.name,
-                callback=partial(self.__event_topic_callback, name),
-                qos_profile=topic_obj.qos_profile.to_ros(),
-                callback_group=MutuallyExclusiveCallbackGroup(),
-            )
-            self.__event_listeners.append(listener)
+            self.__create_event_listener(name, topic_obj)
 
         self.__start_callable_based_event_timers()
+
+    def __create_event_listener(self, name: str, topic_obj: Topic) -> None:
+        """Create the single subscription backing all events on a topic"""
+        if name in self._external_topics:
+            self.get_logger().info(
+                f"Event topic '{name}' is fed by a robot plugin; "
+                "no ROS subscription created"
+            )
+            return
+        listener = self.create_subscription(
+            msg_type=topic_obj.ros_msg_type,
+            topic=topic_obj.name,
+            callback=partial(self.__event_topic_callback, name),
+            qos_profile=topic_obj.qos_profile.to_ros(),
+            callback_group=MutuallyExclusiveCallbackGroup(),
+        )
+        self.__event_listeners.append(listener)
+
+    def add_runtime_event_listener(self, event: Event) -> None:
+        """Start monitoring an event that was not known at activation.
+
+        Unlike the events wired up in `_activate_event_monitoring`, this is
+        called while the Monitor is already running, from a worker thread. Used
+        by `MonitoredAction` to begin watching its success condition on first
+        dispatch. Subscriptions created here live for the life of the node.
+
+        :param event: Event to start monitoring
+        :type event: Event
+        """
+        with self._blackboard_lock:
+            for topic in event.get_involved_topics():
+                if topic.name in self.__events_per_topic:
+                    self.__events_per_topic[topic.name].append(event)
+                    continue
+                self.__events_per_topic[topic.name] = [event]
+                self.__create_event_listener(topic.name, topic)
