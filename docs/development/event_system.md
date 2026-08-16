@@ -169,8 +169,11 @@ launcher.on(robot.events.fall_detected(), [LogInfo(msg="fall"), robot.actions.st
 Marks a component method as callable from the event system. It enforces:
 
 - The method must be a bound method on a `LifecycleNode` subclass.
-- The return type must be `bool` or `None`.
 - If `active=True` is passed, the method only executes when the component is in the `ACTIVE` lifecycle state.
+
+The return type is **not** constrained: an action may return any JSON-serializable value, or `None`.
+When invoked over the `ExecuteMethod` service, `None` and any non-`bool` value are reported as
+success, while `False` is reported as failure.
 
 ```python
 from ros_sugar.utils import component_action
@@ -262,6 +265,78 @@ action = Action(method=log_alert, args=("WARNING", sensor.msg.data))
 ::::
 
 These expressions (`topic.msg.data`, `odom.msg.pose.pose.position.x`, etc.) are `MsgConditionBuilder` objects — the same ones used to build conditions. When used as action arguments, they tell the framework which topic and which nested attribute to extract at execution time.
+
+---
+
+### Monitored Actions
+
+A plain `Action` is fire-and-forget: it dispatches a method and nothing afterwards can tell whether the method actually worked. `MonitoredAction` closes that loop — it dispatches, waits for a verdict, then re-dispatches while the verdict is negative and the retry budget allows.
+
+```python
+from ros_sugar.core import MonitoredAction
+
+grasp = MonitoredAction(
+    gripper.close,
+    success=gripper_state.msg.closed.is_true(),
+    timeout=3.0,
+    on_timeout="retry",
+    max_retries=3,
+)
+
+launcher.on(grasp_requested, grasp)
+```
+
+`MonitoredAction` is an `Action`, so it is registered and serialized exactly like one, and the monitoring runs wherever the action runs:
+
+| Action type | Monitored by | Notes |
+|:------------|:-------------|:------|
+| Component action | The component node | Success condition and retry policy travel with the action into the component process |
+| System-level action (`publish_message`, …) | The Monitor | Resolved to the real Monitor method by name, then monitored |
+| Inline recipe method | The Monitor | See below |
+| ROS launch action | — | Not applicable: `MonitoredAction` wraps a callable, a launch action has none |
+
+An inline recipe method is normally owned by the Launcher and executed in the launch context. A `MonitoredAction` is routed to the **Monitor** instead, because the launch context discards an action's return value and a blocking watch there would stall the launch event loop. Nothing is lost by this: the `LaunchContext` passed to an `OpaqueFunction` is never forwarded to the method anyway.
+
+The upshot is that `success`, `timeout` and `max_retries` behave identically whichever kind of action you monitor.
+
+#### Deciding the verdict
+
+| `success` | Verdict comes from | Meaning |
+|:----------|:-------------------|:--------|
+| A `Condition` | Live topic data | World state is authoritative. If the condition becomes true the action succeeded, **even if the method reported otherwise** |
+| Omitted | The method's return value | `False` or a raised exception is a failure. `True`, `None` and any other value are successes |
+
+`None` counts as success so that wrapping an existing void `@component_action` does not silently change its meaning — it matches how the `ExecuteMethod` service already reports component actions.
+
+#### Retry policy
+
+| Parameter | Effect |
+|:----------|:-------|
+| `timeout` | Seconds to wait for the verdict on each attempt |
+| `on_timeout` | What a timeout means: `"fail"`, `"succeed"` or `"retry"` (default) |
+| `max_retries` | Number of *re*-dispatches, so total attempts are `max_retries + 1` |
+| `retry_delay` | Seconds to wait between attempts |
+
+There is a single retry budget. `on_timeout` only classifies what a timeout *means*; a method that reports failure consumes the same budget as one that times out. `on_timeout="fail"` and `"succeed"` are terminal and never consume a retry.
+
+:::{note}
+Setting a `success` condition without a `timeout` lets the action wait forever if the condition is never met. A warning is logged at construction; set a timeout.
+:::
+
+#### How success is detected
+
+The success condition is monitored as an ordinary `Event`, evaluated **on message arrival** rather than polled. Two things follow from that:
+
+- A condition that holds for only a single message cannot be missed.
+- The latch is cleared at the start of every attempt, so a success can only ever be credited to data that arrived *after* the action was dispatched. Without this, `MonitoredAction(arm.move_to_pregrasp, success=at_pregrasp.is_true())` would report instant success whenever the arm already happened to be there.
+
+Monitoring starts on the **first dispatch**, not at activation, so a host never subscribes to the success topic of an action that is never triggered. The subscription is then kept until the node is deactivated rather than being torn down after each attempt.
+
+:::{warning}
+`MonitoredAction.__call__` blocks until the outcome is decided, and dispatches run on a pool of 10 workers shared by all monitored actions. A long-running action holds one of those workers for its whole lifetime.
+
+There is also no way to cancel a method that is already executing: when an attempt times out, the action stops waiting and stops retrying, but the call itself may still be running.
+:::
 
 ---
 

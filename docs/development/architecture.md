@@ -24,6 +24,7 @@ The `ros_sugar.core` package exposes the primary building blocks:
 | `Monitor` | `rclpy.node.Node` | Event evaluation and component supervision |
 | `Event` | _(standalone)_ | Condition-based trigger on topic data |
 | `Action` | _(standalone)_ | Callable dispatched when an event fires |
+| `MonitoredAction` | `Action` | Action that verifies its own outcome and retries until it succeeds |
 | `Status` | _(standalone)_ | Health status wrapper around `ComponentStatus` msg |
 | `Fallback` / `ComponentFallbacks` | _(attrs / standalone)_ | Failure recovery actions |
 
@@ -153,8 +154,9 @@ The callback group can be specified at construction via the `callback_group` par
 Defined in `ros_sugar.utils.component_action`. Marks a method as an action that can be dispatched by the event system. The decorator enforces:
 
 1. The method belongs to a `LifecycleNode` instance.
-2. The return type annotation is `bool` or `None`.
-3. If `active=True`, the component must be in the **Active** lifecycle state.
+2. If `active=True`, the component must be in the **Active** lifecycle state.
+
+The return type is **not** constrained: an action may return any JSON-serializable value, or `None`.
 
 Can be used bare (`@component_action`) or with parameters (`@component_action(description={...}, active=True)`). The optional `description` parameter accepts an OpenAI-compatible tool/function description dict, used when actions are exposed as tools to an orchestrating LLM.
 
