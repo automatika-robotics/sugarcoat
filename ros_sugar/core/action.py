@@ -30,7 +30,7 @@ from ..launch import logger
 from ..condition import MsgConditionBuilder
 from ..io import Topic, get_msg_type
 from ..io.supported_types import SupportedType
-from ..utils import InvalidAction
+from ..utils import ActionResult, InvalidAction, parse_action_result
 
 
 def _create_auto_topic_parser(input_msg_type: Type, target_type: Type) -> Optional[Callable]:
@@ -374,15 +374,23 @@ class Action:
                 call_kwargs[key] = conv_func(msg)
         return call_args, call_kwargs
 
-    def __call__(self, **kwargs):
+    def __call__(self, **kwargs) -> ActionResult:
         """
         Execute the action.
+
+        :return: (success, message) per the action contract. A raised exception
+            is reported as a failure carrying its message, so a caller never has
+            to distinguish 'raised' from 'returned nothing'
+        :rtype: ActionResult
         """
         call_args, call_kwargs = self._prepare_call(**kwargs)
         try:
-            return self.executable(*call_args, **call_kwargs)
+            result = self.executable(*call_args, **call_kwargs)
         except Exception as e:
-            logger.error(f"Error executing action: {e}")
+            error = f"Error executing action '{self.action_name}': {e}"
+            logger.error(error)
+            return False, error
+        return parse_action_result(result, self.action_name)
 
     def _setup_conversions(self, event_topic_name, event_msg_type):
         """Method will be invoked from the associated event to setup any required automatic converters
