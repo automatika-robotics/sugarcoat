@@ -339,7 +339,7 @@ The upshot is that `success`, `timeout` and `max_retries` behave identically whi
 | A `Condition` | Live topic data | World state is authoritative. If the condition becomes true the action succeeded, **even if the method reported otherwise** |
 | Omitted | The method's return value | The `success` half of the action's `(bool, str)` result. A raised exception is a failure carrying its message |
 
-`None` counts as success so that wrapping an existing void `@component_action` does not silently change its meaning — it matches how the `ExecuteMethod` service already reports component actions.
+A return that does not follow the contract — `None` included — is logged and treated as a **failure**. Failing closed is deliberate: every consumer of an action reads its outcome, and a malformed value is truthy, so the alternative is silently reporting a success that never happened.
 
 #### Retry policy
 

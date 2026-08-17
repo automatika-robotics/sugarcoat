@@ -53,10 +53,9 @@ class MonitoredAction(Action):
       as ``gripper_state.msg.closed.is_true()``. World state is authoritative: if
       the condition becomes true the action succeeded, even if the dispatched
       method reported otherwise.
-    - **The return value**, when no success condition is given. Returning `False`
-      or raising is a failure; `True`, `None` or any other value is a success,
-      matching how component actions are reported over the `ExecuteMethod`
-      service.
+    - **The return value**, when no success condition is given. The success half
+      of the action's `(bool, str)` result decides the verdict. A raised
+      exception, or a return that does not follow the contract, is a failure.
 
     A `MonitoredAction` is an `Action`, so it is registered, routed and
     serialized exactly like one and the monitoring runs in whichever process

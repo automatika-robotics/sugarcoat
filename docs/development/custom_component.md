@@ -365,7 +365,8 @@ Every component inherits these actions that can be used directly in fallbacks or
 | `set_param(name, value, keep_alive=True)` | Change one parameter |
 | `set_params(names, values, keep_alive=True)` | Change multiple parameters |
 | `broadcast_status()` | Publish current health status |
-| `inspect_component()` | Return a string summary of the component's config, inputs, and outputs |
+
+All of them follow the action contract and return `ActionResult`. `inspect_component()`, which returns a string summary of the component's config, inputs and outputs, is **not** an action: it is an undecorated method returning `str`, so it cannot be used in an event or a fallback.
 
 ### Custom Action/Service Names
 
