@@ -169,11 +169,44 @@ launcher.on(robot.events.fall_detected(), [LogInfo(msg="fall"), robot.actions.st
 Marks a component method as callable from the event system. It enforces:
 
 - The method must be a bound method on a `LifecycleNode` subclass.
+- The method must be annotated to return `Tuple[bool, str]` — see [The action contract](#the-action-contract) below. This is checked at decoration time, so a component that does not follow it fails at import.
 - If `active=True` is passed, the method only executes when the component is in the `ACTIVE` lifecycle state.
 
-The return type is **not** constrained: an action may return any JSON-serializable value, or `None`.
-When invoked over the `ExecuteMethod` service, `None` and any non-`bool` value are reported as
-success, while `False` is reported as failure.
+### The action contract
+
+**Every action returns `(success, message)`.** The bool reports success or failure; the string
+carries a result when the action succeeded and an error message when it failed.
+
+```python
+from ros_sugar.utils import ActionResult, component_action
+
+class Gripper(BaseComponent):
+    @component_action
+    def close(self) -> ActionResult:
+        if self._blocked:
+            return False, "gripper is obstructed"
+        return True, "gripper closed"
+```
+
+`ActionResult` is a plain alias for `Tuple[bool, str]` — actions return an ordinary tuple, nothing
+more. An action that needs to return something structured serializes it into the string:
+
+```python
+    @component_action
+    def inspect(self) -> ActionResult:
+        return True, json.dumps({"grasped": True, "width": 0.04})
+```
+
+Over the `ExecuteMethod` service the two halves map onto the response directly: `success` carries the
+bool, and the string lands in `response_json` on success or `error_msg` on failure. A raised
+exception is reported as a failure carrying its message, so a caller never has to tell "it raised"
+apart from "it returned nothing".
+
+:::{note}
+Two things that look like actions are deliberately **exempt**, because they already have
+incompatible contracts: an [event condition](#callable) is a predicate and returns `bool`, and a
+Launcher `@action_handler` returns ROS launch entities.
+:::
 
 ```python
 from ros_sugar.utils import component_action
@@ -200,7 +233,7 @@ class Navigator(BaseComponent):
             },
         },
     })
-    def navigate_to(self, *, x: float, y: float) -> bool:
+    def navigate_to(self, *, x: float, y: float) -> ActionResult:
         ...
 ```
 
@@ -304,7 +337,7 @@ The upshot is that `success`, `timeout` and `max_retries` behave identically whi
 | `success` | Verdict comes from | Meaning |
 |:----------|:-------------------|:--------|
 | A `Condition` | Live topic data | World state is authoritative. If the condition becomes true the action succeeded, **even if the method reported otherwise** |
-| Omitted | The method's return value | `False` or a raised exception is a failure. `True`, `None` and any other value are successes |
+| Omitted | The method's return value | The `success` half of the action's `(bool, str)` result. A raised exception is a failure carrying its message |
 
 `None` counts as success so that wrapping an existing void `@component_action` does not silently change its meaning — it matches how the `ExecuteMethod` service already reports component actions.
 
@@ -385,7 +418,7 @@ When a failure is detected, `ComponentFallbacks` follows this resolution order:
 4. If `max_retries` is exhausted and the fallback has a list of actions, move to the next action in the list.
 5. If all actions in the list are exhausted, set the `giveup` flag and execute `on_giveup` if defined.
 
-A successful fallback execution (action returns `True`) resets the health status to `STATUS_HEALTHY`.
+A successful fallback execution (the action's result reports `success=True`) resets the health status to `STATUS_HEALTHY`. A fallback that reports failure leaves the status untouched, so the ladder moves on to the next retry or action.
 
 Fallbacks run inside the component, not in the Monitor: a timer at
 `config.fallback_rate` checks the component's own `health_status` and walks

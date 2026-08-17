@@ -12,6 +12,7 @@ from ros_sugar.core import BaseComponent, Event
 from ros_sugar import Launcher
 from automatika_ros_sugar.msg import ComponentStatus
 from ros_sugar.actions import Action, LogInfo
+from ros_sugar.utils import ActionResult
 
 # Threading Events
 on_any_py_event = threadingEvent()
@@ -116,8 +117,9 @@ def generate_test_description():
         on_change=True,
     )
 
-    def trigger_event(on_event: Event, **_):
+    def trigger_event(on_event: Event, **_) -> ActionResult:
         on_event.set()
+        return True, "Event trigger recorded"
 
     launcher = Launcher()
 

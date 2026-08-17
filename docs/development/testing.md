@@ -180,7 +180,7 @@ def test_fallback_retry():
 
     def failing_action():
         calls["n"] += 1
-        return False
+        return False, "simulated failure"  # actions return (success, message)
 
     fallbacks = ComponentFallbacks(
         on_component_fail=Fallback(action=Action(failing_action), max_retries=3)

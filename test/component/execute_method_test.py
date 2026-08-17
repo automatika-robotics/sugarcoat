@@ -1,3 +1,12 @@
+"""Tests the ExecuteMethod service against the (bool, str) action contract.
+
+An action returns `(success, message)`. Over the wire that maps onto the three
+`ExecuteMethod.srv` response fields: `success` carries the bool, and the string
+lands in `response_json` when the action succeeded or in `error_msg` when it
+failed. An action that wants to return something structured serializes it into
+the string itself, which is the `return_payload` case below.
+"""
+
 import json
 import unittest
 import launch_testing
@@ -8,17 +17,17 @@ import rclpy
 
 from ros_sugar.core import BaseComponent
 from ros_sugar import Launcher
-from ros_sugar.utils import component_action
+from ros_sugar.utils import ActionResult, component_action
 from automatika_ros_sugar.srv import ExecuteMethod
 
 
-EXPECTED_DICT = {"status": "ok", "count": 3, "items": ["a", "b"]}
-EXPECTED_INT = 42
-EXPECTED_STRING = "hello"
+EXPECTED_PAYLOAD = {"status": "ok", "count": 3, "items": ["a", "b"]}
+SUCCESS_MESSAGE = "did the thing"
+FAILURE_MESSAGE = "could not do the thing"
 
 
 class ReturningComponent(BaseComponent):
-    """Component with component_action methods returning various non-bool types."""
+    """Component whose actions cover both arms of the action contract."""
 
     def __init__(self, component_name, **kwargs):
         super().__init__(component_name, **kwargs)
@@ -27,32 +36,21 @@ class ReturningComponent(BaseComponent):
         return
 
     @component_action
-    def return_dict(self):
-        return EXPECTED_DICT
+    def succeed(self) -> ActionResult:
+        return True, SUCCESS_MESSAGE
 
     @component_action
-    def return_int(self):
-        return EXPECTED_INT
+    def fail(self) -> ActionResult:
+        return False, FAILURE_MESSAGE
 
     @component_action
-    def return_string(self):
-        return EXPECTED_STRING
+    def return_payload(self) -> ActionResult:
+        """Structured output is carried as JSON inside the message string"""
+        return True, json.dumps(EXPECTED_PAYLOAD)
 
     @component_action
-    def return_none(self):
-        return None
-
-    @component_action
-    def return_true(self) -> bool:
-        return True
-
-    @component_action
-    def return_false(self) -> bool:
-        return False
-
-    @component_action
-    def return_non_serializable(self):
-        return object()
+    def raise_error(self) -> ActionResult:
+        raise RuntimeError("boom")
 
 
 @pytest.mark.launch_test
@@ -69,7 +67,7 @@ def generate_test_description():
 
 
 class TestExecuteMethodResponse(unittest.TestCase):
-    """Tests that ExecuteMethod.srv response_json is populated for non-bool returns."""
+    """Tests that ExecuteMethod maps an action's (bool, str) onto the response."""
 
     @classmethod
     def setUpClass(cls):
@@ -96,46 +94,40 @@ class TestExecuteMethodResponse(unittest.TestCase):
         req.kwargs_json = ""
         future = self.client.call_async(req)
         rclpy.spin_until_future_complete(
-            self.node, future, timeout_sec=10.0, executor=rclpy.executors.SingleThreadedExecutor(context=self.context)
+            self.node,
+            future,
+            timeout_sec=10.0,
+            executor=rclpy.executors.SingleThreadedExecutor(context=self.context),
         )
         self.assertTrue(future.done(), f"Service call '{method_name}' did not complete")
         return future.result()
 
-    def test_dict_return_is_json_encoded(self):
-        resp = self._call("return_dict")
+    def test_success_carries_the_message_in_response_json(self):
+        resp = self._call("succeed")
         self.assertTrue(resp.success)
-        self.assertEqual(json.loads(resp.response_json), EXPECTED_DICT)
+        self.assertEqual(json.loads(resp.response_json), SUCCESS_MESSAGE)
+        self.assertEqual(resp.error_msg, "")
 
-    def test_int_return_is_json_encoded(self):
-        resp = self._call("return_int")
-        self.assertTrue(resp.success)
-        self.assertEqual(json.loads(resp.response_json), EXPECTED_INT)
+    def test_failure_carries_the_message_in_error_msg(self):
+        """Regression: a (False, msg) tuple used to be reported as success.
 
-    def test_string_return_is_json_encoded(self):
-        resp = self._call("return_string")
-        self.assertTrue(resp.success)
-        self.assertEqual(json.loads(resp.response_json), EXPECTED_STRING)
-
-    def test_none_return_has_empty_response_json(self):
-        resp = self._call("return_none")
-        self.assertTrue(resp.success)
-        self.assertEqual(resp.response_json, "")
-
-    def test_true_bool_return(self):
-        resp = self._call("return_true")
-        self.assertTrue(resp.success)
-        self.assertEqual(json.loads(resp.response_json), True)
-
-    def test_false_bool_return(self):
-        resp = self._call("return_false")
+        Before the action contract, a tuple fell through the type dispatch to
+        the generic branch, so `success` was set True and the error text was
+        JSON-dumped into `response_json`.
+        """
+        resp = self._call("fail")
         self.assertFalse(resp.success)
-        self.assertNotEqual(resp.error_msg, "")
+        self.assertEqual(resp.error_msg, FAILURE_MESSAGE)
 
-    def test_non_serializable_return_sets_error(self):
-        resp = self._call("return_non_serializable")
+    def test_structured_output_travels_as_json_in_the_message(self):
+        resp = self._call("return_payload")
         self.assertTrue(resp.success)
-        self.assertEqual(resp.response_json, "")
-        self.assertIn("not JSON serializable", resp.error_msg)
+        self.assertEqual(json.loads(json.loads(resp.response_json)), EXPECTED_PAYLOAD)
+
+    def test_raised_exception_is_reported_as_failure(self):
+        resp = self._call("raise_error")
+        self.assertFalse(resp.success)
+        self.assertIn("boom", resp.error_msg)
 
     def test_unknown_method_fails(self):
         resp = self._call("this_method_does_not_exist")

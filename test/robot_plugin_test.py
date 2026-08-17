@@ -1217,7 +1217,7 @@ def _event_component(plugin, topic, name):
     component._robot_plugin = plugin
     component._use_robot_plugin()
     component._add_event_action_pair(
-        Event(topic.msg.data > 10), Action(method=lambda: None)
+        Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
     )
     return component
 
@@ -1301,7 +1301,7 @@ def test_event_on_a_sensor_topic_binds_to_that_sensor(rclpy_context):
     try:
         component._use_robot_plugin()
         component._add_event_action_pair(
-            Event(topic.msg.data > 10), Action(method=lambda: None)
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
         )
         component._turn_on_events_management()
 
@@ -1358,7 +1358,7 @@ def test_event_on_a_sensor_topic_binds_with_no_robot_plugin(rclpy_context):
         assert component._robot_plugin is None, "no robot plugin in this recipe"
         component._use_robot_plugin()
         component._add_event_action_pair(
-            Event(topic.msg.data > 10), Action(method=lambda: None)
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
         )
         component._turn_on_events_management()
 

@@ -10,7 +10,7 @@ from ros_sugar.core import Event
 from ros_sugar.io import Topic
 from ros_sugar.core import BaseComponent
 from ros_sugar import Launcher
-from ros_sugar.utils import component_action
+from ros_sugar.utils import ActionResult, component_action
 from ros_sugar.actions import Action, publish_message
 
 from std_msgs.msg import Float32
@@ -57,16 +57,19 @@ class ChildComponent(BaseComponent):
         return
 
     @component_action
-    def test_action(self, **_) -> None:
+    def test_action(self, **_) -> ActionResult:
         global component_action_py_event
         self.get_logger().info("Testing a component action")
         component_action_py_event.set()
+        return True, "Component action ran"
 
     @component_action
-    def test_parsing_from_topic(self, topic_data=None, **_) -> None:
+    def test_parsing_from_topic(self, topic_data=None, **_) -> ActionResult:
         global action_with_topic_arg_py_event
-        if topic_data == TOPIC_ATTRIBUTE_VALUE:
-            action_with_topic_arg_py_event.set()
+        if topic_data != TOPIC_ATTRIBUTE_VALUE:
+            return False, f"Expected {TOPIC_ATTRIBUTE_VALUE}, got {topic_data}"
+        action_with_topic_arg_py_event.set()
+        return True, "Parsed the topic argument"
 
 
 @pytest.mark.launch_test
@@ -82,8 +85,9 @@ def generate_test_description():
 
     event_on_published_message = Event(test_topic, handle_once=True)
 
-    def inline_method():
+    def inline_method() -> ActionResult:
         inline_action_py_event.set()
+        return True, "Inline recipe method ran"
 
     msg = Float32()
     msg.data = TOPIC_ATTRIBUTE_VALUE

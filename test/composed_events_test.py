@@ -11,6 +11,7 @@ from ros_sugar.io import Topic
 from ros_sugar.core import BaseComponent, Event
 from ros_sugar import Launcher
 from ros_sugar.actions import Action, LogInfo
+from ros_sugar.utils import ActionResult
 
 # Threading Events
 on_any_and_on_equal_py_event = threadingEvent()
@@ -88,8 +89,9 @@ def generate_test_description():
 
     event_on_not_false = Event(~bool_topic.msg.data.is_false())
 
-    def trigger_event(on_event: Event, **_):
+    def trigger_event(on_event: Event, **_) -> ActionResult:
         on_event.set()
+        return True, "Event trigger recorded"
 
     launcher = Launcher()
 

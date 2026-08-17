@@ -10,6 +10,7 @@ from ros_sugar.core import BaseComponent, Event
 from ros_sugar import Launcher
 from ros_sugar.io import Topic
 from ros_sugar.actions import Action, LogInfo
+from ros_sugar.utils import ActionResult
 
 # ------------------------------------------------------------------
 # Threading events used to signal that consequence actions fired
@@ -45,19 +46,23 @@ class ComponentA(BaseComponent):
         pass
 
     # --- Component consequence methods ---
-    def on_change_trigger(self, **_) -> None:
+    def on_change_trigger(self, **_) -> ActionResult:
         global on_change_py_event
         on_change_py_event.set()
+        return True, "on_change trigger recorded"
 
-    def on_handle_once_trigger(self, **_) -> None:
+    def on_handle_once_trigger(self, **_) -> ActionResult:
         global handle_once_first_py_event
         handle_once_invocations.append(1)
         handle_once_first_py_event.set()
+        return True, "handle_once trigger recorded"
 
-    def on_dynamic_trigger(self, value, **_) -> None:
+    def on_dynamic_trigger(self, value, **_) -> ActionResult:
         global dynamic_arg_comp_py_event
-        if value == EXPECTED_VALUE:
-            dynamic_arg_comp_py_event.set()
+        if value != EXPECTED_VALUE:
+            return False, f"Expected {EXPECTED_VALUE}, got {value}"
+        dynamic_arg_comp_py_event.set()
+        return True, "dynamic arg trigger recorded"
 
 
 class PublisherComponent(BaseComponent):
@@ -116,14 +121,17 @@ def generate_test_description():
         return toggler
 
     # ------ Actions --------
-    def on_basic_trigger(**_) -> None:
+    def on_basic_trigger(**_) -> ActionResult:
         global basic_trigger_py_event
         basic_trigger_py_event.set()
+        return True, "basic trigger recorded"
 
-    def on_dynamic_trigger(value, **_) -> None:
+    def on_dynamic_trigger(value, **_) -> ActionResult:
         global dynamic_arg_recipe_py_event
-        if value == EXPECTED_VALUE:
-            dynamic_arg_recipe_py_event.set()
+        if value != EXPECTED_VALUE:
+            return False, f"Expected {EXPECTED_VALUE}, got {value}"
+        dynamic_arg_recipe_py_event.set()
+        return True, "dynamic arg trigger recorded"
 
     # --- Case 1: recipe-level basic trigger ---
     # Condition starts False, becomes True after execution counter exceeds 5

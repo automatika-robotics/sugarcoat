@@ -26,6 +26,7 @@ from ros_sugar.core import Action, BaseComponent, Event, MonitoredAction
 from ros_sugar.core.action import LogInfo
 from ros_sugar.io import Topic
 from ros_sugar.launch.launcher import InvalidAction
+from ros_sugar.utils import ActionResult
 
 # ------------------------------------------------------------------
 # Threading events and counters used to observe what each action did
@@ -60,15 +61,17 @@ NEVER_TRUE_TOPIC = "never_closed"
 MONITOR_CONFIRM_TOPIC = "monitor_confirm"
 
 
-def close_from_the_recipe(**_) -> None:
+def close_from_the_recipe(**_) -> ActionResult:
     """A monitored action declared in the recipe rather than on a component"""
     recipe_calls.append(1)
     recipe_py_event.set()
+    return True, "Recipe method dispatched"
 
 
-def on_monitor_confirm(**_) -> None:
+def on_monitor_confirm(**_) -> ActionResult:
     """Fires once the Monitor owned action has actually published"""
     monitor_confirm_py_event.set()
+    return True, "Monitor owned action confirmed"
 
 # The live gripper, so tests can read back what it ended up watching
 gripper_component = None
@@ -87,20 +90,22 @@ class GripperComponent(BaseComponent):
     def _execution_step(self):
         pass
 
-    def close(self, **_) -> None:
-        """Reports nothing, so only the success condition can end this attempt"""
+    def close(self, **_) -> ActionResult:
+        """Reports success, but the success condition is what really decides"""
         succeeding_calls.append(1)
         succeeding_py_event.set()
+        return True, "Gripper close commanded"
 
-    def close_and_report_failure(self, **_) -> bool:
+    def close_and_report_failure(self, **_) -> ActionResult:
         failing_calls.append(1)
         failing_py_event.set()
-        return False
+        return False, "Gripper reported it could not close"
 
-    def close_without_confirming(self, **_) -> None:
+    def close_without_confirming(self, **_) -> ActionResult:
         """The success condition for this one is never satisfied"""
         timing_out_calls.append(1)
         timing_out_py_event.set()
+        return True, "Gripper close commanded, awaiting confirmation"
 
     def watched_topics(self) -> list:
         """Topics this component currently evaluates events on"""
@@ -166,10 +171,11 @@ def generate_test_description():
 
         return _condition
 
-    def record_watched_topics(**_) -> None:
+    def record_watched_topics(**_) -> ActionResult:
         """Snapshot what the gripper watches before any action is dispatched"""
         watched_topics_before_trigger.extend(gripper.watched_topics())
         snapshot_py_event.set()
+        return True, "Watched topics snapshotted"
 
     # --- Case 1: the success condition is met, so no retry happens ---
     succeeding = MonitoredAction(
@@ -208,7 +214,8 @@ def generate_test_description():
     # method plus the name of the Monitor method that really runs ---
     confirm_topic = Topic(name=MONITOR_CONFIRM_TOPIC, msg_type="Bool")
     from_monitor = MonitoredAction(
-        lambda *_a, **_k: None,
+        # Placeholder, replaced by the real Monitor method at activation
+        lambda *_a, **_k: (True, ""),
         kwargs={"topic": confirm_topic, "msg": Bool(data=True)},
         success=confirm_topic.msg.data.is_true(),
         timeout=30.0,
