@@ -508,7 +508,17 @@ class Event:
         try:
             # Execute all actions
             for action in self._registered_on_trigger_actions:
-                action(topics=global_topic_cache)
+                result = action(topics=global_topic_cache)
+                # This is the one funnel every event-triggered action passes
+                # through, so it is where a reported failure finally gets
+                # surfaced.
+                if isinstance(action, Action) and result:
+                    succeeded, message = result
+                    if not succeeded:
+                        logger.error(
+                            f"Action '{action.action_name}' failed for event "
+                            f"'{self}': {message}"
+                        )
 
             # Handle the blocking delay inside the thread (so main loop isn't blocked)
             if self._keep_event_delay > 0:
@@ -609,7 +619,17 @@ class Event:
         if self._handle_once and self._processed_once:
             return
 
-        triggered = bool(self._action_condition())
+        # NOTE: the condition callable is invoked directly rather than through
+        # Action.__call__. A condition is a predicate returning bool, not an
+        # action returning (success, message)
+        call_args, call_kwargs = self._action_condition._prepare_call()
+        try:
+            triggered = bool(
+                self._action_condition.executable(*call_args, **call_kwargs)
+            )
+        except Exception as e:
+            logger.error(f"Error evaluating condition for event '{self}': {e}")
+            triggered = False
 
         if self._on_change and self._previous_trigger is not None:
             self.trigger = triggered and not self._previous_trigger

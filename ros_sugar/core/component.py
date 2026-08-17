@@ -64,11 +64,13 @@ from ..io.supported_types import SupportedType
 from ..io.topic import Topic
 from ..tf import TFListener, TFListenerConfig
 from ..utils import (
+    ActionResult,
     camel_to_snake_case,
     component_action,
     component_fallback,
     get_methods_with_decorator,
     log_srv,
+    parse_action_result,
 )
 from .action import Action
 from .event import Event, EventBlackboardEntry
@@ -2722,28 +2724,15 @@ class BaseComponent(lifecycle.Node):
                 return response
         try:
             method = getattr(self, request.name)
-            result = method(**kwargs)
-            if isinstance(result, bool):
-                response.success = result
-                # TODO: If the error is caught in the method and it returns false
-                # we consider this a failure. This is for backward compatibility
-                # Thus component actions cannot return False as a legitimate
-                # response. We should ensure all component actions in downstream
-                # packages are modified before changing this behaviour.
-                if not result:
-                    response.error_msg = f"The method '{request.name}' executed but returned False, indicating failure without an exception."
-                else:
-                    response.response_json = json.dumps(result)
-            # NOTE: empty responses are considered successful
-            elif result is None:
-                response.success = True
+            # Actions return (success, message) per the action contract. The
+            # message carries a result when the action succeeded and an error
+            # when it failed
+            success, message = parse_action_result(method(**kwargs), request.name)
+            response.success = success
+            if success:
+                response.response_json = json.dumps(message)
             else:
-                response.success = True
-                try:
-                    response.response_json = json.dumps(result)
-                except (TypeError, ValueError) as e:
-                    response.response_json = ""
-                    response.error_msg = f"The method '{request.name}' returned a value that is not JSON serializable: {e}"
+                response.error_msg = message
         except Exception as e:
             response.success = False
             response.error_msg = f"Component {self.node_name} has a method with requested name '{request.name}' but the following error raised while running: {e}"
@@ -2929,16 +2918,16 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def start(self, **_) -> bool:
+    def start(self, **_) -> ActionResult:
         """
         Start the component - trigger_activate
 
-        :return: If the component is started
-        :rtype: bool
+        :return: If the component is started, with a reason when it is not
+        :rtype: ActionResult
         """
         if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             # Component already active
-            return True
+            return True, f"Component '{self.node_name}' is already active"
 
         elif self.lifecycle_state in [
             LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
@@ -2950,20 +2939,29 @@ class BaseComponent(lifecycle.Node):
         transition_done = self.__wait_for_state_transition()
 
         if not transition_done:
-            return False
+            return (
+                False,
+                f"Component '{self.node_name}' is stuck in a lifecycle transition",
+            )
 
         # configured and inactive
         self.trigger_activate()
 
-        return self.__wait_for_node_start()
+        if not self.__wait_for_node_start():
+            return (
+                False,
+                f"Component '{self.node_name}' did not come up within "
+                f"{self.config.wait_for_restart_time} secs",
+            )
+        return True, f"Component '{self.node_name}' started"
 
     @component_action
-    def stop(self, **_) -> bool:
+    def stop(self, **_) -> ActionResult:
         """
         Stop the component - trigger_deactivate
 
-        :return: If the component is stopped
-        :rtype: bool
+        :return: If the component is stopped, with a reason when it is not
+        :rtype: ActionResult
         """
         if self.lifecycle_state in [
             LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
@@ -2971,19 +2969,24 @@ class BaseComponent(lifecycle.Node):
             LifecycleStateMsg.PRIMARY_STATE_FINALIZED,
         ]:
             # Already not active
-            return True
+            return True, f"Component '{self.node_name}' is already not active"
 
         transition_done = self.__wait_for_state_transition()
 
         if not transition_done:
-            return False
+            return (
+                False,
+                f"Component '{self.node_name}' is stuck in a lifecycle transition",
+            )
 
         self.trigger_deactivate()
 
-        return True
+        return True, f"Component '{self.node_name}' stopped"
 
     @component_action
-    def reconfigure(self, new_config: Any, keep_alive: bool = False, **_) -> bool:
+    def reconfigure(
+        self, new_config: Any, keep_alive: bool = False, **_
+    ) -> ActionResult:
         """
         Reconfigure the component - cleanup->stop->trigger_configure->start
 
@@ -2992,8 +2995,8 @@ class BaseComponent(lifecycle.Node):
         :param keep_alive: Reconfigure while the component is online, defaults to False
         :type keep_alive: bool, optional
 
-        :return: If the component is Reconfigured
-        :rtype: bool
+        :return: If the component is Reconfigured, with a reason when it is not
+        :rtype: ActionResult
         """
         self.get_logger().warning("Reconfiguring component...")
 
@@ -3003,7 +3006,7 @@ class BaseComponent(lifecycle.Node):
                 self.configure(config_file=new_config)
             elif isinstance(new_config, self.config.__class__):
                 self.config = new_config
-            return True
+            return True, f"Component '{self.node_name}' reconfigured in place"
 
         initial_state = self.lifecycle_state
 
@@ -3021,7 +3024,10 @@ class BaseComponent(lifecycle.Node):
         transition_done = self.__wait_for_state_transition()
 
         if not transition_done:
-            return False
+            return (
+                False,
+                f"Component '{self.node_name}' is stuck in a lifecycle transition",
+            )
 
         # set new config as params attr
         if isinstance(new_config, str):
@@ -3034,17 +3040,22 @@ class BaseComponent(lifecycle.Node):
 
         if reactivate:
             self.trigger_activate()
-            return self.__wait_for_node_start()
+            if not self.__wait_for_node_start():
+                return (
+                    False,
+                    f"Component '{self.node_name}' did not come back up after "
+                    "reconfiguring",
+                )
 
-        return True
+        return True, f"Component '{self.node_name}' reconfigured"
 
     @component_action
-    def restart(self, *, wait_time: Optional[float] = None, **_) -> bool:
+    def restart(self, *, wait_time: Optional[float] = None, **_) -> ActionResult:
         """
         Restart the component - stop->start
 
-        :return: If the component is Reconfigured
-        :rtype: bool
+        :return: If the component is restarted, with a reason when it is not
+        :rtype: ActionResult
         """
 
         if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
@@ -3057,7 +3068,10 @@ class BaseComponent(lifecycle.Node):
 
         if not transition_done:
             # timeout
-            return False
+            return (
+                False,
+                f"Component '{self.node_name}' is stuck in a lifecycle transition",
+            )
 
         if wait_time:
             self.get_logger().warning(
@@ -3067,12 +3081,17 @@ class BaseComponent(lifecycle.Node):
 
         # not configured -> configure and start
         self.trigger_activate()
-        return self.__wait_for_node_start()
+        if not self.__wait_for_node_start():
+            return (
+                False,
+                f"Component '{self.node_name}' did not come back up after restarting",
+            )
+        return True, f"Component '{self.node_name}' restarted"
 
     @component_action
     def set_param(
         self, param_name: str, new_value: Any, keep_alive: bool = True, **_
-    ) -> bool:
+    ) -> ActionResult:
         """
         Change the value of one component parameter
 
@@ -3083,10 +3102,8 @@ class BaseComponent(lifecycle.Node):
         :param keep_alive: To keep the component running when updating value, defaults to True
         :type keep_alive: bool, optional
 
-        :raises Exception: Parameter could not be updated to given value
-
-        :return: Parameter updated
-        :rtype: bool
+        :return: Parameter updated, with the reason when it is not
+        :rtype: ActionResult
         """
         try:
             if keep_alive:
@@ -3095,14 +3112,14 @@ class BaseComponent(lifecycle.Node):
                 self.stop()
                 self.config.update_value(param_name, new_value)
                 self.start()
-        except Exception:
-            raise
-        return True
+        except Exception as e:
+            return False, f"Could not update parameter '{param_name}': {e}"
+        return True, f"Parameter '{param_name}' updated to '{new_value}'"
 
     @component_action
     def set_params(
         self, params_names: List[str], new_values: List, keep_alive: bool = True, **_
-    ) -> bool:
+    ) -> ActionResult:
         """
         Change the value of multiple component parameters
 
@@ -3113,10 +3130,8 @@ class BaseComponent(lifecycle.Node):
         :param keep_alive: To keep the component running when updating value, defaults to True
         :type keep_alive: bool, optional
 
-        :raises Exception: Parameter could not be updated to given value
-
-        :return: Parameter updated
-        :rtype: bool
+        :return: Parameters updated, with the reason when they are not
+        :rtype: ActionResult
         """
         try:
             if keep_alive:
@@ -3127,9 +3142,9 @@ class BaseComponent(lifecycle.Node):
                 for param_name, new_value in zip(params_names, new_values):
                     self.config.update_value(param_name, new_value)
                 self.start()
-        except Exception:
-            raise
-        return True
+        except Exception as e:
+            return False, f"Could not update parameters {params_names}: {e}"
+        return True, f"Parameters {params_names} updated"
 
     # END OF ACTIONS
 
@@ -3338,10 +3353,13 @@ class BaseComponent(lifecycle.Node):
             )
 
     @component_fallback
-    def broadcast_status(self, **_) -> None:
+    def broadcast_status(self, **_) -> ActionResult:
         """
         Component fallback defined to only broadcast the current state so it is handled by an external manager.
         Used as the default fallback strategy for any system (external) failure
+
+        :return: Whether the status was broadcast
+        :rtype: ActionResult
         """
         # If node is active publish status
         if (
@@ -3349,6 +3367,13 @@ class BaseComponent(lifecycle.Node):
             and self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE
         ):
             self.health_status_publisher.publish(self.health_status())
+            return True, f"Broadcast status of '{self.node_name}'"
+        # NOTE: reported as a failure so the fallback ladder does not treat a
+        # status that was never published as a successful recovery
+        return (
+            False,
+            f"Cannot broadcast status of '{self.node_name}', it is not active",
+        )
 
     # LIFECYCLE ON TRANSITIONS CUSTOM METHODS
     @property

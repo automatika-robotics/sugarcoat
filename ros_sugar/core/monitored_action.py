@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 from ..condition import Condition
 from ..io import Topic
-from ..utils import logger
+from ..utils import ActionResult, logger, parse_action_result
 from .action import Action
 from .event import Event
 
@@ -259,55 +259,57 @@ class MonitoredAction(Action):
         self._host.add_runtime_event_listener(self._success_event)
         self._watching = True
 
-    def __call__(self, **kwargs) -> bool:
+    def __call__(self, **kwargs) -> ActionResult:
         """Dispatch the action and verify the outcome, retrying as configured.
 
         Blocks until the outcome is decided. This runs on an Event worker
         thread, and the triggering Event will not re-fire while its actions are
         in flight, so no separate preemption handling is needed.
 
-        :return: Whether the action ultimately succeeded
-        :rtype: bool
+        :return: (success, message) per the action contract, where the message
+            explains the final verdict across all attempts
+        :rtype: ActionResult
         """
         self.__start_watching()
         attempt = 0
         while True:
-            succeeded, timed_out = self.__run_attempt(**kwargs)
+            succeeded, timed_out, message = self.__run_attempt(**kwargs)
             if succeeded:
-                return True
+                return True, message
 
             if timed_out and self._on_timeout == "succeed":
                 logger.warning(
                     f"MonitoredAction '{self.action_name}' timed out, reporting success "
                     "as configured by on_timeout='succeed'"
                 )
-                return True
+                return True, f"{message}, reported as success by on_timeout='succeed'"
             if timed_out and self._on_timeout == "fail":
                 logger.error(
                     f"MonitoredAction '{self.action_name}' timed out and on_timeout='fail'"
                 )
-                return False
+                return False, message
 
             if attempt >= self._max_retries:
-                logger.error(
+                error = (
                     f"MonitoredAction '{self.action_name}' failed after "
-                    f"{attempt + 1} attempt(s)"
+                    f"{attempt + 1} attempt(s): {message}"
                 )
-                return False
+                logger.error(error)
+                return False, error
 
             attempt += 1
             logger.warning(
                 f"MonitoredAction '{self.action_name}' failed, retrying "
-                f"({attempt}/{self._max_retries})"
+                f"({attempt}/{self._max_retries}): {message}"
             )
             if self._retry_delay > 0.0:
                 time.sleep(self._retry_delay)
 
-    def __run_attempt(self, **kwargs) -> Tuple[bool, bool]:
+    def __run_attempt(self, **kwargs) -> Tuple[bool, bool, str]:
         """Dispatch once and wait for the verdict.
 
-        :return: (succeeded, timed_out)
-        :rtype: Tuple[bool, bool]
+        :return: (succeeded, timed_out, message)
+        :rtype: Tuple[bool, bool, str]
         """
         # Cleared before dispatching so a success can only ever be credited to
         # data arriving after this attempt started. Otherwise a condition that
@@ -322,31 +324,37 @@ class MonitoredAction(Action):
             return self.__await_return_value(future)
         return self.__await_success_condition(future)
 
-    def __dispatch(self, call_args: List, call_kwargs: Dict) -> bool:
-        """Run the executable, returning whether it reported success"""
+    def __dispatch(self, call_args: List, call_kwargs: Dict) -> ActionResult:
+        """Run the executable and read its verdict off the (bool, str) contract"""
         try:
             result = self.executable(*call_args, **call_kwargs)
         except Exception as e:
-            logger.error(f"Error executing action '{self.action_name}': {e}")
-            return False
-        # Only an explicit False is a failure. None and any other value are
-        # successes, matching how ExecuteMethod reports component actions
-        return result is not False
+            error = f"Error executing action '{self.action_name}': {e}"
+            logger.error(error)
+            return False, error
+        succeeded, message = parse_action_result(result, self.action_name)
+        if not succeeded:
+            logger.warning(
+                f"MonitoredAction '{self.action_name}' reported failure: {message}"
+            )
+        return succeeded, message
 
-    def __await_return_value(self, future) -> Tuple[bool, bool]:
+    def __await_return_value(self, future) -> Tuple[bool, bool, str]:
         """Verdict comes from the dispatched method itself"""
         try:
-            return future.result(timeout=self._timeout), False
+            succeeded, message = future.result(timeout=self._timeout)
+            return succeeded, False, message
         except FutureTimeoutError:
-            logger.warning(
+            error = (
                 f"MonitoredAction '{self.action_name}' did not return within "
                 f"{self._timeout} secs"
             )
+            logger.warning(error)
             # NOTE: the call is still running. A method that is already
             # executing cannot be cancelled
-            return False, True
+            return False, True, error
 
-    def __await_success_condition(self, future) -> Tuple[bool, bool]:
+    def __await_success_condition(self, future) -> Tuple[bool, bool, str]:
         """Verdict comes from the world reaching the expected state"""
         waited = 0.0
         while self._timeout is None or waited < self._timeout:
@@ -354,13 +362,19 @@ class MonitoredAction(Action):
             if self._timeout is not None:
                 slice_secs = min(slice_secs, self._timeout - waited)
             if self._success_latch.wait(slice_secs):
-                return True, False
+                return True, False, "Success condition met"
             waited += slice_secs
             # A dispatch that already reported failure will not bring the
             # condition about, so stop waiting out the rest of the timeout
-            if future.done() and not future.result():
-                return False, False
-        return False, True
+            if future.done():
+                dispatched, message = future.result()
+                if not dispatched:
+                    return False, False, message
+        return (
+            False,
+            True,
+            f"Success condition not met within {self._timeout} secs",
+        )
 
     @property
     def dictionary(self) -> Dict:

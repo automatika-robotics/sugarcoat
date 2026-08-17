@@ -27,6 +27,7 @@ from ..io.topic import Topic
 from .event import Event, EventBlackboardEntry
 from .action import Action
 from .monitored_action import bind_monitored_actions
+from ..utils import ActionResult
 from ..launch import logger
 
 
@@ -544,26 +545,50 @@ class Monitor(Node):
             )
         )
 
+    @staticmethod
+    def _result_from_srv_response(response: Any, description: str) -> ActionResult:
+        """Read a service response into the (success, message) action contract.
+
+        NOTE: `ServiceClientHandler.send_request` returns None when the service
+        is unavailable or the call times out. That has to be a failure: a
+        response object is always truthy, so returning it raw made a lost call
+        and an explicit `success=False` both read as success.
+
+        :param response: The service response, or None if the call did not land
+        :param description: What was attempted, used when the response carries
+            no message of its own
+        :rtype: ActionResult
+        """
+        if response is None:
+            return False, f"{description} got no response from the service"
+        message = getattr(response, "error_msg", "") or getattr(
+            response, "response_json", ""
+        )
+        return bool(response.success), message or description
+
     def execute_component_method(
         self,
         component_name: str,
         method_name: str,
         kwargs: Dict,
-    ) -> Any:
+    ) -> ActionResult:
         srv_client: base_clients.ServiceClientHandler = (
             self._execute_component_method_srv_client[component_name]
         )
         srv_request = ExecuteMethod.Request()
         srv_request.name = method_name
         srv_request.kwargs_json = json.dumps(kwargs)
-        return srv_client.send_request(req_msg=srv_request)
+        return self._result_from_srv_response(
+            srv_client.send_request(req_msg=srv_request),
+            f"Method '{method_name}' on component '{component_name}'",
+        )
 
     def configure_component(
         self,
         component: BaseComponent,
         new_config: Union[object, str],
         keep_alive: bool,
-    ) -> Any:
+    ) -> ActionResult:
         """
         Configure a given component from config instance or config file
         Creates and send the request to the component service
@@ -584,20 +609,23 @@ class Monitor(Node):
                     component.get_change_parameters_msg_from_config(new_config)
                 )
                 request_msg.keep_alive = keep_alive
-                return self._update_parameters_srv_client[
+                response = self._update_parameters_srv_client[
                     component.node_name
                 ].send_request(request_msg)
             else:
                 # For string send a configure from file request
                 request_msg_file = ConfigureFromFile.Request()
                 request_msg_file.path_to_file = new_config
-                return self._configure_from_file_srv_client[
+                response = self._configure_from_file_srv_client[
                     component.node_name
                 ].send_request(request_msg_file)
-        except Exception as e:
-            self.get_logger().error(
-                f"Unable to configure component {component.node_name}: {e}"
+            return self._result_from_srv_response(
+                response, f"Configuring component '{component.node_name}'"
             )
+        except Exception as e:
+            error = f"Unable to configure component {component.node_name}: {e}"
+            self.get_logger().error(error)
+            return False, error
 
     def update_parameter(
         self,
@@ -605,7 +633,7 @@ class Monitor(Node):
         param_name: str,
         new_value: Any,
         keep_alive: bool = True,
-    ) -> Any:
+    ) -> ActionResult:
         """Sends a ChangeParameter service request to given component
 
         :param component: _description_
@@ -628,7 +656,10 @@ class Monitor(Node):
         srv_request.name = param_name
         srv_request.value = str(new_value)
         srv_request.keep_alive = keep_alive
-        return srv_client.send_request(req_msg=srv_request)
+        return self._result_from_srv_response(
+            srv_client.send_request(req_msg=srv_request),
+            f"Updating parameter '{param_name}' on component '{node_name}'",
+        )
 
     def update_parameters(
         self,
@@ -637,7 +668,7 @@ class Monitor(Node):
         new_values: List,
         keep_alive: bool = True,
         **_,
-    ) -> Any:
+    ) -> ActionResult:
         """Sends a ChangeParameters service request to given component
 
         :param component: _description_
@@ -660,7 +691,10 @@ class Monitor(Node):
         srv_request.names = params_names
         srv_request.values = str(new_values)
         srv_request.keep_alive = keep_alive
-        return srv_client.send_request(req_msg=srv_request)
+        return self._result_from_srv_response(
+            srv_client.send_request(req_msg=srv_request),
+            f"Updating parameters {params_names} on component '{node_name}'",
+        )
 
     def _get_srv_client(
         self, srv_name: str, srv_type: type
@@ -718,7 +752,7 @@ class Monitor(Node):
         srv_name: Optional[str] = None,
         srv_type: Optional[type] = None,
         **_,
-    ) -> None:
+    ) -> ActionResult:
         """Action to send a ROS2 service request during runtime
 
         :param srv_name: Service name
@@ -727,17 +761,24 @@ class Monitor(Node):
         :type srv_type: type
         :param srv_request_msg: Service request message
         :type srv_request_msg: Any
+        :rtype: ActionResult
         """
         if not srv_name or not srv_type:
-            self.get_logger().error(
-                f"Cannot send service request to unknown ROS2 service with name: {srv_name} and type {srv_type}"
+            error = (
+                f"Cannot send service request to unknown ROS2 service with name: "
+                f"{srv_name} and type {srv_type}"
             )
-            return
+            self.get_logger().error(error)
+            return False, error
         if not srv_request_msg:
             # If request is not provided create an empty one
             srv_request_msg = srv_type.Request()
         srv_client = self._get_srv_client(srv_name, srv_type)
-        srv_client.send_request(srv_request_msg)
+        # NOTE: send_request returns None when the service is unavailable or the
+        # call times out, so the response is checked rather than discarded
+        if srv_client.send_request(srv_request_msg) is None:
+            return False, f"Service '{srv_name}' did not respond"
+        return True, f"Request sent to service '{srv_name}'"
 
     def send_action_goal(
         self,
@@ -745,7 +786,7 @@ class Monitor(Node):
         action_name: Optional[str] = None,
         action_type: Optional[type] = None,
         **_,
-    ) -> None:
+    ) -> ActionResult:
         """Action to send a ROS2 action goal during runtime
 
         :param action_name: ROS2 action name
@@ -754,17 +795,24 @@ class Monitor(Node):
         :type action_type: type
         :param action_request_msg: ROS2 action goal message
         :type action_request_msg: Any
+        :rtype: ActionResult
         """
         if not action_name or not action_type:
-            self.get_logger().error(
-                f"Cannot send service request to unknown ROS2 service with name: {action_name} and type {action_type}"
+            error = (
+                f"Cannot send action goal to unknown ROS2 action with name: "
+                f"{action_name} and type {action_type}"
             )
-            return
+            self.get_logger().error(error)
+            return False, error
         if not action_request_msg:
             # If request is not provided create an empty one
             action_request_msg = action_type.Goal()
         action_client = self._get_action_client(action_name, action_type)
-        action_client.send_request(action_request_msg)
+        # NOTE: this reports goal acceptance only, not the terminal outcome of
+        # the action, which arrives later on the client handler
+        if not action_client.send_request(action_request_msg):
+            return False, f"Action server '{action_name}' did not accept the goal"
+        return True, f"Goal sent to action server '{action_name}'"
 
     def _get_component_action_request_message_type(self, component_name: str) -> Any:
         """Helper method to prepare the action request message for a given component action
@@ -834,7 +882,7 @@ class Monitor(Node):
         publish_rate: Optional[float] = None,
         publish_period: Optional[float] = None,
         **_,
-    ) -> None:
+    ) -> ActionResult:
         """Action to publish a message to a given topic
 
         :param topic: Published topic
@@ -845,6 +893,7 @@ class Monitor(Node):
         :type publish_rate: Optional[float], optional
         :param publish_period: Publishing period, if none and rate is given the message is published forever, defaults to None
         :type publish_period: Optional[float], optional
+        :rtype: ActionResult
         """
         publisher: Publisher = self.create_publisher(
             msg_type=topic.ros_msg_type,
@@ -877,6 +926,7 @@ class Monitor(Node):
                 timer_name,
                 self.create_timer(timer_period_sec=1 / publish_rate, callback=callback),
             )
+        return True, f"Publishing to topic '{topic.name}'"
 
     def _timer_publish_msg_loop(
         self, timer_name: str, max_time: float, publisher: Publisher, msg: Any
