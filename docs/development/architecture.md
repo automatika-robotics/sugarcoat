@@ -23,8 +23,8 @@ The `ros_sugar.core` package exposes the primary building blocks:
 | `BaseComponent` | `rclpy.lifecycle.Node` | Managed lifecycle execution unit |
 | `Monitor` | `rclpy.node.Node` | Event evaluation and component supervision |
 | `Event` | _(standalone)_ | Condition-based trigger on topic data |
-| `Action` | _(standalone)_ | Callable dispatched when an event fires |
-| `MonitoredAction` | `Action` | Action that verifies its own outcome and retries until it succeeds |
+| `Action` | `BaseAction` _(internal)_ | Callable dispatched when an event fires; declaring a success condition, timeout or retry budget makes it verify its own outcome |
+| `Routine` | _(standalone)_ | Organizing primitive containing a sequence of `Action`s, monitored one by one, with a published progress cursor; hosted by the `Monitor` |
 | `Status` | _(standalone)_ | Health status wrapper around `ComponentStatus` msg |
 | `Fallback` / `ComponentFallbacks` | _(attrs / standalone)_ | Failure recovery actions |
 

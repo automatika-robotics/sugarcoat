@@ -303,12 +303,12 @@ These expressions (`topic.msg.data`, `odom.msg.pose.pose.position.x`, etc.) are 
 
 ### Monitored Actions
 
-A plain `Action` is fire-and-forget: it dispatches a method and nothing afterwards can tell whether the method actually worked. `MonitoredAction` closes that loop — it dispatches, waits for a verdict, then re-dispatches while the verdict is negative and the retry budget allows.
+An `Action` is fire-and-forget by default: it dispatches a method and nothing afterwards can tell whether the method actually worked. Passing any of the monitoring parameters — `success`, `timeout`, `max_retries`, `retry_delay` or `cancel_method` — **activates monitoring**: the action dispatches, waits for a verdict, then re-dispatches while the verdict is negative and the retry budget allows. There is no separate class; a monitored action is an `Action` that was told what success means.
 
 ```python
-from ros_sugar.core import MonitoredAction
+from ros_sugar.core import Action
 
-grasp = MonitoredAction(
+grasp = Action(
     gripper.close,
     success=gripper_state.msg.closed.is_true(),
     timeout=3.0,
@@ -319,16 +319,16 @@ grasp = MonitoredAction(
 launcher.on(grasp_requested, grasp)
 ```
 
-`MonitoredAction` is an `Action`, so it is registered and serialized exactly like one, and the monitoring runs wherever the action runs:
+A monitored action is registered and serialized exactly like a plain one, and the monitoring runs wherever the action runs:
 
 | Action type | Monitored by | Notes |
 |:------------|:-------------|:------|
 | Component action | The component node | Success condition and retry policy travel with the action into the component process |
 | System-level action (`publish_message`, …) | The Monitor | Resolved to the real Monitor method by name, then monitored |
 | Inline recipe method | The Monitor | See below |
-| ROS launch action | — | Not applicable: `MonitoredAction` wraps a callable, a launch action has none |
+| ROS launch action | — | Not applicable: monitoring wraps a callable, a launch action has none |
 
-An inline recipe method is normally owned by the Launcher and executed in the launch context. A `MonitoredAction` is routed to the **Monitor** instead, because the launch context discards an action's return value and a blocking watch there would stall the launch event loop. Nothing is lost by this: the `LaunchContext` passed to an `OpaqueFunction` is never forwarded to the method anyway.
+An inline recipe method is normally owned by the Launcher and executed in the launch context. A *monitored* recipe action is routed to the **Monitor** instead, because the launch context discards an action's return value and a blocking watch there would stall the launch event loop. Nothing is lost by this: the `LaunchContext` passed to an `OpaqueFunction` is never forwarded to the method anyway.
 
 The upshot is that `success`, `timeout` and `max_retries` behave identically whichever kind of action you monitor.
 
@@ -352,6 +352,8 @@ A return that does not follow the contract — `None` included — is logged and
 
 There is a single retry budget. `on_timeout` only classifies what a timeout *means*; a method that reports failure consumes the same budget as one that times out. `on_timeout="fail"` and `"succeed"` are terminal and never consume a retry.
 
+`on_fail` and `fallback` are also accepted here, but they are read only when the action is a step of a [Routine](#routines) — an action running on its own has no sequence around it to abort or skip.
+
 :::{note}
 Setting a `success` condition without a `timeout` lets the action wait forever if the condition is never met. A warning is logged at construction; set a timeout.
 :::
@@ -361,15 +363,122 @@ Setting a `success` condition without a `timeout` lets the action wait forever i
 The success condition is monitored as an ordinary `Event`, evaluated **on message arrival** rather than polled. Two things follow from that:
 
 - A condition that holds for only a single message cannot be missed.
-- The latch is cleared at the start of every attempt, so a success can only ever be credited to data that arrived *after* the action was dispatched. Without this, `MonitoredAction(arm.move_to_pregrasp, success=at_pregrasp.is_true())` would report instant success whenever the arm already happened to be there.
+- A condition that holds while no attempt is in flight is ignored, and a verdict arriving from an attempt that has already been decided is discarded. So a success can only ever be credited to data that arrived *after* the action was dispatched — without this, `Action(arm.move_to_pregrasp, success=at_pregrasp.is_true())` would report instant success whenever the arm already happened to be there.
 
 Monitoring starts on the **first dispatch**, not at activation, so a host never subscribes to the success topic of an action that is never triggered. The subscription is then kept until the node is deactivated rather than being torn down after each attempt.
 
-:::{warning}
-`MonitoredAction.__call__` blocks until the outcome is decided, and dispatches run on a pool of 10 workers shared by all monitored actions. A long-running action holds one of those workers for its whole lifetime.
+#### Two ways to run one
 
-There is also no way to cancel a method that is already executing: when an attempt times out, the action stops waiting and stops retrying, but the call itself may still be running.
+Calling a monitored action blocks the calling thread until the outcome is decided (an unmonitored one simply runs inline, exactly as a method call). `start(on_done)` runs the same watch and retry logic without blocking anything and reports the outcome to a callback instead. Both go through one implementation — the blocking form is a thin adapter over the callback form — so the semantics above are identical either way. `Routine` uses `start()`, which is what lets it sequence a long procedure without parking a worker thread on it.
+
+#### Preemption
+
+`halt()` stops the watch and retry loop of a run in flight. If the action was given a `cancel_method`, it is invoked so the action can also be told to stop acting:
+
+```python
+move = Action(
+    arm.move_to_pregrasp,
+    success=arm_state.msg.at_pregrasp.is_true(),
+    timeout=10.0,
+    cancel_method=arm.stop,
+)
+```
+
+:::{warning}
+A dispatched call that is already executing cannot be interrupted — Python offers no way to do it. `halt()` stops the *waiting and retrying*; `cancel_method` is the only thing that can affect the call itself, which is why any action used in a preemptible context should provide one.
+
+Dispatches also run on a pool of 10 workers shared by all monitored actions, so a long-running action holds one of those workers for its whole lifetime.
 :::
+
+---
+
+### Routines
+
+A `Routine` is an ordered sequence of steps: the object that *is* a procedure. Where a chain of events leaves "detect, then pre-grasp, then close, then lift" implicit in the wiring, a routine names it, gives each step its own success test and retry policy, and publishes where it has got to.
+
+```python
+from ros_sugar.core import Action, Routine
+
+pick = Routine(
+    "pick_object",
+    steps=[
+        Action(perception.detect_object,
+                        success=perception_out.msg.object_found.is_true(),
+                        timeout=5.0),
+        Action(arm.move_to_pregrasp,
+                        success=arm_state.msg.at_pregrasp.is_true(),
+                        timeout=10.0, cancel_method=arm.stop),
+        Action(gripper.close, name="grasp",
+                        success=gripper_state.msg.closed.is_true(), timeout=3.0,
+                        max_retries=2, on_fail="fallback", fallback=gripper.reopen),
+        Action(arm.lift, success=arm_state.msg.at_lift.is_true()),
+    ],
+    on_complete=logger_component.log_pick_done,
+    on_abort=safety.open_gripper_and_home,
+)
+
+launcher.on(pick_requested, pick)
+```
+
+A `Routine` is not an `Action` — it is the organizing primitive *containing* actions, monitored one by one — but it is registered on an event exactly the same way, so it needs no new registration surface.
+
+#### Steps are monitored actions
+
+**A step is an ordinary `Action`** — there is no separate step type. `success`, `timeout`, `on_timeout`, `max_retries`, `retry_delay` and `cancel_method` are the ones you already know, deciding whether *this* step worked, with one retry budget per step spent by a reported failure or a timeout alike.
+
+Once that budget is gone, `on_fail` decides what the **sequence around the step** does:
+
+| `on_fail` | Effect |
+|:----------|:-------|
+| `"abort"` (default) | The routine ends as `failed` and `on_abort` runs |
+| `"skip"` | The failure is logged and the routine carries on to the next step |
+| `"fallback"` | The action's `fallback` runs; the routine carries on if it succeeds and aborts if it does not |
+
+`name` renames the action for the cursor, where the method name is not what you want it to say. Step names must be unique within a routine.
+
+A step may also be given as a bare callable, which is wrapped in an unmonitored `Action` — a fire-and-dispatch step whose return value is its verdict.
+
+#### A routine reports that it started, not that it succeeded
+
+Steps are driven by callbacks rather than by a parked thread, so triggering a routine returns as soon as the first step is dispatched:
+
+```python
+success, message = pick()   # (True, "Routine 'pick_object' started")
+```
+
+The outcome arrives later, through `on_complete` / `on_abort` and the published cursor. **A recipe that has to react to a routine finishing must key on those, not on the result of the action that started it.** Triggering a routine that is already running is a no-op, so a repeating event cannot restart one mid-procedure.
+
+#### Where it runs
+
+A routine spans components, so no single component can host it. The Launcher routes every routine to the **Monitor**, which is the one node that can reach all of them, and which subscribes to the topics every step needs — including step success topics, and the topics a step reads its arguments from. Each step re-reads those topic values when it is *entered*, not when the routine was triggered, so a step acts on what is true when it runs.
+
+:::{warning}
+A routine cannot yet drive a component added with `multiprocessing=True`: the Monitor holds an unspun copy of a component that runs in its own process. This is rejected at launch with an `InvalidAction` rather than silently doing nothing.
+:::
+
+#### Control and progress
+
+The Monitor exposes each routine by name, so control is available as ordinary system-level actions — an emergency-stop event can abort a routine:
+
+| Monitor method | Effect |
+|:---------------|:-------|
+| `start_routine(name)` | Start it, same as triggering the action |
+| `pause_routine(name)` | Preempt the step in flight and stop there |
+| `resume_routine(name)` | Re-enter the step it stopped at |
+| `abort_routine(name, reason)` | End it now and run `on_abort` |
+| `get_routine_state(name)` | The cursor, as JSON |
+
+Pausing preempts the step in flight, and resuming runs that step again from the start: a step is the smallest thing a routine can be positioned at.
+
+The cursor is also published on `/routine/<name>/state` as JSON in a `std_msgs/String` — a new message type would have to be regenerated by every downstream package, and the cursor is an introspection channel:
+
+```json
+{"name": "pick_object", "status": "running", "index": 2,
+ "active_step": "grasp", "steps": ["detect", "pregrasp", "grasp", "lift"],
+ "message": "", "elapsed": 4.31}
+```
+
+`status` is a `RoutineStatus` (`ros_sugar.core`), a string-valued enum: `idle`, `running`, `paused`, `completed`, `failed` or `aborted` on the wire.
 
 ---
 
