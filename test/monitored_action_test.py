@@ -1,6 +1,6 @@
-"""Tests for MonitoredAction.
+"""Tests for monitored Action.
 
-A MonitoredAction dispatches, waits for a verdict, then re-dispatches while the
+A monitored Action dispatches, waits for a verdict, then re-dispatches while the
 verdict is negative and the retry budget allows. The verdict comes either from a
 success condition on live topic data, or from the return value of the dispatched
 method when no condition is given.
@@ -22,7 +22,7 @@ import pytest
 from std_msgs.msg import Bool
 
 from ros_sugar import Launcher
-from ros_sugar.core import Action, BaseComponent, Event, MonitoredAction
+from ros_sugar.core import Action, BaseComponent, Event
 from ros_sugar.core.action import LogInfo
 from ros_sugar.io import Topic
 from ros_sugar.launch.launcher import InvalidAction
@@ -178,7 +178,7 @@ def generate_test_description():
         return True, "Watched topics snapshotted"
 
     # --- Case 1: the success condition is met, so no retry happens ---
-    succeeding = MonitoredAction(
+    succeeding = Action(
         gripper.close,
         success=closed_topic.msg.data.is_true(),
         timeout=30.0,
@@ -186,14 +186,14 @@ def generate_test_description():
     )
 
     # --- Case 2: the method reports failure, so the budget is spent ---
-    failing = MonitoredAction(
+    failing = Action(
         gripper.close_and_report_failure,
         timeout=30.0,
         max_retries=FAILING_MAX_RETRIES,
     )
 
     # --- Case 3: the condition is never met, so the wait expires ---
-    timing_out = MonitoredAction(
+    timing_out = Action(
         gripper.close_without_confirming,
         success=never_closed_topic.msg.data.is_true(),
         timeout=2.0,
@@ -202,7 +202,7 @@ def generate_test_description():
     )
 
     # --- Case 5: a recipe method, which belongs to no component ---
-    from_recipe = MonitoredAction(
+    from_recipe = Action(
         close_from_the_recipe,
         success=closed_topic.msg.data.is_true(),
         timeout=30.0,
@@ -213,7 +213,7 @@ def generate_test_description():
     # Built the way ros_sugar.actions builds its stack actions: a placeholder
     # method plus the name of the Monitor method that really runs ---
     confirm_topic = Topic(name=MONITOR_CONFIRM_TOPIC, msg_type="Bool")
-    from_monitor = MonitoredAction(
+    from_monitor = Action(
         # Placeholder, replaced by the real Monitor method at activation
         lambda *_a, **_k: (True, ""),
         kwargs={"topic": confirm_topic, "msg": Bool(data=True)},
@@ -263,15 +263,15 @@ def generate_test_description():
 # ------------------------------------------------------------------
 
 
-class TestMonitoredAction(unittest.TestCase):
+class TestAction(unittest.TestCase):
     """The three routes out of an attempt, plus lazy success monitoring."""
 
     wait_time = 60.0  # seconds
 
     def test_action_is_dispatched(self):
-        """A MonitoredAction is registered and dispatched like any Action."""
+        """A monitored Action is registered and dispatched like any Action."""
         assert succeeding_py_event.wait(self.wait_time), (
-            "MonitoredAction was never dispatched"
+            "monitored Action was never dispatched"
         )
 
     def test_success_condition_ends_the_attempt(self):
@@ -282,7 +282,7 @@ class TestMonitoredAction(unittest.TestCase):
         retrying until its budget ran out.
         """
         assert succeeding_py_event.wait(self.wait_time), (
-            "MonitoredAction with a success condition was never dispatched"
+            "monitored Action with a success condition was never dispatched"
         )
         # Long enough for the retry loop to fire again if the condition were
         # not being honoured
@@ -295,7 +295,7 @@ class TestMonitoredAction(unittest.TestCase):
     def test_reported_failure_spends_the_retry_budget(self):
         """[Route 2] Returning False retries, max_retries times over."""
         assert failing_py_event.wait(self.wait_time), (
-            "MonitoredAction returning False was never dispatched"
+            "monitored Action returning False was never dispatched"
         )
         expected = FAILING_MAX_RETRIES + 1
         deadline = time.time() + self.wait_time
@@ -309,13 +309,13 @@ class TestMonitoredAction(unittest.TestCase):
         # And then it stops, rather than retrying forever
         time.sleep(5.0)
         assert len(failing_calls) == expected, (
-            "MonitoredAction kept retrying after exhausting its budget"
+            "monitored Action kept retrying after exhausting its budget"
         )
 
     def test_timeout_is_terminal_when_configured_to_fail(self):
         """[Route 3] The wait expires, and on_timeout='fail' does not retry."""
         assert timing_out_py_event.wait(self.wait_time), (
-            "MonitoredAction with an unsatisfiable condition was never dispatched"
+            "monitored Action with an unsatisfiable condition was never dispatched"
         )
         # Well past the 2.0s timeout, so a retry would have shown up by now
         time.sleep(10.0)
@@ -331,7 +331,7 @@ class TestMonitoredAction(unittest.TestCase):
         discarded and a blocking watch would stall the launch loop.
         """
         assert recipe_py_event.wait(self.wait_time), (
-            "MonitoredAction on a recipe method was never dispatched"
+            "monitored Action on a recipe method was never dispatched"
         )
         time.sleep(10.0)
         assert len(recipe_calls) == 1, (
@@ -347,7 +347,7 @@ class TestMonitoredAction(unittest.TestCase):
         placeholder to the real method and evaluated the condition afterwards.
         """
         assert monitor_confirm_py_event.wait(self.wait_time), (
-            "Monitor owned MonitoredAction never published, so it was either "
+            "Monitor owned monitored Action never published, so it was either "
             "not dispatched or not resolved to the real Monitor method"
         )
 
@@ -361,18 +361,18 @@ class TestMonitoredAction(unittest.TestCase):
             "Never captured the watched topics"
         )
         assert SUCCESS_TOPIC not in watched_topics_before_trigger, (
-            f"'{SUCCESS_TOPIC}' was already watched before any MonitoredAction "
+            f"'{SUCCESS_TOPIC}' was already watched before any monitored Action "
             f"was dispatched: {watched_topics_before_trigger}"
         )
 
     def test_ros_launch_action_cannot_be_monitored(self):
         """A ROS launch action has no method to dispatch or verify.
 
-        `MonitoredAction` wraps a callable, so passing a launch entity must be
+        `monitored Action` wraps a callable, so passing a launch entity must be
         rejected outright rather than accepted and then failing at dispatch.
         """
         with self.assertRaises(TypeError) as caught:
-            MonitoredAction(LogInfo(msg="not a callable"))
+            Action(LogInfo(msg="not a callable"), timeout=5.0)
         assert "callable" in str(caught.exception), (
             f"Expected a message about the action not being callable, got "
             f"'{caught.exception}'"
@@ -385,7 +385,7 @@ class TestMonitoredAction(unittest.TestCase):
         to run a watch and retry loop. The recipe must be rejected at setup
         rather than raising once the action is triggered.
         """
-        lifecycle = MonitoredAction(
+        lifecycle = Action(
             gripper_component.start,
             success=Topic(name=SUCCESS_TOPIC, msg_type="Bool").msg.data.is_true(),
             timeout=5.0,
@@ -403,14 +403,14 @@ class TestMonitoredAction(unittest.TestCase):
         )
         with self.assertRaises(InvalidAction) as caught:
             launcher._setup_events_actions()
-        assert "MonitoredAction" in str(caught.exception), (
-            f"Expected a message naming MonitoredAction, got '{caught.exception}'"
+        assert "cannot be monitored" in str(caught.exception), (
+            f"Expected a message about monitoring, got '{caught.exception}'"
         )
 
     def test_success_topic_is_watched_after_the_action_runs(self):
         """Once dispatched, the success condition is evaluated on arrival."""
         assert succeeding_py_event.wait(self.wait_time), (
-            "MonitoredAction was never dispatched"
+            "monitored Action was never dispatched"
         )
         deadline = time.time() + self.wait_time
         while time.time() < deadline:
@@ -418,6 +418,6 @@ class TestMonitoredAction(unittest.TestCase):
                 break
             time.sleep(0.5)
         assert SUCCESS_TOPIC in gripper_component.watched_topics(), (
-            f"'{SUCCESS_TOPIC}' was never watched after the MonitoredAction was "
+            f"'{SUCCESS_TOPIC}' was never watched after the monitored Action was "
             f"dispatched, only {gripper_component.watched_topics()}"
         )
