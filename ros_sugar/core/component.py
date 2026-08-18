@@ -48,7 +48,7 @@ from tf2_ros.transform_listener import TransformListener
 from ..base_clients import ActionClientConfig
 from .action import Action
 from .event import Event, EventBlackboardEntry
-from .monitored_action import MonitoredAction, bind_monitored_actions
+from .action import bind_monitored_actions
 from ..io.callbacks import GenericCallback
 from ..config.base_attrs import explicit_fields
 from ..config.base_config import (
@@ -192,7 +192,7 @@ class BaseComponent(lifecycle.Node):
         self._main_goal_handle = None
         self._main_goal_lock = threading.Lock()
         # Guards the event blackboard and the per topic event index, which a
-        # MonitoredAction can extend at runtime from a worker thread when it
+        # A monitored Action can extend at runtime from a worker thread when it
         # starts watching its success condition
         self._events_lock = threading.Lock()
         self._main_action_name: Optional[str] = None
@@ -1421,7 +1421,7 @@ class BaseComponent(lifecycle.Node):
 
         Unlike the events wired up in `_turn_on_events_management`, this is
         called while the component is already running, from a worker thread.
-        Used by `MonitoredAction` to begin watching its success condition on
+        Used by a monitored `Action` to begin watching its success condition on
         first dispatch. Subscriptions created here live until the component is
         deactivated, so repeat triggers and retries do not churn them.
 
@@ -1522,7 +1522,7 @@ class BaseComponent(lifecycle.Node):
         1. Updates Cache of all required events topics
         2. Re-evaluates all events that depend on this topic
         """
-        # Guarded so that a MonitoredAction registering its success event from a
+        # Guarded so that a monitored Action registering its success event from a
         # worker thread cannot mutate the index while it is iterated here, nor
         # the blackboard while it is lazily cleaned below.
         # NOTE: check_condition only submits actions to a thread pool, so the
@@ -1927,10 +1927,9 @@ class BaseComponent(lifecycle.Node):
                     )
                 # reparse the method using the given action name
                 method = getattr(self, action_dict["action_name"])
-                action_class = (
-                    MonitoredAction if action_dict.get("monitored") else Action
-                )
-                reconstructed_action = action_class.deserialize_action(
+                # Monitoring policy keys restore with their defaults when
+                # absent, so one class deserializes both plain and monitored
+                reconstructed_action = Action.deserialize_action(
                     serialized_action_dict=action_dict,
                     deserialized_method=method,
                 )
