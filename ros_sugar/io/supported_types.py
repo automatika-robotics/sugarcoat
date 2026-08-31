@@ -208,6 +208,46 @@ def ros_msg_to_str(msg_object: Any) -> str:
     return lines
 
 
+def validate_msg_fields(
+    msg_class: type, data_dict: Dict[str, Any], where: str = "the message"
+) -> None:
+    """Check that every key in a dict names a real field of a ROS message.
+
+    :meth:`set_ros_msg_from_dict` skips keys it does not recognise, which is
+    the right thing when it is filling a message and the wrong thing when a
+    person wrote the dict: a misspelt field silently leaves that part of the
+    message at its default. Somebody sending a navigation goal would get a
+    pose of all zeros and no indication anything was dropped.
+
+    :param msg_class: The ROS message class the dict is meant to fill
+    :param data_dict: The values, nested the same way the message is
+    :param where: What to call the message in the error, for a caller who
+        cannot see which nested field is being checked
+    :raises ValueError: Naming the offending key and the fields that do exist
+    """
+    fields = msg_class.get_fields_and_field_types()
+    for field_name, field_value in data_dict.items():
+        if field_name not in fields:
+            raise ValueError(
+                f"{where} has no field '{field_name}'. It has: "
+                f"{', '.join(sorted(fields))}"
+            )
+        if not isinstance(field_value, dict):
+            continue
+        base_type, _ = _split_ros_field_type(fields[field_name])
+        if "/" not in base_type:
+            continue
+        module_str_name, msg_str_name = base_type.split("/")
+        try:
+            nested_class = getattr(
+                importlib.import_module(f"{module_str_name}.msg"), msg_str_name
+            )
+        except (ImportError, AttributeError):
+            # Not resolvable here; set_ros_msg_from_dict will report it
+            continue
+        validate_msg_fields(nested_class, field_value, f"'{field_name}'")
+
+
 def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
     """
     Creates a ROS message object from a dictionary structure.
