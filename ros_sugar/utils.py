@@ -39,12 +39,17 @@ MsgT = TypeVar("MsgT")
 # result when the action succeeded and an error when it failed, and may hold JSON
 # if the action needs to return something structured.
 # NOTE: typing.Tuple rather than the PEP 585 builtin, this package supports python3.8
-ActionResult = Tuple[bool, str]
+ActionReturnType = Tuple[bool, str]
+
+#: Deprecated spelling of :data:`ActionReturnType`. Kept so existing recipes keep importing and annotating
+ActionResult = ActionReturnType
 
 # Accepted spellings of the contract in a return annotation, including the string
-# forms produced by quoted annotations or `from __future__ import annotations`
+# forms produced by quoted annotations or `from __future__ import annotations`,
+# and the old name, so an annotation written against it still validates
 _ACTION_RETURN_ANNOTATIONS = (
-    ActionResult,
+    ActionReturnType,
+    "ActionReturnType",
     "ActionResult",
     "Tuple[bool, str]",
     "tuple[bool, str]",
@@ -72,7 +77,7 @@ def _validate_action_return(func: Callable, decorator_name: str) -> None:
     )
 
 
-def parse_action_result(value: Any, action_name: str) -> ActionResult:
+def parse_action_result(value: Any, action_name: str) -> ActionReturnType:
     """Coerce an action's return value into the (success, message) contract.
 
     The single runtime enforcement point, so a return that does not follow the
@@ -83,7 +88,7 @@ def parse_action_result(value: Any, action_name: str) -> ActionResult:
     :param value: Whatever the action returned
     :param action_name: Action name, for the error message
     :return: The validated (success, message) pair
-    :rtype: ActionResult
+    :rtype: ActionReturnType
     """
     if (
         isinstance(value, tuple)

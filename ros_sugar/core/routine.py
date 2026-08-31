@@ -8,7 +8,7 @@ from typing import Callable, Dict, List, Optional, Union
 
 from ..config import StrEnum
 from ..io import Topic
-from ..utils import ActionResult, logger
+from ..utils import ActionReturnType, logger
 from .action import Action, ActionOutcome, ActionServerGoal
 
 
@@ -272,17 +272,17 @@ class Routine:
 
     # ---- Control -----------------------------------------------------------
 
-    def __call__(self, **kwargs) -> ActionResult:
+    def __call__(self, **kwargs) -> ActionReturnType:
         """Start the routine.
 
         :return: (success, message) reporting that the routine *started*. The
             outcome of the routine itself arrives later, via `on_complete` /
             `on_abort` and the cursor
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         return self._start_routine(**kwargs)
 
-    def _start_routine(self, **kwargs) -> ActionResult:
+    def _start_routine(self, **kwargs) -> ActionReturnType:
         """Entry point, also the Action's executable"""
         with self._lock:
             if self._status in (RoutineStatus.RUNNING, RoutineStatus.PAUSED):
@@ -308,13 +308,13 @@ class Routine:
         self.__enter_step(0)
         return True, f"Routine '{self.name}' started"
 
-    def pause(self, **_) -> ActionResult:
+    def pause(self, **_) -> ActionReturnType:
         """Stop at the current step without ending the routine.
 
         The step in flight is preempted, and `resume()` runs it again from the
         start: a step is the smallest thing a routine can be positioned at.
 
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         with self._lock:
             if self._status != RoutineStatus.RUNNING:
@@ -328,10 +328,10 @@ class Routine:
         self.__publish_state()
         return True, info_str
 
-    def resume(self, **_) -> ActionResult:
+    def resume(self, **_) -> ActionReturnType:
         """Re-enter the step the routine was paused at
 
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         with self._lock:
             if self._status != RoutineStatus.PAUSED:
@@ -346,11 +346,11 @@ class Routine:
         self.__enter_step(index)
         return True, info_str
 
-    def abort(self, reason: str = "aborted by request", **_) -> ActionResult:
+    def abort(self, reason: str = "aborted by request", **_) -> ActionReturnType:
         """End the routine now, preempting the step in flight and running `on_abort`
 
         :param reason: Recorded in the cursor and logged
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         with self._lock:
             if self._status not in (RoutineStatus.RUNNING, RoutineStatus.PAUSED):
@@ -417,7 +417,7 @@ class Routine:
         return call_kwargs
 
     def __on_step_done(
-        self, index: int, result: ActionResult, outcome: ActionOutcome
+        self, index: int, result: ActionReturnType, outcome: ActionOutcome
     ) -> None:
         """Apply the step's policy to its verdict and move the cursor"""
         succeeded, message = result
@@ -459,7 +459,7 @@ class Routine:
         )
 
     def __on_fallback_done(
-        self, index: int, failure: str, result: ActionResult, outcome: ActionOutcome
+        self, index: int, failure: str, result: ActionReturnType, outcome: ActionOutcome
     ) -> None:
         """A recovered step lets the routine carry on, an unrecovered one ends it"""
         recovered, message = result
@@ -503,7 +503,7 @@ class Routine:
         terminal.start(partial(self.__on_terminal_done, status), **call_kwargs)
 
     def __on_terminal_done(
-        self, status: RoutineStatus, result: ActionResult, _outcome: ActionOutcome
+        self, status: RoutineStatus, result: ActionReturnType, _outcome: ActionOutcome
     ) -> None:
         """Report an on_complete / on_abort action that did not work"""
         succeeded, message = result

@@ -64,7 +64,7 @@ from ..io.supported_types import SupportedType
 from ..io.topic import Topic
 from ..tf import TFListener, TFListenerConfig
 from ..utils import (
-    ActionResult,
+    ActionReturnType,
     camel_to_snake_case,
     component_action,
     component_fallback,
@@ -2917,12 +2917,12 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def start(self, **_) -> ActionResult:
+    def start(self, **_) -> ActionReturnType:
         """
         Start the component - trigger_activate
 
         :return: If the component is started, with a reason when it is not
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             # Component already active
@@ -2955,12 +2955,12 @@ class BaseComponent(lifecycle.Node):
         return True, f"Component '{self.node_name}' started"
 
     @component_action
-    def stop(self, **_) -> ActionResult:
+    def stop(self, **_) -> ActionReturnType:
         """
         Stop the component - trigger_deactivate
 
         :return: If the component is stopped, with a reason when it is not
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         if self.lifecycle_state in [
             LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
@@ -2985,7 +2985,7 @@ class BaseComponent(lifecycle.Node):
     @component_action
     def reconfigure(
         self, new_config: Any, keep_alive: bool = False, **_
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """
         Reconfigure the component - cleanup->stop->trigger_configure->start
 
@@ -2995,7 +2995,7 @@ class BaseComponent(lifecycle.Node):
         :type keep_alive: bool, optional
 
         :return: If the component is Reconfigured, with a reason when it is not
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         self.get_logger().warning("Reconfiguring component...")
 
@@ -3049,12 +3049,12 @@ class BaseComponent(lifecycle.Node):
         return True, f"Component '{self.node_name}' reconfigured"
 
     @component_action
-    def restart(self, *, wait_time: Optional[float] = None, **_) -> ActionResult:
+    def restart(self, *, wait_time: Optional[float] = None, **_) -> ActionReturnType:
         """
         Restart the component - stop->start
 
         :return: If the component is restarted, with a reason when it is not
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
 
         if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
@@ -3090,7 +3090,7 @@ class BaseComponent(lifecycle.Node):
     @component_action
     def set_param(
         self, param_name: str, new_value: Any, keep_alive: bool = True, **_
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """
         Change the value of one component parameter
 
@@ -3102,7 +3102,7 @@ class BaseComponent(lifecycle.Node):
         :type keep_alive: bool, optional
 
         :return: Parameter updated, with the reason when it is not
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         try:
             if keep_alive:
@@ -3118,7 +3118,7 @@ class BaseComponent(lifecycle.Node):
     @component_action
     def set_params(
         self, params_names: List[str], new_values: List, keep_alive: bool = True, **_
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """
         Change the value of multiple component parameters
 
@@ -3130,7 +3130,7 @@ class BaseComponent(lifecycle.Node):
         :type keep_alive: bool, optional
 
         :return: Parameters updated, with the reason when they are not
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         try:
             if keep_alive:
@@ -3352,13 +3352,13 @@ class BaseComponent(lifecycle.Node):
             )
 
     @component_fallback
-    def broadcast_status(self, **_) -> ActionResult:
+    def broadcast_status(self, **_) -> ActionReturnType:
         """
         Component fallback defined to only broadcast the current state so it is handled by an external manager.
         Used as the default fallback strategy for any system (external) failure
 
         :return: Whether the status was broadcast
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         # If node is active publish status
         if (

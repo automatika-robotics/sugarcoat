@@ -40,7 +40,7 @@ from ._action_registry import (
     SystemActionRegistry,
 )
 from .routine import Routine, RoutineStatus
-from ..utils import ActionResult, parse_action_result
+from ..utils import ActionReturnType, parse_action_result
 from ..launch import logger
 
 
@@ -621,7 +621,7 @@ class Monitor(Node):
         )
 
     @staticmethod
-    def _result_from_srv_response(response: Any, description: str) -> ActionResult:
+    def _result_from_srv_response(response: Any, description: str) -> ActionReturnType:
         """Read a service response into the (success, message) action contract.
 
         NOTE: `ServiceClientHandler.send_request` returns None when the service
@@ -632,7 +632,7 @@ class Monitor(Node):
         :param response: The service response, or None if the call did not land
         :param description: What was attempted, used when the response carries
             no message of its own
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         if response is None:
             return False, f"{description} got no response from the service"
@@ -646,7 +646,7 @@ class Monitor(Node):
         component_name: str,
         method_name: str,
         kwargs: Dict,
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         srv_client: base_clients.ServiceClientHandler = (
             self._execute_component_method_srv_client[component_name]
         )
@@ -663,7 +663,7 @@ class Monitor(Node):
         component: BaseComponent,
         new_config: Union[object, str],
         keep_alive: bool,
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """
         Configure a given component from config instance or config file
         Creates and send the request to the component service
@@ -708,7 +708,7 @@ class Monitor(Node):
         param_name: str,
         new_value: Any,
         keep_alive: bool = True,
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Sends a ChangeParameter service request to given component
 
         :param component: _description_
@@ -743,7 +743,7 @@ class Monitor(Node):
         new_values: List,
         keep_alive: bool = True,
         **_,
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Sends a ChangeParameters service request to given component
 
         :param component: _description_
@@ -847,7 +847,7 @@ class Monitor(Node):
 
     # -------- RESOLVING A NAME INTO SOMETHING CALLABLE ------------
 
-    def _executable_for(self, entry: RegisteredAction) -> Callable[..., ActionResult]:
+    def _executable_for(self, entry: RegisteredAction) -> Callable[..., ActionReturnType]:
         """Turn a registry entry into something that can be called.
 
         This is where naming something and doing it meet. The registry knows
@@ -859,7 +859,7 @@ class Monitor(Node):
 
         :param entry: What to resolve, from the action registry
         :raises KeyError: If the entry names something this Monitor cannot reach
-        :rtype: Callable[..., ActionResult]
+        :rtype: Callable[..., ActionReturnType]
         """
         if entry.kind == COMPONENT_METHOD:
             return partial(self.__run_component_method, entry)
@@ -876,7 +876,7 @@ class Monitor(Node):
             )
         raise KeyError(f"'{entry.ref}' has unknown kind '{entry.kind}'")
 
-    def __run_component_method(self, entry: RegisteredAction, **kwargs) -> ActionResult:
+    def __run_component_method(self, entry: RegisteredAction, **kwargs) -> ActionReturnType:
         """Call a component method over its own ExecuteMethod service.
 
         Always over the service, never by holding the object: at runtime the
@@ -898,7 +898,7 @@ class Monitor(Node):
 
     def __resolve_monitor_method(
         self, entry: RegisteredAction
-    ) -> Callable[..., ActionResult]:
+    ) -> Callable[..., ActionReturnType]:
         """Bind one of the Monitor's own methods, re-checking the allowlist.
 
         Re-checked rather than trusted: the registry is built elsewhere, and
@@ -916,7 +916,7 @@ class Monitor(Node):
 
     def __call_component_service(
         self, entry: RegisteredAction, **kwargs
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Send a request to one of a component's services"""
         try:
             client = self.__service_client_for(entry)
@@ -1083,7 +1083,7 @@ class Monitor(Node):
         srv_name: Optional[str] = None,
         srv_type: Optional[type] = None,
         **_,
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Action to send a ROS2 service request during runtime
 
         :param srv_name: Service name
@@ -1092,7 +1092,7 @@ class Monitor(Node):
         :type srv_type: type
         :param srv_request_msg: Service request message
         :type srv_request_msg: Any
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         if not srv_name or not srv_type:
             error = (
@@ -1117,7 +1117,7 @@ class Monitor(Node):
         action_name: Optional[str] = None,
         action_type: Optional[type] = None,
         **_,
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Action to send a ROS2 action goal during runtime
 
         :param action_name: ROS2 action name
@@ -1126,7 +1126,7 @@ class Monitor(Node):
         :type action_type: type
         :param action_request_msg: ROS2 action goal message
         :type action_request_msg: Any
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         if not action_name or not action_type:
             error = (
@@ -1213,7 +1213,7 @@ class Monitor(Node):
         publish_rate: Optional[float] = None,
         publish_period: Optional[float] = None,
         **_,
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Action to publish a message to a given topic
 
         :param topic: Published topic
@@ -1224,7 +1224,7 @@ class Monitor(Node):
         :type publish_rate: Optional[float], optional
         :param publish_period: Publishing period, if none and rate is given the message is published forever, defaults to None
         :type publish_period: Optional[float], optional
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         publisher: Publisher = self.create_publisher(
             msg_type=topic.ros_msg_type,
@@ -1485,7 +1485,7 @@ class Monitor(Node):
                 for name, entry in self._events_topics_blackboard.items()
             }
 
-    def wait(self, duration: float, **_) -> ActionResult:
+    def wait(self, duration: float, **_) -> ActionReturnType:
         """Do nothing for a while, so a routine can dwell between steps.
 
         A step that waits has no other spelling. Every other action settles as
@@ -1500,7 +1500,7 @@ class Monitor(Node):
         worker is released when it expires, and its verdict is discarded.
 
         :param duration: Seconds to wait
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         try:
             seconds = float(duration)
@@ -1527,7 +1527,7 @@ class Monitor(Node):
         actions: Union[Action, Routine, List],
         event_id: Optional[str] = None,
         **_,
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Start watching an event the recipe did not declare.
 
         Everything `add_runtime_event_listener` skips, because that one exists
@@ -1538,7 +1538,7 @@ class Monitor(Node):
         :param event: What to watch for
         :param actions: What to do when it fires, one or several
         :param event_id: Name to remove it by later, defaults to the event's id
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         actions = actions if isinstance(actions, list) else [actions]
         if not actions:
@@ -1577,14 +1577,14 @@ class Monitor(Node):
         logger.info(f"Watching runtime event '{event_id}'")
         return True, f"Watching event '{event_id}'"
 
-    def remove_event(self, event_id: str, **_) -> ActionResult:
+    def remove_event(self, event_id: str, **_) -> ActionReturnType:
         """Stop watching an event that was added at runtime.
 
         Its subscriptions stay: a topic is subscribed once and shared by every
         event reading it, so dropping one here would blind the others.
 
         :param event_id: The name it was registered under
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         with self._blackboard_lock:
             event = self.__runtime_events.pop(event_id, None)
@@ -1612,7 +1612,7 @@ class Monitor(Node):
         logger.info(f"Stopped watching runtime event '{event_id}'")
         return True, f"Stopped watching event '{event_id}'"
 
-    def add_routine(self, routine: Routine, replace: bool = False, **_) -> ActionResult:
+    def add_routine(self, routine: Routine, replace: bool = False, **_) -> ActionReturnType:
         """Take ownership of a routine that the recipe did not declare.
 
         A routine declared in a recipe piggybacks on its trigger event for the
@@ -1621,7 +1621,7 @@ class Monitor(Node):
 
         :param routine: The routine to host
         :param replace: Replace one already registered under this name
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         with self._blackboard_lock:
             already = self.__routines.get(routine.name, None)
@@ -1648,7 +1648,7 @@ class Monitor(Node):
 
     def remove_routine(
         self, routine_name: str, force: bool = False, **_
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Drop a routine and take its cursor topic down.
 
         :param routine_name: Name it was registered under
@@ -1656,7 +1656,7 @@ class Monitor(Node):
             Without this a running routine is kept, because removing one
             mid-step would leave whatever it started running with nothing
             watching it
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         with self._blackboard_lock:
             routine = self.__routines.get(routine_name, None)
@@ -1687,17 +1687,17 @@ class Monitor(Node):
 
     # ---- What is available, for a caller that cannot read the recipe -------
 
-    def list_actions(self, **_) -> ActionResult:
+    def list_actions(self, **_) -> ActionReturnType:
         """Every action addressable by name, as JSON"""
         return True, json.dumps(self._action_registry.dictionary)
 
-    def list_routines(self, **_) -> ActionResult:
+    def list_routines(self, **_) -> ActionReturnType:
         """Every registered routine and where it has got to, as JSON"""
         with self._blackboard_lock:
             routines = list(self.__routines.values())
         return True, json.dumps([routine.state for routine in routines])
 
-    def list_events(self, **_) -> ActionResult:
+    def list_events(self, **_) -> ActionReturnType:
         """Every event registered at runtime, as JSON"""
         with self._blackboard_lock:
             events = {
@@ -1720,7 +1720,7 @@ class Monitor(Node):
         holds lifecycle power over every component, so what a name can reach
         has to be a decision rather than a consequence of how it is spelled.
         """
-        self._runtime_api: Dict[str, Callable[..., ActionResult]] = {
+        self._runtime_api: Dict[str, Callable[..., ActionReturnType]] = {
             "list_actions": self.list_actions,
             "list_routines": self.list_routines,
             "list_events": self.list_events,
@@ -1810,13 +1810,13 @@ class Monitor(Node):
         actions: Union[Dict, List[Dict]],
         event_id: Optional[str] = None,
         **_,
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Register an event described as JSON.
 
         :param event: An `Event.to_dict()`, or the same fields by hand
         :param actions: One or more action specs, as `_action_from_spec` takes
         :param event_id: Name to remove it by later
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         try:
             built_event = self.__event_from_spec(event)
@@ -1855,12 +1855,12 @@ class Monitor(Node):
 
     def _add_routine_from_spec(
         self, routine: Dict, replace: bool = False, **_
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """Register a routine described as JSON.
 
         :param routine: `{name, steps, on_complete, on_abort, description}`
         :param replace: Replace one already registered under this name
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         try:
             built = Routine.from_spec(routine, self._action_from_spec)
@@ -1879,33 +1879,33 @@ class Monitor(Node):
             )
         return routine
 
-    def start_routine(self, routine_name: str, **_) -> ActionResult:
+    def start_routine(self, routine_name: str, **_) -> ActionReturnType:
         """Start a routine by name
 
         :param routine_name: Name the routine was declared with
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         routine = self.__get_routine(routine_name)
         if routine is None:
             return False, f"Unknown routine '{routine_name}'"
         return routine()
 
-    def pause_routine(self, routine_name: str, **_) -> ActionResult:
+    def pause_routine(self, routine_name: str, **_) -> ActionReturnType:
         """Pause a running routine, preempting the step in flight
 
         :param routine_name: Name the routine was declared with
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         routine = self.__get_routine(routine_name)
         if routine is None:
             return False, f"Unknown routine '{routine_name}'"
         return routine.pause()
 
-    def resume_routine(self, routine_name: str, **_) -> ActionResult:
+    def resume_routine(self, routine_name: str, **_) -> ActionReturnType:
         """Resume a paused routine, re-entering the step it stopped at
 
         :param routine_name: Name the routine was declared with
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         routine = self.__get_routine(routine_name)
         if routine is None:
@@ -1914,23 +1914,23 @@ class Monitor(Node):
 
     def abort_routine(
         self, routine_name: str, reason: str = "aborted by request", **_
-    ) -> ActionResult:
+    ) -> ActionReturnType:
         """End a routine now, preempting the step in flight and running its on_abort
 
         :param routine_name: Name the routine was declared with
         :param reason: Recorded in the cursor and logged
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         routine = self.__get_routine(routine_name)
         if routine is None:
             return False, f"Unknown routine '{routine_name}'"
         return routine.abort(reason)
 
-    def get_routine_state(self, routine_name: str, **_) -> ActionResult:
+    def get_routine_state(self, routine_name: str, **_) -> ActionReturnType:
         """Where a routine has got to, as JSON
 
         :param routine_name: Name the routine was declared with
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         routine = self.__get_routine(routine_name)
         if routine is None:

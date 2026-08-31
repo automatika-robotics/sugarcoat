@@ -38,7 +38,7 @@ from ..condition import MsgConditionBuilder
 from ..io import Topic, get_msg_type
 from ..io.supported_types import SupportedType
 from ..utils import (
-    ActionResult,
+    ActionReturnType,
     InvalidAction,
     MissingActionArgument,
     parse_action_result,
@@ -423,14 +423,14 @@ class BaseAction:
                     call_kwargs[key] = conv_func(msg)
         return call_args, call_kwargs
 
-    def __call__(self, **kwargs) -> ActionResult:
+    def __call__(self, **kwargs) -> ActionReturnType:
         """
         Execute the action.
 
         :return: (success, message) per the action contract. A raised exception
             is reported as a failure carrying its message, so a caller never has
             to distinguish 'raised' from 'returned nothing'
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         try:
             call_args, call_kwargs = self._prepare_call(**kwargs)
