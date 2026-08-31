@@ -12,7 +12,7 @@ from rclpy.action.server import GoalStatus
 from ..condition import Condition
 from ..config import StrEnum
 from ..io import Topic
-from ..utils import ActionResult, logger, parse_action_result
+from ..utils import ActionReturnType, logger, parse_action_result
 from .base_action import BaseAction, LogInfo, OpaqueCoroutine, OpaqueFunction
 from .event import Event
 
@@ -266,7 +266,7 @@ class Action(BaseAction):
         # on a dispatch worker, a timer thread or a subscription callback, so all
         # of it is guarded by the lock
         self._run_lock = threading.RLock()
-        self._on_done: Optional[Callable[[ActionResult, ActionOutcome], None]] = None
+        self._on_done: Optional[Callable[[ActionReturnType, ActionOutcome], None]] = None
         self._run_kwargs: Dict = {}
         self._running = False
         self._attempt = 0
@@ -441,7 +441,7 @@ class Action(BaseAction):
     # ---- Running the action ------------------------------------------------
 
     def start(
-        self, on_done: Callable[[ActionResult, ActionOutcome], None], **kwargs
+        self, on_done: Callable[[ActionReturnType, ActionOutcome], None], **kwargs
     ) -> None:
         """Dispatch and watch the outcome without blocking the caller.
 
@@ -480,7 +480,7 @@ class Action(BaseAction):
             return
         self.__begin_attempt()
 
-    def __call__(self, **kwargs) -> ActionResult:
+    def __call__(self, **kwargs) -> ActionReturnType:
         """Execute the action and return its result.
 
         An unmonitored action runs inline on the calling thread, exactly as a
@@ -491,15 +491,15 @@ class Action(BaseAction):
 
         :return: (success, message) per the action contract, where a monitored
             action's message explains the final verdict across all attempts
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         if not self._is_monitored:
             return super().__call__(**kwargs)
 
         settled = threading.Event()
-        verdict: List[ActionResult] = []
+        verdict: List[ActionReturnType] = []
 
-        def _on_done(result: ActionResult, _outcome: ActionOutcome) -> None:
+        def _on_done(result: ActionReturnType, _outcome: ActionOutcome) -> None:
             verdict.append(result)
             settled.set()
 
@@ -507,7 +507,7 @@ class Action(BaseAction):
         settled.wait()
         return verdict[0]
 
-    def halt(self) -> ActionResult:
+    def halt(self) -> ActionReturnType:
         """Preempt a run in flight.
 
         Stops the watch and retry loop, and invokes `cancel_method` if one was
@@ -518,7 +518,7 @@ class Action(BaseAction):
         in a preemptible context should provide one.
 
         :return: (success, message), where the message reports what was halted
-        :rtype: ActionResult
+        :rtype: ActionReturnType
         """
         with self._run_lock:
             if not self._running:
@@ -587,7 +587,7 @@ class Action(BaseAction):
         )
         future.add_done_callback(partial(self.__on_dispatch_done, attempt_id))
 
-    def __dispatch(self, call_args: List, call_kwargs: Dict) -> ActionResult:
+    def __dispatch(self, call_args: List, call_kwargs: Dict) -> ActionReturnType:
         """Run the executable and read its verdict off the (bool, str) contract"""
         try:
             result = self.executable(*call_args, **call_kwargs)
@@ -716,7 +716,7 @@ class Action(BaseAction):
             return
         self.__begin_attempt()
 
-    def __finish(self, result: ActionResult, outcome: ActionOutcome) -> None:
+    def __finish(self, result: ActionReturnType, outcome: ActionOutcome) -> None:
         """End the run and report the verdict to whoever started it"""
         with self._run_lock:
             if not self._running:
@@ -997,7 +997,7 @@ class ActionServerGoal(Action):
             return client.send_request_from_dict(goal)
         return client.send_request(goal)
 
-    def _send_and_wait(self, **kwargs) -> ActionResult:
+    def _send_and_wait(self, **kwargs) -> ActionReturnType:
         """Send the goal and block until it, or the success condition, settles.
 
         Blocking is safe here: dispatches run on their own worker pool, never
@@ -1047,7 +1047,7 @@ class ActionServerGoal(Action):
         except Exception:
             return False
 
-    def _verdict_from_condition(self, client) -> ActionResult:
+    def _verdict_from_condition(self, client) -> ActionReturnType:
         """Keep checking the condition for a grace period after the goal ends.
 
         A condition topic often lags the server finishing, so deciding at the
@@ -1075,7 +1075,7 @@ class ActionServerGoal(Action):
             GoalStatus.STATUS_CANCELED: "canceled",
         }.get(getattr(client, "action_status", None), "no terminal status")
 
-    def _verdict_from_status(self, client) -> ActionResult:
+    def _verdict_from_status(self, client) -> ActionReturnType:
         """The server's own outcome, when no success condition was given"""
         status = getattr(client, "action_status", GoalStatus.STATUS_UNKNOWN)
         if status == GoalStatus.STATUS_SUCCEEDED:
@@ -1088,7 +1088,7 @@ class ActionServerGoal(Action):
 
     # ---- Preemption -------------------------------------------------------
 
-    def _cancel(self, **_) -> ActionResult:
+    def _cancel(self, **_) -> ActionReturnType:
         """Cancel the goal in flight and release the waiting dispatch"""
         self._abandoned = True
         client = self._client
