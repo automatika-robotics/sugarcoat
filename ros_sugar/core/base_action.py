@@ -37,7 +37,12 @@ from ..launch import logger
 from ..condition import MsgConditionBuilder
 from ..io import Topic, get_msg_type
 from ..io.supported_types import SupportedType
-from ..utils import ActionResult, InvalidAction, parse_action_result
+from ..utils import (
+    ActionResult,
+    InvalidAction,
+    MissingActionArgument,
+    parse_action_result,
+)
 
 
 def _create_auto_topic_parser(input_msg_type: Type, target_type: Type) -> Optional[Callable]:
@@ -318,6 +323,16 @@ class BaseAction:
         function_parameters = inspect.signature(self.executable).parameters
         # Dict of: arg_index or kwarg name -> input topic message builder
         self.__input_topics: Dict[Union[str, int], MsgConditionBuilder] = {}
+        # Of those, the ones the executable cannot be called without, mapped to
+        # the parameter they fill. Dropping a keyword argument raises; dropping
+        # a positional one shifts every argument after it into the wrong slot
+        self.__required_inputs: Dict[str, str] = {}
+        positional = [
+            param
+            for param in function_parameters.values()
+            if param.kind
+            in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD)
+        ]
 
         # 1. Check & Parse Positional Args
         if args:
@@ -330,6 +345,11 @@ class BaseAction:
             for idx, value in enumerate(args):
                 if isinstance(value, MsgConditionBuilder):
                     self.__input_topics[f"arg_{idx}"] = value
+                    self.__required_inputs[f"arg_{idx}"] = (
+                        positional[idx].name
+                        if idx < len(positional)
+                        else f"argument {idx}"
+                    )
                 else:
                     _args.append(value)
 
@@ -340,6 +360,9 @@ class BaseAction:
                 # Make sure this keyword argument exists in the function
                 if isinstance(value, MsgConditionBuilder):
                     self.__input_topics[f"kwarg_{key}"] = value
+                    param = function_parameters.get(key)
+                    if param is not None and param.default is inspect.Parameter.empty:
+                        self.__required_inputs[f"kwarg_{key}"] = key
                 else:
                     self._kwargs[key] = value
 
@@ -357,15 +380,27 @@ class BaseAction:
         call_kwargs = self._kwargs.copy()
 
         # If the action is executed by an 'Event' the event will pass the triggering message
-        topics = kwargs.get("topics", None)
-        if topics and self.__input_topics:
+        # Keyed on having inputs to resolve, not on having data to resolve them
+        # from: an empty snapshot is precisely when a required argument is
+        # missing, so skipping the check there would skip it when it matters
+        topics = kwargs.get("topics", None) or {}
+        if self.__input_topics:
             # Collect the required inputs
+            missing = []
             for key, topic_condition in self.__input_topics.items():
-                if related_message := topics.get(topic_condition.name, None):
-                    output = topic_condition.get_value(object_value=related_message)
-                else:
-                    # Related message is not sent -> skip
+                related_message = topics.get(topic_condition.name, None)
+                if related_message is None:
+                    # Nothing published on that topic yet. Calling anyway would
+                    # either raise on a keyword argument or, worse, shift a
+                    # positional one, so an argument that is really required
+                    # stops the call instead of being dropped
+                    if key in self.__required_inputs:
+                        missing.append(
+                            f"'{self.__required_inputs[key]}' from topic "
+                            f"'{topic_condition.name}'"
+                        )
                     continue
+                output = topic_condition.get_value(object_value=related_message)
                 if key.startswith("arg_"):
                     # Python3.8 compatibility (instead of removeprefix())
                     key = key[len("arg_"):]
@@ -376,9 +411,16 @@ class BaseAction:
                     key = key[len("kwarg_"):]
                     call_kwargs[key] = output
 
-        for key, (name, conv_func) in self.__prepared_events_conversions.items():
-            if msg := topics.get(name, None):
-                call_kwargs[key] = conv_func(msg)
+            if missing:
+                raise MissingActionArgument(
+                    f"Action '{self.action_name}' cannot run yet, no value for "
+                    + ", ".join(missing)
+                )
+
+        if topics:
+            for key, (name, conv_func) in self.__prepared_events_conversions.items():
+                if (msg := topics.get(name, None)) is not None:
+                    call_kwargs[key] = conv_func(msg)
         return call_args, call_kwargs
 
     def __call__(self, **kwargs) -> ActionResult:
@@ -390,7 +432,12 @@ class BaseAction:
             to distinguish 'raised' from 'returned nothing'
         :rtype: ActionResult
         """
-        call_args, call_kwargs = self._prepare_call(**kwargs)
+        try:
+            call_args, call_kwargs = self._prepare_call(**kwargs)
+        except MissingActionArgument as e:
+            # Not an error in the recipe: the data has simply not arrived
+            logger.warning(str(e))
+            return False, str(e)
         try:
             result = self.executable(*call_args, **call_kwargs)
         except Exception as e:
