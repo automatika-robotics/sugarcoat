@@ -626,8 +626,8 @@ class Event:
         # NOTE: the condition callable is invoked directly rather than through
         # Action.__call__. A condition is a predicate returning bool, not an
         # action returning (success, message)
-        call_args, call_kwargs = self._action_condition._prepare_call()
         try:
+            call_args, call_kwargs = self._action_condition._prepare_call()
             triggered = bool(
                 self._action_condition.executable(*call_args, **call_kwargs)
             )
