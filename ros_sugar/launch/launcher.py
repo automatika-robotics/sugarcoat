@@ -65,6 +65,7 @@ from ..core.routine import Routine
 from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
+from ..core._action_registry import SystemActionRegistry
 from .launch_actions import ComponentLaunchAction
 from ..base_clients import ServiceClientConfig, ActionClientConfig
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
@@ -242,6 +243,8 @@ class Launcher:
 
         # Events/Actions dictionaries
         self._internal_events: Optional[List[Event]] = None
+        # Built in _setup_monitor_node, read by _init_monitor_node
+        self._action_registry: Optional[SystemActionRegistry] = None
         self._internal_event_names: Optional[List[str]] = None
         self._ros_events_actions: Dict[str, List[ROSLaunchAction]] = {}
         # Dictionaries {serialized_event: actions}
@@ -1498,6 +1501,7 @@ class Launcher:
     ) -> None:
         self.monitor_node = Monitor(
             components_names=components_names,
+            action_registry=self._action_registry,
             events_actions=self._monitor_events_actions,
             events_to_emit=self._internal_events,
             services_components=services_components,
@@ -1551,6 +1555,19 @@ class Launcher:
                 comp.node_name
                 for comp in self.__components_to_activate_on_start_threaded
             ]
+        )
+
+        # What the stack can be asked to do by name. Built here because this is
+        # the only place holding every component object together with how each
+        # of them is launched.
+        # NOTE: handed over as an attribute rather than an argument, because
+        # downstream packages override _init_monitor_node to install their own
+        # monitor and a new parameter would break them
+        self._action_registry = SystemActionRegistry.from_components(
+            self._components,
+            monitor_methods=Monitor.RUNTIME_MONITOR_ACTIONS,
+            monitor_class=Monitor,
+            out_of_process=list(self._pkg_executable),
         )
 
         self._init_monitor_node(
