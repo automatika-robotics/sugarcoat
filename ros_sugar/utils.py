@@ -112,6 +112,16 @@ class InvalidAction(Exception):
     pass
 
 
+class MissingActionArgument(Exception):
+    """Raised when an argument read from a topic has no value at dispatch time
+
+    Unlike InvalidAction this is not a recipe error: the action is well formed,
+    the data it needs has simply not arrived yet.
+    """
+
+    pass
+
+
 class IntEnum(BaseIntEnum):
     """
     Extends enum.IntEnum class with methods to get all integer values and get enum value corresponding to given int value
