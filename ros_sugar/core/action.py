@@ -2,9 +2,12 @@
 
 import json
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from functools import partial
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+
+from rclpy.action.server import GoalStatus
 
 from ..condition import Condition
 from ..config import StrEnum
@@ -16,6 +19,7 @@ from .event import Event
 __all__ = [
     "Action",
     "ActionOutcome",
+    "ActionServerGoal",
     "LogInfo",
     "OpaqueCoroutine",
     "OpaqueFunction",
@@ -305,7 +309,11 @@ class Action(BaseAction):
         """Whether this action watches its own outcome.
 
         True as soon as any part of a watch or retry policy is declared:
-        `success`, `timeout`, `max_retries`, `retry_delay` or `cancel_method`.
+        `success`, `timeout`, `max_retries` or `cancel_method`.
+
+        NOTE: not `retry_delay`. It only delays a retry, so with no retries to
+        delay it can never take effect, and arming a watch loop for it would
+        monitor an action that has nothing to monitor.
 
         :rtype: bool
         """
@@ -359,7 +367,21 @@ class Action(BaseAction):
         if isinstance(action, BaseAction):
             return cls.from_base_action(action)
         if callable(action):
-            return cls(method=action)
+            # A component action has already been checked: the decorator
+            # validated that it returns (bool, str) when the class was defined.
+            # A loose function has not, and wrapping it silently would let a
+            # step whose verdict cannot be read reach a routine
+            if hasattr(action, "_action_description"):
+                return cls(method=action)
+            # A lambda has no name worth quoting back, so do not tell someone
+            # to write Action(<lambda>)
+            name = getattr(action, "__name__", "")
+            wrapped = f"Action({name})" if name.isidentifier() else "an Action"
+            raise TypeError(
+                f"{owner} is a plain callable. Wrap it as {wrapped} to say what "
+                "should happen to its result, or declare it on a component with "
+                "@component_action"
+            )
         raise TypeError(
             f"{owner} must be an Action or a callable, got {type(action)}"
         )
@@ -598,6 +620,28 @@ class Action(BaseAction):
             message,
         )
 
+    def _abandon_attempt(self) -> None:
+        """Drop work an attempt left in flight. No-op for a plain method call.
+
+        Overridden by kinds whose dispatch outlives the call, so a timeout does
+        not leave the real work running.
+        """
+        return None
+
+    def get_feedback(self) -> Optional[Dict]:
+        """Progress of the attempt in flight, or None when there is none.
+
+        Read by a Routine to put the active step's progress in its cursor.
+        """
+        return None
+
+    def set_feedback_sink(self, sink: Optional[Callable[[], None]]) -> None:
+        """Install a zero-arg callable to ping when feedback arrives.
+
+        No-op unless the action actually produces feedback.
+        """
+        return None
+
     def __on_timeout(self, attempt_id: int) -> None:
         """The attempt ran out of time before anything settled it"""
         self.__settle_attempt(
@@ -623,6 +667,11 @@ class Action(BaseAction):
             self._attempt_open = False
             attempt = self._attempt
         self.__cancel_timer()
+
+        if outcome == ActionOutcome.TIMEOUT:
+            # The dispatch never reported back, so whatever it started is still
+            # running. Retrying or failing on top of it would leave it there.
+            self._abandon_attempt()
 
         if succeeded:
             self.__finish((True, message), ActionOutcome.SUCCESS)
@@ -738,11 +787,17 @@ class Action(BaseAction):
         cls,
         serialized_action_dict: Dict,
         deserialized_method: Callable,
+        cancel_method: Optional[Callable] = None,
+        fallback: Optional["Action"] = None,
     ) -> "Action":
         """Reconstruct an Action from serialized action data
 
         :param serialized_action_dict: Serialized action data
         :param deserialized_method: Deserialized action method
+        :param cancel_method: Resolved cancel method, overriding the serialized
+            name. Needed when the executable is not a bound method, so there is
+            no owner to resolve that name against
+        :param fallback: Resolved fallback action. `dictionary` cannot carry one
         :rtype: Action
         """
         reconstructed: "Action" = super().deserialize_action(  # type: ignore[assignment]
@@ -760,8 +815,13 @@ class Action(BaseAction):
             max_retries=serialized_action_dict.get("max_retries", 0),
             retry_delay=serialized_action_dict.get("retry_delay", 0.0),
             on_fail=serialized_action_dict.get("on_fail", "abort"),
-            cancel_method=cls.__deserialize_cancel_method(
-                serialized_action_dict.get("cancel", None), deserialized_method
+            fallback=fallback,
+            cancel_method=(
+                cancel_method
+                if cancel_method is not None
+                else cls.__deserialize_cancel_method(
+                    serialized_action_dict.get("cancel", None), deserialized_method
+                )
             ),
         )
         return reconstructed
@@ -782,3 +842,303 @@ class Action(BaseAction):
             )
             return None
         return getattr(owner, cancel_name)
+
+
+class ActionServerGoal(Action):
+    """A step that sends a goal to a ROS action server and waits for its result.
+
+    Unlike a method step, the dispatch outlives the call: the goal runs on the
+    server and its result is the verdict. So this kind reads the server's own
+    outcome instead of needing a success topic, cancels natively on `halt()`,
+    and reports the server's feedback into a routine's cursor.
+
+    ```python
+    Routine("patrol", steps=[
+        ActionServerGoal(component="planner", goal=goal_msg, timeout=120.0),
+        ActionServerGoal(component="planner", goal=other_goal, on_fail="skip"),
+    ])
+    ```
+
+    The client is resolved from the host at dispatch, not held here: steps are
+    built in a recipe or from JSON, both before any node exists.
+
+    :param component: Node name of a component whose main action server to drive
+    :param server_name: Action server name, when not naming a component
+    :param server_type: Action type, required with `server_name`
+    :param goal: A ready Goal message, a dict of goal fields, or None to take
+        one from the call arguments
+    :param success: Condition proving the goal did what was wanted. When given
+        it decides the verdict: met at any point during execution, or within
+        `success_grace` of the goal returning, means success. The server's own
+        outcome then only bounds the window
+    :param success_grace: Seconds to keep checking `success` after the goal
+        returns, for a condition topic that lags the server
+    """
+
+    #: How often the wait loop re-checks the success condition and the client
+    _POLL_PERIOD = 0.2
+
+    def __init__(
+        self,
+        *,
+        component: Optional[str] = None,
+        server_name: Optional[str] = None,
+        server_type: Optional[type] = None,
+        goal: Optional[Any] = None,
+        success: Optional[Union[Condition, Topic]] = None,
+        success_grace: float = 1.0,
+        timeout: Optional[float] = None,
+        on_timeout: str = "fail",
+        max_retries: int = 0,
+        retry_delay: float = 0.0,
+        on_fail: str = "abort",
+        fallback: Optional[Union[BaseAction, Callable]] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> None:
+        if not component and not (server_name and server_type):
+            raise ValueError(
+                "An action server step needs either 'component' or both "
+                "'server_name' and 'server_type'"
+            )
+        self._component = component
+        self._server_name = server_name
+        self._server_type = server_type
+        self._goal_spec = goal
+        # NOTE: kept here rather than handed to the monitoring policy. As a
+        # policy condition it would mean "server succeeded AND then this holds",
+        # which for a goal that already reports its own outcome is a wait for
+        # nothing. Here it is checked during the goal and briefly after it.
+        self._success_check = self.__as_condition(success)
+        self._success_grace = success_grace
+
+        # Per-dispatch state
+        self._client = None
+        self._settled = threading.Event()
+        self._abandoned = False
+        self._feedback_sink: Optional[Callable[[], None]] = None
+
+        super().__init__(
+            method=self._send_and_wait,
+            timeout=timeout,
+            # If timeout is set but no timeout policy -> retry be default
+            on_timeout=on_timeout if timeout is not None else "retry",
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            cancel_method=self._cancel,
+            on_fail=on_fail,
+            fallback=fallback,
+            name=name or component or server_name,
+            description=description,
+        )
+
+    @staticmethod
+    def __as_condition(
+        success: Optional[Union[Condition, Topic]],
+    ) -> Optional[Condition]:
+        """Take a Condition as given, or a Topic as 'anything on this topic'"""
+        if success is None or isinstance(success, Condition):
+            return success
+        if isinstance(success, Topic):
+            return Condition(
+                topic_name=success.name,
+                topic_msg_type=success.msg_type.__name__,
+                topic_qos_config=success.qos_profile.to_dict(),
+                topic_use_plugin=success.use_plugin,
+                attribute_path=[],
+                operator_func=None,
+                ref_value=None,
+            )
+        raise TypeError(
+            f"'success' must be a Condition or a Topic, got {type(success)}"
+        )
+
+    @property
+    def target(self) -> str:
+        """Readable name of the server this step drives"""
+        return self._component or self._server_name or "unknown"
+
+    def get_required_topics(self) -> List[Topic]:
+        """Topics the step reads, including the success condition's.
+
+        A routine reports these so its host subscribes them before the step
+        runs; without that the condition would never see any data.
+        """
+        topics = list(super().get_required_topics())
+        if self._success_check is not None:
+            known = {topic.name for topic in topics}
+            for name, spec in self._success_check._get_involved_topics().items():
+                if name not in known:
+                    topics.append(Topic(name=name, **spec))
+        return topics
+
+    # ---- Dispatch ---------------------------------------------------------
+
+    def _resolve_client(self):
+        """Get the client for this step's server from the host"""
+        if self._host is None:
+            raise RuntimeError(
+                f"Action server step '{self.action_name}' has no host to get a "
+                "client from. It must be registered on a Monitor before it runs"
+            )
+        if self._component:
+            return self._host.get_component_action_client(self._component)
+        return self._host.get_action_client(self._server_name, self._server_type)
+
+    def _dispatch_goal(self, client, call_kwargs: Dict) -> bool:
+        """Send the goal, in whichever of the three shapes it was given"""
+        goal = self._goal_spec
+        if goal is None:
+            # Filled from the call arguments, or an empty goal
+            goal = call_kwargs.get("goal", None)
+        if goal is None:
+            return client.send_request(client.config.action_type.Goal())
+        if isinstance(goal, dict):
+            return client.send_request_from_dict(goal)
+        return client.send_request(goal)
+
+    def _send_and_wait(self, **kwargs) -> ActionResult:
+        """Send the goal and block until it, or the success condition, settles.
+
+        Blocking is safe here: dispatches run on their own worker pool, never
+        on the ROS executor. The deadline belongs to this action's own timeout.
+        """
+        try:
+            client = self._resolve_client()
+        except Exception as e:
+            return False, str(e)
+
+        self._client = client
+        self._abandoned = False
+        self._settled.clear()
+        client.add_feedback_listener(self._on_client_event)
+        try:
+            if not self._dispatch_goal(client, kwargs):
+                if client.goal_rejected:
+                    return False, f"Server '{self.target}' rejected the goal"
+                return False, f"Server '{self.target}' did not accept the goal"
+
+            while not self._settled.wait(self._POLL_PERIOD):
+                if self._condition_met():
+                    # Succeeded early: stop the goal rather than leave it
+                    # running while the routine moves on
+                    self._cancel()
+                    return True, f"Success condition met while '{self.target}' ran"
+                if client.action_returned or client.goal_rejected or self._abandoned:
+                    break
+
+            if self._condition_met():
+                return True, f"Success condition met as '{self.target}' returned"
+            if self._success_check is not None:
+                return self._verdict_from_condition(client)
+            return self._verdict_from_status(client)
+        finally:
+            client.remove_feedback_listener(self._on_client_event)
+
+    def _condition_met(self) -> bool:
+        """Whether the success condition holds against the host's latest data"""
+        if self._success_check is None or self._host is None:
+            return False
+        snapshot = getattr(self._host, "get_topics_snapshot", None)
+        if snapshot is None:
+            return False
+        try:
+            return self._success_check.evaluate(snapshot())
+        except Exception:
+            return False
+
+    def _verdict_from_condition(self, client) -> ActionResult:
+        """Keep checking the condition for a grace period after the goal ends.
+
+        A condition topic often lags the server finishing, so deciding at the
+        instant of return would fail a goal that did work.
+        """
+        deadline = time.time() + self._success_grace
+        while time.time() < deadline:
+            if self._settled.wait(min(self._POLL_PERIOD, self._success_grace)):
+                pass
+            if self._condition_met():
+                return True, f"Success condition met after '{self.target}' returned"
+            if self._abandoned:
+                break
+        return (
+            False,
+            f"Success condition not met within {self._success_grace}s of "
+            f"'{self.target}' returning ({self._status_name(client)})",
+        )
+
+    @staticmethod
+    def _status_name(client) -> str:
+        return {
+            GoalStatus.STATUS_SUCCEEDED: "succeeded",
+            GoalStatus.STATUS_ABORTED: "aborted",
+            GoalStatus.STATUS_CANCELED: "canceled",
+        }.get(getattr(client, "action_status", None), "no terminal status")
+
+    def _verdict_from_status(self, client) -> ActionResult:
+        """The server's own outcome, when no success condition was given"""
+        status = getattr(client, "action_status", GoalStatus.STATUS_UNKNOWN)
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            return True, f"Server '{self.target}' succeeded"
+        if status == GoalStatus.STATUS_ABORTED:
+            return False, f"Server '{self.target}' aborted the goal"
+        if status == GoalStatus.STATUS_CANCELED:
+            return False, f"Goal on '{self.target}' was canceled"
+        return False, f"No terminal status from '{self.target}'"
+
+    # ---- Preemption -------------------------------------------------------
+
+    def _cancel(self, **_) -> ActionResult:
+        """Cancel the goal in flight and release the waiting dispatch"""
+        self._abandoned = True
+        client = self._client
+        result = (
+            client.cancel_request() if client is not None else (True, "nothing to cancel")
+        )
+        self._settled.set()
+        return result
+
+    def _abandon_attempt(self) -> None:
+        """A timed out attempt leaves a live goal on the server; take it back"""
+        self._cancel()
+
+    # ---- Feedback ---------------------------------------------------------
+
+    def _on_client_event(self) -> None:
+        """Fired by the client on every feedback message and on terminal state"""
+        client = self._client
+        if client is not None and (client.action_returned or client.goal_rejected):
+            self._settled.set()
+        if self._feedback_sink is not None:
+            self._feedback_sink()
+
+    def set_feedback_sink(self, sink: Optional[Callable[[], None]]) -> None:
+        """Install the callable pinged when the server sends feedback"""
+        self._feedback_sink = sink
+
+    def get_feedback(self) -> Optional[Dict]:
+        """Progress of the goal in flight, for a routine's cursor"""
+        client = self._client
+        if client is None:
+            return None
+        return {
+            "target": self.target,
+            "server_status": client._status,
+            "feedback_count": client.feedback_count,
+        }
+
+    # ---- Serialization ----------------------------------------------------
+
+    @property
+    def dictionary(self) -> Dict:
+        """Serialized form, adding what identifies the server and the goal"""
+        dict_value = super().dictionary
+        dict_value["kind"] = "action_server"
+        dict_value["component"] = self._component
+        dict_value["server_name"] = self._server_name
+        dict_value["goal"] = self._goal_spec if isinstance(self._goal_spec, dict) else None
+        dict_value["success_grace"] = self._success_grace
+        dict_value["success"] = (
+            self._success_check.to_json() if self._success_check else None
+        )
+        return dict_value
