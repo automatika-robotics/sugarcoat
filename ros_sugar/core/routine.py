@@ -9,15 +9,14 @@ from typing import Callable, Dict, List, Optional, Union
 from ..config import StrEnum
 from ..io import Topic
 from ..utils import ActionResult, logger
-from .action import Action, ActionOutcome
+from .action import Action, ActionOutcome, ActionServerGoal
 
 
 class RoutineStatus(StrEnum):
-    """Where a routine is in its lifecycle.
+    """Routine lifecycle status.
 
     Published on the cursor topic and readable through the host's
-    `get_routine_state`. A `StrEnum`, so each member compares and serializes
-    as its plain string value.
+    `get_routine_state`.
     """
 
     IDLE = "idle"
@@ -28,7 +27,7 @@ class RoutineStatus(StrEnum):
     ABORTED = "aborted"
 
     def is_terminal(self) -> bool:
-        """Whether the routine has ended and cannot transition further
+        """Whether the routine reach an "end" lifecycle status and cannot transition further
 
         :rtype: bool
         """
@@ -42,10 +41,10 @@ class RoutineStatus(StrEnum):
 class Routine:
     """An ordered sequence of Action steps, run to completion or to a failure.
 
-    A `Routine` is a procedure that can be declared in a Recipe implicitly: 'detect, then pre-grasp, then close, then lift'. A routine gives each step its own success test and retry
-    policy, and publishes where it has got to.
+    A `Routine` is a procedure that can be declared in a Recipe implicitly or added at runtime through the 'Monitor': 'detect, then pre-grasp, then close, then lift'.
+    A routine gives each step its own success test and retry policy, and publishes where it has got to.
 
-    A step is an ordinary `Action`. `success`, `timeout` and `max_retries` decide whether a
+    A step is an ordinary `Action`. The `success`, `timeout` and `max_retries` attributes decide whether a
     step worked; `on_fail` and `fallback`, which only a routine reads, decide
     what the sequence does when it did not.
 
@@ -89,12 +88,15 @@ class Routine:
     # Monitor key their routing and hosting on
     _is_routine = True
 
+    #: Shortest gap between cursor republishes driven by step feedback
+    _FEEDBACK_PERIOD = 0.2
+
     def __init__(
         self,
         name: str,
-        steps: List[Union[Action, Callable]],
-        on_complete: Optional[Union[Action, Callable]] = None,
-        on_abort: Optional[Union[Action, Callable]] = None,
+        steps: List[Union[Action, ActionServerGoal, Callable]],
+        on_complete: Optional[Union[Action, ActionServerGoal, Callable]] = None,
+        on_abort: Optional[Union[Action, ActionServerGoal, Callable]] = None,
         description: Optional[str] = None,
     ) -> None:
         if not steps:
@@ -115,9 +117,7 @@ class Routine:
                 "A step is named in the cursor, so give one of them an explicit "
                 "'name' to tell them apart"
             )
-        self.on_complete = Action.coerce(
-            on_complete, f"The on_complete of '{name}'"
-        )
+        self.on_complete = Action.coerce(on_complete, f"The on_complete of '{name}'")
         self.on_abort = Action.coerce(on_abort, f"The on_abort of '{name}'")
 
         # Cursor and run state. Every transition happens on a dispatch worker, a
@@ -138,10 +138,59 @@ class Routine:
         self._host = None
         self._state_publisher: Optional[Callable[[str], None]] = None
 
+        # Rate limit for republishing the cursor on step feedback
+        self._last_feedback_publish: float = 0.0
+
+    @classmethod
+    def from_spec(cls, spec: Dict, resolve: Callable[[Dict], Action]) -> "Routine":
+        """Build a routine from a plain dictionary, as sent over a service.
+
+        Only the shape is checked here. Turning a step into something callable
+        needs a registry and clients, so that is the host's job (Monitor) and arrives as
+        `resolve`.
+
+        ```python
+        Routine.from_spec(
+            {"name": "mission", "steps": [{"ref": "planner/main_action"}]},
+            monitor._action_from_spec,
+        )
+        ```
+
+        :param spec: `{name, steps, on_complete, on_abort, description}`, where
+            each step is whatever `resolve` understands
+        :param resolve: Turns one step dictionary into an Action
+        :raises ValueError: If the spec names no routine or carries no steps
+        :rtype: Routine
+        """
+        name = spec.get("name")
+        if not name:
+            raise ValueError("A routine spec needs a 'name'")
+        steps = spec.get("steps") or []
+        if not steps:
+            raise ValueError(f"Routine '{name}' has no steps")
+
+        def _resolve(step_spec, what: str) -> Optional[Action]:
+            if step_spec is None:
+                return None
+            try:
+                return resolve(step_spec)
+            except Exception as e:
+                raise ValueError(f"{what} of routine '{name}': {e}") from e
+
+        return cls(
+            name=name,
+            steps=[
+                _resolve(step, f"Step {index + 1}") for index, step in enumerate(steps)
+            ],
+            on_complete=_resolve(spec.get("on_complete"), "The on_complete"),
+            on_abort=_resolve(spec.get("on_abort"), "The on_abort"),
+            description=spec.get("description"),
+        )
+
     # ---- Registration ------------------------------------------------------
 
     def set_host(self, host) -> None:
-        """Give the routine, and every action it runs, the node that runs them.
+        """Register the host node to the routine, and every action it runs.
 
         :param host: A node exposing `add_runtime_event_listener`
         """
@@ -184,21 +233,19 @@ class Routine:
 
     @property
     def state(self) -> Dict:
-        """Where the routine has got to
+        """Current lifecycle state of the routine
 
         :rtype: Dict
         """
         with self._lock:
-            active = (
-                self.steps[self._index].action_name
-                if self._status in (RoutineStatus.RUNNING, RoutineStatus.PAUSED)
-                else None
-            )
-            return {
+            running = self._status in (RoutineStatus.RUNNING, RoutineStatus.PAUSED)
+            # If started: running or paused, get current step
+            step = self.steps[self._index] if running else None
+            cursor = {
                 "name": self.name,
                 "status": self._status,
                 "index": self._index,
-                "active_step": active,
+                "active_step": step.action_name if step else None,
                 "steps": [step.action_name for step in self.steps],
                 "message": self._message,
                 "elapsed": (
@@ -207,9 +254,15 @@ class Routine:
                     else 0.0
                 ),
             }
+        # Only steps that report progress add this, so a routine of plain
+        # method steps carries exactly what it always did
+        feedback = step.get_feedback() if step else None
+        if feedback is not None:
+            cursor["step_feedback"] = feedback
+        return cursor
 
     def __publish_state(self) -> None:
-        """Publish the cursor, if the host gave us somewhere to publish it"""
+        """Publish the cursor, if the host provided a publisher"""
         if self._state_publisher is None:
             return
         try:
@@ -270,9 +323,10 @@ class Routine:
             self._status = RoutineStatus.PAUSED
             self._message = f"paused at step '{step.action_name}'"
         step.halt()
-        logger.info(f"Routine '{self.name}' paused at step '{step.action_name}'")
+        info_str = f"Routine '{self.name}' paused at step '{step.action_name}'"
+        logger.info(info_str)
         self.__publish_state()
-        return True, f"Routine '{self.name}' paused at step '{step.action_name}'"
+        return True, info_str
 
     def resume(self, **_) -> ActionResult:
         """Re-enter the step the routine was paused at
@@ -286,10 +340,11 @@ class Routine:
             self._message = ""
             index = self._index
             step_name = self.steps[index].action_name
-        logger.info(f"Routine '{self.name}' resumed at step '{step_name}'")
+        info_str = f"Routine '{self.name}' resumed at step '{step_name}'"
+        logger.info(info_str)
         self.__publish_state()
         self.__enter_step(index)
-        return True, f"Routine '{self.name}' resumed at step '{step_name}'"
+        return True, info_str
 
     def abort(self, reason: str = "aborted by request", **_) -> ActionResult:
         """End the routine now, preempting the step in flight and running `on_abort`
@@ -327,8 +382,26 @@ class Routine:
             f"Routine '{self.name}' entering step '{step.action_name}' "
             f"({index + 1}/{len(self.steps)})"
         )
+        # Republish the cursor as this step reports progress.
+        step.set_feedback_sink(partial(self.__on_step_feedback, index))
         self.__publish_state()
         step.start(partial(self.__on_step_done, index), **call_kwargs)
+
+    def __on_step_feedback(self, index: int) -> None:
+        """A step reported progress: put it in the cursor.
+
+        Called from the host's executor thread, so it is rate limited to keep a
+        chatty server from flooding the cursor topic.
+        """
+        with self._lock:
+            if self._status != RoutineStatus.RUNNING or index != self._index:
+                return
+            now = time.time()
+            due = now - self._last_feedback_publish >= self._FEEDBACK_PERIOD
+            if not due:
+                return
+            self._last_feedback_publish = now
+        self.__publish_state()
 
     def __step_kwargs(self) -> Dict:
         """Arguments for the next step.
@@ -351,6 +424,8 @@ class Routine:
         with self._lock:
             stale = self._status != RoutineStatus.RUNNING or index != self._index
             step = self.steps[index]
+        # This step is done reporting, whether or not its verdict still counts
+        step.set_feedback_sink(None)
         if stale or outcome == ActionOutcome.PREEMPTED:
             # The verdict of a step the routine has already moved past, paused
             # or aborted cannot advance it
