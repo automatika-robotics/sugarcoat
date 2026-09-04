@@ -298,21 +298,21 @@ The validation runs during initialization and raises if required topics are miss
 Use the `@component_action` decorator to mark methods as dispatchable actions. These can be used as fallback targets or wired to events:
 
 ```python
-from ros_sugar.utils import ActionResult, component_action, component_fallback
+from ros_sugar.utils import ActionReturnType, component_action, component_fallback
 
 class MyComponent(BaseComponent):
     @component_action
-    def reset_buffer(self) -> ActionResult:
+    def reset_buffer(self) -> ActionReturnType:
         self.buffer = []
         return True, "buffer reset"
 
     @component_fallback
-    def emergency_stop(self) -> ActionResult:
+    def emergency_stop(self) -> ActionReturnType:
         self.publishers_dict["velocity"].publish(0.0)
         return True, "motors stopped"
 ```
 
-- `@component_action`: Validates lifecycle state before execution. **Must be annotated to return `Tuple[bool, str]`** (aliased as `ActionResult`) — the bool reports success, the string carries a result or an error message. When an action is invoked remotely through the `ExecuteMethod` service, the bool becomes the response's `success`; see the [built-in services](../advanced/srvs.md).
+- `@component_action`: Validates lifecycle state before execution. **Must be annotated to return `Tuple[bool, str]`** (aliased as `ActionReturnType`) — the bool reports success, the string carries a result or an error message. When an action is invoked remotely through the `ExecuteMethod` service, the bool becomes the response's `success`; see the [built-in services](../advanced/srvs.md).
 - `@component_fallback`: Validates the component is in a valid state (active, inactive, or activating).
 
 ### Tool Descriptions for LLM Orchestration
@@ -328,7 +328,7 @@ class MyComponent(BaseComponent):
             "description": "Clears the internal data buffer and resets processing state.",
         },
     })
-    def reset_buffer(self) -> ActionResult:
+    def reset_buffer(self) -> ActionReturnType:
         self.buffer = []
         return True, "buffer reset"
 
@@ -339,7 +339,7 @@ class MyComponent(BaseComponent):
             "description": "Immediately stops all motor output.",
         },
     })
-    def emergency_stop(self) -> ActionResult:
+    def emergency_stop(self) -> ActionReturnType:
         self.publishers_dict["velocity"].publish(0.0)
         return True, "motors stopped"
 ```
@@ -348,7 +348,7 @@ When `description` is omitted, the method's docstring is used as the description
 
 ```python
 @component_action(description={...}, active=True)
-def move_forward(self) -> ActionResult:
+def move_forward(self) -> ActionReturnType:
     ...
 ```
 
@@ -366,7 +366,7 @@ Every component inherits these actions that can be used directly in fallbacks or
 | `set_params(names, values, keep_alive=True)` | Change multiple parameters |
 | `broadcast_status()` | Publish current health status |
 
-All of them follow the action contract and return `ActionResult`. `inspect_component()`, which returns a string summary of the component's config, inputs and outputs, is **not** an action: it is an undecorated method returning `str`, so it cannot be used in an event or a fallback.
+All of them follow the action contract and return `ActionReturnType`. `inspect_component()`, which returns a string summary of the component's config, inputs and outputs, is **not** an action: it is an undecorated method returning `str`, so it cannot be used in an event or a fallback.
 
 ### Custom Action/Service Names
 
@@ -416,7 +416,7 @@ from ros_sugar.core import BaseComponent, Action
 from ros_sugar.io import Topic
 from ros_sugar.io.supported_types import Float64, String
 from ros_sugar.config import BaseComponentConfig, base_validators
-from ros_sugar.utils import ActionResult, component_action
+from ros_sugar.utils import ActionReturnType, component_action
 from ros_sugar.launch import Launcher
 
 
@@ -466,7 +466,7 @@ class ExponentialFilter(BaseComponent):
         self.publishers_dict["filtered_signal"].publish(self._filtered)
 
     @component_action
-    def reset_filter(self) -> ActionResult:
+    def reset_filter(self) -> ActionReturnType:
         self._filtered = 0.0
         return True, "filter reset"
 

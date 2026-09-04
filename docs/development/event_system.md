@@ -178,22 +178,22 @@ Marks a component method as callable from the event system. It enforces:
 carries a result when the action succeeded and an error message when it failed.
 
 ```python
-from ros_sugar.utils import ActionResult, component_action
+from ros_sugar.utils import ActionReturnType, component_action
 
 class Gripper(BaseComponent):
     @component_action
-    def close(self) -> ActionResult:
+    def close(self) -> ActionReturnType:
         if self._blocked:
             return False, "gripper is obstructed"
         return True, "gripper closed"
 ```
 
-`ActionResult` is a plain alias for `Tuple[bool, str]` — actions return an ordinary tuple, nothing
+`ActionReturnType` is a plain alias for `Tuple[bool, str]` — actions return an ordinary tuple, nothing
 more. An action that needs to return something structured serializes it into the string:
 
 ```python
     @component_action
-    def inspect(self) -> ActionResult:
+    def inspect(self) -> ActionReturnType:
         return True, json.dumps({"grasped": True, "width": 0.04})
 ```
 
@@ -233,7 +233,7 @@ class Navigator(BaseComponent):
             },
         },
     })
-    def navigate_to(self, *, x: float, y: float) -> ActionResult:
+    def navigate_to(self, *, x: float, y: float) -> ActionReturnType:
         ...
 ```
 
@@ -479,6 +479,20 @@ The cursor is also published on `/routine/<name>/state` as JSON in a `std_msgs/S
 ```
 
 `status` is a `RoutineStatus` (`ros_sugar.core`), a string-valued enum: `idle`, `running`, `paused`, `completed`, `failed` or `aborted` on the wire.
+
+The topic is **latched** (`TRANSIENT_LOCAL`, depth 1). A cursor is published only when the routine transitions, so without latching anything connecting mid-mission — a UI, a rosbag, `ros2 topic echo` — would see nothing until the routine next moved. Subscribe with `TRANSIENT_LOCAL` to get the current state on connect:
+
+```python
+from rclpy.qos import DurabilityPolicy
+from ros_sugar.config import QoSConfig
+
+node.create_subscription(
+    String, "/routine/pick_object/state", on_state,
+    QoSConfig(durability=DurabilityPolicy.TRANSIENT_LOCAL, queue_size=1).to_ros(),
+)
+```
+
+A `VOLATILE` subscriber stays compatible and behaves as before: it receives transitions from the moment it connects, just not the retained sample.
 
 ---
 

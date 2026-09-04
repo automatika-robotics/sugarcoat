@@ -154,7 +154,7 @@ The callback group can be specified at construction via the `callback_group` par
 Defined in `ros_sugar.utils.component_action`. Marks a method as an action that can be dispatched by the event system. The decorator enforces:
 
 1. The method belongs to a `LifecycleNode` instance.
-2. The method is annotated to return `Tuple[bool, str]` (aliased as `ActionResult`).
+2. The method is annotated to return `Tuple[bool, str]` (aliased as `ActionReturnType`).
 3. If `active=True`, the component must be in the **Active** lifecycle state.
 
 Every action returns `(success, message)`: the bool reports success or failure, the string carries a
@@ -164,11 +164,11 @@ component that does not follow the contract fails at import.
 Can be used bare (`@component_action`) or with parameters (`@component_action(description={...}, active=True)`). The optional `description` parameter accepts an OpenAI-compatible tool/function description dict, used when actions are exposed as tools to an orchestrating LLM.
 
 ```python
-from ros_sugar.utils import ActionResult, component_action
+from ros_sugar.utils import ActionReturnType, component_action
 
 class MyComponent(BaseComponent):
     @component_action
-    def stop_motors(self) -> ActionResult:
+    def stop_motors(self) -> ActionReturnType:
         # ... stop logic ...
         return True, "motors stopped"
 
@@ -179,7 +179,7 @@ class MyComponent(BaseComponent):
             "description": "Immediately stop all motors.",
         },
     })
-    def stop_motors_with_desc(self) -> ActionResult:
+    def stop_motors_with_desc(self) -> ActionReturnType:
         ...
 ```
 
@@ -190,11 +190,11 @@ Defined in `ros_sugar.utils.component_fallback`. Marks a method as a fallback ha
 Like `@component_action`, it can be used bare or with a `description` parameter for LLM tool descriptions.
 
 ```python
-from ros_sugar.utils import ActionResult, component_fallback
+from ros_sugar.utils import ActionReturnType, component_fallback
 
 class MyComponent(BaseComponent):
     @component_fallback
-    def restart(self) -> ActionResult:
+    def restart(self) -> ActionReturnType:
         self.trigger_deactivate()
         self.trigger_activate()
         return True, "component restarted"
