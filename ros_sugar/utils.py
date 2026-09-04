@@ -38,7 +38,6 @@ MsgT = TypeVar("MsgT")
 # The return contract for every action: (success, message). The message carries a
 # result when the action succeeded and an error when it failed, and may hold JSON
 # if the action needs to return something structured.
-# NOTE: typing.Tuple rather than the PEP 585 builtin, this package supports python3.8
 ActionReturnType = Tuple[bool, str]
 
 #: Deprecated spelling of :data:`ActionReturnType`. Kept so existing recipes keep importing and annotating
