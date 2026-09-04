@@ -17,7 +17,7 @@ import rclpy
 
 from ros_sugar.core import BaseComponent
 from ros_sugar import Launcher
-from ros_sugar.utils import ActionResult, component_action
+from ros_sugar.utils import ActionReturnType, component_action
 from automatika_ros_sugar.srv import ExecuteMethod
 
 
@@ -36,20 +36,20 @@ class ReturningComponent(BaseComponent):
         return
 
     @component_action
-    def succeed(self) -> ActionResult:
+    def succeed(self) -> ActionReturnType:
         return True, SUCCESS_MESSAGE
 
     @component_action
-    def fail(self) -> ActionResult:
+    def fail(self) -> ActionReturnType:
         return False, FAILURE_MESSAGE
 
     @component_action
-    def return_payload(self) -> ActionResult:
+    def return_payload(self) -> ActionReturnType:
         """Structured output is carried as JSON inside the message string"""
         return True, json.dumps(EXPECTED_PAYLOAD)
 
     @component_action
-    def raise_error(self) -> ActionResult:
+    def raise_error(self) -> ActionReturnType:
         raise RuntimeError("boom")
 
 
