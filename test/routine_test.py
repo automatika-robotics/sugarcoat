@@ -26,7 +26,7 @@ import launch_testing
 import launch_testing.actions
 import launch_testing.markers
 import pytest
-from example_interfaces.action import Fibonacci
+from tf2_msgs.action import LookupTransform
 from rclpy.action.server import GoalStatus
 from rclpy.qos import DurabilityPolicy
 from std_msgs.msg import String
@@ -193,13 +193,17 @@ class StatePublisher(BaseComponent):
 class CountingComponent(BaseComponent):
     """A component whose main action server counts, slowly enough to observe.
 
-    `order` doubles as the instruction: a negative order makes the server abort,
-    so a failing goal needs no separate kind of server.
+    The count doubles as the instruction: a negative count makes the server
+    abort, so a failing goal needs no separate kind of server.
+
+    tf2_msgs/LookupTransform is the action type only because it ships with
+    tf2_ros, a declared dependency, so the suite needs nothing extra installed.
+    Nothing looks up a transform: the count travels as text in `target_frame`.
     """
 
     def __init__(self, component_name, **kwargs):
         super().__init__(component_name, **kwargs)
-        self.action_type = Fibonacci
+        self.action_type = LookupTransform
         # Namespaced by node, as the framework default is: a bare "count" would
         # put all four servers on one action name and every goal would reach
         # every server
@@ -210,33 +214,28 @@ class CountingComponent(BaseComponent):
         pass
 
     def main_action_callback(self, goal_handle):
-        order = goal_handle.request.order
-        goals_received.append((self.node_name, order))
-        result = Fibonacci.Result()
+        count = int(goal_handle.request.target_frame)
+        goals_received.append((self.node_name, count))
+        result = LookupTransform.Result()
 
-        if order < 0:
+        if count < 0:
             goal_handle.abort()
             return result
 
-        # Counting, not real Fibonacci: the message field is int32[], which
-        # actual Fibonacci values overflow well before a goal is long enough
-        # to still be running when a test aborts it
-        for step in range(order):
+        for _ in range(count):
             if goal_handle.is_cancel_requested:
-                goals_cancelled.append((self.node_name, order))
+                goals_cancelled.append((self.node_name, count))
                 goal_handle.canceled()
                 return result
-            feedback = Fibonacci.Feedback()
-            feedback.sequence = [step]
             try:
-                goal_handle.publish_feedback(feedback)
+                # The feedback message has no fields; only its arrival is observed
+                goal_handle.publish_feedback(LookupTransform.Feedback())
             except Exception:
                 # Shutdown tore the publisher down under us: the long goals are
                 # meant to still be running when the tests end
                 return result
             time.sleep(0.1)
 
-        result.sequence = [order]
         goal_handle.succeed()
         return result
 
@@ -344,7 +343,7 @@ def generate_test_description():
         steps=[
             ActionServerGoal(
                 component="counter",
-                goal={"order": 3},
+                goal={"target_frame": "3"},
                 name="count_to_three",
                 timeout=15.0,
             )
@@ -358,7 +357,7 @@ def generate_test_description():
         steps=[
             ActionServerGoal(
                 component="failer",
-                goal={"order": -1},
+                goal={"target_frame": "-1"},
                 name="count_backwards",
                 timeout=15.0,
             )
@@ -373,7 +372,7 @@ def generate_test_description():
         steps=[
             ActionServerGoal(
                 component="runner",
-                goal={"order": 300},
+                goal={"target_frame": "300"},
                 name="count_forever",
                 timeout=120.0,
             )
@@ -387,7 +386,7 @@ def generate_test_description():
         steps=[
             ActionServerGoal(
                 component="reporter",
-                goal={"order": 300},
+                goal={"target_frame": "300"},
                 name="count_and_report",
                 timeout=120.0,
             )
@@ -781,7 +780,7 @@ class TestActionServerStep(unittest.TestCase):
     def test_the_monitor_hands_the_step_a_client_for_the_component(self):
         """The step holds no client; it resolves one from its host at dispatch"""
         client = monitor_node.get_component_action_client("counter")
-        assert client.config.action_type == Fibonacci
+        assert client.config.action_type == LookupTransform
 
         with self.assertRaises(KeyError) as caught:
             monitor_node.get_component_action_client("no_such_component")

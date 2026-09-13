@@ -21,7 +21,7 @@ import launch_testing.markers
 import pytest
 import rclpy
 from automatika_ros_sugar.srv import ExecuteMethod
-from example_interfaces.action import Fibonacci
+from tf2_msgs.action import LookupTransform
 
 from ros_sugar import Launcher
 from ros_sugar.config import ComponentRunType
@@ -57,11 +57,15 @@ class ReadingPublisher(BaseComponent):
 
 
 class CountingComponent(BaseComponent):
-    """A main action server, so a mission step can be a real goal"""
+    """A main action server, so a mission step can be a real goal.
+
+    tf2_msgs/LookupTransform is the action type only because it ships with
+    tf2_ros, a declared dependency. The count travels as text in `target_frame`.
+    """
 
     def __init__(self, component_name, **kwargs):
         super().__init__(component_name, **kwargs)
-        self.action_type = Fibonacci
+        self.action_type = LookupTransform
         self.main_action_name = f"{component_name}/count"
         self.run_type = ComponentRunType.ACTION_SERVER
 
@@ -69,13 +73,12 @@ class CountingComponent(BaseComponent):
         pass
 
     def main_action_callback(self, goal_handle):
-        result = Fibonacci.Result()
-        for _ in range(goal_handle.request.order):
+        result = LookupTransform.Result()
+        for _ in range(int(goal_handle.request.target_frame)):
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 return result
             time.sleep(0.05)
-        result.sequence = [goal_handle.request.order]
         goal_handle.succeed()
         return result
 
@@ -181,7 +184,7 @@ class TestRuntimeApi(unittest.TestCase):
                 "name": "over_the_wire",
                 "steps": [
                     {"ref": "driver/note", "kwargs": {"value": "one"}, "name": "first"},
-                    {"ref": "counter/count", "goal": {"order": 2}, "name": "count"},
+                    {"ref": "counter/count", "goal": {"target_frame": "2"}, "name": "count"},
                     {"ref": "driver/note", "kwargs": {"value": "two"}, "name": "last"},
                 ],
             },
@@ -205,7 +208,7 @@ class TestRuntimeApi(unittest.TestCase):
             "add_routine",
             routine={
                 "name": "controllable",
-                "steps": [{"ref": "counter/count", "goal": {"order": 40}}],
+                "steps": [{"ref": "counter/count", "goal": {"target_frame": "40"}}],
             },
         ).success
 
@@ -304,12 +307,12 @@ class TestRuntimeApi(unittest.TestCase):
             "add_routine",
             routine={
                 "name": "typo",
-                "steps": [{"ref": "counter/count", "goal": {"ordr": 2}}],
+                "steps": [{"ref": "counter/count", "goal": {"targt_frame": "2"}}],
             },
         )
         assert not response.success
-        assert "ordr" in response.error_msg
-        assert "order" in response.error_msg
+        assert "targt_frame" in response.error_msg
+        assert "target_frame" in response.error_msg
 
     def test_a_routine_with_no_steps_is_refused(self):
         response = self.call("add_routine", routine={"name": "empty", "steps": []})
