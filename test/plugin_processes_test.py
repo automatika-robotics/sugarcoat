@@ -93,6 +93,14 @@ def _launcher_with(plugin, components):
     return launcher
 
 
+@pytest.fixture
+def driver_installed(monkeypatch):
+    """Treat the tests' fake driver package as installed."""
+    monkeypatch.setattr(
+        "ros_sugar.launch.launcher._check_ros_executable", lambda *_: None
+    )
+
+
 # --- demand resolution ---------------------------------------------------
 
 
@@ -196,7 +204,7 @@ def test_demand_defaults_empty_without_a_launcher():
 # --- process declaration -------------------------------------------------
 
 
-def test_declared_driver_becomes_a_launch_action():
+def test_declared_driver_becomes_a_launch_action(driver_installed):
     plugin = _DriverPlugin()
     comp = _FakeComponent(
         "a", in_topics=[Topic(name="scan_front", msg_type="LaserScan", use_plugin=True)]
@@ -247,6 +255,103 @@ def test_a_raising_declaration_does_not_stop_bringup():
 
     assert not [e for e in launcher._description.entities
                 if isinstance(e, NodeLaunchAction)]
+
+
+def test_a_driver_that_is_not_installed_fails_bringup():
+    """Found by the launch system only once running, it stopped every node with
+    an error naming neither the plugin nor the fix."""
+    from ament_index_python.packages import PackageNotFoundError
+
+    plugin = _DriverPlugin()  # declares 'fake_lidar_pkg', which is not installed
+    comp = _FakeComponent(
+        "a", in_topics=[Topic(name="scan_front", msg_type="LaserScan", use_plugin=True)]
+    )
+    launcher = _launcher_with(plugin, [comp])
+    launcher._resolve_plugin_demand()
+
+    with pytest.raises(PackageNotFoundError) as raised:
+        launcher._launch_plugin_processes(plugin)
+
+    message = raised.value.args[0]
+    assert plugin.id in message
+    assert "lidar_driver" in message, "names the driver"
+    assert "scan_front" in message, "names what the recipe used it for"
+    assert "not installed" in message
+
+
+def test_a_driver_missing_its_executable_fails_bringup():
+    from ros_sugar.launch.launcher import _check_ros_executable
+
+    with pytest.raises(FileNotFoundError, match="no executable 'no_such_node'"):
+        _check_ros_executable("tf2_ros", "no_such_node")
+
+
+def test_an_installed_driver_passes_the_check():
+    from ros_sugar.launch.launcher import _check_ros_executable
+
+    _check_ros_executable("tf2_ros", "static_transform_publisher")
+
+
+def test_add_ros_node_rejects_a_package_that_is_not_installed():
+    """The same failure for a node a recipe adds by hand."""
+    from ament_index_python.packages import PackageNotFoundError
+
+    launcher = Launcher()
+    with pytest.raises(PackageNotFoundError, match="not installed"):
+        launcher.add_ros_node(package="no_such_pkg", executable="node")
+    assert not [e for e in launcher._description.entities
+                if isinstance(e, NodeLaunchAction)]
+
+
+def test_a_missing_driver_fails_before_anything_is_opened():
+    """Raised before the bus starts or any host opens, so a failed bringup
+    leaves no transports or bus behind."""
+    from ament_index_python.packages import PackageNotFoundError
+
+    plugin = _RosDriverPlugin()  # declares 'fake_lidar_pkg'
+    launcher = Launcher(robot_plugin=plugin)
+    launcher._components = [
+        _FakeComponent(
+            "a",
+            in_topics=[Topic(name="scan_front", msg_type="LaserScan", use_plugin=True)],
+        )
+    ]
+    launcher.monitor_node = _FakeMonitorNode()
+
+    with pytest.raises(PackageNotFoundError):
+        launcher._setup_plugins()
+
+    assert launcher._plugin_hosts == []
+    assert launcher._plugin_bus is None
+    assert plugin.seen_at_attach is None, "on_attached must not have run"
+
+
+def test_a_raising_precondition_skips_the_driver():
+    plugin = _DriverPlugin()
+    comp = _FakeComponent(
+        "a", in_topics=[Topic(name="scan_front", msg_type="LaserScan", use_plugin=True)]
+    )
+    launcher = _launcher_with(plugin, [comp])
+    launcher._resolve_plugin_demand()
+
+    def _broken():
+        raise OSError("cannot probe the port")
+
+    plugin.required_processes = lambda: [
+        ProcessSpec(package="fake_lidar_pkg", executable="n", precondition=_broken)
+    ]
+    launcher._launch_plugin_processes(plugin)  # must not raise
+
+    assert not [e for e in launcher._description.entities
+                if isinstance(e, NodeLaunchAction)]
+
+
+def test_a_single_spec_instead_of_a_list_does_not_stop_bringup():
+    plugin = _DriverPlugin()
+    launcher = _launcher_with(plugin, [])
+    plugin.required_processes = lambda: ProcessSpec(package="p", executable="e")
+
+    launcher._launch_plugin_processes(plugin)  # logged as a declaration fault
 
 
 def test_plugins_without_the_hook_are_unaffected():
@@ -322,7 +427,7 @@ class _FakeMonitorNode:
 
 
 @pytest.fixture
-def wired_launcher():
+def wired_launcher(driver_installed):
     plugin = _RosDriverPlugin()
     launcher = Launcher(robot_plugin=plugin)
     launcher._components = [
