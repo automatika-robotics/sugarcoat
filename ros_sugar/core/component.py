@@ -23,6 +23,7 @@ from typing import (
 )
 
 import rclpy.callback_groups as ros_callback_groups
+from action_msgs.srv import CancelGoal
 from automatika_ros_sugar.srv import (
     ChangeParameter,
     ChangeParameters,
@@ -42,6 +43,7 @@ from rclpy.lifecycle.node import LifecycleState, TransitionCallbackReturn
 from rclpy.publisher import Publisher as ROSPublisher
 from rclpy.subscription import Subscription
 from rclpy.utilities import try_shutdown
+from std_srvs.srv import Trigger
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
@@ -1012,11 +1014,22 @@ class BaseComponent(lifecycle.Node):
             node=self,
             action_type=self.action_type,
             action_name=action_name,
-            execute_callback=self.main_action_callback,
+            execute_callback=self._main_action_execute_callback,
             goal_callback=self._main_action_goal_callback,
             handle_accepted_callback=self._main_action_handle_accepted_callback,
             cancel_callback=self._main_action_cancel_callback,
             callback_group=action_callback_group,
+        )
+        # Cancels the ongoing goal for callers that do not hold its handle,
+        # through the action's own cancel service
+        self._main_action_cancel_client = self.create_client(
+            CancelGoal, f"{action_name}/_action/cancel_goal"
+        )
+        self._main_action_cancel_srv = self.create_service(
+            Trigger,
+            f"{self.get_name()}/cancel_main_action",
+            self._cancel_main_action_srv_callback,
+            callback_group=MutuallyExclusiveCallbackGroup(),
         )
 
     def create_all_action_clients(self):
@@ -1132,6 +1145,8 @@ class BaseComponent(lifecycle.Node):
             self, "action_server"
         ):
             self.action_server.destroy()
+            self.destroy_service(self._main_action_cancel_srv)
+            self.destroy_client(self._main_action_cancel_client)
 
     def destroy_all_action_clients(self):
         """
@@ -2181,14 +2196,22 @@ class BaseComponent(lifecycle.Node):
 
     def _main_action_goal_callback(self, _) -> GoalResponse:
         """
-        Goal callback for the main component action server
+        Goal callback for the main component action server. A new goal is
+        rejected while another one is ongoing: it has to finish or be canceled
+        first (see the 'cancel_main_action' service)
 
-        :param goal_request: _description_
+        :param goal_request: Incoming goal request
         :type goal_request: Any action goal handler type
-        :return: ACCEPT
+        :return: ACCEPT, or REJECT while a goal is ongoing
         :rtype: rclpy.action.GoalResponse
         """
-        # Cancel any ongoing action
+        with self._main_goal_lock:
+            ongoing = self._main_goal_handle is not None
+        if ongoing:
+            self.get_logger().warning(
+                "Rejected goal request: another goal is ongoing, cancel it first"
+            )
+            return GoalResponse.REJECT
         self.get_logger().info("Received goal request")
         return GoalResponse.ACCEPT
 
@@ -2197,13 +2220,44 @@ class BaseComponent(lifecycle.Node):
         Main component action server callback when handle is accepted
         """
         with self._main_goal_lock:
-            if self._main_goal_handle is not None and self._main_goal_handle.is_active:
-                # Abort the existing goal
-                self.get_logger().info("Aborting previous goal")
-                self._main_goal_handle.abort()
             self._main_goal_handle = goal_handle
             self.get_logger().info("Goal accepted")
             self._main_goal_handle.execute()
+
+    def _main_action_execute_callback(self, goal_handle):
+        """Runs the main action callback. The goal stays ongoing until the
+        callback returns, not only until it reaches a terminal state, so a new
+        goal never runs alongside the cleanup of the previous one
+        """
+        try:
+            return self.main_action_callback(goal_handle)
+        finally:
+            with self._main_goal_lock:
+                self._main_goal_handle = None
+
+    def _cancel_main_action_srv_callback(
+        self, _, response: Trigger.Response
+    ) -> Trigger.Response:
+        """Requests canceling the ongoing goal of the main action server, the
+        same way its action client would
+
+        :param response: Whether a cancel was requested, and why not
+        :type response: Trigger.Response
+        :rtype: Trigger.Response
+        """
+        with self._main_goal_lock:
+            goal_handle = self._main_goal_handle
+        if goal_handle is None or not goal_handle.is_active:
+            response.success = False
+            response.message = "No ongoing goal to cancel"
+            return response
+        request = CancelGoal.Request()
+        request.goal_info.goal_id = goal_handle.goal_id
+        # Not waited on: the cancel is carried out by the action server itself
+        self._main_action_cancel_client.call_async(request)
+        response.success = True
+        response.message = "Cancel requested for the ongoing goal"
+        return response
 
     def _main_action_cancel_callback(self, _) -> Optional[CancelResponse]:
         """Main component action server callback when handle is canceled
