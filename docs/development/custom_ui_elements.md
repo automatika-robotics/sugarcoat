@@ -6,6 +6,8 @@ This guide covers how to register custom input and output elements in Sugarcoat'
 
 Sugarcoat's web UI renders input forms and output displays based on the message types of component topics. Built-in types (`String`, `Image`, `Float64`, etc.) have default UI elements. For custom types, downstream packages register their own elements through the `UI_EXTENSIONS` hook.
 
+The browser is one client of the UI node. Everything it shows comes through the node's JSON/WebSocket API, which third-party front-ends use directly; see [What the API Serves](#what-the-api-serves) for what a custom type must provide for that path, independent of any browser element.
+
 The flow:
 
 1. Your package defines UI element functions and registers them in `UI_EXTENSIONS`.
@@ -16,7 +18,12 @@ The flow:
 
 ### Output Elements
 
-Output elements render component output data in the logging panel. They receive a logging card container and must return it with the new content appended:
+Output elements come in two kinds, told apart by the function's name:
+
+- **Log renderers** append an entry to the logging panel each time a message arrives. This is what a custom type normally needs. The function receives the logging card, the callback's UI content, and a source label, and returns the card with the new content appended.
+- **Card renderers** (`_out_*`) give a topic a dedicated card in the outputs grid that JavaScript fills over a WebSocket. Only the built-in `_out_image_element` (video frames) and `_out_map_element` (occupancy grid with markers) have that JavaScript, so reuse them for image-like or map-like outputs rather than writing a new `_out_*` function.
+
+A log renderer looks like this:
 
 ```python
 from ros_sugar.ui_node.elements import _log_text_element
@@ -43,10 +50,15 @@ You can reuse built-in rendering helpers from `ros_sugar.ui_node.elements`:
 | Helper | Renders |
 |:-------|:--------|
 | `_log_text_element(card, text, src, id="text")` | Text log entry |
-| `_out_image_element(card, output, src)` | JPEG-encoded image |
-| `_out_map_element(card, output, src)` | Occupancy grid map |
-| `_log_audio_element(card, output, src)` | Audio playback element |
-| `augment_text_in_logging_card(card, text, target_id)` | Append text to an existing element (for streaming) |
+| `_log_audio_element(card, output, src, id="audio")` | Audio playback entry |
+| `_log_geometry_element(card, output, src, id="geometry")` | Point / pose entry from `{"data": [x, y, z(, heading)]}` |
+| `augment_text_in_logging_card(card, new_txt, target_id="text")` | Append text to the latest entry with that id (streaming, payload is the delta) |
+| `replace_text_in_logging_card(card, new_txt, target_id="text")` | Replace the text of the latest entry with that id, keeping its source prefix (streaming, payload is the full text so far) |
+| `remove_child_from_logging_card(card, target_id)` | Remove and return the latest entry with that id |
+| `_out_image_element(topic_name, **_)` | Card renderer: video frame fed from `WS /api/outputs/<topic>` |
+| `_out_map_element(topic_name, map_output_markers=None, point_inputs=None, **_)` | Card renderer: occupancy grid with overlay markers fed from `WS /api/world/<topic>` |
+
+The `output` a log renderer receives is the callback's `_get_ui_content()` for that message, so make sure a custom callback returns JSON-serializable content there.
 
 ### Input Elements
 
@@ -178,3 +190,25 @@ UI_EXTENSIONS["my_package"] = augment_ui
 ```
 
 No further configuration is needed — the Launcher picks up the extension automatically when the package is imported.
+
+## What the API Serves
+
+`enable_ui()` always starts a Starlette JSON/WebSocket API on the UI node; the FastHTML browser is mounted on top of it and is optional (`enable_ui(serve_browser=False)` serves the API alone and needs only `starlette` and `uvicorn`). Third-party front-ends and scripts talk to the API, never to the browser elements, so a custom type has to be presentable there regardless of what it registers in `UI_EXTENSIONS`:
+
+- The payload streamed for an output is the callback's `_get_ui_content()`, memoized per message and converted only when a client consumes the topic. Return a JSON-serializable `dict` or `str`; for heavy data return a summary, as the built-in scan and cloud callbacks do.
+- The type's `_ui_rate_sampled` chooses the transport: `False` pushes every message, `True` samples the latest value at `api_stream_default_rate` (capped by `api_max_stream_rate`). Set it on heavy streaming types; a client can still override per connection with `?rate=`.
+
+The routes, all under `/api`:
+
+| Route | Purpose |
+|:------|:--------|
+| `GET /api/health` | Liveness |
+| `GET /api/interfaces` | Discovery: declared inputs and outputs with their `msg_type` and field `schema` (outputs also report their `mode`), plus services and actions with their request and goal schemas |
+| `POST /api/inputs/{name}` | Publish to a UI input; the body is the message in the schema `GET /api/interfaces` describes |
+| `WS /api/inputs/{name}/audio` | Stream base64 audio chunks to an `Audio` input |
+| `WS /api/outputs/{name}` | Stream an output's UI content as `{"topic": ..., "payload": ...}` |
+| `POST /api/services/{name}` | Call a declared service client |
+| `POST /api/actions/{name}`, `POST /api/actions/{name}/cancel`, `WS /api/actions/{name}/feedback` | Send a goal, cancel it, and follow its feedback |
+| `WS /api/world/{grid}` | An occupancy grid plus the declared point, pose, odometry and path outputs as overlay and path markers |
+
+The browser's input forms still submit over the FastHTML `/ws` route shown above, but its video, map and action-feedback panes are plain API clients of the WebSocket routes in this table.

@@ -208,8 +208,17 @@ Notes:
   else.
 - Override `on_attached(node, bus)` only if you need custom HOST-side setup —
   binding a `RosServiceTransport` client is the canonical case. The HOST already
-  opens transports, wires decoders to the bus and runs heartbeats for you. It is
-  the **only** author hook.
+  opens transports, wires decoders to the bus and runs heartbeats for you.
+- Override `on_detached(node, bus)` to leave the hardware in a safe state on
+  shutdown. It runs on the HOST **before** the transports close, so the plugin
+  can still reach the device: a lidar has to be told to stop its motor, and
+  closing the port does not do it. Anything raised here is logged and does not
+  stop teardown.
+- Decorate an action factory with `plugin_action(description=...)` to attach an
+  OpenAI-style tool description, either a plain string or a `function` block
+  with a parameter schema. `plugin.actions.tool_descriptions(namespace="robot")`
+  then returns a ready-to-use tool list for an orchestrating LLM, falling back
+  to the factory's first docstring line where no description was given.
 
 ### Overriding for non-default deployments
 
@@ -338,6 +347,68 @@ Assigning `launcher.frames = RobotFrames(...)` still works and sets both at
 once — but `RobotFrames` carries a default body frame, so naming only the world
 frame that way would hand the plugin a frame it has to override. The
 single-frame setters avoid the question.
+
+### Placing the Robot's Own Sensors
+
+A robot plugin knows where its built-in sensors sit. Declare them as `mounts`,
+with `child` set to the frame the sensor's messages name, and the launcher
+publishes each as a static transform, so consumers resolve where the sensor is
+without a URDF or a `robot_state_publisher`:
+
+```python
+from ros_sugar.robot import Mount
+
+class MyRobotPlugin(RobotPlugin):
+    def __init__(self):
+        ...
+        self.base_frame = "base_link"
+        self.mounts = [
+            Mount(parent=self, child="lidar_front", xyz=(0.30, 0.0, 0.25)),
+            Mount(parent=self, child="camera_optical", xyz=(0.25, 0.0, 0.40),
+                  rpy=(-1.571, 0.0, -1.571)),
+        ]
+```
+
+A mount without a `child` is rejected when the plugin is attached. Mounts are
+static; a sensor with moving parts publishes the transform from its own base
+frame to the moving one itself.
+
+### Declaring How the Robot Is Mapped
+
+Mapping is a one-off, operator-driven activity that produces a map on disk, so
+it is driven from the EMOS tooling rather than from a recipe. The plugin only
+declares *how* the environment gets mapped, through the `MAPPING` class
+attribute:
+
+- `VendorMapping` when the robot ships its own SLAM: the vendor tool's commands
+  as argv lists (`{name}` is substituted with the map name, `{path}` with an
+  archive path), the map store, and optional `apply`, `after_apply`, `export`,
+  `import_` and `remove` commands.
+- `NativeMapping` when EMOS builds the map itself from the plugin's own
+  feedbacks. Inputs are named by **feedback key**, not topic, so the plugin
+  stays the single source of truth for the topic behind them.
+
+```python
+from ros_sugar.robot import NativeMapping, VendorMapping
+
+class VendorMappedRobot(RobotPlugin):
+    MAPPING = VendorMapping(
+        start=["drmap", "mapping", "-b", "-n", "{name}"],
+        stop=["drmap", "stop_mapping"],
+        apply=["drmap", "apply", "{name}"],
+        after_apply=["systemctl", "restart", "localization.service"],
+        store="/var/opt/robot/data/maps",
+    )
+
+class SelfMappedRobot(RobotPlugin):
+    MAPPING = NativeMapping(cloud="lidar", imu="lidar_imu", z_max=1.2)
+```
+
+Both providers answer `active_grid_path()` with the occupancy-grid YAML of the
+active map (or `None`), so a recipe can ask either the same question. The
+declaration is part of `describe()` under `"mapping"`, tagged with
+`"kind": "vendor"` or `"native"`; a plugin that declares neither reports
+`None`.
 
 ## Sensor Plugins and Frames
 
@@ -475,8 +546,11 @@ be told which topic each reads, usually with a constructor argument.
 During component activation, for every input topic the plugin provides a
 `Feedback` for:
 
-- `RosTopicTransport` → the component's subscriber is re-pointed at the robot's
-  topic and type.
+- `RosTopicTransport` → the component's subscriber is created on the robot's
+  topic, with the plugin's message type and QoS. The input keeps the recipe's
+  name: `component.callbacks`, `in_topics` and anything the component recorded
+  about the input are unchanged. Only the explicit `ReplaceTopic` service
+  changes an input's identity.
 - any other transport → no ROS subscription is created; decoded ROS messages
   from the feedback bus are pushed straight into the component's callback slot.
 
@@ -491,6 +565,20 @@ Decoded feedback is also injected into the Monitor's event blackboard, so
 `Event`s and `Condition`s over plugin feedback evaluate exactly as they would
 for a real ROS topic.
 
+### How Feedback Reaches Components
+
+- **Multithreaded launch** uses an in-process bus that hands every consumer, and
+  the Monitor, the *same* decoded message object, with no serialization.
+  Consumers must treat feedback messages as read-only and copy before mutating.
+- **Multiprocess launch** uses a Unix-socket bus. Messages are CDR-serialized,
+  except that types implementing the shared-memory hooks (`Image`,
+  `CompressedImage` and `PointCloud2` among the built-ins) whose payload is at
+  least 32 KiB are written to a per-feedback shared-memory ring; only a small
+  descriptor crosses the socket, and each consumer copies the frame out. A
+  frame overwritten before a consumer reads it is dropped, never delivered
+  torn. Give a custom type of your own the same treatment by implementing
+  `to_shm_payload` / `from_shm_payload`, described in {doc}`custom_types`.
+
 ## Introspection
 
 List everything a plugin exposes, programmatically or from the command line:
@@ -501,7 +589,7 @@ plugin.list_commands()    # -> [CommandSpec, ...]
 plugin.list_actions()     # -> [ActionSpec, ...]
 plugin.list_events()      # -> [EventSpec, ...]
 plugin.describe()         # -> a JSON-serializable tree of all of the above,
-                          #    including the plugin's role
+                          #    plus the plugin's role and mapping declaration
 plugin.id                 # -> identity within a recipe
 plugin.role               # -> PluginRole.ROBOT | PluginRole.SENSOR (read-only)
 ```

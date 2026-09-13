@@ -78,6 +78,25 @@ When a `Topic` object is passed directly (rather than a `Condition`), the event 
 event = Event(event_condition=event_topic)
 ```
 
+#### Robot Plugin Feedback
+
+A feedback stream declared by a robot plugin is a topic like any other for the
+event system. `Feedback.as_topic()` returns the `Topic` to build conditions on:
+the real ROS topic for a `RosTopicTransport` feedback, or a synthetic topic
+named after the feedback's bus channel for any other transport. Plugins
+usually wrap this in their `events` registry so a recipe never sees the
+channel name:
+
+```python
+low_battery = Event(robot.feedbacks["battery"].as_topic().msg.data < 0.2)
+launcher.on(robot.events.low_battery(0.2), robot.actions.sit())   # the same, via the plugin
+```
+
+Synthetic topics have no ROS subscription. The plugin HOST feeds each decoded
+message into the Monitor's blackboard directly (see Part 2), and a component
+that owns an action on such an event subscribes to the feedback bus instead of
+creating a ROS subscription.
+
 #### Callable
 
 A user-supplied function polled at `check_rate` Hz. It must return `bool` and must **not** be a `@component_action` method (those are bound to Actions and Fallbacks and cannot be used as conditions).
@@ -135,6 +154,14 @@ launcher.add_pkg(
     components=[my_component],
     events_actions={low_battery: stop_action},
 )
+```
+
+`Launcher.on(event, action)` registers the same mapping one pair at a time,
+which reads better with plugin-provided factories:
+
+```python
+launcher.on(low_battery, stop_action)
+launcher.on(robot.events.fall_detected(), [LogInfo(msg="fall"), robot.actions.stand_up()])
 ```
 
 #### The `@component_action` Decorator
@@ -285,6 +312,12 @@ When a failure is detected, `ComponentFallbacks` follows this resolution order:
 
 A successful fallback execution (action returns `True`) resets the health status to `STATUS_HEALTHY`.
 
+Fallbacks run inside the component, not in the Monitor: a timer at
+`config.fallback_rate` checks the component's own `health_status` and walks
+the hierarchy above. A failure for which neither a level-specific fallback nor
+`on_any_fail` is defined is reported once in the log and kept in the
+broadcast status; nothing is retried.
+
 ---
 
 ## Part 2 — Architecture & Routing Internals
@@ -382,7 +415,9 @@ The Monitor is a ROS2 node that runs in the main process. It is responsible for:
 2. **Polling callable-based conditions** via timers.
 3. **Executing system-level actions** (publish_message, send_srv_request, etc.).
 4. **Emitting internal events** back to the Launcher context for actions the Launcher owns.
-5. **Health monitoring**: subscribing to each component's `ComponentStatus` topic. When a failure is detected, it triggers the component's fallback chain.
+5. **Receiving robot-plugin feedback** for topics that have no ROS subscription: the plugin HOST calls `feed_external_topic(channel, msg)` for every decoded message, which enters the blackboard and is evaluated exactly like a message received over ROS.
+
+Health status is not the Monitor's job: every component checks its own status and runs its fallbacks on its fallback timer (see Part 1). The Monitor's per-component work is the reconfiguration, lifecycle and `ExecuteMethod` service clients it holds for each one, and activating components on start once they are discovered on the graph.
 
 **Activation Flow** (`_activate_event_monitoring`)
 
@@ -396,7 +431,7 @@ When the Monitor activates, it:
 
 4. **Builds a topic → events index** (`__events_per_topic`): Maps each unique topic name to the list of events that depend on it, enabling efficient lookup on message arrival.
 
-5. **Creates one ROS subscription per unique topic**: All events sharing a topic share a single subscriber. The callback `__event_topic_callback` updates the blackboard and evaluates all dependent events.
+5. **Creates one ROS subscription per unique topic**: All events sharing a topic share a single subscriber. The callback `__event_topic_callback` updates the blackboard and evaluates all dependent events. Topics registered with `register_external_topic` (robot-plugin feedback) are skipped; their messages arrive through `feed_external_topic` and take the same path from there.
 
 6. **Creates callable-based polling timers** (`__start_callable_based_event_timers`): One timer per callable-based event, polling at `check_rate` Hz (or `config.loop_rate` if not specified).
 

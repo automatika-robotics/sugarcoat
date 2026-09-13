@@ -58,7 +58,7 @@ Subclass `BaseComponent` with lifecycle hooks, run types, I/O validation, and cu
 :link-type: doc
 :class-card: sugar-card
 
-Add new `SupportedType` wrappers, callbacks, and type registration for custom ROS messages.
+Add new `SupportedType` wrappers and callbacks, register custom ROS messages, and opt into API streaming modes and the shared-memory fast path.
 :::
 
 :::{grid-item-card} {material-regular}`sync_alt;1.5em;sd-text-primary` Processing Pipelines
@@ -74,7 +74,7 @@ Inject post-processors on callbacks and pre-processors on publishers for data tr
 :link-type: doc
 :class-card: sugar-card
 
-Map generic topics to robot-specific interfaces with custom types and service clients.
+Adapt recipes to specific hardware: transports, feedback and command mapping, actions and events, driver processes, sensor mounts and mapping.
 :::
 
 :::{grid-item-card} {material-regular}`dashboard;1.5em;sd-text-primary` UI Elements
@@ -82,7 +82,7 @@ Map generic topics to robot-specific interfaces with custom types and service cl
 :link-type: doc
 :class-card: sugar-card
 
-Register custom input forms and output visualizations in the web UI for new data types.
+Register custom input forms and output visualizations in the web UI, and understand what the JSON/WebSocket API serves for new data types.
 :::
 
 :::{grid-item-card} {material-regular}`science;1.5em;sd-text-primary` Testing
@@ -90,7 +90,7 @@ Register custom input forms and output visualizations in the web UI for new data
 :link-type: doc
 :class-card: sugar-card
 
-Unit and integration testing for components, events, actions, and fallbacks.
+Running the suite, and testing components, events, fallbacks, plugins and recipes with pytest and launch_testing.
 :::
 
 ::::
