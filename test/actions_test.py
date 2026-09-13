@@ -4,7 +4,6 @@ import launch_testing
 import launch_testing.actions
 import launch_testing.markers
 import pytest
-import logging
 
 from typing import Tuple
 

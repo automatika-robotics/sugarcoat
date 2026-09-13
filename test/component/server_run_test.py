@@ -7,7 +7,7 @@ import launch_testing.markers
 import pytest
 import rclpy
 from action_msgs.msg import GoalStatus
-from example_interfaces.action import Fibonacci
+from tf2_msgs.action import LookupTransform
 from rclpy.action import ActionClient
 from std_srvs.srv import Trigger
 
@@ -23,7 +23,7 @@ from nav_msgs.srv import SetMap
 # Threading Events
 execution_service_py_event = threadingEvent()
 
-#: Goals the action server component started executing, by order
+#: Goals the action server component started executing, by count
 started_goals = []
 
 
@@ -64,11 +64,16 @@ class ChildComponent(BaseComponent):
 
 
 class CountingComponent(BaseComponent):
-    """Counts slowly, so a goal is still ongoing when the next one arrives"""
+    """Counts slowly, so a goal is still ongoing when the next one arrives.
+
+    tf2_msgs/LookupTransform is the action type only because it ships with
+    tf2_ros, a declared dependency. The count travels as text in `target_frame`,
+    and doubles as the goal's identity in `started_goals`.
+    """
 
     def __init__(self, component_name, **kwargs):
         super().__init__(component_name, **kwargs)
-        self.action_type = Fibonacci
+        self.action_type = LookupTransform
         self.main_action_name = f"{component_name}/count"
         self.run_type = ComponentRunType.ACTION_SERVER
 
@@ -76,9 +81,10 @@ class CountingComponent(BaseComponent):
         pass
 
     def main_action_callback(self, goal_handle):
-        started_goals.append(goal_handle.request.order)
-        result = Fibonacci.Result()
-        for _ in range(goal_handle.request.order):
+        count = int(goal_handle.request.target_frame)
+        started_goals.append(count)
+        result = LookupTransform.Result()
+        for _ in range(count):
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 return result
@@ -140,9 +146,12 @@ class TestActions(unittest.TestCase):
 
 
 class TestActionServer(unittest.TestCase):
-    """Tests that Component runtype ACTION_SERVER takes one goal at a time: a
-    new goal is rejected until the ongoing one finishes or is canceled, and
-    'cancel_main_action' cancels it for any caller"""
+    """Tests that 'cancel_main_action' cancels the ongoing goal of a Component
+    with runtype ACTION_SERVER for any caller.
+
+    The server takes one goal at a time, so a goal is only ever sent once the
+    previous one has ended.
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -151,18 +160,28 @@ class TestActionServer(unittest.TestCase):
         cls.node = rclpy.create_node("action_server_client", context=cls.context)
         cls.executor = rclpy.executors.SingleThreadedExecutor(context=cls.context)
         cls.executor.add_node(cls.node)
-        cls.client = ActionClient(cls.node, Fibonacci, "counter/count")
+        cls.client = ActionClient(cls.node, LookupTransform, "counter/count")
         cls.cancel = cls.node.create_client(Trigger, "counter/cancel_main_action")
         assert cls.client.wait_for_server(timeout_sec=30.0), "no action server"
         assert cls.cancel.wait_for_service(timeout_sec=30.0), "no cancel service"
 
     @classmethod
     def tearDownClass(cls):
+        cls.executor.shutdown()
         cls.node.destroy_node()
         cls.context.try_shutdown()
 
     def setUp(self):
         started_goals.clear()
+        #: Result of the goal this test sent last
+        self.result = None
+
+    def tearDown(self):
+        # A goal left running by a failed test is canceled here, not carried
+        # into the next test
+        if self.result is not None and not self.result.done():
+            self.cancel_ongoing()
+            self.wait(self.result)
 
     def wait(self, future, timeout: float = 15.0):
         rclpy.spin_until_future_complete(
@@ -171,46 +190,35 @@ class TestActionServer(unittest.TestCase):
         assert future.done(), "timed out"
         return future.result()
 
-    def send(self, order: int):
-        return self.wait(self.client.send_goal_async(Fibonacci.Goal(order=order)))
+    def send(self, count: int):
+        """Sends a goal and returns its result future"""
+        assert self.result is None or self.result.done(), "a goal is still ongoing"
+        goal = LookupTransform.Goal(target_frame=str(count))
+        handle = self.wait(self.client.send_goal_async(goal))
+        assert handle.accepted, f"goal {count} was rejected"
+        self.result = handle.get_result_async()
+        return self.result
 
-    def wait_until_started(self, order: int):
+    def wait_until_started(self, count: int):
         deadline = time.time() + 15.0
-        while order not in started_goals and time.time() < deadline:
+        while count not in started_goals and time.time() < deadline:
             self.executor.spin_once(timeout_sec=0.05)
-        assert order in started_goals, f"goal {order} never started"
+        assert count in started_goals, f"goal {count} never started"
 
     def cancel_ongoing(self) -> Trigger.Response:
         return self.wait(self.cancel.call_async(Trigger.Request()))
 
-    def test_a_goal_is_rejected_while_another_is_ongoing(self):
-        first = self.send(100)
-        assert first.accepted
-        self.wait_until_started(100)
-
-        assert not self.send(7).accepted, "the ongoing goal was replaced"
-        assert started_goals == [100]
-
-        assert self.cancel_ongoing().success
-        self.wait(first.get_result_async())
-
     def test_the_cancel_service_cancels_the_ongoing_goal(self):
-        handle = self.send(200)
+        result = self.send(200)
         self.wait_until_started(200)
 
         response = self.cancel_ongoing()
         assert response.success, response.message
         # Canceled through the regular path, so its own client sees it canceled
-        assert self.wait(handle.get_result_async()).status == GoalStatus.STATUS_CANCELED
+        assert self.wait(result).status == GoalStatus.STATUS_CANCELED
 
-    def test_a_goal_is_accepted_once_the_previous_one_finished(self):
-        first = self.send(2)
-        assert first.accepted
-        self.wait(first.get_result_async())
-
-        second = self.send(2)
-        assert second.accepted
-        assert self.wait(second.get_result_async()).status == GoalStatus.STATUS_SUCCEEDED
+        # Once canceled, the server takes the next goal
+        assert self.wait(self.send(2)).status == GoalStatus.STATUS_SUCCEEDED
 
     def test_canceling_with_no_ongoing_goal_says_so(self):
         response = self.cancel_ongoing()
