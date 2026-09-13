@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.8.1 (2026-09-13)
+------------------
 * (fix) Swaps package used in test to avoid new dependencies
 * (feature) Adds missing driver to plugin tests
 * (fix) Add Launcher check for a requested ros executable/package and raises a clear error if not available
