@@ -60,7 +60,6 @@ from ..config.base_config import (
     ExternalProcessorType,
     QoSConfig,
 )
-from ..io.callbacks import GenericCallback
 from ..io.publisher import Publisher
 from ..io.supported_types import SupportedType
 from ..io.topic import Topic
@@ -74,8 +73,6 @@ from ..utils import (
     log_srv,
     parse_action_result,
 )
-from .action import Action
-from .event import Event, EventBlackboardEntry
 from .fallbacks import ComponentFallbacks, Fallback
 from .status import Status
 
