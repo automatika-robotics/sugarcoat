@@ -17,11 +17,13 @@ def launcher():
 
 
 def test_add_ros_node_appends_action(launcher):
+    # A declared dependency, so it is installed wherever this suite runs;
+    # `add_ros_node` now rejects a package that is not
     action = launcher.add_ros_node(
-        package="demo_nodes_cpp",
-        executable="talker",
-        name="my_talker",
-        remappings=[("chatter", "/chat")],
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="my_tf",
+        remappings=[("tf_static", "/tf_static_test")],
     )
     assert isinstance(action, NodeLaunchAction)
     assert action in launcher._description.entities
