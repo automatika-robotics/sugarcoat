@@ -66,8 +66,8 @@ class VendorMapping(BaseAttrs):
         vendor's localization service, without which the switch silently does
         not take effect.
     :param export: Package a map for copying off the robot. Vendors commonly
-        only package the *active* map and take no argument, so ``{name}`` is
-        optional here.
+        only package the *active* map and take no argument, so ``{name}`` and
+        ``{path}`` are optional here.
     :param export_dir: Where ``export`` leaves the archive, when the vendor
         chooses the path itself. Empty means unknown, and the caller reports
         only that the command ran.
