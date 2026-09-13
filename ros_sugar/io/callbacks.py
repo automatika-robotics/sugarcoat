@@ -12,7 +12,7 @@ import numpy as np
 from geometry_msgs.msg import Pose, PoseStamped
 from jinja2.environment import Template
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
-from sensor_msgs.msg import CameraInfo, Imu, JointState, LaserScan, NavSatFix, Range
+from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Header
 from rclpy.logging import get_logger
 from rclpy.subscription import Subscription
@@ -577,6 +577,7 @@ class OdomCallback(GenericCallback):
         odom_in_map_pose_data.pose.pose.position.y = transform.transform.translation.y
         odom_in_map_pose_data.pose.pose.position.z = transform.transform.translation.z
         odom_in_map_pose_data.pose.pose.orientation = transform.transform.rotation
+        odom_in_map_pose_data.twist.twist = msg.twist.twist
 
         odom_in_goal_pose_data: Odometry = utils.odom_from_frame1_to_frame2(
             pose_1_in_2=odom_in_map_pose_data, pose_target_in_1=msg

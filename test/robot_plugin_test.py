@@ -17,13 +17,17 @@ import pytest
 import rclpy
 from std_msgs.msg import Int32 as RosInt32
 
+from rclpy import qos
+from ros_sugar.config import QoSConfig
 from ros_sugar.io.topic import Topic
+from ros_sugar.supported_types import LaserScan
 from ros_sugar.robot import (
     ActionRegistry,
     EventRegistry,
     Feedback,
     HttpTransport,
     InProcessFeedbackBus,
+    NativeMapping,
     PluginMetadata,
     RobotCommand,
     RobotPlugin,
@@ -32,6 +36,7 @@ from ros_sugar.robot import (
     SdkCallbackTransport,
     SocketFeedbackBus,
     UdpTransport,
+    VendorMapping,
     create_supported_type,
 )
 
@@ -460,6 +465,88 @@ def test_inspect_cli():
 
 
 # ---------------------------------------------------------------------------
+# Mapping declarations
+# ---------------------------------------------------------------------------
+
+
+class _VendorMappingPlugin(RobotPlugin):
+    """A robot whose own software builds the map, driven by a vendor tool."""
+
+    MAPPING = VendorMapping(
+        start=["drmap", "mapping", "-b", "-n", "{name}"],
+        stop=["drmap", "stop_mapping"],
+        apply=["drmap", "apply", "{name}"],
+        after_apply=["systemctl", "restart", "localization.service"],
+        import_=["drmap", "unpack", "{path}"],
+        store="/var/opt/robot/data/maps",
+        area_limit_m=50.0,
+    )
+
+    def __init__(self):
+        self.metadata = PluginMetadata(name="VendorMapper", vendor="test")
+
+
+class _NativeMappingPlugin(RobotPlugin):
+    """A robot EMOS maps itself, from the plugin's own sensor feedbacks."""
+
+    MAPPING = NativeMapping(cloud="lidar", imu="lidar_imu", z_max=1.2)
+
+    def __init__(self):
+        self.metadata = PluginMetadata(name="NativeMapper", vendor="test")
+
+
+def test_plugin_without_mapping_describes_none():
+    """A plugin that cannot be mapped says so explicitly rather than omitting
+    the key, so a consumer never has to distinguish absent from unmappable."""
+    plugin = MockPlugin(state_port=46030, cmd_port=46031)
+    assert plugin.describe()["mapping"] is None
+
+
+def test_vendor_mapping_reaches_describe():
+    """The declaration survives into the introspection tree, tagged so a
+    consumer can tell the two providers apart."""
+    mapping = _VendorMappingPlugin().describe()["mapping"]
+    assert mapping["kind"] == "vendor"
+    assert mapping["start"] == ["drmap", "mapping", "-b", "-n", "{name}"]
+    assert mapping["after_apply"] == [
+        "systemctl",
+        "restart",
+        "localization.service",
+    ]
+    assert mapping["store"] == "/var/opt/robot/data/maps"
+    # Defaults the declaration did not set.
+    assert mapping["grid"] == "occ_grid.yaml"
+    assert mapping["cloud"] == "full_cloud.pcd"
+    assert mapping["active_link"] == "active"
+    assert mapping["requires_root"] is True
+    assert mapping["host"] == "local"
+    assert mapping["export"] is None
+    # The keyword-dodging attribute name does not leak to the CLI.
+    assert mapping["import"] == ["drmap", "unpack", "{path}"]
+    assert "import_" not in mapping
+
+
+def test_native_mapping_reaches_describe():
+    """Inputs are named by feedback key, not topic, so the plugin stays the
+    single source of truth for the topic behind them."""
+    mapping = _NativeMappingPlugin().describe()["mapping"]
+    assert mapping["kind"] == "native"
+    assert mapping["cloud"] == "lidar"
+    assert mapping["imu"] == "lidar_imu"
+    assert mapping["z_min"] == 0.15
+    assert mapping["z_max"] == 1.2
+    assert mapping["resolution"] == 0.05
+
+
+def test_mapping_spec_is_json_serializable():
+    """``describe`` crosses into the CLI as JSON, so the mapping block must
+    survive the trip with nothing exotic in it."""
+    for plugin in (_VendorMappingPlugin(), _NativeMappingPlugin()):
+        payload = json.loads(json.dumps(plugin.describe()["mapping"]))
+        assert payload["kind"] in {"vendor", "native"}
+
+
+# ---------------------------------------------------------------------------
 # Registries
 # ---------------------------------------------------------------------------
 
@@ -511,11 +598,11 @@ def test_plugin_host_feedback_and_command_flow():
     try:
         # A consumer subscribes to the feedback channel as a component would
         decoded = []
-        from rclpy.serialization import deserialize_message
 
+        # In-process bus delivers the live decoded message object (no CDR).
         bus.subscribe(
             "robot/feedback/Int32",
-            lambda data: decoded.append(deserialize_message(data, RosInt32).data),
+            lambda msg: decoded.append(msg.data),
         )
 
         # The robot streams a telemetry packet into the plugin's bound port
@@ -1319,7 +1406,7 @@ class _DescribingPlugin(RobotPlugin):
             geometry_params=np.array([0.61, 0.37, 0.4]),
             ctrl_vx_limits=LinearCtrlLimits(max_vel=1.0, max_acc=2.5, max_decel=7.5),
             ctrl_omega_limits=AngularCtrlLimits(
-                max_vel=1.5, max_acc=2.5, max_decel=4.0, max_steer=1.57
+                max_omega=1.5, max_acc=2.5, max_decel=4.0, max_ang=1.57
             ),
         )
         self.base_frame = "lite3_base"
@@ -2101,9 +2188,8 @@ def test_unstamped_feedback_is_stamped_with_the_plugin_frame(rclpy_context):
         tx.close()
         assert received, "no feedback arrived"
 
-        from rclpy.serialization import deserialize_message
-
-        msg = deserialize_message(received[0], Imu)
+        # In-process bus delivers the live decoded message object (no CDR).
+        msg = received[0]
         assert msg.header.frame_id == "waist_imu_frame"
     finally:
         handle.unsubscribe()
@@ -2263,6 +2349,44 @@ def test_setup_plugins_hosts_every_plugin_on_one_bus(rclpy_context):
             launcher._plugin_bus.close()
 
 
+def test_setup_plugins_creates_and_injects_shm_manager(rclpy_context):
+    """On the socket bus the launcher creates one shared-memory writer pool and
+    injects it into every host; the in-process bus needs none."""
+    from ros_sugar.robot.shm import PluginShmManager
+
+    # Socket bus (multiprocess): a non-empty _pkg_executable forces it.
+    launcher = _launcher_with([])
+    launcher.monitor_node = _StubMonitor()
+    launcher._pkg_executable = {"c": ("pkg", "entry")}
+    launcher.add_plugin(MockUdpSensor(state_port=_free_port(), id="cam"))
+    try:
+        launcher._setup_plugins()
+        assert isinstance(launcher._plugin_shm, PluginShmManager)
+        assert launcher._plugin_hosts
+        assert all(h._shm is launcher._plugin_shm for h in launcher._plugin_hosts)
+    finally:
+        for host in launcher._plugin_hosts:
+            host.close()
+        if launcher._plugin_bus:
+            launcher._plugin_bus.close()
+        if launcher._plugin_shm:
+            launcher._plugin_shm.close()
+
+    # In-process bus: no manager, and hosts get shm=None.
+    launcher2 = _launcher_with([])
+    launcher2.monitor_node = _StubMonitor()
+    launcher2.add_plugin(MockUdpSensor(state_port=_free_port(), id="cam2"))
+    try:
+        launcher2._setup_plugins()
+        assert launcher2._plugin_shm is None
+        assert all(h._shm is None for h in launcher2._plugin_hosts)
+    finally:
+        for host in launcher2._plugin_hosts:
+            host.close()
+        if launcher2._plugin_bus:
+            launcher2._plugin_bus.close()
+
+
 def test_setup_plugins_registers_each_plugins_feedback_with_the_monitor(rclpy_context):
     """Events over non-ROS feedback are tracked without a ROS subscription, so
     every plugin's channels have to reach the Monitor -- namespaced, or two
@@ -2382,3 +2506,339 @@ def test_publishing_mounts_is_a_noop_without_any(rclpy_context):
         assert not hasattr(node, "_pending")
     finally:
         node.destroy_node()
+
+
+# ---------------------------------------------------------------------------
+# Shared-memory feedback encode/decode (socket-bus fast path)
+# ---------------------------------------------------------------------------
+
+
+def _image_sensor():
+    """A minimal sensor plugin exposing one built-in Image feedback."""
+    from ros_sugar.supported_types import Image
+
+    class _ImageSensor(SensorPlugin):
+        def __init__(self):
+            self.metadata = PluginMetadata(name="ImageSensor")
+            transport = SdkCallbackTransport("img")
+            self.transports = {"img": transport}
+            self.feedbacks = {
+                "Image": Feedback(
+                    key="Image",
+                    msg_type=Image,
+                    transport=transport,
+                    decoder=lambda raw: raw,
+                )
+            }
+
+    return _ImageSensor()
+
+
+def _image_msg(nbytes: int):
+    from sensor_msgs.msg import Image as ROSImage
+
+    msg = ROSImage()
+    msg.header.frame_id = "cam"
+    msg.height = 1
+    msg.width = nbytes
+    msg.encoding = "mono8"
+    msg.step = nbytes
+    msg.data = bytes((i % 256) for i in range(nbytes))
+    return msg
+
+
+def test_encode_feedback_shm_roundtrip_skips_cdr(monkeypatch):
+    """A large hook-supporting feedback rides shared memory: the payload is
+    tagged SHM, rebuilds byte-identically, and no CDR (de)serialization runs."""
+    import ros_sugar.robot.plugin as plugin_mod
+    from ros_sugar.robot.shm import PluginShmManager, ShmReaderCache
+
+    counts = {"ser": 0, "deser": 0}
+    _ser, _deser = plugin_mod.serialize_message, plugin_mod.deserialize_message
+    monkeypatch.setattr(
+        plugin_mod,
+        "serialize_message",
+        lambda m: (counts.__setitem__("ser", counts["ser"] + 1), _ser(m))[1],
+    )
+    monkeypatch.setattr(
+        plugin_mod,
+        "deserialize_message",
+        lambda d, t: (counts.__setitem__("deser", counts["deser"] + 1), _deser(d, t))[1],
+    )
+
+    sensor = _image_sensor()
+    fb = sensor.feedbacks["Image"]
+    manager = PluginShmManager(launcher_pid=4321)
+    host = RobotPluginHost(sensor, node=None, bus=InProcessFeedbackBus(), shm=manager)
+    try:
+        big = _image_msg(40_000)  # >= SHM_MIN_BYTES
+        payload = host._encode_feedback(fb, big)
+        assert payload[:1] == plugin_mod._FB_KIND_SHM
+
+        reader = ShmReaderCache()
+        out = plugin_mod._decode_shm_feedback(fb, reader, payload[1:])
+        reader.close()
+
+        assert bytes(out.data) == bytes(big.data)
+        assert out.encoding == "mono8"
+        assert out.header.frame_id == "cam"
+        assert counts == {"ser": 0, "deser": 0}  # SHM path pays no CDR
+    finally:
+        manager.close()
+
+
+def test_encode_feedback_falls_back_to_cdr():
+    """No manager, or a sub-threshold frame, takes the CDR path (tagged CDR)."""
+    import ros_sugar.robot.plugin as plugin_mod
+    from rclpy.serialization import deserialize_message
+    from sensor_msgs.msg import Image as ROSImage
+
+    from ros_sugar.robot.shm import PluginShmManager
+
+    sensor = _image_sensor()
+    fb = sensor.feedbacks["Image"]
+
+    # No manager -> always CDR, even for a large frame.
+    host_no_shm = RobotPluginHost(sensor, node=None, bus=InProcessFeedbackBus())
+    assert host_no_shm._encode_feedback(fb, _image_msg(40_000))[:1] == (
+        plugin_mod._FB_KIND_CDR
+    )
+
+    # Manager present but a sub-threshold frame -> CDR (size gate), and it
+    # deserializes cleanly once the tag byte is stripped.
+    manager = PluginShmManager(launcher_pid=99)
+    host = RobotPluginHost(sensor, node=None, bus=InProcessFeedbackBus(), shm=manager)
+    try:
+        payload = host._encode_feedback(fb, _image_msg(100))
+        assert payload[:1] == plugin_mod._FB_KIND_CDR
+        out = deserialize_message(payload[1:], ROSImage)
+        assert out.encoding == "mono8"
+    finally:
+        manager.close()
+
+
+def test_socket_bus_shm_end_to_end(monkeypatch):
+    """A large Image travels host -> component over a real socket bus through
+    shared memory: byte-identical on the far side, and no CDR runs on the
+    payload -- only the tiny descriptor crosses the socket."""
+    import ros_sugar.robot.plugin as plugin_mod
+    from ros_sugar.robot.shm import PluginShmManager
+
+    counts = {"ser": 0, "deser": 0}
+    _ser, _deser = plugin_mod.serialize_message, plugin_mod.deserialize_message
+    monkeypatch.setattr(
+        plugin_mod,
+        "serialize_message",
+        lambda m: (counts.__setitem__("ser", counts["ser"] + 1), _ser(m))[1],
+    )
+    monkeypatch.setattr(
+        plugin_mod,
+        "deserialize_message",
+        lambda d, t: (counts.__setitem__("deser", counts["deser"] + 1), _deser(d, t))[1],
+    )
+
+    # HOST: server socket bus + shm manager
+    server = SocketFeedbackBus()
+    manager = PluginShmManager()
+    host_plugin = _image_sensor()
+    host_plugin._set_id("cam")
+    host_plugin._bind_identity()
+    host = RobotPluginHost(host_plugin, node=None, bus=server, owns_bus=True, shm=manager)
+    host.open()
+
+    # CONSUMER: a second plugin on a client socket bus, as a component process is
+    consumer = _image_sensor()
+    consumer._set_id("cam")
+    consumer._bind_identity()
+    client = SocketFeedbackBus(server.endpoint)
+    client.connect()
+    consumer.set_bus(client)
+
+    received = []
+    handle = consumer.subscribe_feedback(consumer.feedbacks["Image"], received.append)
+    try:
+        time.sleep(0.2)  # let the SUBSCRIBE reach the server before we publish
+        frame = _image_msg(40_000)
+        host._dispatch_feedback(host_plugin.feedbacks["Image"], frame)
+
+        deadline = time.time() + 3.0
+        while not received and time.time() < deadline:
+            time.sleep(0.02)
+        assert received, "no feedback arrived over the socket bus"
+        out = received[0]
+        assert bytes(out.data) == bytes(frame.data)
+        assert out.encoding == "mono8"
+        assert counts == {"ser": 0, "deser": 0}  # traveled via SHM, not CDR
+    finally:
+        handle.unsubscribe()
+        host.close()  # owns_bus=True -> closes the server bus
+        client.close()
+        manager.close()
+
+
+def test_shm_descriptor_is_tiny_on_the_wire():
+    """A full 1080p frame encodes to a small descriptor: the socket carries
+    ~100 bytes, not the ~6 MB frame."""
+    import ros_sugar.robot.plugin as plugin_mod
+    from ros_sugar.robot.shm import PluginShmManager
+    from sensor_msgs.msg import Image as ROSImage
+
+    manager = PluginShmManager()
+    sensor = _image_sensor()
+    host = RobotPluginHost(sensor, node=None, bus=InProcessFeedbackBus(), shm=manager)
+    fb = sensor.feedbacks["Image"]
+    try:
+        frame = ROSImage()
+        frame.height, frame.width = 1080, 1920
+        frame.encoding = "rgb8"
+        frame.step = 1920 * 3
+        frame.data = os.urandom(1920 * 1080 * 3)  # ~6.2 MB 1080p RGB
+        assert len(frame.data) > 6_000_000
+
+        payload = host._encode_feedback(fb, frame)
+        assert payload[:1] == plugin_mod._FB_KIND_SHM
+        assert len(payload) < 1024  # a descriptor crossed the wire, not the frame
+    finally:
+        manager.close()
+
+
+class _RosCloudPlugin(RobotPlugin):
+    """A plugin serving one sensor over a ROS topic of its own, the way a
+    LiDAR driver started by the plugin publishes."""
+
+    def __init__(self):
+        from ros_sugar.robot import RosTopicTransport
+
+        self.metadata = PluginMetadata(name="RosCloudBot", vendor="test")
+        transport = RosTopicTransport(
+            "lidar_front",
+            topic_name="rs/front/points",
+            msg_type=LaserScan,
+            qos=QoSConfig(reliability=qos.ReliabilityPolicy.BEST_EFFORT),
+        )
+        self.transports = {"lidar_front": transport}
+        self.feedbacks = {
+            "lidar_front": Feedback(
+                key="lidar_front", msg_type=LaserScan, transport=transport
+            )
+        }
+
+
+def test_ros_topic_feedback_keeps_the_recipe_name(rclpy_context):
+    """A plugin serving an input over a ROS topic changes where the input is
+    subscribed, not what it is called. The callbacks key, ``in_topics`` and
+    any name a component recorded stay the recipe's; the subscriber alone
+    sits on the plugin's topic with the plugin's QoS, and a message published
+    there lands in the recipe's slot."""
+    from sensor_msgs.msg import LaserScan as RosLaserScan
+
+    from ros_sugar.core.component import BaseComponent
+
+    component = BaseComponent(
+        component_name="ros_feedback_component",
+        inputs=[Topic(name="lidar_front", msg_type="LaserScan", use_plugin=True)],
+    )
+    component.rclpy_init_node()
+    component._robot_plugin = _RosCloudPlugin()
+    try:
+        component._use_robot_plugin()
+        assert list(component.callbacks) == ["lidar_front"]
+        assert component.in_topics[0].name == "lidar_front"
+        # a ROS subscription, not the plugin bus
+        assert "lidar_front" not in component._external_topics
+
+        component.create_all_subscribers()
+        subscriber = component.callbacks["lidar_front"]._subscriber
+        assert subscriber.topic_name == "/rs/front/points"
+        assert (
+            subscriber.qos_profile.reliability == qos.ReliabilityPolicy.BEST_EFFORT
+        )
+
+        publisher = component.create_publisher(RosLaserScan, "rs/front/points", 10)
+        scan = RosLaserScan()
+        scan.header.frame_id = "rslidar_front"
+        callback = component.callbacks["lidar_front"]
+        deadline = time.time() + 2.0
+        while callback.msg is None and time.time() < deadline:
+            publisher.publish(scan)
+            rclpy.spin_once(component, timeout_sec=0.05)
+        assert callback.msg is not None
+        assert callback.frame_id == "rslidar_front"
+
+        # the explicit swap is the one thing that changes identity
+        assert component._replace_input_topic("lidar_front", "/other", "LaserScan") is None
+        assert list(component.callbacks) == ["other"]
+        assert component.callbacks["other"]._subscriber.topic_name == "/other"
+    finally:
+        component.destroy_node()
+
+
+def test_robot_plugin_sensor_mounts_are_collected_by_the_launcher():
+    """A robot plugin places its own built-in sensors through ``mounts``;
+    the launcher publishes them like a sensor plugin's mount."""
+    from ros_sugar import Launcher
+    from ros_sugar.robot import Mount
+
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    plugin.base_frame = "base"
+    plugin.mounts = [Mount(parent=plugin, child="sonar_front", xyz=(0.3, 0.0, 0.0))]
+    launcher = Launcher(robot_plugin=plugin)
+    assert [(m.parent_frame, m.child_frame) for m in launcher._mounts] == [
+        ("base", "sonar_front")
+    ]
+
+    # A mount that names no frame cannot be placed
+    plugin = MockPlugin(state_port=_free_port(), cmd_port=_free_port())
+    plugin.base_frame = "base"
+    plugin.mounts = [Mount(parent=plugin, xyz=(0.3, 0.0, 0.0))]
+    with pytest.raises(ValueError, match="child"):
+        Launcher(robot_plugin=plugin)
+
+
+def _make_map_store(tmp_path, active_name, files):
+    """A map store with one map, marked active by a symlink."""
+    store = tmp_path / "maps"
+    mapdir = store / active_name
+    mapdir.mkdir(parents=True)
+    for f in files:
+        (mapdir / f).write_text("image: x\n")
+    (store / "active").symlink_to(mapdir)
+    return str(store)
+
+
+def test_active_grid_path_prefers_the_declared_name(tmp_path):
+    store = _make_map_store(tmp_path, "map-20260101-100000",
+                            ["occ_grid.yaml", "full_cloud.pcd"])
+    decl = VendorMapping(start=["x"], stop=["y"], store=store)
+    assert decl.active_grid_path().endswith("occ_grid.yaml")
+
+
+def test_active_grid_path_discovers_an_unconventional_name(tmp_path):
+    """A map imported rather than built by the vendor's own tool can use any
+    filename -- assuming occ_grid.yaml is what breaks a recipe."""
+    store = _make_map_store(tmp_path, "map-20260807-153443", ["office.yaml"])
+    decl = VendorMapping(start=["x"], stop=["y"], store=store)
+    assert decl.active_grid_path().endswith("office.yaml")
+
+
+def test_active_grid_path_refuses_to_guess(tmp_path):
+    """Two candidates and no declared name: returning either would be a coin
+    flip a recipe would silently navigate on."""
+    store = _make_map_store(tmp_path, "m-20260101-100000", ["a.yaml", "b.yaml"])
+    decl = VendorMapping(start=["x"], stop=["y"], store=store, grid="")
+    assert decl.active_grid_path() is None
+
+
+def test_active_grid_path_without_a_store_or_active_map(tmp_path):
+    assert VendorMapping(start=["x"], stop=["y"], store="").active_grid_path() is None
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    decl = VendorMapping(start=["x"], stop=["y"], store=str(empty))
+    assert decl.active_grid_path() is None
+
+
+def test_native_mapping_answers_the_same_question(tmp_path):
+    """A recipe should not have to know which provider it is talking to."""
+    store = _make_map_store(tmp_path, "room-20260101-100000", ["occ_grid.yaml"])
+    decl = NativeMapping(cloud="lidar", store=store)
+    assert decl.active_grid_path().endswith("occ_grid.yaml")

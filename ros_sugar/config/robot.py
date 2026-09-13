@@ -116,23 +116,45 @@ def _to_enum(enum_cls, value):
 
 @define(kw_only=True)
 class LinearCtrlLimits(BaseAttrs):
-    """Linear velocity control limits along one axis"""
+    """Linear velocity control limits along one axis.
+
+    This class is a copy of ``LinearVelocityControlParams`` in kompass-core
+    (``kompass_cpp.control``), kept here so that a recipe can be written
+    without depending on the core library. The two must be kept in sync.
+
+    The maxima and accelerations accept zero on purpose: a robot without a
+    lateral axis declares it as all-zero limits (see the default of
+    ``RobotConfig.ctrl_vy_limits``). Only the minimum is strictly positive,
+    since a zero minimum is no deadband at all.
+    """
 
     max_vel: float = field(validator=validators.ge(0.0))  # m/s
     max_acc: float = field(validator=validators.ge(0.0))  # m/s^2
     max_decel: float = field(validator=validators.ge(0.0))  # m/s^2
-    min_absolute_val: float = field(default=0.01, validator=validators.ge(0.0))
+    # Smallest speed the robot executes; commands below it are zeroed (m/s).
+    min_vel: float = field(default=0.05, validator=validators.gt(0.0))
 
 
 @define(kw_only=True)
 class AngularCtrlLimits(BaseAttrs):
-    """Angular velocity control limits"""
+    """Angular velocity control limits.
 
-    max_vel: float = field(validator=validators.ge(0.0))  # rad/s
-    max_steer: float = field(validator=validators.ge(0.0))  # rad
+    This class is a copy of ``AngularVelocityControlParams`` in kompass-core
+    (``kompass_cpp.control``), kept here so that a recipe can be written
+    without depending on the core library. The two must be kept in sync.
+
+    The maxima and accelerations accept zero for the same reason as in
+    ``LinearCtrlLimits``: an axis a robot does not have is declared with
+    all-zero limits. Only the minimum is strictly positive, since a zero
+    minimum is no deadband at all.
+    """
+
+    max_omega: float = field(validator=validators.ge(0.0))  # rad/s
+    max_ang: float = field(validator=validators.ge(0.0))  # rad, steering angle
     max_acc: float = field(validator=validators.ge(0.0))  # rad/s^2
     max_decel: float = field(validator=validators.ge(0.0))  # rad/s^2
-    min_absolute_val: float = field(default=0.01, validator=validators.ge(0.0))
+    # Smallest rate the robot executes; commands below it are zeroed (rad/s).
+    min_omega: float = field(default=0.01, validator=validators.gt(0.0))
 
 
 @define(kw_only=True)

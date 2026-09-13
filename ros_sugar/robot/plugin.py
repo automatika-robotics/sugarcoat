@@ -18,8 +18,9 @@ import inspect
 import json
 import re
 import threading
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Union
 
+import msgpack
 from attrs import define, field
 from rclpy.logging import get_logger
 from rclpy.serialization import deserialize_message, serialize_message
@@ -28,9 +29,38 @@ from ..config import BaseAttrs, RobotConfig, StrEnum
 from .bus import LOGGER_NAME, BusHandle, FeedbackBus, SocketFeedbackBus
 from .command import CommandSpec, RobotCommand
 from .feedback import Feedback, FeedbackSpec
+from .mapping import NativeMapping, VendorMapping
+from .mount import Mount
+from .process import ProcessSpec
 from .registries import ActionRegistry, ActionSpec, EventRegistry, EventSpec
+from .shm import PluginShmManager, ShmDescriptor, ShmReaderCache
 from .transports import Transport
 from .transports.ros import RosServiceTransport, RosTopicTransport
+
+
+# A 1-byte prefix distinguishing a CDR-serialized message from a shared-memory
+# descriptor to determine the bus type. The tag lives inside the payload and is
+# added/stripped only here. (only used in multiprocessing)
+_FB_KIND_CDR = b"\x00"  # rest is serialize_message() output
+_FB_KIND_SHM = b"\x01"  # rest is msgpack {"d": ShmDescriptor.pack(), "m": meta}
+
+#: Only feedbacks whose payload is at least this large take the SHM fast path;
+#: below it CDR is used.
+SHM_MIN_BYTES = 32 * 1024
+
+
+def _decode_shm_feedback(feedback: Feedback, reader: ShmReaderCache, body: bytes):
+    """Rebuild a feedback message from a shared-memory envelope. Used in feedback
+    consumer components.
+
+    Returns ``None`` when the frame was overwritten before it could be read. The
+    caller is expected to skip as a dropped frame.
+    """
+    env = msgpack.unpackb(body, raw=False)
+    buffer = reader.read(ShmDescriptor.unpack(env["d"]))
+    if buffer is None:
+        return None
+    return feedback.msg_type.from_shm_payload(env["m"], buffer)
 
 
 class AmbiguousPluginEntryError(LookupError):
@@ -145,9 +175,7 @@ class Plugin:
                 # place for anything else lets the wrapped __init__ raise
                 # Python's own unexpected-keyword TypeError
                 explicit_frame = (
-                    kw.pop("frame_id", None)
-                    if isinstance(self, SensorPlugin)
-                    else None
+                    kw.pop("frame_id", None) if isinstance(self, SensorPlugin) else None
                 )
                 try:
                     bound = sig.bind(self, *args, **kw)
@@ -184,6 +212,10 @@ class Plugin:
         # Explicit identity, if the recipe passed ``id=``; otherwise ``id``
         # derives from the metadata name (see the property below).
         self._id: str = ""
+        # What the recipe actually asked this plugin for. Populated by the
+        # launcher at bringup; empty everywhere else. See ``requested_feedbacks``.
+        self._requested_feedbacks: FrozenSet[str] = frozenset()
+        self._requested_commands: FrozenSet[str] = frozenset()
 
     # identity
     @property
@@ -284,7 +316,7 @@ class Plugin:
         # host publishes on
         if plugin_id := spec.get("id"):
             plugin._set_id(plugin_id)
-        if frame_id := spec.get("frame_id"):
+        if isinstance(plugin, SensorPlugin) and (frame_id := spec.get("frame_id")):
             plugin._set_frame_id(frame_id)
         plugin._bind_identity()
         if bus_endpoint is not None:
@@ -305,6 +337,74 @@ class Plugin:
         `SocketFeedbackBus`.
         """
         self._bus = bus
+
+    # what the recipe asked for
+    @property
+    def requested_feedbacks(self) -> FrozenSet[str]:
+        """Keys of the feedbacks this recipe's components actually consume.
+
+        Populated by the launcher at bringup from every component's
+        ``Topic(use_plugin=...)`` reference, resolved through
+        `resolve_feedback`, and available before `on_attached` runs.
+
+        A plugin may expose far more than any one recipe uses. This is how a
+        plugin tells the difference — chiefly to avoid paying for what nobody
+        asked for, such as starting a LiDAR driver for a recipe that never
+        looks at the points. See `required_processes`.
+
+        Empty when no launcher populated it: a `RobotPluginHost` built directly,
+        as in tests and standalone tools, has no recipe to serve. Treat empty
+        as "nothing was asked for" rather than "everything" — a standalone host
+        that started every driver a plugin knows about would be a surprise.
+        """
+        return self._requested_feedbacks
+
+    @property
+    def requested_commands(self) -> FrozenSet[str]:
+        """Keys of the commands this recipe's components actually send.
+
+        The counterpart of `requested_feedbacks`, resolved from components'
+        output topics through `resolve_command`.
+        """
+        return self._requested_commands
+
+    def _set_requested(
+        self, feedbacks: FrozenSet[str], commands: FrozenSet[str]
+    ) -> None:
+        """Record what the recipe asked for. Called by the launcher only."""
+        self._requested_feedbacks = frozenset(feedbacks)
+        self._requested_commands = frozenset(commands)
+
+    # external processes
+    def required_processes(self) -> List[ProcessSpec]:
+        """External driver nodes this plugin needs running — override in
+        subclasses that front hardware served by a separate node.
+
+        Called once per bringup in the launcher process, after
+        `requested_feedbacks` and `requested_commands` are populated and before
+        `on_attached`. Return declarations only; the launcher starts and owns
+        the processes, so they get respawn, captured output and teardown
+        ordered with the recipe.
+
+        Gate on what was actually requested, so a recipe that ignores a sensor
+        does not pay to run its driver::
+
+            def required_processes(self):
+                if not {"lidar_front", "lidar_back"} & self.requested_feedbacks:
+                    return []
+                return [ProcessSpec(package="rslidar_sdk",
+                                    executable="rslidar_sdk_node",
+                                    parameters=[self.lidar_config],
+                                    precondition=self._lidar_port_is_free)]
+
+        Anything raised here is logged and skipped: a driver that cannot be
+        declared should not take the whole recipe down with it.
+
+        :return: Processes to launch, or ``[]`` (the default) for a plugin that
+            needs none.
+        """
+        # No processes by default -- see the docstring.
+        return []
 
     # host-side customization hook
     def on_attached(self, node: Any, bus: FeedbackBus) -> None:
@@ -427,17 +527,47 @@ class Plugin:
         self, feedback: Feedback, on_ros_msg: Callable[[Any], None]
     ) -> BusHandle:
         """Subscribe to a feedback stream; ``on_ros_msg`` is called with each
-        decoded ROS message. Used by components for non-ROS feedback."""
+        decoded ROS message. Used by components for non-ROS feedback.
+
+        On an in-process bus (multithreaded launch) the decoded message is
+        handed to ``on_ros_msg`` directly, with no serialization. Every
+        consumer and the Monitor then share the one live message instance, so
+        consumers must treat feedback messages as read-only and deep-copy
+        before mutating. On a socket bus the payload is read from shared memory
+        or deserialized, per consumer.
+        """
         if self._bus is None:
             raise RuntimeError(
                 "RobotPlugin.subscribe_feedback() called before a bus was attached"
             )
         ros_type = feedback.msg_type.get_ros_type()
+        # One shared-memory reader per subscription (only used in multiprocessing)
+        reader: Optional[ShmReaderCache] = (
+            None if self._bus.carries_objects else ShmReaderCache()
+        )
 
-        def _on_data(data: bytes) -> None:
-            on_ros_msg(deserialize_message(data, ros_type))
+        def _on_data(payload: Any) -> None:
+            if reader is None:
+                # In-process bus: payload is the live decoded message object.
+                on_ros_msg(payload)
+                return
+            if payload[:1] == _FB_KIND_SHM:
+                # Multiprocessing: payload is in shared memory
+                msg = _decode_shm_feedback(feedback, reader, payload[1:])
+                if msg is not None:  # None -> frame was missed; drop it
+                    on_ros_msg(msg)
+            else:
+                # Multiprocessing: payload is CDR-serialized
+                on_ros_msg(deserialize_message(payload[1:], ros_type))
 
-        return self._bus.subscribe(feedback.channel, _on_data)
+        handle = self._bus.subscribe(feedback.channel, _on_data)
+
+        def _unsubscribe() -> None:
+            handle.unsubscribe()
+            if reader is not None:
+                reader.close()
+
+        return BusHandle(_unsubscribe)
 
     def open_command(self, command: RobotCommand) -> None:
         """Prepare a command transport for sending from a component process.
@@ -480,6 +610,7 @@ class Plugin:
 
     def describe(self) -> Dict[str, Any]:
         """Return a JSON-serializable introspection tree for this plugin."""
+        mapping = getattr(self, "MAPPING", None)
         return {
             "metadata": self.metadata.asdict(),
             "transports": {name: t.kind for name, t in self.transports.items()},
@@ -487,6 +618,7 @@ class Plugin:
             "commands": [s.asdict() for s in self.list_commands()],
             "actions": [s.asdict() for s in self.list_actions()],
             "events": [s.asdict() for s in self.list_events()],
+            "mapping": mapping.spec() if mapping is not None else None,
             "role": str(self.role),
         }
 
@@ -502,6 +634,11 @@ class RobotPlugin(Plugin):
 
     _role: PluginRole = PluginRole.ROBOT
 
+    # How this robot's environment gets mapped. A `VendorMapping` when the
+    # robot ships its own SLAM, a `NativeMapping` when EMOS builds the map
+    # from this plugin's sensor feedbacks, or ``None`` when neither.
+    MAPPING: Optional[Union[VendorMapping, NativeMapping]] = None
+
     def _base_init(self, cls: type) -> None:
         super()._base_init(cls)
         # Robot geometry and kinematic description
@@ -510,6 +647,11 @@ class RobotPlugin(Plugin):
         # is deliberately absent: where the robot has been placed is described
         # by the environment, not by the robot.
         self.base_frame: Optional[str] = None
+        # Static placements of the robot's own sensors relative to the body
+        # (child = the frame the sensor's messages name). The launcher
+        # publishes them as static transforms, so consumers can resolve where
+        # a built-in sensor sits without a URDF.
+        self.mounts: List[Mount] = []
 
 
 class SensorPlugin(Plugin):
@@ -585,12 +727,16 @@ class RobotPluginHost:
         bus: FeedbackBus,
         monitor_feed: Optional[Callable[[str, Any], None]] = None,
         owns_bus: bool = True,
+        shm: Optional[PluginShmManager] = None,
     ) -> None:
         self.plugin = plugin
         self.node = node
         self.bus = bus
         self.monitor_feed = monitor_feed
         self._owns_bus = owns_bus
+        # Shared-memory writer pool for large feedbacks on the socket bus; the
+        # launcher owns it and injects it. None -> everything takes the CDR path.
+        self._shm = shm
         self._active = False
         self._keep_alive_threads: List[threading.Thread] = []
         self._keep_alive_stop: Optional[threading.Event] = None
@@ -694,9 +840,40 @@ class RobotPluginHost:
         if msg is None:
             return
         self._stamp_frame(feedback, msg)
-        self.bus.publish(feedback.channel, serialize_message(msg))
+        if self.bus.carries_objects:
+            # In-process bus: hand over the live object, no serialization.
+            self.bus.publish(feedback.channel, msg)
+        else:
+            self.bus.publish(feedback.channel, self._encode_feedback(feedback, msg))
         if self.monitor_feed is not None:
             self.monitor_feed(feedback.channel, msg)
+
+    def _encode_feedback(self, feedback: Feedback, msg: Any) -> bytes:
+        """Encode a feedback for the socket bus, tagged with its payload kind.
+
+        Large, feedbacks (camera frames, point clouds) go through the shared-memory
+        ring. The frame is written to a slot and only a tiny descriptor goes through
+        the bus. Everything else and any SHM failure falls back to CDR. .
+        """
+        if self._shm is not None:
+            shm_payload = feedback.msg_type.to_shm_payload(msg)
+            if shm_payload is not None:
+                # if shared memory feedback is implemented in the type
+                meta, view = shm_payload
+                if view.nbytes >= SHM_MIN_BYTES:
+                    try:
+                        writer = self._shm.writer_for(self.plugin.id, feedback.key)
+                        desc = writer.write(view)
+                        return _FB_KIND_SHM + msgpack.packb(  # pyright: ignore[reportOperatorIssue]
+                            {"d": desc.pack(), "m": meta}, use_bin_type=True
+                        )
+                    except Exception as e:  # pragma: no cover - defensive
+                        get_logger(LOGGER_NAME).warning(
+                            f"SHM encode for feedback '{feedback.key}' failed; "
+                            f"using CDR: {e}"
+                        )
+        # else: return serialized feedback
+        return _FB_KIND_CDR + serialize_message(msg)
 
     def _stamp_frame(self, feedback: Feedback, msg: Any) -> None:
         """Stamp a decoded message with the frame its data is in.

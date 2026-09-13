@@ -1,7 +1,7 @@
 """Data containers for ROS message payloads processed by callbacks."""
 
 import math
-from typing import List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
 from attrs import Factory, define, field
@@ -169,6 +169,27 @@ class PointCloudData(BaseAttrs):
             return None
         self._xyz_cache = xyz[np.isfinite(xyz).all(axis=1)]
         return self._xyz_cache
+
+    def buffer_layout(self) -> Dict[str, Any]:
+        """The raw point buffer with the fields that describe it, as keyword
+        arguments for a raw-buffer consumer.
+
+        Unlike ``asdict()``, which returns every field of the container, nothing
+        else is included. The buffer is passed through, not copied, and nothing is decoded.
+
+        :return: Buffer and layout keyword arguments
+        :rtype: Dict[str, Any]
+        """
+        return {
+            "data": self.data,
+            "point_step": self.point_step,
+            "row_step": self.row_step,
+            "height": self.height,
+            "width": self.width,
+            "x_offset": self.x_offset,
+            "y_offset": self.y_offset,
+            "z_offset": self.z_offset,
+        }
 
     def filtered(
         self,

@@ -74,6 +74,9 @@ class ComponentLaunchAction(NodeLaunchAction):
         :param event_name: Event key name to identify which events got triggered
         :type event_name: str
         """
+        # On shutdown, dont care about events queued here
+        if self.__context.is_shutdown:
+            return
         try:
             # Create a launch event of type InternalEvent with the event name
             event = InternalEvent(
@@ -179,7 +182,7 @@ class ComponentLaunchAction(NodeLaunchAction):
             raise Exception("Node executor is unknown")
         try:
             self.__ros_executor.add_node(self.__ros_node)
-            while self.__is_running:
+            while self.__is_running and not self.__context.is_shutdown:
                 # TODO: switch this to `spin()` when it considers
                 #   asynchronously added subscriptions.
                 self.__ros_executor.spin_once(

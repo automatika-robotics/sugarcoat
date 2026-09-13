@@ -122,6 +122,10 @@ class Status:
         Set status to Running - Healthy
         """
         self._set_status_from_dict(key=0)
+        # Clear any previous failure sources
+        self._msg.src_algorithms = []
+        self._msg.src_components = []
+        self._msg.src_topics = []
 
     def set_failure(self):
         """

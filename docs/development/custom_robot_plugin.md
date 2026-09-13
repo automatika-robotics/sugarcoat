@@ -236,6 +236,57 @@ class _MyRobotForTest(MyRobotPlugin):
 The serializable plugin spec captures whichever subclass and kwargs were used,
 so the same override survives the multiprocess launch boundary.
 
+### Bringing Up a Driver Node
+
+Some feedback is only real if a separate process is running: a LiDAR's points
+come from the vendor's driver node, not from the plugin. Which driver that is,
+and how it must be configured, is exactly the robot-specific knowledge the
+plugin exists to absorb — so declare it on the plugin rather than making every
+recipe start it by hand.
+
+Override `required_processes()` and return a `ProcessSpec` per node. The
+launcher brings them up through the same machinery as `Launcher.add_ros_node`,
+which means they get respawn, captured output, and teardown ordered with the
+rest of the recipe:
+
+```python
+from ros_sugar.robot import ProcessSpec
+
+class MyRobotPlugin(RobotPlugin):
+    def required_processes(self):
+        # Only pay for the driver if the recipe actually reads the points
+        if not {"lidar_front", "lidar_back"} & self.requested_feedbacks:
+            return []
+        return [
+            ProcessSpec(
+                package="rslidar_sdk",
+                executable="rslidar_sdk_node",
+                parameters=[self.LIDAR_CONFIG],
+                precondition=self._lidar_port_is_free,
+            )
+        ]
+```
+
+`requested_feedbacks` and `requested_commands` hold the keys the recipe's
+components actually consume, resolved from their `Topic(use_plugin=...)`
+references. A plugin usually exposes more than any one recipe needs; this is
+how it tells the difference. Both are populated before `required_processes()`
+and `on_attached()` run, and are empty when there is no launcher — a plugin
+nobody asked anything of should provide nothing, not everything.
+
+```{caution}
+Set a `precondition` for any driver that claims an exclusive resource. Most
+LiDAR drivers bind a fixed UDP port and cannot coexist with a second copy of
+themselves, and many robots already start the vendor's own instance at boot.
+A second one comes up cleanly and then simply never publishes — which reads as
+a crash and sends people looking in the wrong place. Return `False` when the
+existing instance is detected.
+```
+
+Declare processes; do not start them. A plugin that spawned its own subprocess
+would sit outside the launch system: no respawn, no captured output, no ordered
+shutdown, and a process still holding the device if the launcher is killed.
+
 ## Describing the Robot
 
 A `RobotPlugin` knows the robot it drives, so it can configure the whole stack:
@@ -250,7 +301,7 @@ class MyRobotPlugin(RobotPlugin):
             geometry_params=[0.61, 0.37, 0.4],
             ctrl_vx_limits=LinearCtrlLimits(max_vel=1.0, max_acc=2.5, max_decel=7.5),
             ctrl_omega_limits=AngularCtrlLimits(
-                max_vel=1.5, max_acc=2.5, max_decel=4.0, max_steer=1.57
+                max_omega=1.5, max_acc=2.5, max_decel=4.0, max_ang=1.57
             ),
         )
         self.base_frame = "base_link"

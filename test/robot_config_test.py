@@ -35,7 +35,7 @@ def robot_config(**overrides) -> RobotConfig:
         "geometry_params": [0.2, 1.0],
         "ctrl_vx_limits": LinearCtrlLimits(max_vel=1.0, max_acc=3.0, max_decel=5.0),
         "ctrl_omega_limits": AngularCtrlLimits(
-            max_vel=5.0, max_steer=math.pi, max_acc=10.0, max_decel=10.0
+            max_omega=5.0, max_ang=math.pi, max_acc=10.0, max_decel=10.0
         ),
         **overrides,
     })
@@ -197,3 +197,19 @@ def test_component_config_carries_robot_and_frames():
     assert rebuilt.robot.geometry_type is RobotGeometryType.SPHERE
     assert rebuilt.frames.robot_base == "body"
     assert rebuilt.frames.world == "odom"
+
+
+def test_zero_minimum_velocities_are_rejected():
+    """A minimum velocity of zero is no deadband at all, so both limits
+    classes refuse it while a positive value is accepted."""
+    LinearCtrlLimits(max_vel=1.0, max_acc=3.0, max_decel=5.0, min_vel=0.05)
+    with pytest.raises(ValueError):
+        LinearCtrlLimits(max_vel=1.0, max_acc=3.0, max_decel=5.0, min_vel=0.0)
+
+    AngularCtrlLimits(
+        max_omega=5.0, max_ang=math.pi, max_acc=10.0, max_decel=10.0, min_omega=0.05
+    )
+    with pytest.raises(ValueError):
+        AngularCtrlLimits(
+            max_omega=5.0, max_ang=math.pi, max_acc=10.0, max_decel=10.0, min_omega=0.0
+        )

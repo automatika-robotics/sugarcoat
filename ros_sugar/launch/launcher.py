@@ -15,12 +15,14 @@ from typing import (
     Optional,
     Union,
     Any,
+    Set,
     Tuple,
     Mapping,
     cast,
 )
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+from shutil import which
 
 import msgpack
 import msgpack_numpy as m_pack
@@ -67,11 +69,13 @@ from ..base_clients import ServiceClientConfig, ActionClientConfig
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
 from ..ui_node import UINode, UINodeConfig
 from ..robot import (
+    AmbiguousPluginEntryError,
     FeedbackBus,
     Mount,
     InProcessFeedbackBus,
     Plugin,
     PluginRole,
+    PluginShmManager,
     RobotPlugin,
     RobotPluginHost,
     SocketFeedbackBus,
@@ -94,6 +98,26 @@ m_pack.patch()
 # than a genuine crash. Launch/subprocess reports signal terminations as
 # negative values (-signum); shells that propagate them use 128+signum.
 _SIGNAL_EXIT_CODES = frozenset({-2, -9, -15, 130, 137, 143})
+
+
+def _check_ros_executable(package: str, executable: str) -> None:
+    """Fail now if launch_ros would not find ``executable`` in ``package``.
+
+    :raises PackageNotFoundError: If the package is not installed
+    :raises FileNotFoundError: If the package has no such executable
+    """
+    from ament_index_python.packages import PackageNotFoundError, get_package_prefix
+
+    try:
+        prefix = get_package_prefix(package)
+    except PackageNotFoundError:
+        raise PackageNotFoundError(
+            f"package '{package}' is not installed, or its workspace is not sourced"
+        ) from None
+    if which(executable, path=os.path.join(prefix, "lib", package)) is None:
+        raise FileNotFoundError(
+            f"package '{package}' is installed but has no executable '{executable}'"
+        )
 
 
 UI_EXTENSIONS = {}
@@ -184,6 +208,8 @@ class Launcher:
             self.add_plugin(robot_plugin)
         # Shared by every attached plugin host, so the launcher owns it
         self._plugin_bus: Optional[FeedbackBus] = None
+        # Shared-memory writer pool for large feedbacks on the socket bus
+        self._plugin_shm: Optional[PluginShmManager] = None
         # Tracks whether the recipe explicitly set robot config. If not config
         # is pulled from a plugin. In case both present, recipe wins.
         self._robot_explicitly_set: bool = False
@@ -552,7 +578,8 @@ class Launcher:
 
         :param mount: Where this sensor sits, when nothing else publishes its
             frame into TF. Omit it if a URDF, a ``robot_state_publisher`` or
-            the sensor's own driver already does.
+            the sensor's own driver already does. A robot plugin's own
+            sensor placements come from its ``mounts`` list instead.
         :type mount: Optional[Mount]
 
         :raises ValueError: If a second robot plugin is attached, or if the id
@@ -581,10 +608,18 @@ class Launcher:
         if mount is not None:
             mount.child = plugin
             self._mounts.append(mount)
+        # A robot plugin may place its own built-in sensors (child = the frame
+        # those sensors' messages name); publish them like any other mount
+        for sensor_mount in getattr(plugin, "mounts", None) or []:
+            if sensor_mount.child is None:
+                raise ValueError(
+                    f"A mount declared by plugin '{plugin.metadata.name}' names no "
+                    "child frame: set 'child' to the frame the sensor publishes in."
+                )
+            self._mounts.append(sensor_mount)
 
     def _publish_mounts(self) -> None:
-        """Hand every declared mount to the Monitor as a static transform to be published to /tf_static.
-        """
+        """Hand every declared mount to the Monitor as a static transform to be published to /tf_static."""
         if not self._mounts:
             return
         from geometry_msgs.msg import TransformStamped
@@ -649,6 +684,108 @@ class Launcher:
                         "attached to this recipe. Attached plugins: "
                         f"{', '.join(self._plugins) or 'none'}."
                     )
+
+    def _plugin_for_topic(self, topic) -> Optional[Plugin]:
+        """Resolve which attached plugin serves a topic, or ``None``.
+
+        ``use_plugin=True`` means the robot plugin; a string names a plugin by
+        its id. Mirrors the component-side resolution of the same name, minus
+        the logging — `_validate_plugin_references` has already rejected the
+        cases worth complaining about by the time this runs.
+        """
+        if not topic.use_plugin:
+            return None
+        if topic.use_plugin is True:
+            return self._robot_plugin
+        return self._plugins.get(topic.use_plugin)
+
+    def _resolve_plugin_demand(self) -> None:
+        """Tell each plugin which of its entries the recipe actually uses. Knowing what was asked for lets a plugin provide exactly that; see `Plugin.required_processes`.
+
+        Runs before the plugin hosts open, so `Plugin.on_attached` and
+        `required_processes` both see a populated set.
+        """
+        if not self._plugins:
+            return
+        feedbacks: Dict[str, Set[str]] = {pid: set() for pid in self._plugins}
+        commands: Dict[str, Set[str]] = {pid: set() for pid in self._plugins}
+
+        for component in self._components:
+            for topics, resolver, target in (
+                (getattr(component, "in_topics", None), "resolve_feedback", feedbacks),
+                (getattr(component, "out_topics", None), "resolve_command", commands),
+            ):
+                for topic in topics or []:
+                    plugin = self._plugin_for_topic(topic)
+                    if plugin is None:
+                        continue
+                    try:
+                        entry = getattr(plugin, resolver)(
+                            topic.name, topic.msg_type.__name__
+                        )
+                    except (TypeError, AmbiguousPluginEntryError):
+                        # A mis-wired topic. The component logs it and falls
+                        # back to an ordinary ROS topic
+                        continue
+                    if entry is not None:
+                        target[plugin.id].add(entry.key)
+
+        for plugin_id, plugin in self._plugins.items():
+            plugin._set_requested(
+                frozenset(feedbacks[plugin_id]), frozenset(commands[plugin_id])
+            )
+            if requested := sorted(feedbacks[plugin_id] | commands[plugin_id]):
+                logger.debug(f"Plugin '{plugin_id}' serves: {', '.join(requested)}")
+
+    def _launch_plugin_processes(self, plugin: Plugin) -> None:
+        """Add launch actions for the external drivers a plugin declares.
+
+        A driver that is not installed fails bringup. The recipe asked for the
+        data it serves, so running without it would lead to unhealthy behavior.
+
+        :raises PackageNotFoundError: If a driver's package is not installed
+        :raises FileNotFoundError: If a driver's package has no such executable
+        """
+        from ament_index_python.packages import PackageNotFoundError
+
+        try:
+            # Materialized here, so a plugin returning something that is not a
+            # list is reported like any other declaration fault
+            specs = list(plugin.required_processes() or [])
+        except Exception as e:
+            logger.error(
+                f"Plugin '{plugin.id}' failed to declare its required "
+                f"processes: {e}. No driver will be started for it."
+            )
+            return
+
+        for spec in specs:
+            try:
+                if spec.precondition is not None and not spec.precondition():
+                    logger.info(
+                        f"Plugin '{plugin.id}': not starting '{spec.label}' "
+                        "(precondition not met -- typically the driver is "
+                        "already running)"
+                    )
+                    continue
+            except Exception as e:
+                logger.error(
+                    f"Plugin '{plugin.id}': precondition for driver "
+                    f"'{spec.label}' failed: {e}. Not starting it."
+                )
+                continue
+            try:
+                self.add_ros_node(**spec.launch_kwargs())
+            except (PackageNotFoundError, FileNotFoundError) as e:
+                used = ", ".join(sorted(plugin.requested_feedbacks)) or "none"
+                raise type(e)(
+                    f"Plugin '{plugin.id}' needs the driver '{spec.label}', but "
+                    f"{e.args[0]}. The recipe uses these feedbacks from the "
+                    f"plugin: {used}. Install the package and source its "
+                    "workspace, or stop using those topics in the recipe so the "
+                    "driver is not needed."
+                ) from None
+            logger.info(f"Plugin '{plugin.id}': starting driver '{spec.label}'")
 
     def _distribute_plugins(self) -> None:
         """Hand every attached plugin to every component.
@@ -716,8 +853,7 @@ class Launcher:
             )
         else:
             logger.info(
-                f"Applying robot base frame '{base_frame}' from plugin "
-                f"'{plugin_name}'"
+                f"Applying robot base frame '{base_frame}' from plugin '{plugin_name}'"
             )
         for component in self._components:
             if hasattr(component.config, "frames"):
@@ -758,9 +894,7 @@ class Launcher:
     def _set_frame(self, attribute: str, frame: str) -> None:
         """Set one frame on every component that has a frames configuration."""
         if not isinstance(frame, str) or not frame:
-            raise ValueError(
-                f"Frame name must be a non-empty string, got {frame!r}"
-            )
+            raise ValueError(f"Frame name must be a non-empty string, got {frame!r}")
         for component in self._components:
             if hasattr(component.config, "frames"):
                 setattr(component.config.frames, attribute, frame)
@@ -1496,6 +1630,7 @@ class Launcher:
                 executable=executable_name,
                 output="screen",
                 arguments=arguments,
+                prefix=component.launch_prefix,
             )
         return NodeLaunchAction(
             package=pkg_name,
@@ -1505,6 +1640,7 @@ class Launcher:
             executable=executable_name,
             output="screen",
             arguments=arguments,
+            prefix=component.launch_prefix,
         )
 
     def _build_exit_handler_entity(
@@ -1628,6 +1764,14 @@ class Launcher:
         """
         Adds all components to be launched in separate threads
         """
+        if component.launch_prefix:
+            logger.warning(
+                f"Component '{component.node_name}' sets launch_prefix "
+                f"'{component.launch_prefix}', but runs multithreaded in a launcher "
+                "process with no process of its own, so the prefix has no effect. "
+                "Launch the component's package with multiprocessing=True to "
+                "apply it."
+            )
         component_action = ComponentLaunchAction(
             node=component,
             namespace=self._namespace,
@@ -1740,9 +1884,12 @@ class Launcher:
         :param output: Output configuration, defaults to 'screen'
         :type output: str
         :param launch_node_kwargs: Additional keyword arguments for launch_ros Node
+        :raises PackageNotFoundError: If the package is not installed
+        :raises FileNotFoundError: If the package has no such executable
         :return: The created launch action
         :rtype: launch_ros.actions.Node
         """
+        _check_ros_executable(package, executable)
         node_action = NodeLaunchAction(
             package=package,
             executable=executable,
@@ -1879,6 +2026,16 @@ class Launcher:
         """
         if not self._plugins:
             return
+
+        if self._plugin_hosts:
+            return
+        # Record what the recipe asked each plugin for before anything opens
+        self._resolve_plugin_demand()
+
+        # Launch plugin drivers in their own processes (if any). This is done before the feedback bus is started so that the bus is ready to accept connections when the drivers start.
+        for plugin in self._plugins.values():
+            self._launch_plugin_processes(plugin)
+
         # A socket feedback bus is needed when any component runs as its own
         # process; otherwise an in-process bus avoids the socket round trip.
         use_socket_bus = bool(self._pkg_executable)
@@ -1887,6 +2044,9 @@ class Launcher:
         # so it has to outlive any single host
         self._plugin_bus = bus
         bus.start()
+        # Shared-memory writer pool for large feedbacks. Only useful on the
+        # socket bus (multiprocess).
+        self._plugin_shm = PluginShmManager() if use_socket_bus else None
 
         for plugin in self._plugins.values():
             host = RobotPluginHost(
@@ -1895,13 +2055,13 @@ class Launcher:
                 bus=bus,
                 monitor_feed=self.monitor_node.feed_external_topic,
                 owns_bus=False,
+                shm=self._plugin_shm,
             )
             host.open()
             self._plugin_hosts.append(host)
             # Register every non-ROS feedback's synthetic topic with the Monitor
             # so events over it are tracked without a ROS subscription.
-            # ROS-topic feedbacks keep a normal ROS subscription (their
-            # as_topic() is the real robot topic), so they are NOT external.
+            # ROS-topic feedbacks keep a normal ROS subscription so they are NOT external.
             for feedback in plugin.feedbacks.values():
                 if not feedback.is_ros_topic:
                     self.monitor_node.register_external_topic(feedback.as_topic())
@@ -2001,6 +2161,10 @@ class Launcher:
         if self._plugin_bus is not None:
             self._plugin_bus.close()
             self._plugin_bus = None
+        # Unlink the shared-memory segments once the writers (hosts) are down.
+        if self._plugin_shm is not None:
+            self._plugin_shm.close()
+            self._plugin_shm = None
 
         if self._thread_pool:
             self._thread_pool.shutdown()

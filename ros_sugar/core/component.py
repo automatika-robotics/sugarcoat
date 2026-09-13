@@ -1,65 +1,75 @@
 """Base Component"""
 
-import os
-import time
-import json
-import socket
-from copy import deepcopy
-from contextlib import contextmanager
-import threading
-from typing import Any, Dict, List, Optional, Union, Callable, Sequence, Tuple, Type
-from functools import wraps, partial
 import importlib
+import json
+import os
+import socket
+import threading
+import time
+from contextlib import contextmanager
+from copy import deepcopy
+from functools import partial, wraps
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 
-from rclpy import logging as rclpy_logging
-from rclpy.action.server import ActionServer, CancelResponse, GoalResponse
-from rclpy.utilities import try_shutdown
 import rclpy.callback_groups as ros_callback_groups
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
-from rclpy import lifecycle
-from rclpy.lifecycle.node import TransitionCallbackReturn, LifecycleState
-from rclpy.publisher import Publisher as ROSPublisher
-from rclpy.subscription import Subscription
-from rclpy.client import Client
-from tf2_ros.buffer import Buffer
-from tf2_ros.transform_listener import TransformListener
-from builtin_interfaces.msg import Time
-from geometry_msgs.msg import TransformStamped
-from lifecycle_msgs.msg import State as LifecycleStateMsg
-
 from automatika_ros_sugar.srv import (
     ChangeParameter,
     ChangeParameters,
     ConfigureFromFile,
-    ReplaceTopic,
     ExecuteMethod,
+    ReplaceTopic,
 )
+from builtin_interfaces.msg import Time
+from geometry_msgs.msg import TransformStamped
+from lifecycle_msgs.msg import State as LifecycleStateMsg
+from rclpy import lifecycle
+from rclpy import logging as rclpy_logging
+from rclpy.action.server import ActionServer, CancelResponse, GoalResponse
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
+from rclpy.client import Client
+from rclpy.lifecycle.node import LifecycleState, TransitionCallbackReturn
+from rclpy.publisher import Publisher as ROSPublisher
+from rclpy.subscription import Subscription
+from rclpy.utilities import try_shutdown
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 
-from .action import Action
-from .event import Event, EventBlackboardEntry
-from ..io.callbacks import GenericCallback
+from ..base_clients import ActionClientConfig
 from ..config.base_attrs import explicit_fields
 from ..config.base_config import (
+    BaseAttrs,
     BaseComponentConfig,
     ComponentRunType,
     ExternalProcessorType,
-    BaseAttrs,
     QoSConfig,
 )
-from ..io.topic import Topic
-from ..io.supported_types import SupportedType
+from ..io.callbacks import GenericCallback
 from ..io.publisher import Publisher
-from .fallbacks import ComponentFallbacks, Fallback
-from .status import Status
+from ..io.supported_types import SupportedType
+from ..io.topic import Topic
+from ..tf import TFListener, TFListenerConfig
 from ..utils import (
     camel_to_snake_case,
-    component_fallback,
     component_action,
+    component_fallback,
     get_methods_with_decorator,
     log_srv,
 )
-from ..base_clients import ActionClientConfig
-from ..tf import TFListener, TFListenerConfig
+from .action import Action
+from .event import Event, EventBlackboardEntry
+from .fallbacks import ComponentFallbacks, Fallback
+from .status import Status
 
 
 class BaseComponent(lifecycle.Node):
@@ -181,12 +191,19 @@ class BaseComponent(lifecycle.Node):
         # Additional types from derived packages
         self._additional_types: List[Type[SupportedType]] = []
 
+        # Command prefix for this component's process in multiprocess launch,
+        # e.g. "taskset -c 4-7", "nice -n 10" or "perf record".
+        self.launch_prefix: Optional[str] = None
+
         # Plugins attached by the Launcher, keyed by plugin id (HOST instances
         # in multithreaded launch, reconstructed CLIENT instances in
         # multiprocess launch)
         self._plugins: Dict[str, Any] = {}
         # Names of input/output topics bound to non-ROS robot plugin transports
         self._external_topics: set = set()
+        # Recipe topic name -> ROS topic its subscriber is created on, for
+        # inputs a robot plugin serves over a ROS topic of its own
+        self._plugin_ros_topics: Dict[str, str] = {}
         # Feedback-bus subscription handles to release on deactivation
         self._robot_plugin_bus_handles: List = []
 
@@ -198,6 +215,8 @@ class BaseComponent(lifecycle.Node):
         # Input topic name -> (goal frame, is the mount rigid). Declared by the
         # component (usually in init_variables)
         self._input_frame_targets: Dict[str, Tuple[str, bool]] = {}
+        # Keys already reported through log_once
+        self._logged_once: Set[str] = set()
 
         # To use without launcher -> Init the ROS2 node directly
         if self.config._use_without_launcher:
@@ -420,16 +439,7 @@ class BaseComponent(lifecycle.Node):
                 continue
             transport = feedback.transport
             if isinstance(transport, RosTopicTransport):
-                if topic.name != transport.topic_name:
-                    self.get_logger().info(
-                        f"Robot plugin remaps input '{topic.name}' "
-                        f"({topic.msg_type.__name__}) to '{transport.topic_name}'"
-                    )
-                error = self._replace_input_topic(
-                    topic.name, transport.topic_name, transport.msg_type
-                )
-                if error:
-                    self.get_logger().error(error)
+                self._bind_ros_feedback(topic, feedback, transport)
             else:
                 self._attach_external_feedback(topic, feedback, plugin)
 
@@ -474,6 +484,40 @@ class BaseComponent(lifecycle.Node):
             else:
                 self._replace_output_by_transport(topic, command, plugin)
 
+    def _bind_ros_feedback(self, topic: Topic, feedback, transport) -> None:
+        """Serve an input from the ROS topic a robot plugin publishes it on.
+
+        The recipe's topic name stays the input's identity. Only the subscription
+        points at the plugin's topic, with the plugin's message type and QoS,
+        the way `_attach_external_feedback` keeps the name for non-ROS transports.
+
+        :param topic: The component input topic being adapted.
+        :param feedback: The `robot.feedback.Feedback` to bind.
+        :param transport: Its `robot.transports.RosTopicTransport`.
+        """
+        old_callback = self.callbacks.get(topic.name)
+        if old_callback is None:
+            self.get_logger().error(
+                f"Cannot bind robot feedback: no callback slot for input '{topic.name}'"
+            )
+            return
+        new_topic = Topic(
+            name=topic.name,
+            msg_type=transport.msg_type,
+            qos_profile=transport.qos,
+            use_plugin=topic.use_plugin,
+        )
+        new_callback = new_topic.msg_type.callback(new_topic, node_name=self.node_name)
+        # Adaptation runs before the subscribers are created; this is where
+        # the input's subscriber will be pointed
+        self._plugin_ros_topics[topic.name] = transport.topic_name
+        self.callbacks[topic.name] = new_callback
+        self._update_inactive_input_topic(old_callback.input_topic, new_topic)
+        self.get_logger().info(
+            f"Input '{topic.name}' bound to robot plugin feedback "
+            f"'{feedback.key}' via ROS topic '{transport.topic_name}'"
+        )
+
     def _attach_external_feedback(self, topic: Topic, feedback, plugin) -> None:
         """Bind a non-ROS robot feedback stream into the component's callback slot.
 
@@ -486,8 +530,7 @@ class BaseComponent(lifecycle.Node):
         component's originally-declared input type (e.g. a manufacturer's custom
         message standing in for ``Odometry``). The component's callback object
         is therefore swapped for one of ``feedback.msg_type``, keeping the
-        original topic name as the ``callbacks`` dict key - exactly as
-        `_replace_input_topic` does for ROS-topic feedback.
+        original topic name as the ``callbacks`` dict key.
 
         :param topic: The component input topic being adapted.
         :param feedback: The `robot.feedback.Feedback` to bind.
@@ -586,9 +629,7 @@ class BaseComponent(lifecycle.Node):
         for config in configs:
             # Only apply fields actually set, not a full snapshot. So fields set
             # by the component itself are not written over
-            self._algorithms_config[config.__class__.__name__] = explicit_fields(
-                config
-            )
+            self._algorithms_config[config.__class__.__name__] = explicit_fields(config)
 
     def _configure_algorithm(self, algo_config: BaseAttrs) -> BaseAttrs:
         """Configure an algorithm from the user defined configuration classes
@@ -709,15 +750,19 @@ class BaseComponent(lifecycle.Node):
         :param callback:
         :type callback: GenericCallback
         """
+        name = callback.input_topic.name
+        topic = self._plugin_ros_topics.get(name, name)  # for topics coming from plugins
         _subscriber = self.create_subscription(
             msg_type=callback.input_topic.ros_msg_type,
-            topic=callback.input_topic.name,
+            topic=topic,
             qos_profile=callback.input_topic.qos_profile.to_ros(),
             callback=callback.callback,
             callback_group=self.callback_group,
         )
         self.get_logger().debug(
-            f"Started subscriber to topic: {callback.input_topic.name} of type {callback.input_topic.msg_type}"
+            f"Started subscriber to topic: {topic} of type "
+            f"{callback.input_topic.msg_type}"
+            + (f" for input '{name}'" if topic != name else "")
         )
         return _subscriber
 
@@ -815,16 +860,19 @@ class BaseComponent(lifecycle.Node):
         """
         Create required subscriptions, publications, timers, ... etc. to activate the node
         """
-        # Init any global node variables
-        self.init_variables()
-
-        # Adapt the component's topics to whichever plugins are attached. A
-        # recipe with none should never get here as the launcher fails at bringup.
-        # So this warns and keeps working for a standalone component.
+        # Adapt the component's topics to whichever plugins are attached.
+        # NOTE: Plugin adaptation MUST run before init_variables(), as it replaces
+        # entries in `self.callbacks` with new objects and destroys the old
+        # subscribers, so a component that caches callback references during
+        # init_variables() would be
+        # left holding orphans
         if self._plugins:
             self._use_robot_plugin()
         else:
             self._warn_orphaned_plugin_topics()
+
+        # Init any global node variables
+        self.init_variables()
 
         self.create_all_subscribers()
 
@@ -1222,6 +1270,24 @@ class BaseComponent(lifecycle.Node):
         return self.get_transform_listener(
             source_frame, goal_frame, static_tf
         ).transform
+
+    def log_once(self, key: str, message: str, level: str = "warning") -> None:
+        """Log a lasting condition the first time it is seen under `key`.
+
+        Use instead of rclpy's `once=True` which mutes by call site
+
+        :param key: Name of the condition, unique within the component
+        :type key: str
+        :param message: What to log the first time the condition is seen
+        :type message: str
+        :param level: Logger method to use: 'debug', 'info', 'warning',
+            'error' or 'fatal'
+        :type level: str
+        """
+        if key in self._logged_once:
+            return
+        self._logged_once.add(key)
+        getattr(self.get_logger(), level)(message)
 
     def transform_input_to(
         self, topic_name: str, goal_frame: str, static_tf: bool = False
@@ -2414,6 +2480,10 @@ class BaseComponent(lifecycle.Node):
     ) -> Optional[str]:
         """Replaces a component input topic by a new topic
 
+        The explicit swap behind the ReplaceTopic service. The input's identity
+        changes, so the callbacks dict is re-keyed by the new name and
+        ``in_topics`` is updated to match.
+
         :param topic_name: Old Topic name
         :type topic_name: str
         :param new_name: New topic name
@@ -2452,9 +2522,11 @@ class BaseComponent(lifecycle.Node):
 
             new_callback.set_subscriber(self._add_ros_subscriber(new_callback))
 
-        # Update callbacks dictionary
+        # Update callbacks dictionary. The plugin's binding was to the name
+        # being retired thus remove that here as well
+        self._plugin_ros_topics.pop(normalized_topic_name, None)
         self.callbacks.pop(normalized_topic_name)
-        self.callbacks[new_name] = new_callback
+        self.callbacks[new_topic.name] = new_callback
 
         # update the internal lists
         old_topic = old_callback.input_topic
@@ -3069,7 +3141,16 @@ class BaseComponent(lifecycle.Node):
             elif self.__fallbacks.on_any_fail:
                 self.__fallbacks_giveup = self.__fallbacks.execute_generic_fallback()
 
-            # Update the health status from the fallback after execution
+            else:
+                # No policy is defined for this failure, so there is no fallback
+                # status to adopt.
+                self.get_logger().warning(
+                    "No fallback policy is defined for detected failure -> Failure is broadcasted",
+                    once=True,
+                )
+                return
+
+            # Update the health status from the fallback that just ran
             self.health_status.value = self.__fallbacks.latest_status
 
         except ValueError:

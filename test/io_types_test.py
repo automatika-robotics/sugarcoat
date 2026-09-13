@@ -11,6 +11,7 @@ Sections, one per message type:
   extraction in world frame, UI content
 - MultiArray: layout-driven reshaping
 - Image: raw buffer decoding
+- Depth image metadata: encoding -> (dtype, scale), buffer untouched
 - CameraInfo: CameraInfoCallback -> CameraIntrinsics, rectification,
   binning and region of interest corrections
 - Path: UI downsampling
@@ -49,6 +50,7 @@ from ros_sugar.io.datatypes import (
     PointCloudData,
     read_camera_info,
 )
+from ros_sugar.io.utils import depth_image_metadata
 from ros_sugar.io import supported_types
 
 
@@ -259,6 +261,34 @@ def test_cloud_unfiltered_request_returns_the_raw_buffer():
     assert pc.width == 4 and pc.height == 1
     assert pc.frame_id == "lidar_link"
     assert bytes(pc.data) == bytes(msg.data)
+
+
+def test_cloud_buffer_layout_is_the_raw_buffer_and_its_fields():
+    """buffer_layout() is the exact keyword set a raw-buffer consumer takes:
+    the buffer itself (no copy) and the fields needed to walk it, nothing
+    else from the container."""
+    output = _cloud_output(
+        _make_cloud(CLOUD_POINTS, point_padding=4, height=2, row_padding=8)
+    )
+    assert output is not None
+    layout = output.buffer_layout()
+    assert set(layout) == {
+        "data",
+        "point_step",
+        "row_step",
+        "height",
+        "width",
+        "x_offset",
+        "y_offset",
+        "z_offset",
+    }
+    assert layout["data"] is output.data
+    assert (layout["point_step"], layout["row_step"]) == (
+        output.point_step,
+        output.row_step,
+    )
+    assert (layout["height"], layout["width"]) == (2, 2)
+    assert (layout["x_offset"], layout["y_offset"], layout["z_offset"]) == (0, 4, 8)
 
 
 def test_cloud_z_band_filter():
@@ -923,6 +953,66 @@ def test_image_rgb8_decoding():
     )
 
 
+def test_image_big_endian_uint16_decoding():
+    """is_bigendian buffers must byte-swap on read (also guards the
+    numpy>=2-compatible newbyteorder path)."""
+    values = np.array([[1, 256], [4096, 65535]], dtype=np.uint16)
+    msg = Image()
+    msg.height = 2
+    msg.width = 2
+    msg.encoding = "mono16"
+    msg.step = 4
+    msg.is_bigendian = 1
+    msg.data = values.astype(">u2").tobytes()
+    output = _fed_callback(ImageCallback, "Image", msg).get_output()
+    np.testing.assert_array_equal(output, values)
+
+
+def test_depth_image_view_is_zero_copy():
+    """A 16UC1 depth image must come back as the raw uint16 buffer view:
+    same values, same memory, no normalization pass."""
+    values = np.array([[500, 1000], [1500, 65535]], dtype=np.uint16)
+    msg = Image()
+    msg.height = 2
+    msg.width = 2
+    msg.encoding = "16UC1"
+    msg.step = 4
+    msg.data = values.tobytes()
+    output = _fed_callback(ImageCallback, "Image", msg).get_output()
+    assert output.dtype == np.uint16
+    assert output.flags["C_CONTIGUOUS"]
+    np.testing.assert_array_equal(output, values)
+    assert np.shares_memory(output, np.frombuffer(msg.data, dtype=np.uint16))
+
+
+# ---------------------------------------------------------------------------
+# Depth image metadata
+# ---------------------------------------------------------------------------
+
+
+def test_depth_metadata_encoding_map():
+    assert depth_image_metadata("16UC1") == (np.dtype(np.uint16), 1e-3)
+    assert depth_image_metadata("mono16") == (np.dtype(np.uint16), 1e-3)
+    assert depth_image_metadata("32FC1") == (np.dtype(np.float32), 1.0)
+
+
+def test_depth_metadata_is_case_insensitive():
+    assert depth_image_metadata("16uc1") == depth_image_metadata("16UC1")
+    assert depth_image_metadata("Mono16") == depth_image_metadata("mono16")
+
+
+def test_depth_metadata_scale_override():
+    # e.g. a ToF camera publishing uint16 in 0.1mm units
+    dtype, scale = depth_image_metadata("16UC1", depth_scale=1e-4)
+    assert dtype == np.dtype(np.uint16)
+    assert scale == 1e-4
+
+
+def test_depth_metadata_rejects_non_depth_encodings():
+    with pytest.raises(ValueError, match="Unsupported depth image encoding"):
+        depth_image_metadata("rgb8")
+
+
 # ---------------------------------------------------------------------------
 # Path
 # ---------------------------------------------------------------------------
@@ -1264,3 +1354,305 @@ def test_camera_info_type_registration():
     assert _topic("CameraInfo").msg_type is supported_types.CameraInfo
     info = _camera_info()
     assert supported_types.CameraInfo.convert(info) is info
+
+
+# --- Shared-memory feedback fast-path hooks --------------------------------
+
+
+def test_image_shm_payload_roundtrip():
+    src = Image()
+    src.header.frame_id = "cam_optical"
+    src.header.stamp.sec = 12
+    src.header.stamp.nanosec = 345
+    src.height, src.width = 4, 6
+    src.encoding = "rgb8"
+    src.is_bigendian = 1
+    src.step = src.width * 3
+    src.data = bytes(range(src.height * src.step))
+
+    meta, view = supported_types.Image.to_shm_payload(src)
+    assert bytes(view) == bytes(src.data)  # zero-copy view of the pixel buffer
+
+    out = supported_types.Image.from_shm_payload(meta, bytes(view))
+    assert (out.height, out.width, out.encoding) == (4, 6, "rgb8")
+    assert (out.is_bigendian, out.step) == (1, 18)
+    assert out.header.frame_id == "cam_optical"
+    assert (out.header.stamp.sec, out.header.stamp.nanosec) == (12, 345)
+    assert bytes(out.data) == bytes(src.data)
+
+
+def test_compressed_image_shm_payload_roundtrip():
+    src = supported_types.CompressedImage.get_ros_type()()
+    src.header.frame_id = "cam"
+    src.header.stamp.sec = 7
+    src.header.stamp.nanosec = 8
+    src.format = "jpeg"
+    src.data = bytes([1, 2, 3, 4, 5])
+
+    meta, view = supported_types.CompressedImage.to_shm_payload(src)
+    out = supported_types.CompressedImage.from_shm_payload(meta, bytes(view))
+    assert out.format == "jpeg"
+    assert out.header.frame_id == "cam"
+    assert (out.header.stamp.sec, out.header.stamp.nanosec) == (7, 8)
+    assert bytes(out.data) == b"\x01\x02\x03\x04\x05"
+
+
+def test_pointcloud2_shm_payload_roundtrip():
+    src = PointCloud2()
+    src.header.frame_id = "lidar"
+    src.header.stamp.sec = 1
+    src.header.stamp.nanosec = 2
+    src.height, src.width = 1, 3
+    src.is_bigendian = False
+    src.point_step = 12
+    src.row_step = 36
+    src.is_dense = True
+    src.fields = [
+        PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+        PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+        PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+    ]
+    src.data = bytes(range(36))
+
+    meta, view = supported_types.PointCloud2.to_shm_payload(src)
+    out = supported_types.PointCloud2.from_shm_payload(meta, bytes(view))
+    assert (out.height, out.width, out.point_step, out.row_step) == (1, 3, 12, 36)
+    assert out.is_dense
+    assert out.header.frame_id == "lidar"
+    assert bytes(out.data) == bytes(src.data)
+    assert [(f.name, f.offset, f.datatype, f.count) for f in out.fields] == [
+        ("x", 0, PointField.FLOAT32, 1),
+        ("y", 4, PointField.FLOAT32, 1),
+        ("z", 8, PointField.FLOAT32, 1),
+    ]
+
+
+def test_type_without_override_has_no_shm_payload():
+    # A type that does not override the hook falls through to CDR (None), and
+    # its base from_shm_payload must never run.
+    assert supported_types.Odometry.to_shm_payload(Odometry()) is None
+    with pytest.raises(NotImplementedError):
+        supported_types.Odometry.from_shm_payload({}, b"")
+
+
+# ---------------------------------------------------------------------------
+# Large payload fields take the generated setter's fast path
+# ---------------------------------------------------------------------------
+# rosidl assigns an array.array of the field's typecode as is; anything else is
+# walked element by element in Python, and on distributions that validate
+# fields it is walked twice more first. The property under test is therefore
+# "the field is an array.array of the right typecode", not just its content.
+
+
+def test_image_from_numpy_takes_the_fast_path():
+    import array
+
+    from ros_sugar.io.supported_types import Image
+
+    frame = np.arange(4 * 6 * 3, dtype=np.uint8).reshape(4, 6, 3)
+    msg = Image.convert(frame)
+    assert isinstance(msg.data, array.array) and msg.data.typecode == "B"
+    assert msg.data.tobytes() == frame.tobytes()
+    assert (msg.height, msg.width) == (4, 6)
+
+
+def test_compressed_image_from_numpy_takes_the_fast_path():
+    import array
+
+    from ros_sugar.io.supported_types import CompressedImage
+
+    encoded = np.frombuffer(b"\xff\xd8 not really a jpeg \xff\xd9", dtype=np.uint8)
+    msg = CompressedImage.convert(encoded)
+    assert isinstance(msg.data, array.array) and msg.data.typecode == "B"
+    assert msg.data.tobytes() == encoded.tobytes()
+
+
+def test_shared_memory_rebuild_takes_the_fast_path():
+    """The consumer-side rebuild after a shared-memory hand-off is done once
+    per frame per consumer; it must copy the buffer, not walk it."""
+    import array
+
+    from sensor_msgs.msg import CompressedImage as ROSCompressedImage
+    from sensor_msgs.msg import Image as ROSImage
+    from sensor_msgs.msg import PointCloud2 as ROSPointCloud2
+    from sensor_msgs.msg import PointField
+
+    from ros_sugar.io.supported_types import CompressedImage, Image, PointCloud2
+
+    image = ROSImage()
+    image.header.frame_id = "cam"
+    image.height, image.width, image.encoding, image.step = 2, 3, "rgb8", 9
+    image.data = array.array("B", bytes(range(18)))
+
+    compressed = ROSCompressedImage()
+    compressed.header.frame_id = "cam"
+    compressed.format = "jpeg"
+    compressed.data = array.array("B", b"\xff\xd8\x00\x01\xff\xd9")
+
+    cloud = ROSPointCloud2()
+    cloud.header.frame_id = "lidar"
+    cloud.height, cloud.width, cloud.point_step, cloud.row_step = 1, 2, 16, 32
+    cloud.fields = [
+        PointField(name=n, offset=o, datatype=PointField.FLOAT32, count=1)
+        for n, o in (("x", 0), ("y", 4), ("z", 8))
+    ]
+    cloud.data = array.array("B", bytes(range(32)))
+
+    for kind, msg in ((Image, image), (CompressedImage, compressed), (PointCloud2, cloud)):
+        meta, view = kind.to_shm_payload(msg)
+        # the reader hands back a copy of the slot as bytes
+        rebuilt = kind.from_shm_payload(meta, bytes(view))
+        assert isinstance(rebuilt.data, array.array) and rebuilt.data.typecode == "B"
+        assert rebuilt.data.tobytes() == msg.data.tobytes()
+        assert rebuilt.header.frame_id == msg.header.frame_id
+
+
+def test_grid_from_numpy_takes_the_fast_path_and_keeps_column_order():
+    import array
+
+    from ros_sugar.io.supported_types import OccupancyGrid as GridType
+
+    from ros_sugar.io.callbacks import OccupancyGridCallback
+
+    # non-square, every cell distinct: a transposed or row-major flatten would
+    # show up in the element order and in the decoded shape
+    grid = np.array([[0, 100, 25], [-1, 50, 75]], dtype=np.int8)
+    msg = GridType.convert(grid, resolution=0.1)
+    assert isinstance(msg.data, array.array) and msg.data.typecode == "b"
+    # flattened by column, unknown cells stay -1
+    assert list(msg.data) == [0, -1, 100, 50, 25, 75]
+    assert (msg.info.width, msg.info.height) == (2, 3)
+
+    # and the callback reads the very same grid back
+    reader = OccupancyGridCallback(Topic(name="/map", msg_type="OccupancyGrid"))
+    reader.callback(msg)
+    assert np.array_equal(np.asarray(reader.get_output(get_obstacles=False)), grid)
+
+
+def test_multiarray_from_numpy_takes_the_fast_path():
+    import array
+
+    from std_msgs.msg import Float32MultiArray, Float64MultiArray
+
+    from ros_sugar.io.utils import numpy_to_multiarray
+
+    values = np.arange(6, dtype=np.float64).reshape(2, 3) / 4
+    single = numpy_to_multiarray(values, Float32MultiArray)
+    double = numpy_to_multiarray(values, Float64MultiArray)
+    assert isinstance(single.data, array.array) and single.data.typecode == "f"
+    assert isinstance(double.data, array.array) and double.data.typecode == "d"
+    assert list(double.data) == values.flatten().tolist()
+    assert np.allclose(list(single.data), values.flatten())
+    assert [dim.size for dim in double.layout.dim] == [2, 3]
+
+
+# ---------------------------------------------------------------------------
+# Building messages from arrays and intrinsics: complete, and the publisher's
+# header handling left alone
+# ---------------------------------------------------------------------------
+
+
+def test_image_from_numpy_is_complete_and_leaves_the_header_to_the_publisher():
+    from ros_sugar.io.supported_types import Image
+
+    frame = np.zeros((4, 6, 3), dtype=np.uint8)
+    msg = Image.convert(frame)
+    assert (msg.height, msg.width, msg.step) == (4, 6, 18)
+    assert msg.encoding == "rgb8" and msg.is_bigendian == 0
+    # the publisher stamps and frames after conversion; nothing pre-empts it
+    assert msg.header.frame_id == "" and msg.header.stamp.sec == 0
+
+
+@pytest.mark.parametrize(
+    "shape, dtype, expected, step",
+    [
+        ((4, 6), np.uint8, "mono8", 6),
+        ((4, 6, 4), np.uint8, "rgba8", 24),
+        ((4, 6), np.uint16, "16UC1", 12),
+        ((4, 6), np.float32, "32FC1", 24),
+    ],
+)
+def test_image_encoding_is_inferred_from_the_array(shape, dtype, expected, step):
+    from ros_sugar.io.supported_types import Image
+
+    msg = Image.convert(np.zeros(shape, dtype=dtype))
+    assert msg.encoding == expected and msg.step == step
+
+
+def test_image_encoding_stated_by_a_decoder_wins_and_decodes_back():
+    """A BGR decoder has to say so; the package's own callback then reads the
+    frame back with the right shape."""
+    from sensor_msgs.msg import Image as ROSImage
+
+    from ros_sugar.io.callbacks import ImageCallback
+    from ros_sugar.io.supported_types import Image
+
+    frame = np.zeros((4, 6, 3), dtype=np.uint8)
+    frame[1, 2] = (255, 0, 0)  # blue, as OpenCV lays it out
+    msg = Image.convert(frame, encoding="bgr8", stamp=1234.5, frame_id="front_optical")
+    assert isinstance(msg, ROSImage) and msg.encoding == "bgr8"
+    assert msg.header.frame_id == "front_optical"
+    assert msg.header.stamp.sec == 1234
+    assert msg.header.stamp.nanosec == pytest.approx(5e8, rel=1e-3)
+
+    reader = ImageCallback(Topic(name="/cam", msg_type="Image"))
+    reader.callback(msg)
+    decoded = reader.get_output()
+    assert decoded.shape == (4, 6, 3)
+    assert reader.frame_id == "front_optical"
+
+
+def test_image_from_an_unknown_layout_asks_for_the_encoding():
+    from ros_sugar.io.supported_types import Image
+
+    with pytest.raises(ValueError, match="encoding"):
+        Image.convert(np.zeros((4, 6), dtype=np.float16))
+    with pytest.raises(ValueError, match="\\(H, W\\)"):
+        Image.convert(np.zeros(24, dtype=np.uint8))
+
+
+def test_camera_info_from_raw_intrinsics_round_trips_through_the_reader():
+    from ros_sugar.io.supported_types import CameraInfo
+
+    raw = CameraIntrinsics(
+        fx=500.0, fy=510.0, cx=320.0, cy=240.0, width=640, height=480,
+        distortion_model="plumb_bob",
+        distortion=np.array([0.1, -0.2, 0.0, 0.0, 0.05]),
+        frame_id="front_optical", timestamp=12.25,
+    )
+    msg = CameraInfo.convert(raw)
+    # a raw image: K and D carry it, P stays unset so a reader falls back to K
+    assert list(msg.p) == [0.0] * 12
+    assert msg.k[0] == 500.0 and msg.k[4] == 510.0 and msg.k[2] == 320.0
+    assert list(msg.d) == pytest.approx([0.1, -0.2, 0.0, 0.0, 0.05])
+
+    back = read_camera_info(msg)
+    assert (back.fx, back.fy, back.cx, back.cy) == (500.0, 510.0, 320.0, 240.0)
+    assert (back.width, back.height) == (640, 480)
+    assert np.array_equal(back.distortion, raw.distortion)
+    assert back.distortion_model == "plumb_bob"
+    assert back.frame_id == "front_optical"
+    assert back.timestamp == pytest.approx(12.25)
+
+
+def test_camera_info_from_rectified_intrinsics_publishes_the_projection():
+    from ros_sugar.io.supported_types import CameraInfo
+
+    rectified = CameraIntrinsics(
+        fx=400.0, fy=400.0, cx=300.0, cy=200.0, width=640, height=480,
+        frame_id="front_optical",
+    )
+    msg = CameraInfo.convert(rectified, stamp=3.0)
+    assert msg.p[0] == 400.0 and msg.p[6] == 200.0
+    assert msg.header.stamp.sec == 3 and msg.header.frame_id == "front_optical"
+
+    back = read_camera_info(msg)
+    assert (back.fx, back.cx) == (400.0, 300.0)
+    assert back.distortion.size == 0
+
+
+def test_camera_info_message_passes_through():
+    from ros_sugar.io.supported_types import CameraInfo
+
+    info = _camera_info()
+    assert CameraInfo.convert(info) is info

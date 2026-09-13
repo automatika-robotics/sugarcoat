@@ -1,7 +1,9 @@
 """ROS Topics Supported Message Types"""
 
-from typing import Any, Union, Optional, List, Dict
+from typing import Any, Union, Optional, List, Dict, Tuple
 import base64
+import sys
+
 import numpy as np
 import importlib
 
@@ -28,6 +30,7 @@ from sensor_msgs.msg import JointState as ROSJointState
 from sensor_msgs.msg import LaserScan as ROSLaserScan
 from sensor_msgs.msg import NavSatFix as ROSNavSatFix
 from sensor_msgs.msg import PointCloud2 as ROSPointCloud2
+from sensor_msgs.msg import PointField as ROSPointField
 from sensor_msgs.msg import Range as ROSRange
 
 # STD_MSGS SUPPORTED ROS TYPES
@@ -44,8 +47,9 @@ from std_msgs.msg import (
 )
 
 from . import callbacks
+from .datatypes import CameraIntrinsics
 from .utils import _convert_ros_scalar, _split_ros_field_type
-from .utils import numpy_to_multiarray
+from .utils import bytes_to_array, image_encoding, numpy_to_multiarray, stamp_header
 
 
 _additional_types = {}
@@ -339,6 +343,29 @@ class SupportedType:
         """
         return cls._ros_type
 
+    @classmethod
+    def to_shm_payload(cls, msg: Any) -> Optional[Tuple[Dict, memoryview]]:
+        """Zero-copy hand-off for the shared-memory feedback fast path.
+
+        Return ``(meta, view)`` where ``view`` is a zero-copy ``memoryview`` of
+        the message's dominant buffer and ``meta`` carries everything
+        `from_shm_payload` needs to rebuild the message around a copy of it.
+        Return ``None`` (the default) for types that are not a good fit so the
+        caller falls back to CDR. Overridden on large, single-buffer types.
+        """
+        return None
+
+    @classmethod
+    def from_shm_payload(cls, meta: Dict, buffer: bytes) -> Any:
+        """Rebuild a ROS message from ``meta`` and a copy of the payload buffer.
+
+        Paired with `to_shm_payload`; only called for types that returned a
+        payload from it.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} does not implement from_shm_payload"
+        )
+
 
 class String(SupportedType):
     """String."""
@@ -446,17 +473,70 @@ class Image(SupportedType):
     _ui_rate_sampled = True  # continuous frames; also inherited by CompressedImage
 
     @classmethod
-    def convert(cls, output: Union[ROSImage, np.ndarray], **_) -> ROSImage:
-        """
-        Takes a ROS Image message or numpy array and returns a ROS Image message
+    def convert(
+        cls,
+        output: Union[ROSImage, np.ndarray],
+        encoding: Optional[str] = None,
+        stamp: Optional[float] = None,
+        frame_id: str = "",
+        **_,
+    ) -> ROSImage:
+        """Passes a ROS Image through, or builds a complete one around an array.
+
+        The array is (H, W) or (H, W, C). ``encoding`` names the pixel layout
+        as the array holds it. When unset, it is inferred from the dtype and the
+        channel count.
+
+        ``stamp`` in seconds and ``frame_id`` are for callers building
+        messages outside a publisher.
+
         :return: ROSImage
         """
         if isinstance(output, ROSImage):
             return output
+        if output.ndim not in (2, 3):
+            raise ValueError(f"An image array is (H, W) or (H, W, C), got {output.shape}")
+        channels = 1 if output.ndim == 2 else output.shape[2]
+        if encoding is None:
+            encoding = image_encoding(output.dtype, channels)
         msg = ROSImage()
+        stamp_header(msg.header, stamp, frame_id)
         msg.height = output.shape[0]
         msg.width = output.shape[1]
-        msg.data = output.flatten()
+        msg.encoding = encoding
+        msg.is_bigendian = 0 if sys.byteorder == "little" else 1
+        msg.step = output.shape[1] * channels * output.dtype.itemsize
+        msg.data = bytes_to_array(output.tobytes())
+        return msg
+
+    @classmethod
+    def to_shm_payload(cls, msg: ROSImage) -> Optional[Tuple[Dict, memoryview]]:
+        """Hand out the raw pixel buffer zero-copy, plus the header + geometry
+        fields needed to rebuild the message."""
+        meta = {
+            "h": msg.height,
+            "w": msg.width,
+            "e": msg.encoding,
+            "b": int(msg.is_bigendian),
+            "st": msg.step,
+            "s": msg.header.stamp.sec,
+            "ns": msg.header.stamp.nanosec,
+            "f": msg.header.frame_id,
+        }
+        return meta, memoryview(msg.data)
+
+    @classmethod
+    def from_shm_payload(cls, meta: Dict, buffer: bytes) -> ROSImage:
+        msg = ROSImage()
+        msg.header.stamp.sec = meta["s"]
+        msg.header.stamp.nanosec = meta["ns"]
+        msg.header.frame_id = meta["f"]
+        msg.height = meta["h"]
+        msg.width = meta["w"]
+        msg.encoding = meta["e"]
+        msg.is_bigendian = bool(meta["b"])
+        msg.step = meta["st"]
+        msg.data = bytes_to_array(buffer)
         return msg
 
 
@@ -479,7 +559,30 @@ class CompressedImage(Image):
             return output
         msg = ROSCompressedImage()
         msg.format = "png"
-        msg.data = output.flatten()
+        msg.data = bytes_to_array(np.asarray(output).tobytes())
+        return msg
+
+    @classmethod
+    def to_shm_payload(
+        cls, msg: ROSCompressedImage
+    ) -> Optional[Tuple[Dict, memoryview]]:
+        """CompressedImage carries only a format string plus the encoded blob."""
+        meta = {
+            "fmt": msg.format,
+            "s": msg.header.stamp.sec,
+            "ns": msg.header.stamp.nanosec,
+            "f": msg.header.frame_id,
+        }
+        return meta, memoryview(msg.data)
+
+    @classmethod
+    def from_shm_payload(cls, meta: Dict, buffer: bytes) -> ROSCompressedImage:
+        msg = ROSCompressedImage()
+        msg.header.stamp.sec = meta["s"]
+        msg.header.stamp.nanosec = meta["ns"]
+        msg.header.frame_id = meta["f"]
+        msg.format = meta["fmt"]
+        msg.data = bytes_to_array(buffer)
         return msg
 
 
@@ -534,6 +637,42 @@ class PointCloud2(SupportedType):
     callback = callbacks.PointCloudCallback
     _ui_rate_sampled = True  # dense sensor stream
 
+    @classmethod
+    def to_shm_payload(cls, msg: ROSPointCloud2) -> Optional[Tuple[Dict, memoryview]]:
+        """The packed point buffer plus the field layout and geometry."""
+        meta = {
+            "h": msg.height,
+            "w": msg.width,
+            "b": int(msg.is_bigendian),
+            "ps": msg.point_step,
+            "rs": msg.row_step,
+            "d": int(msg.is_dense),
+            "fl": [(f.name, f.offset, f.datatype, f.count) for f in msg.fields],
+            "s": msg.header.stamp.sec,
+            "ns": msg.header.stamp.nanosec,
+            "f": msg.header.frame_id,
+        }
+        return meta, memoryview(msg.data)
+
+    @classmethod
+    def from_shm_payload(cls, meta: Dict, buffer: bytes) -> ROSPointCloud2:
+        msg = ROSPointCloud2()
+        msg.header.stamp.sec = meta["s"]
+        msg.header.stamp.nanosec = meta["ns"]
+        msg.header.frame_id = meta["f"]
+        msg.height = meta["h"]
+        msg.width = meta["w"]
+        msg.is_bigendian = bool(meta["b"])
+        msg.point_step = meta["ps"]
+        msg.row_step = meta["rs"]
+        msg.is_dense = bool(meta["d"])
+        msg.fields = [
+            ROSPointField(name=n, offset=o, datatype=dt, count=c)
+            for (n, o, dt, c) in meta["fl"]
+        ]
+        msg.data = bytes_to_array(buffer)
+        return msg
+
 
 class JointState(SupportedType):
     """JointState"""
@@ -570,13 +709,46 @@ class CameraInfo(SupportedType):
     # effectively static, so there is nothing to throttle
 
     @classmethod
-    def convert(cls, output: ROSCameraInfo, **_) -> ROSCameraInfo:
-        """
-        Passes a ROS CameraInfo message through.
+    def convert(
+        cls,
+        output: Union[ROSCameraInfo, CameraIntrinsics],
+        stamp: Optional[float] = None,
+        frame_id: str = "",
+        **_,
+    ) -> ROSCameraInfo:
+        """Passes a ROS CameraInfo through, or builds one from CameraIntrinsics
+        as the inverse of `read_camera_info`.
+
+        Intrinsics carrying distortion coefficients describe a raw image. They
+        go into ``K`` and ``D`` and ``P`` stays unset, so a reader falls back
+        to ``K``. Intrinsics without coefficients describe a rectified or
+        registered image go into ``P``, and into ``K`` as well since no
+        raw matrix is known.
+
+        ``stamp`` in seconds and ``frame_id`` override the intrinsics' own,
+        for callers building messages outside a publisher.
 
         :return: ROSCameraInfo
         """
-        return output
+        if isinstance(output, ROSCameraInfo):
+            return output
+        msg = ROSCameraInfo()
+        stamp_header(
+            msg.header,
+            output.timestamp if stamp is None else stamp,
+            frame_id or output.frame_id,
+        )
+        msg.width, msg.height = int(output.width), int(output.height)
+        msg.distortion_model = output.distortion_model
+        fx, fy, cx, cy = (float(v) for v in (output.fx, output.fy, output.cx, output.cy))
+        msg.k = [fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0]
+        msg.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        distortion = np.asarray(output.distortion, dtype=np.float64).ravel()
+        if distortion.size:
+            msg.d = distortion.tolist()
+        else:
+            msg.p = [fx, 0.0, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]
+        return msg
 
 
 class Imu(SupportedType):
@@ -659,7 +831,7 @@ class OccupancyGrid(SupportedType):
 
         # flatten by column
         # index (0,0) is the lower right corner of the grid in ROS
-        msg.data = output.flatten("F").astype(np.int8).tolist()
+        msg.data = bytes_to_array(output.flatten("F").astype(np.int8).tobytes(), "b")
         return msg
 
 

@@ -1,7 +1,9 @@
-from typing import List, Tuple, Dict, Callable, Union, Any
+from typing import List, Optional, Tuple, Dict, Callable, Union, Any
 import re
 import sys
 import base64
+import array
+
 import numpy as np
 import cv2
 from socket import socket
@@ -31,73 +33,102 @@ def convert_img_to_jpeg_str(img, node_name: str = "util") -> str:
         return base64.b64encode(buffer).decode("utf-8")
 
 
+# Image encodings to (dtype, channels), keyed lowercase
+IMAGE_ENCODINGS: Dict[str, Tuple[type, int]] = {
+    # RGB/BGR family
+    "rgb8": (np.uint8, 3),
+    "rgba8": (np.uint8, 4),
+    "rgb16": (np.uint16, 3),
+    "rgba16": (np.uint16, 4),
+    "bgr8": (np.uint8, 3),
+    "bgra8": (np.uint8, 4),
+    "bgr16": (np.uint16, 3),
+    "bgra16": (np.uint16, 4),
+    # Mono
+    "mono8": (np.uint8, 1),
+    "mono16": (np.uint16, 1),
+    # Bayer – typically raw single-channel
+    "bayer_rggb8": (np.uint8, 1),
+    "bayer_bggr8": (np.uint8, 1),
+    "bayer_gbrg8": (np.uint8, 1),
+    "bayer_grbg8": (np.uint8, 1),
+    "bayer_rggb16": (np.uint16, 1),
+    "bayer_bggr16": (np.uint16, 1),
+    "bayer_gbrg16": (np.uint16, 1),
+    "bayer_grbg16": (np.uint16, 1),
+    # CvMat types
+    "8uc1": (np.uint8, 1),
+    "8uc2": (np.uint8, 2),
+    "8uc3": (np.uint8, 3),
+    "8uc4": (np.uint8, 4),
+    "8sc1": (np.int8, 1),
+    "8sc2": (np.int8, 2),
+    "8sc3": (np.int8, 3),
+    "8sc4": (np.int8, 4),
+    "16uc1": (np.uint16, 1),
+    "16uc2": (np.uint16, 2),
+    "16uc3": (np.uint16, 3),
+    "16uc4": (np.uint16, 4),
+    "16sc1": (np.int16, 1),
+    "16sc2": (np.int16, 2),
+    "16sc3": (np.int16, 3),
+    "16sc4": (np.int16, 4),
+    "32sc1": (np.int32, 1),
+    "32sc2": (np.int32, 2),
+    "32sc3": (np.int32, 3),
+    "32sc4": (np.int32, 4),
+    "32fc1": (np.float32, 1),
+    "32fc2": (np.float32, 2),
+    "32fc3": (np.float32, 3),
+    "32fc4": (np.float32, 4),
+    "64fc1": (np.float64, 1),
+    "64fc2": (np.float64, 2),
+    "64fc3": (np.float64, 3),
+    "64fc4": (np.float64, 4),
+    "yuv422": (np.uint8, 2),
+}
+
+
 def process_encoding(encoding: str) -> Tuple[np.dtype, int]:
     """
     Returns dtype and number of channels from encoding
     """
     encoding = encoding.lower()
-
-    # Define mapping from encoding to (dtype, channels)
-    encoding_map = {
-        # RGB/BGR family
-        "rgb8": (np.uint8, 3),
-        "rgba8": (np.uint8, 4),
-        "rgb16": (np.uint16, 3),
-        "rgba16": (np.uint16, 4),
-        "bgr8": (np.uint8, 3),
-        "bgra8": (np.uint8, 4),
-        "bgr16": (np.uint16, 3),
-        "bgra16": (np.uint16, 4),
-        # Mono
-        "mono8": (np.uint8, 1),
-        "mono16": (np.uint16, 1),
-        # Bayer – typically raw single-channel
-        "bayer_rggb8": (np.uint8, 1),
-        "bayer_bggr8": (np.uint8, 1),
-        "bayer_gbrg8": (np.uint8, 1),
-        "bayer_grbg8": (np.uint8, 1),
-        "bayer_rggb16": (np.uint16, 1),
-        "bayer_bggr16": (np.uint16, 1),
-        "bayer_gbrg16": (np.uint16, 1),
-        "bayer_grbg16": (np.uint16, 1),
-        # CvMat types
-        "8uc1": (np.uint8, 1),
-        "8uc2": (np.uint8, 2),
-        "8uc3": (np.uint8, 3),
-        "8uc4": (np.uint8, 4),
-        "8sc1": (np.int8, 1),
-        "8sc2": (np.int8, 2),
-        "8sc3": (np.int8, 3),
-        "8sc4": (np.int8, 4),
-        "16uc1": (np.uint16, 1),
-        "16uc2": (np.uint16, 2),
-        "16uc3": (np.uint16, 3),
-        "16uc4": (np.uint16, 4),
-        "16sc1": (np.int16, 1),
-        "16sc2": (np.int16, 2),
-        "16sc3": (np.int16, 3),
-        "16sc4": (np.int16, 4),
-        "32sc1": (np.int32, 1),
-        "32sc2": (np.int32, 2),
-        "32sc3": (np.int32, 3),
-        "32sc4": (np.int32, 4),
-        "32fc1": (np.float32, 1),
-        "32fc2": (np.float32, 2),
-        "32fc3": (np.float32, 3),
-        "32fc4": (np.float32, 4),
-        "64fc1": (np.float64, 1),
-        "64fc2": (np.float64, 2),
-        "64fc3": (np.float64, 3),
-        "64fc4": (np.float64, 4),
-        "yuv422": (np.uint8, 2),
-    }
-
-    if encoding not in encoding_map:
+    if encoding not in IMAGE_ENCODINGS:
         if "yuv422" in encoding:
-            return encoding_map["yuv422"]
+            return IMAGE_ENCODINGS["yuv422"]
         raise ValueError(f"Unsupported encoding: {encoding}")
 
-    return encoding_map[encoding]
+    return IMAGE_ENCODINGS[encoding]
+
+
+def depth_image_metadata(
+    encoding: str, depth_scale: Optional[float] = None
+) -> Tuple[np.dtype, float]:
+    """
+    Returns (dtype, scale) for a depth image encoding, where scale converts
+    raw pixel values to meters.
+
+    Metadata only. Consumers take the raw image_pre_processing view and apply
+    the scale per-pixel on their side.
+
+    - 16UC1 / mono16: uint16 depth in millimeters -> scale 1e-3
+    - 32FC1: float32 depth in meters -> scale 1.0
+    - depth_scale overrides the encoding default, for cameras publishing
+      uint16 in non-millimeter units (e.g. some ToF sensors use 0.1mm)
+    """
+    depth_encoding_map = {
+        "16uc1": (np.dtype(np.uint16), 1e-3),
+        "mono16": (np.dtype(np.uint16), 1e-3),
+        "32fc1": (np.dtype(np.float32), 1.0),
+    }
+    key = encoding.lower()
+    if key not in depth_encoding_map:
+        raise ValueError(f"Unsupported depth image encoding: {encoding}")
+    dtype, scale = depth_encoding_map[key]
+    if depth_scale is not None:
+        scale = float(depth_scale)
+    return dtype, scale
 
 
 def image_pre_processing(img, dtype, num_channels) -> np.ndarray:
@@ -114,7 +145,8 @@ def image_pre_processing(img, dtype, num_channels) -> np.ndarray:
         np_arr.dtype.byteorder == "<"
         or (np_arr.dtype.byteorder == "=" and sys.byteorder == "little")
     ):
-        np_arr = np_arr.byteswap().newbyteorder()
+        # go through the dtype instead for np>=2 compat
+        np_arr = np_arr.byteswap().view(np_arr.dtype.newbyteorder())
 
     # Reshape
     if num_channels == 1:
@@ -489,7 +521,10 @@ def odom_from_frame1_to_frame2(
         _get_position_from_odom(pose_1_in_2),
         _get_orientation_from_odom(pose_1_in_2),
     )
-    return _get_odom_from_ndarray(transformed_pose)
+    transformed_odom = _get_odom_from_ndarray(transformed_pose)
+    transformed_odom.header = pose_target_in_1.header
+    transformed_odom.twist = pose_target_in_1.twist
+    return transformed_odom
 
 
 def _parse_array_type(arr: np.ndarray, ros_msg_cls: type) -> np.ndarray:
@@ -513,6 +548,48 @@ def _parse_array_type(arr: np.ndarray, ros_msg_cls: type) -> np.ndarray:
     elif ros_msg_cls == std_msg.Int64MultiArray:
         arr = arr.astype(np.int64)
     return arr
+
+
+def image_encoding(dtype: np.dtype, channels: int) -> str:
+    """The encoding an array of `dtype` with `channels` is published under.
+
+    The inverse of `process_encoding` is not unique. 8-bit color and grey follow
+    RGB convention. Everything else takes the CvMat form. A decoder producing
+    another layout has to name it itself.
+    """
+    dtype = np.dtype(dtype)
+    if dtype == np.uint8 and channels in (1, 3, 4):
+        return {1: "mono8", 3: "rgb8", 4: "rgba8"}[channels]
+    kind = {"u": "U", "i": "S", "f": "F"}.get(dtype.kind)
+    encoding = f"{dtype.itemsize * 8}{kind}C{channels}"
+    if kind is None or encoding.lower() not in IMAGE_ENCODINGS:
+        raise ValueError(
+            f"No image encoding is known for {dtype.name} with {channels} "
+            "channels; pass encoding="
+        )
+    return encoding
+
+
+def stamp_header(header, stamp: Optional[float], frame_id: str) -> None:
+    """Fill a header for a message built outside a publisher, which would
+    otherwise stamp it. Nothing is touched when neither value is given."""
+    if frame_id:
+        header.frame_id = frame_id
+    if stamp is not None:
+        seconds = int(stamp)
+        header.stamp.sec = seconds
+        header.stamp.nanosec = int((stamp - seconds) * 1e9)
+
+
+def bytes_to_array(buffer: Any, typecode: str = "B") -> array.array:
+    """A message sequence field built on the generated setter's fast path.
+
+    rosidl assigns an ``array.array`` of the field's typecode as is. Anything
+    else is walked element by element in Python.
+    """
+    data = array.array(typecode)
+    data.frombytes(buffer)
+    return data
 
 
 def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
@@ -546,8 +623,9 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
         dim.stride = stride
         msg.layout.dim.append(dim)
 
-    # Flatten the array and convert to list for the message
-    msg.data = arr.flatten().tolist()
+    # make the generate setter take it without a per-element pass
+    typecode = msg.data.typecode
+    msg.data = bytes_to_array(arr.astype(np.dtype(typecode), copy=False).tobytes(), typecode)
 
     return msg
 
@@ -609,7 +687,15 @@ def run_external_processor(
 # JSON-shaped dicts. Conversion goes by the DECLARED field type (not the default
 # value's Python type).
 _ROS_INT_TYPES = frozenset({
-    "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "char",
+    "int8",
+    "uint8",
+    "int16",
+    "uint16",
+    "int32",
+    "uint32",
+    "int64",
+    "uint64",
+    "char",
 })
 _ROS_FLOAT_TYPES = frozenset({"float", "double", "float32", "float64"})
 
@@ -621,7 +707,7 @@ def _split_ros_field_type(ros_type: str) -> Tuple[str, bool]:
     and plain scalars.
     """
     if ros_type.startswith("sequence<"):
-        inner = ros_type[len("sequence<"):].rstrip(">")
+        inner = ros_type[len("sequence<") :].rstrip(">")
         return inner.split(",")[0].strip(), True
     if "[" in ros_type:
         return ros_type.split("[")[0], True

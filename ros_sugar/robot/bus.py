@@ -14,7 +14,7 @@ import socket
 import struct
 import threading
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from rclpy.logging import get_logger
 
@@ -60,11 +60,11 @@ class FeedbackBus(ABC):
         """Attach to an already-started bus from a component process."""
 
     @abstractmethod
-    def publish(self, channel: str, data: bytes) -> None:
+    def publish(self, channel: str, data: Any) -> None:
         """Publish ``data`` on ``channel`` to every subscriber."""
 
     @abstractmethod
-    def subscribe(self, channel: str, on_data: Callable[[bytes], None]) -> BusHandle:
+    def subscribe(self, channel: str, on_data: Callable[[Any], None]) -> BusHandle:
         """Register ``on_data`` to receive every payload published on ``channel``."""
 
     @abstractmethod
@@ -76,13 +76,27 @@ class FeedbackBus(ABC):
         """Socket name for socket buses; ``None`` for in-process buses."""
         return None
 
+    @property
+    def carries_objects(self) -> bool:
+        """Whether publish/subscribe move live Python objects in-process.
+
+        True lets callers hand the decoded message straight to subscribers and
+        skip (de)serialization; False means the bus carries bytes only.
+        """
+        return False
+
 
 class InProcessFeedbackBus(FeedbackBus):
     """Direct in-process fan-out — used for multithreaded launch."""
 
     def __init__(self) -> None:
-        self._subs: Dict[str, List[Callable[[bytes], None]]] = {}
+        self._subs: Dict[str, List[Callable[[Any], None]]] = {}
         self._lock = threading.Lock()
+
+    @property
+    def carries_objects(self) -> bool:
+        """In-process fan-out hands subscribers the live object, unserialized."""
+        return True
 
     def start(self) -> None:  # noqa: D102
         pass
@@ -90,7 +104,7 @@ class InProcessFeedbackBus(FeedbackBus):
     def connect(self) -> None:  # noqa: D102
         pass
 
-    def publish(self, channel: str, data: bytes) -> None:  # noqa: D102
+    def publish(self, channel: str, data: Any) -> None:  # noqa: D102
         with self._lock:
             handlers = list(self._subs.get(channel, ()))
         for handler in handlers:
@@ -101,7 +115,7 @@ class InProcessFeedbackBus(FeedbackBus):
                     f"In-process feedback handler for '{channel}' raised: {e}"
                 )
 
-    def subscribe(self, channel: str, on_data: Callable[[bytes], None]) -> BusHandle:  # noqa: D102
+    def subscribe(self, channel: str, on_data: Callable[[Any], None]) -> BusHandle:  # noqa: D102
         with self._lock:
             self._subs.setdefault(channel, []).append(on_data)
 

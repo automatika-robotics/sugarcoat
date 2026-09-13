@@ -9,9 +9,12 @@ Authors subclass `RobotPlugin`; see ``docs/development/custom_robot_plugin.md``.
 """
 
 from .bus import FeedbackBus, InProcessFeedbackBus, SocketFeedbackBus
+from .shm import PluginShmManager
 from .command import CommandSpec, RobotCommand
 from .feedback import Feedback, FeedbackSpec
+from .mapping import NativeMapping, VendorMapping
 from .mount import Mount
+from .process import ProcessSpec
 from .plugin import (
     AmbiguousPluginEntryError,
     Plugin,
@@ -45,9 +48,12 @@ __all__ = [
     "RobotPluginHost",
     "PluginMetadata",
     "AmbiguousPluginEntryError",
+    "ProcessSpec",
     # descriptors
     "Feedback",
     "FeedbackSpec",
+    "NativeMapping",
+    "VendorMapping",
     "RobotCommand",
     "CommandSpec",
     # registries
@@ -68,6 +74,7 @@ __all__ = [
     "FeedbackBus",
     "InProcessFeedbackBus",
     "SocketFeedbackBus",
+    "PluginShmManager",
     # types
     "create_supported_type",
 ]
