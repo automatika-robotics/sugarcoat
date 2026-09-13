@@ -22,6 +22,7 @@ from typing import (
 )
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+from shutil import which
 
 import msgpack
 import msgpack_numpy as m_pack
@@ -97,6 +98,26 @@ m_pack.patch()
 # than a genuine crash. Launch/subprocess reports signal terminations as
 # negative values (-signum); shells that propagate them use 128+signum.
 _SIGNAL_EXIT_CODES = frozenset({-2, -9, -15, 130, 137, 143})
+
+
+def _check_ros_executable(package: str, executable: str) -> None:
+    """Fail now if launch_ros would not find ``executable`` in ``package``.
+
+    :raises PackageNotFoundError: If the package is not installed
+    :raises FileNotFoundError: If the package has no such executable
+    """
+    from ament_index_python.packages import PackageNotFoundError, get_package_prefix
+
+    try:
+        prefix = get_package_prefix(package)
+    except PackageNotFoundError:
+        raise PackageNotFoundError(
+            f"package '{package}' is not installed, or its workspace is not sourced"
+        ) from None
+    if which(executable, path=os.path.join(prefix, "lib", package)) is None:
+        raise FileNotFoundError(
+            f"package '{package}' is installed but has no executable '{executable}'"
+        )
 
 
 UI_EXTENSIONS = {}
@@ -719,17 +740,18 @@ class Launcher:
     def _launch_plugin_processes(self, plugin: Plugin) -> None:
         """Add launch actions for the external drivers a plugin declares.
 
-        Each `robot.process.ProcessSpec` becomes an ordinary
-        `add_ros_node` action, so a plugin's driver is supervised exactly like
-        one a recipe added by hand.
+        A driver that is not installed fails bringup. The recipe asked for the
+        data it serves, so running without it would lead to unhealthy behavior.
 
-        Nothing here is fatal. A driver that fails to declare, or whose
-        precondition raises, is logged and skipped: the feedback it serves may
-        well be optional to the recipe, and turning a degraded run into no run
-        at all is the worse outcome.
+        :raises PackageNotFoundError: If a driver's package is not installed
+        :raises FileNotFoundError: If a driver's package has no such executable
         """
+        from ament_index_python.packages import PackageNotFoundError
+
         try:
-            specs = plugin.required_processes()
+            # Materialized here, so a plugin returning something that is not a
+            # list is reported like any other declaration fault
+            specs = list(plugin.required_processes() or [])
         except Exception as e:
             logger.error(
                 f"Plugin '{plugin.id}' failed to declare its required "
@@ -737,7 +759,7 @@ class Launcher:
             )
             return
 
-        for spec in specs or []:
+        for spec in specs:
             try:
                 if spec.precondition is not None and not spec.precondition():
                     logger.info(
@@ -746,13 +768,23 @@ class Launcher:
                         "already running)"
                     )
                     continue
-                self.add_ros_node(**spec.launch_kwargs())
             except Exception as e:
-                label = getattr(spec, "label", spec)
                 logger.error(
-                    f"Plugin '{plugin.id}': could not add driver '{label}': {e}"
+                    f"Plugin '{plugin.id}': precondition for driver "
+                    f"'{spec.label}' failed: {e}. Not starting it."
                 )
                 continue
+            try:
+                self.add_ros_node(**spec.launch_kwargs())
+            except (PackageNotFoundError, FileNotFoundError) as e:
+                used = ", ".join(sorted(plugin.requested_feedbacks)) or "none"
+                raise type(e)(
+                    f"Plugin '{plugin.id}' needs the driver '{spec.label}', but "
+                    f"{e.args[0]}. The recipe uses these feedbacks from the "
+                    f"plugin: {used}. Install the package and source its "
+                    "workspace, or stop using those topics in the recipe so the "
+                    "driver is not needed."
+                ) from None
             logger.info(f"Plugin '{plugin.id}': starting driver '{spec.label}'")
 
     def _distribute_plugins(self) -> None:
@@ -1852,9 +1884,12 @@ class Launcher:
         :param output: Output configuration, defaults to 'screen'
         :type output: str
         :param launch_node_kwargs: Additional keyword arguments for launch_ros Node
+        :raises PackageNotFoundError: If the package is not installed
+        :raises FileNotFoundError: If the package has no such executable
         :return: The created launch action
         :rtype: launch_ros.actions.Node
         """
+        _check_ros_executable(package, executable)
         node_action = NodeLaunchAction(
             package=package,
             executable=executable,
@@ -1997,6 +2032,10 @@ class Launcher:
         # Record what the recipe asked each plugin for before anything opens
         self._resolve_plugin_demand()
 
+        # Launch plugin drivers in their own processes (if any). This is done before the feedback bus is started so that the bus is ready to accept connections when the drivers start.
+        for plugin in self._plugins.values():
+            self._launch_plugin_processes(plugin)
+
         # A socket feedback bus is needed when any component runs as its own
         # process; otherwise an in-process bus avoids the socket round trip.
         use_socket_bus = bool(self._pkg_executable)
@@ -2010,8 +2049,6 @@ class Launcher:
         self._plugin_shm = PluginShmManager() if use_socket_bus else None
 
         for plugin in self._plugins.values():
-            # Drivers first
-            self._launch_plugin_processes(plugin)
             host = RobotPluginHost(
                 plugin,
                 node=self.monitor_node,
