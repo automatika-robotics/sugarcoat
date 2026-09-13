@@ -19,7 +19,7 @@ import launch_testing
 import launch_testing.actions
 import launch_testing.markers
 import pytest
-from example_interfaces.action import Fibonacci
+from tf2_msgs.action import LookupTransform
 from nav_msgs.srv import SetMap
 
 from ros_sugar import Launcher
@@ -78,11 +78,15 @@ class DriverComponent(BaseComponent):
 
 
 class CountingComponent(BaseComponent):
-    """Runs a main action server, and counts slowly enough to observe"""
+    """Runs a main action server, and counts slowly enough to observe.
+
+    tf2_msgs/LookupTransform is the action type only because it ships with
+    tf2_ros, a declared dependency. The count travels as text in `target_frame`.
+    """
 
     def __init__(self, component_name, **kwargs):
         super().__init__(component_name, **kwargs)
-        self.action_type = Fibonacci
+        self.action_type = LookupTransform
         self.main_action_name = f"{component_name}/count"
         self.run_type = ComponentRunType.ACTION_SERVER
 
@@ -90,13 +94,12 @@ class CountingComponent(BaseComponent):
         pass
 
     def main_action_callback(self, goal_handle):
-        result = Fibonacci.Result()
-        for step in range(goal_handle.request.order):
+        result = LookupTransform.Result()
+        for _ in range(int(goal_handle.request.target_frame)):
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 return result
             time.sleep(0.05)
-        result.sequence = [goal_handle.request.order]
         goal_handle.succeed()
         return result
 
@@ -260,7 +263,7 @@ class TestActionResolution(unittest.TestCase):
         """A goal named in JSON has to reach the same server a recipe would"""
         step = monitor_node._action_from_spec({
             "ref": "counter/count",
-            "goal": {"order": 2},
+            "goal": {"target_frame": "2"},
             "name": "count_a_little",
             "timeout": 20.0,
         })
@@ -343,7 +346,7 @@ class _RegistryPlanner(BaseComponent):
 
     def __init__(self, component_name, **kwargs):
         super().__init__(component_name, **kwargs)
-        self.action_type = Fibonacci
+        self.action_type = LookupTransform
         self.run_type = ComponentRunType.ACTION_SERVER
 
     def _execution_step(self):
@@ -354,7 +357,7 @@ class _RegistryPlanner(BaseComponent):
         controller does not"""
         return {
             "services": {f"{self.node_name}/save_plan_to_file": SetMap},
-            "actions": {"track_vision_target": Fibonacci},
+            "actions": {"track_vision_target": LookupTransform},
         }
 
 
@@ -517,9 +520,9 @@ class TestActionRegistryContents(unittest.TestCase):
 
     def test_a_main_action_server_is_addressed_by_its_own_name(self):
         """Being the main one is how it was declared, not how it is reached"""
-        entry = self.registry.get("planner/fibonacci")
+        entry = self.registry.get("planner/lookup_transform")
         assert entry.kind == COMPONENT_ACTION_SERVER
-        assert entry.interface_type == "Fibonacci"
+        assert entry.interface_type == "LookupTransform"
 
     def test_a_main_service_is_addressed_by_its_own_name(self):
         entry = self.registry.get("mapper/set_map")
@@ -527,7 +530,7 @@ class TestActionRegistryContents(unittest.TestCase):
         assert entry.interface_type == "SetMap"
 
     def test_a_component_without_a_main_server_has_none_registered(self):
-        assert "driver/fibonacci" not in self.registry
+        assert "driver/lookup_transform" not in self.registry
         assert "driver/set_map" not in self.registry
 
     def test_monitor_methods_are_an_allowlist_not_introspection(self):
@@ -552,7 +555,7 @@ class TestActionRegistryContents(unittest.TestCase):
             out_of_process=["planner"],
         )
         assert registry.get("driver/emergency_stop").in_process
-        assert not registry.get("planner/fibonacci").in_process
+        assert not registry.get("planner/lookup_transform").in_process
 
 
 class TestActionRegistryFailureAndListing(unittest.TestCase):
@@ -607,7 +610,7 @@ class TestActionRegistryFailureAndListing(unittest.TestCase):
         )
         assert all(ref.startswith("driver/") for ref in driver_refs)
         assert [entry.ref for entry in self.registry.list(kind=COMPONENT_ACTION_SERVER)] == [
-            "planner/fibonacci",
+            "planner/lookup_transform",
             "planner/track_vision_target",
         ]
         assert self.registry.owners() == ["driver", "mapper", MONITOR_OWNER, "planner"]
@@ -618,7 +621,7 @@ class TestActionRegistryFailureAndListing(unittest.TestCase):
         payload = json.loads(json.dumps(self.registry.dictionary))
         by_ref = {entry["ref"]: entry for entry in payload}
         assert by_ref["driver/move_to_unblock"]["kind"] == COMPONENT_METHOD
-        assert by_ref["planner/fibonacci"]["interface_type"] == "Fibonacci"
+        assert by_ref["planner/lookup_transform"]["interface_type"] == "LookupTransform"
 
     def test_an_entry_round_trips_through_a_dict(self):
         entry = RegisteredAction(
@@ -660,9 +663,9 @@ class TestActionRegistryEntryPoints(unittest.TestCase):
 
     def test_a_server_keeps_the_full_ros_name_it_is_reached_by(self):
         """The ref is shortened to fit a reference; the client needs the real name"""
-        entry = self.registry.get("planner/fibonacci")
-        assert entry.server_name == "planner/fibonacci"
-        assert self.registry.interface_for("planner/fibonacci") is Fibonacci
+        entry = self.registry.get("planner/lookup_transform")
+        assert entry.server_name == "planner/lookup_transform"
+        assert self.registry.interface_for("planner/lookup_transform") is LookupTransform
 
     def test_fallback_methods_are_addressable_too(self):
         """Asking for one deliberately is fine; only its automatic use is special"""
@@ -688,10 +691,10 @@ class TestActionRegistryEntryPoints(unittest.TestCase):
 
         class Redundant(_RegistryPlanner):
             def get_ros_entrypoints(self):
-                return {"actions": {self.main_action_name: Fibonacci}, "services": {}}
+                return {"actions": {self.main_action_name: LookupTransform}, "services": {}}
 
         registry = SystemActionRegistry.from_components(
             [Redundant(component_name="planner")]
         )
-        assert "planner/fibonacci" in registry
+        assert "planner/lookup_transform" in registry
         assert len(registry.list(kind=COMPONENT_ACTION_SERVER)) == 1
