@@ -2,6 +2,52 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (fix) Swaps package used in test to avoid new dependencies
+* (feature) Adds missing driver to plugin tests
+* (fix) Add Launcher check for a requested ros executable/package and raises a clear error if not available
+* (fix) Fixes test failing type check on humble
+* (feature) Adds map import export keys to the mapping config of plugin
+* (feature) Adds function to plugins to get map store path
+* (feature) Adds mapping definition in plugins
+* (refactor) Adds min omega in ctrl limits and standardizes other angular ctrl names with kompass-core
+* (refactor) Changes param for minimum velocity
+* (feature) Adds mounts to plugin sensors where a robot plugin may mount its own sensors and the launcher publishes their static tf so that a urdf is not needed
+* (fix) Keeps twist information in odom transformation
+* (fix) Adds missing twist in Odom transformation anf removes unused imports
+* (feature) Adds extra args to img senders and adds camaera info sender for plugins to use the functions directly
+* (fix) Fixes large supported type senders where msg creation was passing through rclpy's element by element passes
+* (fix) Standardizes the contract for replace input topics and makes the ros topics coming from plugins keep the recipe name while subscribing to the name supplied by the plugin
+* (feature) Adds a log once utility in base component
+* (fix) Fixes a hang where shutdown on fast emmited internal events blocking the queue from executing shutdown events
+* (feature) Allows sending launch prefixes to component processes in multiprocess launch (`#63 <https://github.com/automatika-robotics/sugarcoat/issues/63>`_)
+* (feature) Adds shared memory writer pools to plugin hosts in launcher
+* (feature) Wires in the shm encode/decode methods into plugins
+* (feature) Adds to and from shm payload methods in the supported types
+* (feature) Adds a no-copy buffer layout return method to pointcloud datatype for navigation consumers
+* (feature) Adds a minimal shared memory manager for use with plugin feedback bus for streaming large payloads
+* (feature) Bypasses serialization/deserialization for in process bus
+* (feature) Adds carries_objects property to plugin bus to avoid serialization on inprocess buses
+* Merge branch 'feature/plugin_drivers_launch' of github.com:automatika-robotics/sugarcoat into feature/plugin_drivers_launch
+* (feature) Adds depth image metadata function and corrects image pre processing for np>2 compatibility
+* (fix) Returns before setting health status if no failure is found
+* (fix) Resets error sources in health status on healthy status update
+* (fix) Fixes plugin adaptation flow in component (applies before init_variables)
+* (fix) Fixes dictionary key setting for callbacks topic names
+* (feature) Enables a Plugin to launch required drivers process by declaring them to Launcher is the driver topic is used in the Recipe
+* (fix) Makes taking projection or raw image path explicit in intrinsics
+* (chore) Adds test for check correct camera info caching behavior
+* (fix) Adds binning to the camerainfo caching key
+* (fix) Fixes checking Union[Literal[..]] in base attrs during deserialization
+* (fix) Fixes type annotation in validator
+* (refactor) Checks for fixed input attribute in callbacks during init
+* (feature) Lifts camera intrinsics datatype upstream into sugarcoat
+* (fix) Fixes type annotation in base client
+* (fix) Fixes a debug logging in sending requests
+* (feature) Adds launching external nodes and external launch files in the recipe
+* Contributors: ahr, mkabtoul
+
 0.8.0 (2026-07-30)
 ------------------
 * (fix) Removes frame_id keyword arg to avoid TypeError in SensorPlugin
