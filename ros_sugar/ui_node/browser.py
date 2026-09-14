@@ -409,7 +409,13 @@ def build_browser_app(
                     updated.clear()
                     for name, type_name in log_topics:
                         content = ros_node.get_latest_output(name)
-                        if not content or content is last_seen.get(name):
+                        # no data yet, or an empty text. false and 0 are
+                        # values and are logged
+                        if (
+                            content is None
+                            or (isinstance(content, str) and not content)
+                            or content is last_seen.get(name)
+                        ):
                             continue
                         last_seen[name] = content
                         # Topics also declared as UI inputs carry user content
