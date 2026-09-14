@@ -263,8 +263,9 @@ def build_browser_app(
             )
         return fh.get_main_page()
 
-    # NOTE: Output topics shown in the running log: everything NOT routed to a
-    # dedicated video/map widget, and not a map overlay.
+    # NOTE: Output topics shown in the running log: those with a log element,
+    # NOT routed to a dedicated video/map widget, and not a map overlay. Types
+    # with no defined element are not entertained.
     _widget_output_names = (
         {name for name, _ in fh.get_all_stream_outputs()}
         | {name for name, _ in fh.get_all_map_outputs()}
@@ -274,6 +275,7 @@ def build_browser_app(
         (o.name, o.msg_type.__name__)
         for o in (ros_node.in_topics or [])
         if o.name not in _widget_output_names
+        and o.msg_type.__name__ in elements._OUTPUT_ELEMENTS
     ]
     log_topic_names = {name for name, _ in log_topics}
     # Topics that are ALSO declared as UI inputs carry user content their

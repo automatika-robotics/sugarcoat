@@ -72,3 +72,31 @@ def test_log_shows_false_and_zero(tmp_path, monkeypatch):
     # Each frame is the whole log card, so the last one holds every entry
     assert "</strong>False</span>" in log
     assert "</strong>0.0</span>" in log
+
+
+def test_log_leaves_out_a_type_without_a_log_element(tmp_path, monkeypatch):
+    """A type with no log element is not subscribed, so it cannot flood or
+    stop the log, and the other topics are still logged"""
+    import time
+
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([
+        Topic(name="joints", msg_type="JointState"),
+        Topic(name="note", msg_type="String"),
+    ])
+    client = TestClient(build_browser_app(node))
+    with client.websocket_connect("/ws") as ws:
+        deadline = time.time() + 5.0
+        while not node.output_listeners and time.time() < deadline:
+            time.sleep(0.01)
+        assert set(node.output_listeners) == {"note"}
+        node.publish("note", "done")
+        log = ws.receive_text()
+
+    assert "done" in log
