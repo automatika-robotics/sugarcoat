@@ -905,9 +905,10 @@ def test_audio_input_unknown_closes():
 # ---------------------------------------------------------------------------
 # UI node lifecycle
 # ---------------------------------------------------------------------------
-def test_ui_node_deactivates_with_service_and_action_clients():
-    """Deactivating releases the node's service and action clients, and the
-    API then reports them as not ready until the node is activated again."""
+@pytest.fixture
+def ui_node():
+    """A real, activated UI node with one service and one action client, neither
+    of which has a server running."""
     import rclpy
     from std_srvs.srv import Trigger
     from tf2_msgs.action import LookupTransform
@@ -920,23 +921,46 @@ def test_ui_node_deactivates_with_service_and_action_clients():
     node = UINode(
         config=UINodeConfig(),
         inputs=[
-            ServiceClientConfig(srv_type=Trigger, name="reset"),
-            ActionClientConfig(action_type=LookupTransform, name="lookup"),
+            ServiceClientConfig(srv_type=Trigger, name="ui_node_test/reset"),
+            ActionClientConfig(action_type=LookupTransform, name="ui_node_test/lookup"),
         ],
     )
     node.rclpy_init_node()
+    node.custom_on_activate()
     try:
-        node.custom_on_activate()
-        service_client = node._ros_service_clients["reset"].client
-        action_client = node._ros_action_clients["lookup"].client
-
-        node.custom_on_deactivate()
-
-        assert service_client not in list(node.clients)
-        assert action_client not in list(node.waitables)
-        with pytest.raises(RuntimeError, match="not ready"):
-            node.send_srv_call({"srv_name": "reset"})
-        with pytest.raises(RuntimeError, match="not ready"):
-            node.send_action_goal({"action_name": "lookup"})
+        yield node
     finally:
         node.destroy_node()
+
+
+def test_ui_node_deactivates_with_service_and_action_clients(ui_node):
+    """Deactivating releases the node's service and action clients, and the
+    API then reports them as not ready until the node is activated again."""
+    service_client = ui_node._ros_service_clients["ui_node_test/reset"].client
+    action_client = ui_node._ros_action_clients["ui_node_test/lookup"].client
+
+    ui_node.custom_on_deactivate()
+
+    assert service_client not in list(ui_node.clients)
+    assert action_client not in list(ui_node.waitables)
+    with pytest.raises(RuntimeError, match="not ready"):
+        ui_node.send_srv_call({"srv_name": "ui_node_test/reset"})
+    with pytest.raises(RuntimeError, match="not ready"):
+        ui_node.send_action_goal({"action_name": "ui_node_test/lookup"})
+
+
+def test_missing_server_is_reported_at_once(ui_node):
+    """With no server behind a declared client, the call fails after a brief
+    wait for discovery instead of holding the request for the client's full
+    timeout (30 s by default)."""
+    import time
+
+    calls = (
+        (ui_node.send_srv_call, {"srv_name": "ui_node_test/reset"}),
+        (ui_node.send_action_goal, {"action_name": "ui_node_test/lookup"}),
+    )
+    for call, data in calls:
+        start = time.monotonic()
+        with pytest.raises(RuntimeError, match="not available"):
+            call(data)
+        assert time.monotonic() - start < 5.0

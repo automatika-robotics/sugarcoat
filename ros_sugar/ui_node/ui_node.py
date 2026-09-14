@@ -398,13 +398,18 @@ class UINode(BaseComponent):
         request fields. The raw ROS response object or None is returned.
 
         :param srv_call_data: ``{"srv_name": <name>, **request_fields}``.
-        :raises RuntimeError: If the service client is not ready.
+        :raises RuntimeError: If the service client is not ready, or no server
+            for the service is available.
         :return: The raw ROS response message, or ``None``.
         """
         srv_name = srv_call_data.pop("srv_name")
         client = self._ros_service_clients.get(srv_name)
         if client is None:
             raise RuntimeError(f"Service client '{srv_name}' is not ready")
+        # short timeout to make sure that clients exist if requested
+        # close to init
+        if not client.client.wait_for_service(timeout_sec=1.0):
+            raise RuntimeError(f"Service '{srv_name}' is not available")
         return client.send_request_from_dict(request_fields=srv_call_data)
 
     def send_action_goal(self, action_goal_data: Dict) -> Optional[bool]:
@@ -414,13 +419,16 @@ class UINode(BaseComponent):
         are the goal fields.
 
         :param action_goal_data: ``{"action_name": <name>, **goal_fields}``.
-        :raises RuntimeError: If the action client is not ready.
+        :raises RuntimeError: If the action client is not ready, or no server
+            for the action is available.
         :return: True if the goal was accepted by the action server.
         """
         action_name = action_goal_data.pop("action_name")
         client = self._ros_action_clients.get(action_name)
         if client is None:
             raise RuntimeError(f"Action client '{action_name}' is not ready")
+        if not client.client.wait_for_server(timeout_sec=1.0):
+            raise RuntimeError(f"Action server '{action_name}' is not available")
         return client.send_request_from_dict(
             request_fields=action_goal_data, wait_until_first_feedback=False
         )
