@@ -457,12 +457,6 @@ def _output_routes(ros_node: UINode) -> List:
             await _reject_websocket(websocket, "Unknown output topic")
             return
 
-        def sample():
-            content = ros_node.get_latest_output(name)
-            if content is None:
-                return None, False
-            return {"topic": name, "payload": _content_to_jsonable(content)}, False
-
         try:
             requested_rate = float(websocket.query_params.get("rate", ""))
         except (TypeError, ValueError):
@@ -472,6 +466,18 @@ def _output_routes(ros_node: UINode) -> List:
             push = name not in rate_sampled_names
         else:
             push = requested_rate == 0  # explicit ?rate=0 forces push
+
+        last_sent = None
+
+        def sample():
+            nonlocal last_sent
+            content = ros_node.get_latest_output(name)
+            # NOTE: Sampled streams skip a tick when the memoized content is the
+            # same object, i.e. no new message arrived. Push sends every message
+            if content is None or (not push and content is last_sent):
+                return None, False
+            last_sent = content
+            return {"topic": name, "payload": _content_to_jsonable(content)}, False
 
         if push:
             # Lossless event push

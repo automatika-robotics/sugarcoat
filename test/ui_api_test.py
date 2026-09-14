@@ -388,12 +388,15 @@ def test_output_stream_ok():
 
 
 def test_output_stream_unknown_closes():
+    """An undeclared name is accepted, then closed with 1008 and a reason, so a
+    client learns why instead of seeing a bare HTTP 403 on the handshake."""
     from starlette.websockets import WebSocketDisconnect
 
     client = _make_client(_ApiNode())
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/outputs/nope") as ws:
+    with client.websocket_connect("/api/outputs/nope") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Unknown output topic")
 
 
 def test_output_stream_default_push_for_light_type():
@@ -435,6 +438,32 @@ def test_output_stream_rate_overrides_to_sample():
     with client.websocket_connect("/api/outputs/odom?rate=50") as ws:
         assert ws.receive_json()["topic"] == "odom"
         assert not node.output_listeners.get("odom")  # sampled path -> no listener
+
+
+def test_sampled_stream_does_not_resend_unchanged_content():
+    """Sampling faster than the source must not repeat the same frame"""
+    import time
+
+    node = _ApiNode()
+    node.latest["map"] = {"frame_id": "map", "data": "AAAA"}
+    client = _make_client(node)
+    with client.websocket_connect("/api/outputs/map?rate=30") as ws:
+        assert ws.receive_json()["payload"]["data"] == "AAAA"
+        time.sleep(0.2)  # several ticks with no new message
+        node.latest["map"] = {"frame_id": "map", "data": "BBBB"}
+        # The next frame is the new message, not a repeat of the first
+        assert ws.receive_json()["payload"]["data"] == "BBBB"
+
+
+def test_push_stream_sends_every_message():
+    """A push stream sends each message, even one carrying the same value"""
+    node = _ApiNode()
+    node.latest["odom"] = {"frame_id": "odom", "data": [1.0]}
+    client = _make_client(node)
+    with client.websocket_connect("/api/outputs/odom") as ws:
+        first = ws.receive_json()
+        node.fire_output("odom")  # a new message with the same content
+        assert ws.receive_json() == first
 
 
 def test_output_stream_push_not_ready_closes():
@@ -734,12 +763,15 @@ def test_action_feedback_not_ready_closes():
 
 
 def test_action_feedback_unknown_closes():
+    """An undeclared name is accepted, then closed with 1008 and a reason, so a
+    client learns why instead of seeing a bare HTTP 403 on the handshake."""
     from starlette.websockets import WebSocketDisconnect
 
     client = _make_client(_ApiNode())
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/actions/nope/feedback") as ws:
+    with client.websocket_connect("/api/actions/nope/feedback") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Unknown action")
 
 
 # ---------------------------------------------------------------------------
@@ -817,13 +849,16 @@ def test_occupancy_grid_ui_content_is_raw_grid_not_jpeg():
 
 
 def test_world_unknown_closes():
+    """An undeclared name is accepted, then closed with 1008 and a reason, so a
+    client learns why instead of seeing a bare HTTP 403 on the handshake."""
     from starlette.websockets import WebSocketDisconnect
 
     client = _make_client(_ApiNode())
-    # 'odom' is an Odometry output, not an occupancy grid -> reject.
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/world/odom") as ws:
+    # 'odom' is an Odometry output, not an occupancy grid
+    with client.websocket_connect("/api/world/odom") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Not a declared OccupancyGrid output")
 
 
 # ---------------------------------------------------------------------------
@@ -847,10 +882,13 @@ def test_audio_input_stream_publishes():
 
 
 def test_audio_input_unknown_closes():
+    """An undeclared name is accepted, then closed with 1008 and a reason, so a
+    client learns why instead of seeing a bare HTTP 403 on the handshake."""
     from starlette.websockets import WebSocketDisconnect
 
     client = _make_client(_ApiNode())
-    # 'cmd_vel' is a Twist input, not Audio -> reject.
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/inputs/cmd_vel/audio") as ws:
+    # 'cmd_vel' is a Twist input, not Audio
+    with client.websocket_connect("/api/inputs/cmd_vel/audio") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Not a declared Audio input")
