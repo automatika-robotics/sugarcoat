@@ -128,6 +128,16 @@ async def _json_body(request) -> Any:
         return None
 
 
+async def _reject_websocket(websocket, reason: str) -> None:
+    """Refuse a WebSocket for a name the recipe did not declare.
+
+    Accepted first and then closed with 1008 and a reason. Closing before
+    accepting makes the server answer the handshake with a bare HTTP 403.
+    """
+    await websocket.accept()
+    await websocket.close(code=1008, reason=reason)
+
+
 async def _stream_at_rate(websocket, default_rate, max_rate, sample) -> None:
     """Accept a websocket and push sampled JSON at the client's requested rate.
 
@@ -337,7 +347,7 @@ def _input_routes(ros_node: UINode) -> List:
         declared Audio input topic. Acks each frame"""
         name = _name_param(websocket)
         if name not in audio_input_names:
-            await websocket.close(code=1008)  # not a declared Audio input
+            await _reject_websocket(websocket, "Not a declared Audio input")
             return
         await websocket.accept()
         try:
@@ -444,7 +454,7 @@ def _output_routes(ros_node: UINode) -> List:
         """
         name = _name_param(websocket)
         if name not in output_names:
-            await websocket.close(code=1008)  # policy violation
+            await _reject_websocket(websocket, "Unknown output topic")
             return
 
         def sample():
@@ -551,7 +561,7 @@ def _action_routes(ros_node: UINode) -> List:
         """
         name = _name_param(websocket)
         if name not in goal_classes:
-            await websocket.close(code=1008)  # policy violation
+            await _reject_websocket(websocket, "Unknown action")
             return
 
         def sample():
@@ -608,7 +618,7 @@ def _world_routes(ros_node: UINode) -> List:
         """
         name = _name_param(websocket)
         if name not in grid_names:
-            await websocket.close(code=1008)  # not an occupancy-grid output
+            await _reject_websocket(websocket, "Not a declared OccupancyGrid output")
             return
         await websocket.accept()
 
