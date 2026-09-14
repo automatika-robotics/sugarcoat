@@ -189,10 +189,19 @@ class _ApiNode:
         self.output_listeners = {}  # topic_name -> set of push listeners
 
     def srv_clients_inputs_dicts(self):
-        return [{"name": "reset", "type": "Trigger", "fields": {}}]
+        from std_srvs.srv import Trigger
+
+        return [
+            {"name": "reset", "type": "Trigger", "fields": {}, "request_class": Trigger.Request}
+        ]
 
     def action_clients_inputs_dicts(self):
-        return [{"name": "navigate", "type": "NavigateToPose", "fields": {}}]
+        # Point stands in for a goal message with an 'x' field
+        from geometry_msgs.msg import Point
+
+        return [
+            {"name": "navigate", "type": "NavigateToPose", "fields": {}, "goal_class": Point}
+        ]
 
     def get_latest_output(self, name):
         return self.latest.get(name)
@@ -299,7 +308,7 @@ def test_publish_input_bad_fields_400():
     node = _ApiNode()
     node.publish_error = ValueError("Cannot build a Twist message")
     client = _make_client(node)
-    resp = client.post("/api/inputs/cmd_vel", json={"bogus": 1})
+    resp = client.post("/api/inputs/cmd_vel", json={"linear": {"x": 1.0}})
     assert resp.status_code == 400
 
 
@@ -484,19 +493,35 @@ def test_action_cancel_not_swallowed_by_goal_route():
 
 
 def test_body_cannot_redirect_to_another_interface():
-    """The URL names the interface. A same-named key in the body must not
-    send the call to a different declared input, service or action."""
+    """The URL names the interface. A body key naming another input, service
+    or action is not a message field, so the call is refused and nothing is
+    sent to either interface."""
     node = _ApiNode()
     client = _make_client(node)
 
-    client.post("/api/inputs/cmd_vel", json={"topic_name": "speech", "linear": {"x": 1.0}})
-    assert node.published[-1] == {"topic_name": "cmd_vel", "linear": {"x": 1.0}}
+    resp = client.post("/api/inputs/cmd_vel", json={"topic_name": "speech", "linear": {"x": 1.0}})
+    assert resp.status_code == 400
+    assert client.post("/api/services/reset", json={"srv_name": "other"}).status_code == 400
+    resp = client.post("/api/actions/navigate", json={"action_name": "other", "x": 1.0})
+    assert resp.status_code == 400
 
-    client.post("/api/services/reset", json={"srv_name": "other"})
-    assert node.service_calls[-1]["srv_name"] == "reset"
+    assert node.published == [] and node.service_calls == [] and node.goals == []
 
-    client.post("/api/actions/navigate", json={"action_name": "other", "x": 1.0})
-    assert node.goals[-1] == {"action_name": "navigate", "x": 1.0}
+
+def test_unknown_fields_are_rejected():
+    """A misspelt field must not be dropped silently, which would send that
+    part of the message at its default value. The error names the field and
+    the ones that exist, at any nesting depth."""
+    node = _ApiNode()
+    client = _make_client(node)
+
+    resp = client.post("/api/inputs/cmd_vel", json={"linear": {"x": 1.0, "q": 2.0}})
+    assert resp.status_code == 400
+    assert "'q'" in resp.json()["error"] and "x, y, z" in resp.json()["error"]
+    assert client.post("/api/services/reset", json={"bogus": 1}).status_code == 400
+    assert client.post("/api/actions/navigate", json={"yaw": 1.0}).status_code == 400
+
+    assert node.published == [] and node.service_calls == [] and node.goals == []
 
 
 def test_malformed_json_body_is_rejected():

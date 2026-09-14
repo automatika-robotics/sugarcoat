@@ -19,7 +19,7 @@ except ModuleNotFoundError as e:
 
 from rosidl_runtime_py.convert import message_to_ordereddict
 
-from ..io.supported_types import get_ros_msg_fields_dict
+from ..io.supported_types import get_ros_msg_fields_dict, validate_msg_fields
 
 from .ui_node import UINode
 
@@ -300,7 +300,7 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
 
 def _input_routes(ros_node: UINode) -> List:
     """Routes for publishing to the declared input topics."""
-    input_names = {topic.name for topic in (ros_node.out_topics or [])}
+    input_types = {topic.name: topic.ros_msg_type for topic in (ros_node.out_topics or [])}
     # Declared Audio input topics, which accept uploads over a dedicated WS.
     audio_input_names = {
         t.name for t in (ros_node.out_topics or []) if t.msg_type.__name__ == "Audio"
@@ -309,7 +309,7 @@ def _input_routes(ros_node: UINode) -> List:
     async def publish_input(request):
         """Publish a JSON message (matching the topic schema) to an input topic."""
         name = _name_param(request)
-        if name not in input_names:
+        if name not in input_types:
             return JSONResponse(
                 {"error": f"Unknown input topic '{name}'"}, status_code=404
             )
@@ -319,6 +319,8 @@ def _input_routes(ros_node: UINode) -> List:
                 {"error": "Request body must be a JSON object"}, status_code=400
             )
         try:
+            # Check before the message is built and skip unrecognized fields
+            validate_msg_fields(input_types[name], body, f"Input '{name}'")
             # NOTE: The route name goes last so a same named body key cannot
             # redirect the publish to another declared input
             subscribers = ros_node.publish_data({**body, "topic_name": name})
@@ -370,12 +372,15 @@ def _input_routes(ros_node: UINode) -> List:
 
 def _service_routes(ros_node: UINode) -> List:
     """Route for calling the declared service clients."""
-    service_names = {client["name"] for client in ros_node.srv_clients_inputs_dicts()}
+    request_classes = {
+        client["name"]: client["request_class"]
+        for client in ros_node.srv_clients_inputs_dicts()
+    }
 
     async def call_service(request):
         """Call a service with a JSON request body and return its JSON response."""
         name = _name_param(request)
-        if name not in service_names:
+        if name not in request_classes:
             return JSONResponse({"error": f"Unknown service '{name}'"}, status_code=404)
         body = await _json_body(request)
         if not isinstance(body, dict):
@@ -383,6 +388,7 @@ def _service_routes(ros_node: UINode) -> List:
                 {"error": "Request body must be a JSON object"}, status_code=400
             )
         try:
+            validate_msg_fields(request_classes[name], body, f"The request for '{name}'")
             # send_srv_call blocks on the ROS future, so offload it off the event
             # loop to keep the server responsive.
             response = await run_in_threadpool(
@@ -483,12 +489,15 @@ def _output_routes(ros_node: UINode) -> List:
 
 def _action_routes(ros_node: UINode) -> List:
     """Routes for sending, canceling and following the declared actions."""
-    action_names = {client["name"] for client in ros_node.action_clients_inputs_dicts()}
+    goal_classes = {
+        client["name"]: client["goal_class"]
+        for client in ros_node.action_clients_inputs_dicts()
+    }
 
     async def send_goal(request):
         """Send a JSON goal to an action; returns 202 once the server accepts it."""
         name = _name_param(request)
-        if name not in action_names:
+        if name not in goal_classes:
             return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
         body = await _json_body(request)
         if not isinstance(body, dict):
@@ -496,6 +505,7 @@ def _action_routes(ros_node: UINode) -> List:
                 {"error": "Request body must be a JSON object"}, status_code=400
             )
         try:
+            validate_msg_fields(goal_classes[name], body, f"The goal for '{name}'")
             # send_action_goal blocks until the goal is accepted/rejected.
             accepted = await run_in_threadpool(
                 # Route name last, so the body cannot pick another action
@@ -523,7 +533,7 @@ def _action_routes(ros_node: UINode) -> List:
     async def cancel_goal(request):
         """Cancel the ongoing goal of an action."""
         name = _name_param(request)
-        if name not in action_names:
+        if name not in goal_classes:
             return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
         try:
             cancelled, message = await run_in_threadpool(ros_node.cancel_action, name)
@@ -540,7 +550,7 @@ def _action_routes(ros_node: UINode) -> List:
         the client disconnects.
         """
         name = _name_param(websocket)
-        if name not in action_names:
+        if name not in goal_classes:
             await websocket.close(code=1008)  # policy violation
             return
 

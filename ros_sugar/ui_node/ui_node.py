@@ -117,6 +117,7 @@ class UINode(BaseComponent):
                 "name": client_config.name,
                 "type": client_config.srv_type.__name__,
                 "fields": request_fields,
+                "request_class": client_config.srv_type.Request,
             }
             clients_configs_dicts.append(config_dict)
         return clients_configs_dicts
@@ -136,6 +137,7 @@ class UINode(BaseComponent):
                 "name": client_config.name,
                 "type": client_config.action_type.__name__,
                 "fields": request_fields,
+                "goal_class": client_config.action_type.Goal,
             }
             clients_configs_dicts.append(config_dict)
         return clients_configs_dicts
