@@ -175,6 +175,7 @@ class _ApiNode:
         self.publish_error = None  # exception to raise from publish_data
         self.service_response = None  # raw ROS response to return
         self.service_error = None  # exception to raise from send_srv_call
+        self.service_calls = []  # recorded service call data
         self.latest = {}  # topic_name -> get_latest_output result
         self.goals = []  # recorded action goals
         self.goal_accepted = True  # send_action_goal return value
@@ -207,6 +208,7 @@ class _ApiNode:
         return 1
 
     def send_srv_call(self, data):
+        self.service_calls.append(data)
         if self.service_error is not None:
             raise self.service_error
         return self.service_response
@@ -479,6 +481,22 @@ def test_action_cancel_not_swallowed_by_goal_route():
     assert resp.status_code == 200
     assert resp.json()["cancelled"] is True
     assert node.goals == []  # the goal handler never ran
+
+
+def test_body_cannot_redirect_to_another_interface():
+    """The URL names the interface. A same-named key in the body must not
+    send the call to a different declared input, service or action."""
+    node = _ApiNode()
+    client = _make_client(node)
+
+    client.post("/api/inputs/cmd_vel", json={"topic_name": "speech", "linear": {"x": 1.0}})
+    assert node.published[-1] == {"topic_name": "cmd_vel", "linear": {"x": 1.0}}
+
+    client.post("/api/services/reset", json={"srv_name": "other"})
+    assert node.service_calls[-1]["srv_name"] == "reset"
+
+    client.post("/api/actions/navigate", json={"action_name": "other", "x": 1.0})
+    assert node.goals[-1] == {"action_name": "navigate", "x": 1.0}
 
 
 def test_set_ros_msg_from_dict_converts_by_declared_type():

@@ -312,7 +312,9 @@ def _input_routes(ros_node: UINode) -> List:
                 {"error": "Request body must be a JSON object"}, status_code=400
             )
         try:
-            subscribers = ros_node.publish_data({"topic_name": name, **body})
+            # NOTE: The route name goes last so a same named body key cannot
+            # redirect the publish to another declared input
+            subscribers = ros_node.publish_data({**body, "topic_name": name})
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
         except ValueError as e:
@@ -377,7 +379,8 @@ def _service_routes(ros_node: UINode) -> List:
             # send_srv_call blocks on the ROS future, so offload it off the event
             # loop to keep the server responsive.
             response = await run_in_threadpool(
-                ros_node.send_srv_call, {"srv_name": name, **body}
+                # Route name last, so the body cannot pick another service
+                ros_node.send_srv_call, {**body, "srv_name": name}
             )
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
@@ -488,7 +491,8 @@ def _action_routes(ros_node: UINode) -> List:
         try:
             # send_action_goal blocks until the goal is accepted/rejected.
             accepted = await run_in_threadpool(
-                ros_node.send_action_goal, {"action_name": name, **body}
+                # Route name last, so the body cannot pick another action
+                ros_node.send_action_goal, {**body, "action_name": name}
             )
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
