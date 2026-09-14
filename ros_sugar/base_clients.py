@@ -362,7 +362,7 @@ class ActionClientHandler:
             request_msg, feedback_callback=self.action_feedback_callback
         )
 
-        self._start_time_secs = self.node.get_clock().now().seconds_nanoseconds()[0]
+        self._start_time_secs = self.node.get_clock().now().nanoseconds / 1e9
 
         # Add method when action is done
         self._send_goal_future.add_done_callback(self.action_response_callback)
@@ -532,7 +532,7 @@ class ActionClientHandler:
         :return: _description_
         :rtype: Dict
         """
-        current_time = self.node.get_clock().now().seconds_nanoseconds()[0]
+        current_time = self.node.get_clock().now().nanoseconds / 1e9
         ui_dict = {
             "status": self._status,
             "feedback": self.feedback_msg.feedback if self.feedback_msg and hasattr(self.feedback_msg, "feedback") else None,

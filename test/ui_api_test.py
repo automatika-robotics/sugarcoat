@@ -933,6 +933,26 @@ def ui_node():
         node.destroy_node()
 
 
+def test_action_duration_has_fractions_of_a_second(ui_node):
+    """A goal running for part of a second reports that part, not 0"""
+    import time
+    from unittest.mock import MagicMock
+
+    handler = ui_node._ros_action_clients["ui_node_test/lookup"]
+    handler.client.wait_for_server = MagicMock(return_value=True)
+
+    def _accept(goal, feedback_callback):
+        handler.goal_accepted = True
+        return MagicMock()
+
+    handler.client.send_goal_async = _accept
+    assert handler.send_request(handler.config.action_type.Goal())
+    time.sleep(0.3)
+
+    assert 0.3 <= handler.get_ui_elements()["duration_secs"] < 1.0
+    handler.reset()
+
+
 def test_ui_node_deactivates_with_service_and_action_clients(ui_node):
     """Deactivating releases the node's service and action clients, and the
     API then reports them as not ready until the node is activated again."""

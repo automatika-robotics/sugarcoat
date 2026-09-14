@@ -335,7 +335,8 @@ def build_browser_app(
                         fb = ros_node.get_action_feedback(name)
                         if fb is None:
                             continue
-                        key = (fb["status"], fb["timestep"], fb["duration_secs"])
+                        # The card shows whole seconds, so a fraction is no change
+                        key = (fb["status"], fb["timestep"], int(fb["duration_secs"]))
                         if key == last_seen.get(name):
                             continue
                         last_seen[name] = key
