@@ -707,6 +707,8 @@ def test_action_feedback_emits_current_state_on_connect():
         "feedback": {"x": 1.0, "y": 2.0, "z": 3.0},
         "timestep": 5,
         "duration_secs": 2.0,
+        "feedback_timeout": False,
+        "result": None,
     }
 
 
@@ -737,16 +739,22 @@ def test_action_feedback_pushed_on_arrival():
         node.fire_action_feedback("navigate")
         assert ws.receive_json()["timestep"] == 2
 
-        # Terminal feedback -> push, then the server closes the stream.
+        # Terminal feedback -> push it with the goal's result, then the server
+        # closes the stream.
+        from geometry_msgs.msg import Point as ROSPoint
+
         node.feedback = {
             "status": "completed",
             "feedback": None,
             "timestep": 3,
             "feedback_timeout": False,
             "duration_secs": 1.5,
+            "result": ROSPoint(x=5.0, y=6.0, z=0.0),  # a raw ROS message
         }
         node.fire_action_feedback("navigate")
-        assert ws.receive_json()["status"] == "completed"
+        terminal = ws.receive_json()
+        assert terminal["status"] == "completed"
+        assert terminal["result"] == {"x": 5.0, "y": 6.0, "z": 0.0}
         with pytest.raises(WebSocketDisconnect):
             ws.receive_json()
 

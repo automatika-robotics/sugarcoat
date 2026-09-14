@@ -169,7 +169,8 @@ class UINode(BaseComponent):
         """Return the latest UI elements for an action client, or ``None``.
 
         The returned dict has ``status``, ``feedback`` (a raw ROS message or
-        ``None``), ``timestep``, ``feedback_timeout`` and ``duration_secs``
+        ``None``), ``timestep``, ``feedback_timeout``, ``duration_secs`` and
+        ``result`` (the raw ROS result message, ``None`` until the goal ends)
         """
         client = self._ros_action_clients.get(action_name)
         if client is None:

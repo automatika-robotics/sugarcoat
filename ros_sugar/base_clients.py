@@ -541,6 +541,8 @@ class ActionClientHandler:
             "duration_secs": (current_time - self._start_time_secs)
             if self._start_time_secs is not None
             else 0.0,
+            # The goal's result message, None until the goal ends
+            "result": self.action_result,
         }
         self._old_status = self._status
         return ui_dict

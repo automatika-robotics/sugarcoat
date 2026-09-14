@@ -581,6 +581,10 @@ def _action_routes(ros_node: UINode) -> List:
                 else None,
                 "timestep": fb["timestep"],
                 "duration_secs": fb["duration_secs"],
+                "feedback_timeout": fb["feedback_timeout"],
+                "result": _content_to_jsonable(fb["result"])
+                if fb.get("result") is not None
+                else None,
             }
             return payload, fb["status"] in ("completed", "aborted", "canceled")
 
