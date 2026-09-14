@@ -900,3 +900,43 @@ def test_audio_input_unknown_closes():
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
     assert (closed.value.code, closed.value.reason) == (1008, "Not a declared Audio input")
+
+
+# ---------------------------------------------------------------------------
+# UI node lifecycle
+# ---------------------------------------------------------------------------
+def test_ui_node_deactivates_with_service_and_action_clients():
+    """Deactivating releases the node's service and action clients, and the
+    API then reports them as not ready until the node is activated again."""
+    import rclpy
+    from std_srvs.srv import Trigger
+    from tf2_msgs.action import LookupTransform
+
+    from ros_sugar.base_clients import ActionClientConfig, ServiceClientConfig
+    from ros_sugar.ui_node.ui_node import UINode, UINodeConfig
+
+    if not rclpy.ok():
+        rclpy.init()
+    node = UINode(
+        config=UINodeConfig(),
+        inputs=[
+            ServiceClientConfig(srv_type=Trigger, name="reset"),
+            ActionClientConfig(action_type=LookupTransform, name="lookup"),
+        ],
+    )
+    node.rclpy_init_node()
+    try:
+        node.custom_on_activate()
+        service_client = node._ros_service_clients["reset"].client
+        action_client = node._ros_action_clients["lookup"].client
+
+        node.custom_on_deactivate()
+
+        assert service_client not in list(node.clients)
+        assert action_client not in list(node.waitables)
+        with pytest.raises(RuntimeError, match="not ready"):
+            node.send_srv_call({"srv_name": "reset"})
+        with pytest.raises(RuntimeError, match="not ready"):
+            node.send_action_goal({"action_name": "lookup"})
+    finally:
+        node.destroy_node()

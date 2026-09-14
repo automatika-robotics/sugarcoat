@@ -366,15 +366,14 @@ class UINode(BaseComponent):
             if inp.client is not None:
                 self.destroy_client(inp.client)
 
-        for inp in self._ros_service_clients.items():
-            if inp.client is not None:
-                self.destroy_client(inp.client)
-                inp.client = None
-
-        for inp in self._ros_action_clients:
-            if inp.client is not None:
-                self.destroy_client(inp.client)
-                inp.client = None
+        for handler in self._ros_service_clients.values():
+            self.destroy_client(handler.client)
+        # Action clients are waitables, which destroy_client ignores
+        for handler in self._ros_action_clients.values():
+            handler.client.destroy()
+        # Recreated on activation. Until then the API reports them as not ready
+        self._ros_service_clients.clear()
+        self._ros_action_clients.clear()
 
         return super().custom_on_deactivate()
 
