@@ -232,6 +232,8 @@ def validate_msg_fields(
                 f"{where} has no field '{field_name}'. It has: "
                 f"{', '.join(sorted(fields))}"
             )
+        # TODO: Fields inside lists of messages are not checked. Recurse
+        # into each item of a message sequence as well
         if not isinstance(field_value, dict):
             continue
         base_type, _ = _split_ros_field_type(fields[field_name])
