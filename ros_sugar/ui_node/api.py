@@ -114,11 +114,18 @@ def _name_param(conn) -> str:
 
 
 async def _json_body(request) -> Any:
-    """Parse a request's JSON body, returning ``{}`` on an empty/invalid body."""
+    """Parse a request's JSON body.
+
+    An empty body is an empty request, ``{}``, so body-less calls (e.g. a
+    Trigger service) still work. A body that is not valid JSON is ``None``,
+    which callers reject: treating it as ``{}`` would publish a default message.
+    """
+    if not (await request.body()).strip():
+        return {}
     try:
         return await request.json()
-    except Exception:
-        return {}
+    except ValueError:
+        return None
 
 
 async def _stream_at_rate(websocket, default_rate, max_rate, sample) -> None:

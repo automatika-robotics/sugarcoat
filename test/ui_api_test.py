@@ -499,6 +499,29 @@ def test_body_cannot_redirect_to_another_interface():
     assert node.goals[-1] == {"action_name": "navigate", "x": 1.0}
 
 
+def test_malformed_json_body_is_rejected():
+    """A body that is not valid JSON must not reach ROS as an empty request,
+    which would publish a default message (e.g. a goal at the origin)."""
+    node = _ApiNode()
+    client = _make_client(node)
+    malformed = {"content": b"{x: 9", "headers": {"content-type": "application/json"}}
+
+    for url in ("/api/inputs/cmd_vel", "/api/services/reset", "/api/actions/navigate"):
+        resp = client.post(url, **malformed)
+        assert resp.status_code == 400, url
+        assert "JSON object" in resp.json()["error"]
+
+    assert node.published == [] and node.service_calls == [] and node.goals == []
+
+
+def test_empty_body_is_an_empty_request():
+    """A body-less call, such as a Trigger service, is still sent"""
+    node = _ApiNode()
+    client = _make_client(node)
+    client.post("/api/services/reset")
+    assert node.service_calls == [{"srv_name": "reset"}]
+
+
 def test_set_ros_msg_from_dict_converts_by_declared_type():
     from std_msgs.msg import ByteMultiArray, Float32MultiArray, String as ROSString
 
