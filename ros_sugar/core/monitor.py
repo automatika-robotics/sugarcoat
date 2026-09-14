@@ -211,6 +211,9 @@ class Monitor(Node):
         self.__routines: Dict[str, Routine] = {}
         # Their cursor publishers, so removing a routine can take its topic down
         self.__routine_publishers: Dict[str, Publisher] = {}
+        # Set once the node is being destroyed, so a routine step stops waiting
+        # on answers that nothing spins to deliver any more
+        self._is_shutting_down: bool = False
         # Events registered while running, keyed by the id used to remove them
         self.__runtime_events: Dict[str, Event] = {}
         # Polling timers for action based events, keyed by event id so an event
@@ -1944,6 +1947,32 @@ class Monitor(Node):
         if routine is None:
             return False, f"Unknown routine '{routine_name}'"
         return True, json.dumps(routine.state)
+
+    @property
+    def is_shutting_down(self) -> bool:
+        """Whether the Monitor node is being destroyed
+
+        :rtype: bool
+        """
+        return self._is_shutting_down
+
+    def destroy_node(self):
+        """Abort the routines still running before the node goes away.
+
+        A step waiting on a goal would otherwise keep its dispatch worker, which
+        the interpreter waits for at exit, until the step times out, and only
+        then cancel the goal through a client that no longer exists.
+        """
+        self._is_shutting_down = True
+        with self._blackboard_lock:
+            routines = list(self.__routines.values())
+        for routine in routines:
+            # Routines that are not running report it and are left as they are
+            try:
+                routine.abort(reason="the Monitor is shutting down")
+            except Exception as e:
+                logger.error(f"Failed to abort routine '{routine.name}' at shutdown: {e}")
+        return super().destroy_node()
 
     def _activate_event_monitoring(self) -> None:
         """

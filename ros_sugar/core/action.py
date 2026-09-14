@@ -1092,9 +1092,14 @@ class ActionServerGoal(Action):
         """Cancel the goal in flight and release the waiting dispatch"""
         self._abandoned = True
         client = self._client
-        result = (
-            client.cancel_request() if client is not None else (True, "nothing to cancel")
-        )
+        if client is None:
+            result = (True, "nothing to cancel")
+        elif getattr(self._host, "is_shutting_down", False):
+            # Nothing spins to deliver the server's answer any more, so waiting
+            # for it would only hold the shutdown up
+            result = client.cancel_request(wait=False)
+        else:
+            result = client.cancel_request()
         self._settled.set()
         return result
 

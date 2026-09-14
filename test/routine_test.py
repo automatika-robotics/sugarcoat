@@ -379,8 +379,9 @@ def generate_test_description():
         ],
     )
 
-    # A separate long routine, never aborted, so the feedback test observes a
-    # live step no matter which order the tests run in
+    # A separate long routine, aborted only by the feedback test once it has
+    # seen feedback, so that test observes a live step no matter which order
+    # the tests run in
     reports = Routine(
         "reports",
         steps=[
@@ -796,10 +797,18 @@ class TestActionServerStep(unittest.TestCase):
                 and state["step_feedback"]["feedback_count"] > 0
             )
 
-        assert wait_for(_has_feedback, self.wait_time), (
-            f"cursor: {routine_state('reports')}"
-        )
-        assert routine_state("reports")["step_feedback"]["target"] == "reporter"
+        try:
+            assert wait_for(_has_feedback, self.wait_time), (
+                f"cursor: {routine_state('reports')}"
+            )
+            assert routine_state("reports")["step_feedback"]["target"] == "reporter"
+        finally:
+            # Left running, the goal outlives this launch, and its step's worker
+            # holds the interpreter's exit until the step times out
+            monitor_node.abort_routine("reports", reason="test done")
+        assert wait_for(
+            lambda: ("reporter", 300) in goals_cancelled, self.wait_time
+        ), "the server never saw a cancel request"
 
     def test_aborting_a_routine_cancels_the_goal_on_the_server(self):
         """Preemption has to reach the server, or the robot keeps going"""
@@ -1513,6 +1522,8 @@ class FakeClient:
         self._status = "inactive"
         self.sent = []
         self.cancels = 0
+        #: `wait` of every cancel request, in order
+        self.cancel_waits = []
         self._listeners = set()
 
     # -- the bits the step calls
@@ -1530,8 +1541,9 @@ class FakeClient:
     def remove_feedback_listener(self, listener):
         self._listeners.discard(listener)
 
-    def cancel_request(self) -> ActionReturnType:
+    def cancel_request(self, wait: bool = True) -> ActionReturnType:
         self.cancels += 1
+        self.cancel_waits.append(wait)
         return True, "cancelled"
 
     # -- test drivers
@@ -1761,6 +1773,22 @@ class TestGoalCancelling(unittest.TestCase):
         assert seen == [True]
         assert not self.handler.action_returned  # reset happened after the notify
 
+    def test_cancel_without_waiting_only_sends_the_request(self):
+        """At shutdown nothing spins to deliver the server's answer, so a wait
+        would last the whole feedback timeout for nothing."""
+        goal_handle = FakeGoalHandle()
+        self.handler._goal_handle = goal_handle
+        self.handler.goal_accepted = True
+        self.handler.action_returned = False
+        # A regression to waiting fails fast rather than sitting out 60s
+        self.handler.config.feedback_check_timeout = 0.5
+        self.handler.config.feedback_check_period = 0.01
+
+        succeeded, message = self.handler.cancel_request(wait=False)
+
+        assert succeeded, message
+        assert goal_handle.cancel_calls == 1
+
 
 class TestGoalVerdict(unittest.TestCase):
     """Verdict from the server"""
@@ -1933,6 +1961,37 @@ class TestGoalPreemption(unittest.TestCase):
         assert done.wait(WAIT)
         assert settled["outcome"] == ActionOutcome.TIMEOUT
         assert client.cancels == 1
+
+    def test_halting_waits_for_the_server_while_the_host_runs(self):
+        """So a routine resumed or moved on does not race a goal still ending"""
+        client = FakeClient()
+        step = ActionServerGoal(component="planner", goal={"x": 1.0})
+        step.set_host(FakeHost(client))
+
+        settled, done = _run(step)
+        assert wait_for(lambda: client.sent)
+        step.halt()
+
+        assert done.wait(WAIT)
+        assert settled["outcome"] == ActionOutcome.PREEMPTED
+        assert client.cancel_waits == [True]
+
+    def test_halting_while_the_host_shuts_down_does_not_wait(self):
+        """The Monitor aborts its routines while being destroyed, when no answer
+        from the server can arrive any more"""
+        client = FakeClient()
+        host = FakeHost(client)
+        step = ActionServerGoal(component="planner", goal={"x": 1.0})
+        step.set_host(host)
+
+        settled, done = _run(step)
+        assert wait_for(lambda: client.sent)
+        host.is_shutting_down = True
+        step.halt()
+
+        assert done.wait(WAIT)
+        assert settled["outcome"] == ActionOutcome.PREEMPTED
+        assert client.cancel_waits == [False]
 
     def test_no_host_fails_cleanly(self):
         step = ActionServerGoal(component="planner", goal={"x": 1.0})

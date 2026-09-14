@@ -493,15 +493,21 @@ class ActionClientHandler:
             time.sleep(self.config.feedback_check_period)
         return False
 
-    def cancel_request(self) -> Tuple[bool, str]:
+    def cancel_request(self, wait: bool = True) -> Tuple[bool, str]:
         """Cancel an active action goal and return result
 
+        :param wait: Wait for the goal to return before reporting. Without it
+            the cancel request is only sent, which is all that can be done once
+            nothing spins to deliver the server's answer, e.g. at shutdown
+        :type wait: bool
         :return: If cancellation is successful
         :rtype: Tuple[bool, str]
         """
         if self.goal_accepted and self._goal_handle is not None:
             # self._send_goal_future.set_result(self.config.action_type.Result())
             self._goal_handle.cancel_goal_async()
+            if not wait:
+                return (True, "Action goal cancel requested")
             # Wait for action to return or timeout
             _check_counter: float = 0.0
             while (
