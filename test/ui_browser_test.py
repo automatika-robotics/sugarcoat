@@ -131,23 +131,24 @@ def test_action_result_is_logged_once_when_it_arrives_after_the_end(
 
     pytest.importorskip("fasthtml")
     pytest.importorskip("monsterui")
-    from example_interfaces.action import Fibonacci
     from starlette.testclient import TestClient
+    from tf2_msgs.action import LookupTransform
 
     from ros_sugar.io.supported_types import get_ros_msg_fields_dict
     from ros_sugar.ui_node.browser import build_browser_app
 
     monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
-    name = "counter/fibonacci"
+    name = "tf/lookup"
     node = _BrowserNode([])
     node.actions = [{
         "name": name,
-        "type": "Fibonacci",
-        "fields": get_ros_msg_fields_dict(Fibonacci.Goal),
+        "type": "LookupTransform",
+        "fields": get_ros_msg_fields_dict(LookupTransform.Goal),
     }]
     client = TestClient(build_browser_app(node))
     ended = {"status": "completed", "timestep": 3, "duration_secs": 1.0, "feedback": None}
-    result = Fibonacci.Result(sequence=[0, 1, 1, 2])
+    result = LookupTransform.Result()
+    result.transform.child_frame_id = "gripper"
 
     with client.websocket_connect("/ws_actions") as ws:
 
@@ -181,5 +182,5 @@ def test_action_result_is_logged_once_when_it_arrives_after_the_end(
         )
         later = _receive_until("running")
 
-    assert logged and "[0, 1, 1, 2]" in logged[-1], "the result was not logged"
+    assert logged and "child_frame_id: gripper" in logged[-1], "the result was not logged"
     assert not [f for f in later if "result" in f], "the result was logged twice"
