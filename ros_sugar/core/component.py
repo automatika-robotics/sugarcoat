@@ -61,7 +61,7 @@ from ..config.base_config import (
     QoSConfig,
 )
 from ..io.publisher import Publisher
-from ..io.supported_types import SupportedType
+from ..io.supported_types import SupportedType, add_additional_datatypes
 from ..io.topic import Topic
 from ..tf import TFListener, TFListenerConfig
 from ..utils import (
@@ -1994,6 +1994,7 @@ class BaseComponent(lifecycle.Node):
         :type value: str
         """
         serialized_types = json.loads(value)
+        new_types = []
         for s_t in serialized_types:
             module_name, _, class_name = s_t.rpartition(".")
             if not module_name:
@@ -2001,7 +2002,12 @@ class BaseComponent(lifecycle.Node):
             module = importlib.import_module(module_name)
             new_type = getattr(module, class_name)
             if issubclass(new_type, SupportedType):
-                self._additional_types.append(new_type)
+                new_types.append(new_type)
+        self._additional_types.extend(new_types)
+        # Topics look their type up in the supported types registry, which
+        # importing a type's module does not always fill (e.g. when a package
+        # registers its types in another module), so register them here
+        add_additional_datatypes(new_types)
 
     @property
     def _inputs_json(self) -> Union[str, bytes, bytearray]:
