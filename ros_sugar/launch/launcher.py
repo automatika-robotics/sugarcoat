@@ -61,9 +61,11 @@ from ..core.action import LogInfo
 from ..actions import publish_message
 from ..config.base_config import ComponentRunType
 from ..core.action import Action
+from ..core.routine import Routine
 from ..core.component import BaseComponent
 from ..core.monitor import Monitor
 from ..core.event import OnInternalEvent, Event
+from ..core._action_registry import SystemActionRegistry
 from .launch_actions import ComponentLaunchAction
 from ..base_clients import ServiceClientConfig, ActionClientConfig
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
@@ -241,6 +243,8 @@ class Launcher:
 
         # Events/Actions dictionaries
         self._internal_events: Optional[List[Event]] = None
+        # Built in _setup_monitor_node, read by _init_monitor_node
+        self._action_registry: Optional[SystemActionRegistry] = None
         self._internal_event_names: Optional[List[str]] = None
         self._ros_events_actions: Dict[str, List[ROSLaunchAction]] = {}
         # Dictionaries {serialized_event: actions}
@@ -264,7 +268,12 @@ class Launcher:
         events_actions: Optional[
             Mapping[
                 Event,
-                Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
+                Union[
+                    Action,
+                    ROSLaunchAction,
+                    Routine,
+                    List[Union[Action, ROSLaunchAction, Routine]],
+                ],
             ]
         ] = None,
         multiprocessing: bool = False,
@@ -357,7 +366,12 @@ class Launcher:
     def on(
         self,
         event: Event,
-        action: Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
+        action: Union[
+            Action,
+            ROSLaunchAction,
+            Routine,
+            List[Union[Action, ROSLaunchAction, Routine]],
+        ],
     ) -> None:
         """Register an event/action mapping on the launcher.
 
@@ -446,6 +460,15 @@ class Launcher:
             Hard upper bound (Hz) for a client-requested API stream rate.
         :type api_max_stream_rate: float, default 30.0
         """
+
+        # A type without a callback in a derived package cannot be a UI output
+        for topic in outputs or []:
+            if topic.msg_type.callback is None:
+                raise TypeError(
+                    f"UI output '{topic.name}' has type "
+                    f"'{topic.msg_type.__name__}', which has no callback, so it "
+                    "cannot be shown in the UI"
+                )
 
         # Fail fast if dependencies of the requested UI mode are missing
         from importlib.util import find_spec
@@ -1049,11 +1072,76 @@ class Launcher:
         :param action: Action
         :type action: Action
         """
+        if isinstance(action, Routine):
+            # A routine is driven by callbacks on the node that hosts it, and
+            # the launch system has no node to host it on
+            raise InvalidAction(
+                f"Routine '{action.name}' cannot be executed by the launch "
+                "system. Routines are hosted by the Monitor, so a routine cannot be "
+                "attached to a lifecycle transition or any other launch entity."
+            )
+        if isinstance(action, Action) and action.is_monitored:
+            # Anything still routed here is run by the launch system as a launch
+            # entity rather than as a callable, so there is nowhere to put a
+            # watch and retry loop. Recipe methods are diverted to the Monitor
+            # before reaching this point; lifecycle transitions cannot be
+            raise InvalidAction(
+                f"Action '{action.action_name}' cannot be monitored. It is "
+                "executed by the launch system as a launch entity, so its outcome "
+                "cannot be watched. Monitor a component, system-level or recipe "
+                "action instead."
+            )
         self.__update_dict_list(self._ros_events_actions, event.id, action)
         if not self._internal_events:
             self._internal_events = [event]
         elif event not in self._internal_events:
             self._internal_events.append(event)
+
+    def __verify_routine(self, routine: Routine) -> None:
+        """Check that every step of a routine is reachable from the Monitor.
+
+        :param routine: The routine being routed
+        :type routine: Routine
+        :raises InvalidAction: If a step targets an unknown component, or one
+            running in its own process, or another routine already uses the name
+        """
+        # Names identify a routine in its cursor topic and to the control
+        # actions, so two routines cannot share one. The same routine object
+        # registered on several events is fine and is registered once
+        for actions in self._monitor_events_actions.values():
+            for registered in actions:
+                if (
+                    isinstance(registered, Routine)
+                    and registered.name == routine.name
+                    and registered is not routine
+                ):
+                    raise InvalidAction(
+                        f"Got two different routines named '{routine.name}'. Routine "
+                        "names identify a routine in its cursor topic and to the "
+                        "control actions, so they must be unique"
+                    )
+        known_components = [component.node_name for component in self._components]
+        for step in routine.steps:
+            owner = step.parent_component
+            if not owner:
+                continue
+            if owner not in known_components:
+                raise InvalidAction(
+                    f"Step '{step.action_name}' of routine '{routine.name}' targets "
+                    f"component '{owner}', which is unknown or not added to the Launcher"
+                )
+            if owner in self._pkg_executable:
+                # The Monitor holds an unspun copy of a component that runs in
+                # its own process, so calling its method directly would do
+                # nothing at all. Dispatching such a step over the component's
+                # ExecuteMethod service is the fix; until then this is rejected
+                # rather than silently doing nothing
+                raise InvalidAction(
+                    f"Step '{step.action_name}' of routine '{routine.name}' targets "
+                    f"component '{owner}', which runs in its own process. Routines "
+                    "cannot yet drive components across processes; add that component "
+                    "with multiprocessing=False to run this routine"
+                )
 
     def __rewrite_actions_for_components(
         self,
@@ -1077,8 +1165,10 @@ class Launcher:
         for event, action_set in events_actions_dict.items():
             bridge_events_per_target: Dict[str, Event] = {}
             for action in action_set:
-                # Verify that the action inputs are available from the event topic(s)
-                if isinstance(action, Action):
+                # Verify that the action inputs are available from the event
+                # topic(s). A routine reports the topics of all of its steps,
+                # so the Monitor subscribes to everything the steps will read
+                if isinstance(action, (Action, Routine)):
                     event.verify_required_action_topics(action)
                 # Callable-based events have their own routing logic
                 if event._is_action_based:
@@ -1107,6 +1197,18 @@ class Launcher:
                         )
                 elif isinstance(action, Action) and action._is_monitor_action:
                     # Action to execute through the monitor
+                    self.__update_dict_list(self._monitor_events_actions, event, action)
+                elif isinstance(action, Action) and action.is_monitored:
+                    # A monitored recipe method would otherwise run in the launch
+                    # context, where its return value is discarded and a blocking
+                    # watch would stall the launch loop. The Monitor runs it on its
+                    # own thread instead, which is what the launch context does
+                    # anyway (the LaunchContext handed to an OpaqueFunction is unused)
+                    self.__update_dict_list(self._monitor_events_actions, event, action)
+                elif isinstance(action, Routine):
+                    # A routine spans components, so no component can host it.
+                    # The Monitor is the one node that can reach all of them
+                    self.__verify_routine(action)
                     self.__update_dict_list(self._monitor_events_actions, event, action)
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
@@ -1152,6 +1254,16 @@ class Launcher:
             )
             if isinstance(action, Action) and action._is_monitor_action:
                 # Action to execute through the monitor
+                self.__update_dict_list(self._monitor_events_actions, event, action)
+            elif isinstance(action, Action) and action.is_monitored:
+                # Runs in the Monitor rather than the launch context, so its
+                # return value stays visible and a blocking watch cannot stall
+                # the launch loop
+                self.__update_dict_list(self._monitor_events_actions, event, action)
+            elif isinstance(action, Routine):
+                # Hosted by the Monitor, which is the only node that can reach
+                # every component a routine's steps target
+                self.__verify_routine(action)
                 self.__update_dict_list(self._monitor_events_actions, event, action)
             elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                 # If it is a valid ROS launch action -> nothing is required
@@ -1398,6 +1510,7 @@ class Launcher:
     ) -> None:
         self.monitor_node = Monitor(
             components_names=components_names,
+            action_registry=self._action_registry,
             events_actions=self._monitor_events_actions,
             events_to_emit=self._internal_events,
             services_components=services_components,
@@ -1451,6 +1564,19 @@ class Launcher:
                 comp.node_name
                 for comp in self.__components_to_activate_on_start_threaded
             ]
+        )
+
+        # What the stack can be asked to do by name. Built here because this is
+        # the only place holding every component object together with how each
+        # of them is launched.
+        # NOTE: handed over as an attribute rather than an argument, because
+        # downstream packages override _init_monitor_node to install their own
+        # monitor and a new parameter would break them
+        self._action_registry = SystemActionRegistry.from_components(
+            self._components,
+            monitor_methods=Monitor.RUNTIME_MONITOR_ACTIONS,
+            monitor_class=Monitor,
+            out_of_process=list(self._pkg_executable),
         )
 
         self._init_monitor_node(
@@ -1783,7 +1909,7 @@ class Launcher:
         )
         self._launch_group.append(component_action)
 
-    def _start_ros_launch(self, introspect: bool = True, debug: bool = False):
+    def _start_ros_launch(self, introspect: bool = True, debug: bool = False) -> int:
         """
         Launch all ros nodes
 
@@ -1791,6 +1917,8 @@ class Launcher:
         :type introspect: bool, optional
         :param debug: LaunchService debugger, defaults to True
         :type debug: bool, optional
+        :return: The launch's return code, non-zero if it failed
+        :rtype: int
         """
         if introspect:
             logger.info("-----------------------------------------------")
@@ -1807,7 +1935,7 @@ class Launcher:
         self.ls = LaunchService(debug=debug)
         self.ls.include_launch_description(self._description)
 
-        self.ls.run(shutdown_when_idle=False)
+        return self.ls.run(shutdown_when_idle=False)
 
     def configure(
         self,
@@ -2150,24 +2278,31 @@ class Launcher:
         if config_file:
             self.configure(config_file)
 
-        self.setup_launch_description()
+        try:
+            self.setup_launch_description()
 
-        self._start_ros_launch(introspect, launch_debug)
+            return_code = self._start_ros_launch(introspect, launch_debug)
+        finally:
+            # Release plugin hosts, bus and shared mem however the launch ends
+            # Tear down every plugin HOST, then the bus they shared
+            for host in self._plugin_hosts:
+                host.close()
+            self._plugin_hosts.clear()
+            if self._plugin_bus is not None:
+                self._plugin_bus.close()
+                self._plugin_bus = None
+            # Unlink the shared-memory segments once the writers (hosts) are down.
+            if self._plugin_shm is not None:
+                self._plugin_shm.close()
+                self._plugin_shm = None
 
-        # Tear down every plugin HOST, then the bus they shared
-        for host in self._plugin_hosts:
-            host.close()
-        self._plugin_hosts.clear()
-        if self._plugin_bus is not None:
-            self._plugin_bus.close()
-            self._plugin_bus = None
-        # Unlink the shared-memory segments once the writers (hosts) are down.
-        if self._plugin_shm is not None:
-            self._plugin_shm.close()
-            self._plugin_shm = None
+            if self._thread_pool:
+                self._thread_pool.shutdown()
 
-        if self._thread_pool:
-            self._thread_pool.shutdown()
+        # Exit with the non-zero code from launch
+        if return_code:
+            logger.error(f"Launch failed with return code {return_code}")
+            sys.exit(return_code)
 
         logger.info("------------------------------------")
         logger.info("ALL COMPONENTS EXITED SUCCESSFULLY")

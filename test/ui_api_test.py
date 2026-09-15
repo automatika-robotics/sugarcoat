@@ -175,6 +175,7 @@ class _ApiNode:
         self.publish_error = None  # exception to raise from publish_data
         self.service_response = None  # raw ROS response to return
         self.service_error = None  # exception to raise from send_srv_call
+        self.service_calls = []  # recorded service call data
         self.latest = {}  # topic_name -> get_latest_output result
         self.goals = []  # recorded action goals
         self.goal_accepted = True  # send_action_goal return value
@@ -188,10 +189,19 @@ class _ApiNode:
         self.output_listeners = {}  # topic_name -> set of push listeners
 
     def srv_clients_inputs_dicts(self):
-        return [{"name": "reset", "type": "Trigger", "fields": {}}]
+        from std_srvs.srv import Trigger
+
+        return [
+            {"name": "reset", "type": "Trigger", "fields": {}, "request_class": Trigger.Request}
+        ]
 
     def action_clients_inputs_dicts(self):
-        return [{"name": "navigate", "type": "NavigateToPose", "fields": {}}]
+        # Point stands in for a goal message with an 'x' field
+        from geometry_msgs.msg import Point
+
+        return [
+            {"name": "navigate", "type": "NavigateToPose", "fields": {}, "goal_class": Point}
+        ]
 
     def get_latest_output(self, name):
         return self.latest.get(name)
@@ -207,6 +217,7 @@ class _ApiNode:
         return 1
 
     def send_srv_call(self, data):
+        self.service_calls.append(data)
         if self.service_error is not None:
             raise self.service_error
         return self.service_response
@@ -297,7 +308,7 @@ def test_publish_input_bad_fields_400():
     node = _ApiNode()
     node.publish_error = ValueError("Cannot build a Twist message")
     client = _make_client(node)
-    resp = client.post("/api/inputs/cmd_vel", json={"bogus": 1})
+    resp = client.post("/api/inputs/cmd_vel", json={"linear": {"x": 1.0}})
     assert resp.status_code == 400
 
 
@@ -377,12 +388,15 @@ def test_output_stream_ok():
 
 
 def test_output_stream_unknown_closes():
+    """An undeclared name is accepted, then closed with 1008 and a reason, so a
+    client learns why instead of seeing a bare HTTP 403 on the handshake."""
     from starlette.websockets import WebSocketDisconnect
 
     client = _make_client(_ApiNode())
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/outputs/nope") as ws:
+    with client.websocket_connect("/api/outputs/nope") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Unknown output topic")
 
 
 def test_output_stream_default_push_for_light_type():
@@ -424,6 +438,32 @@ def test_output_stream_rate_overrides_to_sample():
     with client.websocket_connect("/api/outputs/odom?rate=50") as ws:
         assert ws.receive_json()["topic"] == "odom"
         assert not node.output_listeners.get("odom")  # sampled path -> no listener
+
+
+def test_sampled_stream_does_not_resend_unchanged_content():
+    """Sampling faster than the source must not repeat the same frame"""
+    import time
+
+    node = _ApiNode()
+    node.latest["map"] = {"frame_id": "map", "data": "AAAA"}
+    client = _make_client(node)
+    with client.websocket_connect("/api/outputs/map?rate=30") as ws:
+        assert ws.receive_json()["payload"]["data"] == "AAAA"
+        time.sleep(0.2)  # several ticks with no new message
+        node.latest["map"] = {"frame_id": "map", "data": "BBBB"}
+        # The next frame is the new message, not a repeat of the first
+        assert ws.receive_json()["payload"]["data"] == "BBBB"
+
+
+def test_push_stream_sends_every_message():
+    """A push stream sends each message, even one carrying the same value"""
+    node = _ApiNode()
+    node.latest["odom"] = {"frame_id": "odom", "data": [1.0]}
+    client = _make_client(node)
+    with client.websocket_connect("/api/outputs/odom") as ws:
+        first = ws.receive_json()
+        node.fire_output("odom")  # a new message with the same content
+        assert ws.receive_json() == first
 
 
 def test_output_stream_push_not_ready_closes():
@@ -479,6 +519,61 @@ def test_action_cancel_not_swallowed_by_goal_route():
     assert resp.status_code == 200
     assert resp.json()["cancelled"] is True
     assert node.goals == []  # the goal handler never ran
+
+
+def test_body_cannot_redirect_to_another_interface():
+    """The URL names the interface. A body key naming another input, service
+    or action is not a message field, so the call is refused and nothing is
+    sent to either interface."""
+    node = _ApiNode()
+    client = _make_client(node)
+
+    resp = client.post("/api/inputs/cmd_vel", json={"topic_name": "speech", "linear": {"x": 1.0}})
+    assert resp.status_code == 400
+    assert client.post("/api/services/reset", json={"srv_name": "other"}).status_code == 400
+    resp = client.post("/api/actions/navigate", json={"action_name": "other", "x": 1.0})
+    assert resp.status_code == 400
+
+    assert node.published == [] and node.service_calls == [] and node.goals == []
+
+
+def test_unknown_fields_are_rejected():
+    """A misspelt field must not be dropped silently, which would send that
+    part of the message at its default value. The error names the field and
+    the ones that exist, at any nesting depth."""
+    node = _ApiNode()
+    client = _make_client(node)
+
+    resp = client.post("/api/inputs/cmd_vel", json={"linear": {"x": 1.0, "q": 2.0}})
+    assert resp.status_code == 400
+    assert "'q'" in resp.json()["error"] and "x, y, z" in resp.json()["error"]
+    assert client.post("/api/services/reset", json={"bogus": 1}).status_code == 400
+    assert client.post("/api/actions/navigate", json={"yaw": 1.0}).status_code == 400
+
+    assert node.published == [] and node.service_calls == [] and node.goals == []
+
+
+def test_malformed_json_body_is_rejected():
+    """A body that is not valid JSON must not reach ROS as an empty request,
+    which would publish a default message (e.g. a goal at the origin)."""
+    node = _ApiNode()
+    client = _make_client(node)
+    malformed = {"content": b"{x: 9", "headers": {"content-type": "application/json"}}
+
+    for url in ("/api/inputs/cmd_vel", "/api/services/reset", "/api/actions/navigate"):
+        resp = client.post(url, **malformed)
+        assert resp.status_code == 400, url
+        assert "JSON object" in resp.json()["error"]
+
+    assert node.published == [] and node.service_calls == [] and node.goals == []
+
+
+def test_empty_body_is_an_empty_request():
+    """A body-less call, such as a Trigger service, is still sent"""
+    node = _ApiNode()
+    client = _make_client(node)
+    client.post("/api/services/reset")
+    assert node.service_calls == [{"srv_name": "reset"}]
 
 
 def test_set_ros_msg_from_dict_converts_by_declared_type():
@@ -567,6 +662,17 @@ def test_send_goal_not_ready_503():
     assert resp.status_code == 503
 
 
+def test_send_goal_while_one_runs_409():
+    from ros_sugar.ui_node.utils import GoalInProgressError
+
+    node = _ApiNode()
+    node.goal_error = GoalInProgressError("Action 'navigate' is still running a goal")
+    client = _make_client(node)
+    resp = client.post("/api/actions/navigate", json={})
+    assert resp.status_code == 409
+    assert "still running" in resp.json()["error"]
+
+
 def test_send_goal_rejected_502():
     node = _ApiNode()
     node.goal_accepted = False
@@ -612,6 +718,8 @@ def test_action_feedback_emits_current_state_on_connect():
         "feedback": {"x": 1.0, "y": 2.0, "z": 3.0},
         "timestep": 5,
         "duration_secs": 2.0,
+        "feedback_timeout": False,
+        "result": None,
     }
 
 
@@ -642,16 +750,22 @@ def test_action_feedback_pushed_on_arrival():
         node.fire_action_feedback("navigate")
         assert ws.receive_json()["timestep"] == 2
 
-        # Terminal feedback -> push, then the server closes the stream.
+        # Terminal feedback -> push it with the goal's result, then the server
+        # closes the stream.
+        from geometry_msgs.msg import Point as ROSPoint
+
         node.feedback = {
             "status": "completed",
             "feedback": None,
             "timestep": 3,
             "feedback_timeout": False,
             "duration_secs": 1.5,
+            "result": ROSPoint(x=5.0, y=6.0, z=0.0),  # a raw ROS message
         }
         node.fire_action_feedback("navigate")
-        assert ws.receive_json()["status"] == "completed"
+        terminal = ws.receive_json()
+        assert terminal["status"] == "completed"
+        assert terminal["result"] == {"x": 5.0, "y": 6.0, "z": 0.0}
         with pytest.raises(WebSocketDisconnect):
             ws.receive_json()
 
@@ -668,12 +782,15 @@ def test_action_feedback_not_ready_closes():
 
 
 def test_action_feedback_unknown_closes():
+    """An undeclared name is accepted, then closed with 1008 and a reason, so a
+    client learns why instead of seeing a bare HTTP 403 on the handshake."""
     from starlette.websockets import WebSocketDisconnect
 
     client = _make_client(_ApiNode())
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/actions/nope/feedback") as ws:
+    with client.websocket_connect("/api/actions/nope/feedback") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Unknown action")
 
 
 # ---------------------------------------------------------------------------
@@ -751,13 +868,16 @@ def test_occupancy_grid_ui_content_is_raw_grid_not_jpeg():
 
 
 def test_world_unknown_closes():
+    """An undeclared name is accepted, then closed with 1008 and a reason, so a
+    client learns why instead of seeing a bare HTTP 403 on the handshake."""
     from starlette.websockets import WebSocketDisconnect
 
     client = _make_client(_ApiNode())
-    # 'odom' is an Odometry output, not an occupancy grid -> reject.
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/world/odom") as ws:
+    # 'odom' is an Odometry output, not an occupancy grid
+    with client.websocket_connect("/api/world/odom") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Not a declared OccupancyGrid output")
 
 
 # ---------------------------------------------------------------------------
@@ -781,10 +901,168 @@ def test_audio_input_stream_publishes():
 
 
 def test_audio_input_unknown_closes():
+    """An undeclared name is accepted, then closed with 1008 and a reason, so a
+    client learns why instead of seeing a bare HTTP 403 on the handshake."""
     from starlette.websockets import WebSocketDisconnect
 
     client = _make_client(_ApiNode())
-    # 'cmd_vel' is a Twist input, not Audio -> reject.
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/inputs/cmd_vel/audio") as ws:
+    # 'cmd_vel' is a Twist input, not Audio
+    with client.websocket_connect("/api/inputs/cmd_vel/audio") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Not a declared Audio input")
+
+
+# ---------------------------------------------------------------------------
+# UI node lifecycle
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def ui_node():
+    """A real, activated UI node with one service and one action client, neither
+    of which has a server running."""
+    import rclpy
+    from std_srvs.srv import Trigger
+    from tf2_msgs.action import LookupTransform
+
+    from ros_sugar.base_clients import ActionClientConfig, ServiceClientConfig
+    from ros_sugar.ui_node.ui_node import UINode, UINodeConfig
+
+    if not rclpy.ok():
+        rclpy.init()
+    node = UINode(
+        config=UINodeConfig(),
+        inputs=[
+            ServiceClientConfig(srv_type=Trigger, name="ui_node_test/reset"),
+            ActionClientConfig(action_type=LookupTransform, name="ui_node_test/lookup"),
+        ],
+    )
+    node.rclpy_init_node()
+    node.custom_on_activate()
+    try:
+        yield node
+    finally:
+        node.destroy_node()
+
+
+def test_enable_ui_rejects_an_output_type_without_a_callback(monkeypatch):
+    """The UI node could not read such an output, so the recipe fails at once
+    with a clear error instead of the UI failing to start"""
+    from ros_sugar import Launcher
+    from ros_sugar.io.supported_types import String
+
+    monkeypatch.setattr(String, "callback", None)  # a type without a callback
+
+    with pytest.raises(TypeError, match="'tracks' has type 'String'"):
+        Launcher().enable_ui(outputs=[Topic(name="tracks", msg_type="String")])
+
+
+def test_slow_output_content_does_not_block_other_requests():
+    """Computing an output's content (e.g. a JPEG encode) must not hold up
+    the rest of the server, for a latest read or a stream"""
+    import threading
+    import time
+
+    node = _ApiNode()
+
+    def _slow_latest(name):
+        time.sleep(1.0)
+        return {"data": 1}
+
+    node.get_latest_output = _slow_latest
+
+    def _health_secs(client):
+        start = time.monotonic()
+        assert client.get("/api/health").status_code == 200
+        return time.monotonic() - start
+
+    with _make_client(node) as client:  # one event loop for all requests
+        reader = threading.Thread(
+            target=client.get, args=("/api/outputs/map/latest",), daemon=True
+        )
+        reader.start()
+        time.sleep(0.2)
+        assert _health_secs(client) < 0.5
+        reader.join()
+
+        with client.websocket_connect("/api/outputs/map"):  # a sampled stream
+            time.sleep(0.2)
+            assert _health_secs(client) < 0.5
+
+
+def test_action_duration_has_fractions_of_a_second(ui_node):
+    """A goal running for part of a second reports that part, not 0"""
+    import time
+    from unittest.mock import MagicMock
+
+    handler = ui_node._ros_action_clients["ui_node_test/lookup"]
+    handler.client.wait_for_server = MagicMock(return_value=True)
+
+    def _accept(goal, feedback_callback):
+        handler.goal_accepted = True
+        return MagicMock()
+
+    handler.client.send_goal_async = _accept
+    assert handler.send_request(handler.config.action_type.Goal())
+    time.sleep(0.3)
+
+    assert 0.3 <= handler.get_ui_elements()["duration_secs"] < 1.0
+    handler.reset()
+
+
+def test_ui_node_deactivates_with_service_and_action_clients(ui_node):
+    """Deactivating releases the node's service and action clients, and the
+    API then reports them as not ready until the node is activated again."""
+    service_client = ui_node._ros_service_clients["ui_node_test/reset"].client
+    action_client = ui_node._ros_action_clients["ui_node_test/lookup"].client
+
+    ui_node.custom_on_deactivate()
+
+    assert service_client not in list(ui_node.clients)
+    assert action_client not in list(ui_node.waitables)
+    with pytest.raises(RuntimeError, match="not ready"):
+        ui_node.send_srv_call({"srv_name": "ui_node_test/reset"})
+    with pytest.raises(RuntimeError, match="not ready"):
+        ui_node.send_action_goal({"action_name": "ui_node_test/lookup"})
+
+
+def test_a_second_goal_leaves_the_running_goal_alone(ui_node):
+    """While a goal runs, another is refused before it can clear the running
+    goal's state. Once the goal returns, or its feedback times out, goals are
+    accepted again"""
+    from unittest.mock import MagicMock
+
+    from ros_sugar.ui_node.utils import GoalInProgressError
+
+    name = "ui_node_test/lookup"
+    handler = ui_node._ros_action_clients[name]
+    handler.client.wait_for_server = MagicMock(return_value=True)
+    handler.send_request_from_dict = MagicMock(return_value=True)
+    handler.goal_accepted = True  # a running goal
+
+    with pytest.raises(GoalInProgressError):
+        ui_node.send_action_goal({"action_name": name})
+    handler.send_request_from_dict.assert_not_called()
+    assert handler.goal_accepted
+
+    handler._feedback_timeout = True  # its server went quiet
+    assert ui_node.send_action_goal({"action_name": name})
+    handler._feedback_timeout = False
+    handler.action_returned = True  # it finished
+    assert ui_node.send_action_goal({"action_name": name})
+
+
+def test_missing_server_is_reported_at_once(ui_node):
+    """With no server behind a declared client, the call fails after a brief
+    wait for discovery instead of holding the request for the client's full
+    timeout (30 s by default)."""
+    import time
+
+    calls = (
+        (ui_node.send_srv_call, {"srv_name": "ui_node_test/reset"}),
+        (ui_node.send_action_goal, {"action_name": "ui_node_test/lookup"}),
+    )
+    for call, data in calls:
+        start = time.monotonic()
+        with pytest.raises(RuntimeError, match="not available"):
+            call(data)
+        assert time.monotonic() - start < 5.0

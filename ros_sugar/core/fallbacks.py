@@ -9,6 +9,7 @@ from automatika_ros_sugar.msg import ComponentStatus
 from .action import Action
 from .event import EventBlackboardEntry
 from ..io import Topic
+from ..utils import logger
 
 
 @define
@@ -241,12 +242,16 @@ class ComponentFallbacks:
                 or fallback.retry_idx < fallback.max_retries
             ):
                 try:
-                    success = fallback.action(topics=self.__topics_blackboard)
-                except Exception:
-                    success = False
+                    success, message = fallback.action(
+                        topics=self.__topics_blackboard
+                    )
+                except Exception as e:
+                    success, message = False, str(e)
                 if success:
                     # Fallback ran successfully -> reset the status to healthy
                     self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
+                else:
+                    logger.error(f"Fallback action failed: {message}")
                 fallback.retry_idx += 1
                 self.__giveup = False
             else:
@@ -267,14 +272,16 @@ class ComponentFallbacks:
 
         if fallback.action_idx < len(fallback.action):
             try:
-                success = fallback.action[fallback.action_idx](
+                success, message = fallback.action[fallback.action_idx](
                     topics=self.__topics_blackboard
                 )
-            except Exception:
-                success = False
+            except Exception as e:
+                success, message = False, str(e)
             if success:
                 # Fallback ran successfully -> reset the status to healthy
                 self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
+            else:
+                logger.error(f"Fallback action failed: {message}")
             self.__giveup = False
         else:
             self.__giveup = True

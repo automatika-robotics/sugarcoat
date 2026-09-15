@@ -19,9 +19,10 @@ except ModuleNotFoundError as e:
 
 from rosidl_runtime_py.convert import message_to_ordereddict
 
-from ..io.supported_types import get_ros_msg_fields_dict
+from ..io.supported_types import get_ros_msg_fields_dict, validate_msg_fields
 
 from .ui_node import UINode
+from .utils import GoalInProgressError
 
 # All API routes are namespaced under this prefix
 API_BASE = "/api"
@@ -114,11 +115,28 @@ def _name_param(conn) -> str:
 
 
 async def _json_body(request) -> Any:
-    """Parse a request's JSON body, returning ``{}`` on an empty/invalid body."""
+    """Parse a request's JSON body.
+
+    An empty body is an empty request, ``{}``, so body-less calls (e.g. a
+    Trigger service) still work. A body that is not valid JSON is ``None``,
+    which callers reject: treating it as ``{}`` would publish a default message.
+    """
+    if not (await request.body()).strip():
+        return {}
     try:
         return await request.json()
-    except Exception:
-        return {}
+    except ValueError:
+        return None
+
+
+async def _reject_websocket(websocket, reason: str) -> None:
+    """Refuse a WebSocket for a name the recipe did not declare.
+
+    Accepted first and then closed with 1008 and a reason. Closing before
+    accepting makes the server answer the handshake with a bare HTTP 403.
+    """
+    await websocket.accept()
+    await websocket.close(code=1008, reason=reason)
 
 
 async def _stream_at_rate(websocket, default_rate, max_rate, sample) -> None:
@@ -141,7 +159,8 @@ async def _stream_at_rate(websocket, default_rate, max_rate, sample) -> None:
 
     try:
         while True:
-            payload, done = sample()
+            # Off the event loop
+            payload, done = await asyncio.to_thread(sample)
             if payload is not None:
                 await websocket.send_json(payload)
             if done:
@@ -177,7 +196,8 @@ async def _stream_pushed(websocket, subscribe, unsubscribe, sample) -> None:
         while True:
             # Clear before reading so a message arriving mid-emit re-wakes
             updated.clear()
-            payload, done = sample()
+            # Off the event loop
+            payload, done = await asyncio.to_thread(sample)
             if payload is not None:
                 await websocket.send_json(payload)
             if done:
@@ -293,7 +313,7 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
 
 def _input_routes(ros_node: UINode) -> List:
     """Routes for publishing to the declared input topics."""
-    input_names = {topic.name for topic in (ros_node.out_topics or [])}
+    input_types = {topic.name: topic.ros_msg_type for topic in (ros_node.out_topics or [])}
     # Declared Audio input topics, which accept uploads over a dedicated WS.
     audio_input_names = {
         t.name for t in (ros_node.out_topics or []) if t.msg_type.__name__ == "Audio"
@@ -302,7 +322,7 @@ def _input_routes(ros_node: UINode) -> List:
     async def publish_input(request):
         """Publish a JSON message (matching the topic schema) to an input topic."""
         name = _name_param(request)
-        if name not in input_names:
+        if name not in input_types:
             return JSONResponse(
                 {"error": f"Unknown input topic '{name}'"}, status_code=404
             )
@@ -312,7 +332,11 @@ def _input_routes(ros_node: UINode) -> List:
                 {"error": "Request body must be a JSON object"}, status_code=400
             )
         try:
-            subscribers = ros_node.publish_data({"topic_name": name, **body})
+            # Check before the message is built and skip unrecognized fields
+            validate_msg_fields(input_types[name], body, f"Input '{name}'")
+            # NOTE: The route name goes last so a same named body key cannot
+            # redirect the publish to another declared input
+            subscribers = ros_node.publish_data({**body, "topic_name": name})
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
         except ValueError as e:
@@ -326,7 +350,7 @@ def _input_routes(ros_node: UINode) -> List:
         declared Audio input topic. Acks each frame"""
         name = _name_param(websocket)
         if name not in audio_input_names:
-            await websocket.close(code=1008)  # not a declared Audio input
+            await _reject_websocket(websocket, "Not a declared Audio input")
             return
         await websocket.accept()
         try:
@@ -361,12 +385,15 @@ def _input_routes(ros_node: UINode) -> List:
 
 def _service_routes(ros_node: UINode) -> List:
     """Route for calling the declared service clients."""
-    service_names = {client["name"] for client in ros_node.srv_clients_inputs_dicts()}
+    request_classes = {
+        client["name"]: client["request_class"]
+        for client in ros_node.srv_clients_inputs_dicts()
+    }
 
     async def call_service(request):
         """Call a service with a JSON request body and return its JSON response."""
         name = _name_param(request)
-        if name not in service_names:
+        if name not in request_classes:
             return JSONResponse({"error": f"Unknown service '{name}'"}, status_code=404)
         body = await _json_body(request)
         if not isinstance(body, dict):
@@ -374,10 +401,12 @@ def _service_routes(ros_node: UINode) -> List:
                 {"error": "Request body must be a JSON object"}, status_code=400
             )
         try:
+            validate_msg_fields(request_classes[name], body, f"The request for '{name}'")
             # send_srv_call blocks on the ROS future, so offload it off the event
             # loop to keep the server responsive.
             response = await run_in_threadpool(
-                ros_node.send_srv_call, {"srv_name": name, **body}
+                # Route name last, so the body cannot pick another service
+                ros_node.send_srv_call, {**body, "srv_name": name}
             )
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
@@ -411,7 +440,8 @@ def _output_routes(ros_node: UINode) -> List:
             return JSONResponse(
                 {"error": f"Unknown output topic '{name}'"}, status_code=404
             )
-        content = ros_node.get_latest_output(name)
+        # Off the event loop
+        content = await asyncio.to_thread(ros_node.get_latest_output, name)
         if content is None:
             return JSONResponse(
                 {"error": f"No data received yet for '{name}'"}, status_code=404
@@ -428,14 +458,8 @@ def _output_routes(ros_node: UINode) -> List:
         """
         name = _name_param(websocket)
         if name not in output_names:
-            await websocket.close(code=1008)  # policy violation
+            await _reject_websocket(websocket, "Unknown output topic")
             return
-
-        def sample():
-            content = ros_node.get_latest_output(name)
-            if content is None:
-                return None, False
-            return {"topic": name, "payload": _content_to_jsonable(content)}, False
 
         try:
             requested_rate = float(websocket.query_params.get("rate", ""))
@@ -446,6 +470,18 @@ def _output_routes(ros_node: UINode) -> List:
             push = name not in rate_sampled_names
         else:
             push = requested_rate == 0  # explicit ?rate=0 forces push
+
+        last_sent = None
+
+        def sample():
+            nonlocal last_sent
+            content = ros_node.get_latest_output(name)
+            # NOTE: Sampled streams skip a tick when the memoized content is the
+            # same object, i.e. no new message arrived. Push sends every message
+            if content is None or (not push and content is last_sent):
+                return None, False
+            last_sent = content
+            return {"topic": name, "payload": _content_to_jsonable(content)}, False
 
         if push:
             # Lossless event push
@@ -473,12 +509,15 @@ def _output_routes(ros_node: UINode) -> List:
 
 def _action_routes(ros_node: UINode) -> List:
     """Routes for sending, canceling and following the declared actions."""
-    action_names = {client["name"] for client in ros_node.action_clients_inputs_dicts()}
+    goal_classes = {
+        client["name"]: client["goal_class"]
+        for client in ros_node.action_clients_inputs_dicts()
+    }
 
     async def send_goal(request):
         """Send a JSON goal to an action; returns 202 once the server accepts it."""
         name = _name_param(request)
-        if name not in action_names:
+        if name not in goal_classes:
             return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
         body = await _json_body(request)
         if not isinstance(body, dict):
@@ -486,10 +525,14 @@ def _action_routes(ros_node: UINode) -> List:
                 {"error": "Request body must be a JSON object"}, status_code=400
             )
         try:
+            validate_msg_fields(goal_classes[name], body, f"The goal for '{name}'")
             # send_action_goal blocks until the goal is accepted/rejected.
             accepted = await run_in_threadpool(
-                ros_node.send_action_goal, {"action_name": name, **body}
+                # Route name last, so the body cannot pick another action
+                ros_node.send_action_goal, {**body, "action_name": name}
             )
+        except GoalInProgressError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
         except ValueError as e:
@@ -512,7 +555,7 @@ def _action_routes(ros_node: UINode) -> List:
     async def cancel_goal(request):
         """Cancel the ongoing goal of an action."""
         name = _name_param(request)
-        if name not in action_names:
+        if name not in goal_classes:
             return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
         try:
             cancelled, message = await run_in_threadpool(ros_node.cancel_action, name)
@@ -529,8 +572,8 @@ def _action_routes(ros_node: UINode) -> List:
         the client disconnects.
         """
         name = _name_param(websocket)
-        if name not in action_names:
-            await websocket.close(code=1008)  # policy violation
+        if name not in goal_classes:
+            await _reject_websocket(websocket, "Unknown action")
             return
 
         def sample():
@@ -544,6 +587,10 @@ def _action_routes(ros_node: UINode) -> List:
                 else None,
                 "timestep": fb["timestep"],
                 "duration_secs": fb["duration_secs"],
+                "feedback_timeout": fb["feedback_timeout"],
+                "result": _content_to_jsonable(fb["result"])
+                if fb.get("result") is not None
+                else None,
             }
             return payload, fb["status"] in ("completed", "aborted", "canceled")
 
@@ -587,7 +634,7 @@ def _world_routes(ros_node: UINode) -> List:
         """
         name = _name_param(websocket)
         if name not in grid_names:
-            await websocket.close(code=1008)  # not an occupancy-grid output
+            await _reject_websocket(websocket, "Not a declared OccupancyGrid output")
             return
         await websocket.accept()
 
@@ -611,7 +658,8 @@ def _world_routes(ros_node: UINode) -> List:
             while True:
                 now = loop.time()
                 # Grid
-                grid = ros_node.get_latest_output(name)
+                # Off the event loop
+                grid = await asyncio.to_thread(ros_node.get_latest_output, name)
                 if (
                     grid is not None
                     and grid is not last_grid
@@ -622,7 +670,9 @@ def _world_routes(ros_node: UINode) -> List:
                     last_grid_emit = now
                 # Overlays/paths. Emit each one only when its value changes.
                 for marker_name, marker_type in marker_topics:
-                    content = ros_node.get_latest_output(marker_name)
+                    content = await asyncio.to_thread(
+                        ros_node.get_latest_output, marker_name
+                    )
                     if content is None or content is last_marker.get(marker_name):
                         continue
                     last_marker[marker_name] = content

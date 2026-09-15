@@ -263,8 +263,9 @@ def build_browser_app(
             )
         return fh.get_main_page()
 
-    # NOTE: Output topics shown in the running log: everything NOT routed to a
-    # dedicated video/map widget, and not a map overlay.
+    # NOTE: Output topics shown in the running log: those with a log element,
+    # NOT routed to a dedicated video/map widget, and not a map overlay. Types
+    # with no defined element are not entertained.
     _widget_output_names = (
         {name for name, _ in fh.get_all_stream_outputs()}
         | {name for name, _ in fh.get_all_map_outputs()}
@@ -274,6 +275,7 @@ def build_browser_app(
         (o.name, o.msg_type.__name__)
         for o in (ros_node.in_topics or [])
         if o.name not in _widget_output_names
+        and o.msg_type.__name__ in elements._OUTPUT_ELEMENTS
     ]
     log_topic_names = {name for name, _ in log_topics}
     # Topics that are ALSO declared as UI inputs carry user content their
@@ -323,6 +325,7 @@ def build_browser_app(
         ]
 
         last_seen: Dict[str, tuple] = {}
+        logged_results: Dict[str, Any] = {}
 
         async def _feedback_loop():
             try:
@@ -333,33 +336,51 @@ def build_browser_app(
                         fb = ros_node.get_action_feedback(name)
                         if fb is None:
                             continue
-                        key = (fb["status"], fb["timestep"], fb["duration_secs"])
-                        if key == last_seen.get(name):
-                            continue
-                        last_seen[name] = key
-                        feedback = (
-                            ros_msg_to_str(fb["feedback"]) if fb["feedback"] else None
-                        )
-                        fh.action_clients_ft[name].update(
-                            status=fb["status"],
-                            feedback=feedback,
-                            duration=fb["duration_secs"],
-                            timestep=fb["timestep"],
-                        )
-                        await send(fh.action_clients_ft[name].card)
+                        ended = fb["status"] in ("aborted", "completed", "canceled")
+                        # The card shows whole seconds, so a fraction is no change
+                        key = (fb["status"], fb["timestep"], int(fb["duration_secs"]))
+                        if key != last_seen.get(name):
+                            last_seen[name] = key
+                            feedback = (
+                                ros_msg_to_str(fb["feedback"])
+                                if fb["feedback"]
+                                else None
+                            )
+                            fh.action_clients_ft[name].update(
+                                status=fb["status"],
+                                feedback=feedback,
+                                duration=fb["duration_secs"],
+                                timestep=fb["timestep"],
+                            )
+                            await send(fh.action_clients_ft[name].card)
 
-                        if fb["status"] in ("aborted", "completed", "canceled"):
-                            # display action aborted as an error on the main logging card
-                            if fb["status"] == "aborted":
-                                await log_data(
-                                    send,
-                                    f"Task '{name}' aborted: {feedback}"
-                                    if feedback
-                                    else f"Task '{name}' aborted",
-                                    data_type="String",
-                                    data_src="error",
-                                )
-                            fh.action_clients_ft[name].cleanup()
+                            if ended:
+                                # display action aborted as an error on the main logging card
+                                if fb["status"] == "aborted":
+                                    await log_data(
+                                        send,
+                                        f"Task '{name}' aborted: {feedback}"
+                                        if feedback
+                                        else f"Task '{name}' aborted",
+                                        data_type="String",
+                                        data_src="error",
+                                    )
+                                fh.action_clients_ft[name].cleanup()
+                        # The result can arrive after the ended status, so it is
+                        # checked on every wake and logged once per goal
+                        result = fb["result"]
+                        if (
+                            ended
+                            and result is not None
+                            and result is not logged_results.get(name)
+                        ):
+                            logged_results[name] = result
+                            await log_data(
+                                send,
+                                f"Task '{name}' result: {ros_msg_to_str(result)}",
+                                data_type="String",
+                                data_src="robot",
+                            )
             except (WebSocketDisconnect, RuntimeError):
                 pass
 
@@ -409,7 +430,13 @@ def build_browser_app(
                     updated.clear()
                     for name, type_name in log_topics:
                         content = ros_node.get_latest_output(name)
-                        if not content or content is last_seen.get(name):
+                        # no data yet, or an empty text. false and 0 are
+                        # values and are logged
+                        if (
+                            content is None
+                            or (isinstance(content, str) and not content)
+                            or content is last_seen.get(name)
+                        ):
                             continue
                         last_seen[name] = content
                         # Topics also declared as UI inputs carry user content

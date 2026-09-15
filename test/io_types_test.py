@@ -1656,3 +1656,43 @@ def test_camera_info_message_passes_through():
 
     info = _camera_info()
     assert CameraInfo.convert(info) is info
+
+
+# ---------------------------------------------------------------------------
+# JointState
+# ---------------------------------------------------------------------------
+
+
+def test_joint_state_ui_content_names_the_joints():
+    """A client can tell which value belongs to which joint"""
+    from sensor_msgs.msg import JointState as ROSJointState
+
+    from ros_sugar.io.callbacks import JointStateCallback
+
+    callback = JointStateCallback(Topic(name="joints", msg_type="JointState"))
+    callback.msg = ROSJointState(
+        name=["shoulder", "elbow"], position=[0.1, 0.2], velocity=[0.5, 0.0]
+    )
+
+    assert callback._get_ui_content() == {
+        "data": [0.1, 0.2],
+        "names": ["shoulder", "elbow"],
+        "velocities": [0.5, 0.0],
+        "efforts": [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Audio
+# ---------------------------------------------------------------------------
+
+
+def test_audio_convert_gives_one_bytes_object_per_byte():
+    """The message holds the clip byte by byte, from raw bytes or base64"""
+    from ros_sugar.io.supported_types import Audio
+
+    clip = bytes(range(256)) * 4
+    expected = [bytes([b]) for b in clip]
+
+    assert Audio.convert(clip).data == expected
+    assert Audio.convert(base64.b64encode(clip).decode()).data == expected

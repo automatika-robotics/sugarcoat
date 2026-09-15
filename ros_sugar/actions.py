@@ -24,6 +24,13 @@ These actions interact with standard ROS2 interfaces (Topics, Services, Actions)
 - send_action_goal
 - trigger_action_server
 
+## Routine Actions:
+These control a `Routine` by name on the Monitor that hosts it.
+- start_routine
+- pause_routine
+- resume_routine
+- abort_routine
+
 ## Usage Example:
 ```python
     from ros_sugar.actions import start, log, trigger_service
@@ -70,6 +77,10 @@ __all__ = [
     "trigger_action_server",
     "send_component_action_server_goal",
     "trigger_component_action_server",
+    "start_routine",
+    "pause_routine",
+    "resume_routine",
+    "abort_routine",
 ]
 
 
@@ -541,3 +552,76 @@ def log(*, msg: str, logger_name: Optional[str] = None) -> LogInfo:
     :rtype: LogInfo
     """
     return LogInfo(msg=msg, logger_name=logger_name)
+
+
+def __routine_action(action_name: str, **kwargs) -> Action:
+    """Build one of the Monitor's routine control actions.
+
+    Same shape as the other system level actions: a placeholder callable plus
+    the name of the Monitor method that really runs, resolved at activation.
+
+    :param action_name: Monitor method to run
+    :param kwargs: Arguments for that method
+    :rtype: Action
+    """
+    stack_action = Action(method=lambda *args, **kwargs: None, kwargs=kwargs)
+    stack_action.action_name = action_name
+    stack_action._is_monitor_action = True
+    return stack_action
+
+
+def start_routine(*, routine_name: str) -> Action:
+    """Action to start a routine by name.
+
+    Equivalent to triggering the `Routine` object itself, and useful where the
+    recipe has the name rather than the object.
+
+    :param routine_name: Name the routine was declared with
+    :type routine_name: str
+    :rtype: Action
+    """
+    return __routine_action("start_routine", routine_name=routine_name)
+
+
+def pause_routine(*, routine_name: str) -> Action:
+    """Action to pause a running routine, preempting the step in flight.
+
+    :param routine_name: Name the routine was declared with
+    :type routine_name: str
+    :rtype: Action
+    """
+    return __routine_action("pause_routine", routine_name=routine_name)
+
+
+def resume_routine(*, routine_name: str) -> Action:
+    """Action to resume a paused routine, re-entering the step it stopped at.
+
+    :param routine_name: Name the routine was declared with
+    :type routine_name: str
+    :rtype: Action
+    """
+    return __routine_action("resume_routine", routine_name=routine_name)
+
+
+def abort_routine(
+    *, routine_name: str, reason: str = "aborted by request"
+) -> Action:
+    """Action to end a routine now, running its `on_abort`.
+
+    Written for the case it exists for: a higher priority event, such as an
+    emergency stop, cutting a procedure short.
+
+    ```python
+    launcher.on(emergency_stop, abort_routine(routine_name="pick_object",
+                                              reason="emergency stop"))
+    ```
+
+    :param routine_name: Name the routine was declared with
+    :type routine_name: str
+    :param reason: Recorded in the routine's cursor and logged
+    :type reason: str
+    :rtype: Action
+    """
+    return __routine_action(
+        "abort_routine", routine_name=routine_name, reason=reason
+    )

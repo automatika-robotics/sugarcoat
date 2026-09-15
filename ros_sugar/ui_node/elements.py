@@ -241,7 +241,7 @@ class Task:
                 )
             )
             if self._duration is not None:
-                minutes, seconds = divmod(self._duration, 60)
+                minutes, seconds = divmod(int(self._duration), 60)
                 status_div(Span(f"{minutes}:{seconds}", cls="slick-timer"))
             return status_div
         return Span(

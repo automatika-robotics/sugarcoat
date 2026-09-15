@@ -12,7 +12,11 @@ from copy import copy
 from concurrent.futures import ThreadPoolExecutor
 
 from ..io.topic import Topic
-from .action import Action, OpaqueCoroutine, OpaqueFunction
+# NOTE: events build on BaseAction, never on the full Action: the full class
+# watches its success condition *as* an Event, so importing it here would be a
+# cycle. Everything an event does with an action is base surface, and a
+# condition wrapped in BaseAction structurally cannot carry a retry policy
+from .base_action import BaseAction, OpaqueCoroutine, OpaqueFunction
 from ..condition import Condition
 from ..utils import SomeEntitiesType
 from ..utils import logger
@@ -280,13 +284,13 @@ class Event:
         # Case 1: Init from Condition Expression (topic.msg.data > 5)
         if isinstance(event_condition, Condition):
             self._condition = event_condition
-            self._action_condition: Optional[Action] = None
+            self._action_condition: Optional[BaseAction] = None
             self._is_action_based: bool = False
             self.check_rate: Optional[float] = None
 
         # Case 2: Topics are passed for on_any event
         elif isinstance(event_condition, Topic):
-            self._action_condition: Optional[Action] = None
+            self._action_condition: Optional[BaseAction] = None
             self._is_action_based: bool = False
             self.check_rate: Optional[float] = None
             self._condition = Condition(
@@ -302,7 +306,7 @@ class Event:
         # Case 3: Callable-based polling: action return value is the boolean condition
         elif isinstance(event_condition, Callable):
             self._condition = None
-            self._action_condition = Action(method=event_condition)
+            self._action_condition = BaseAction(method=event_condition)
             self._is_action_based = True
             self.check_rate = check_rate
             # Validate: must not be a @component_action (bound to a component lifecycle)
@@ -327,7 +331,7 @@ class Event:
         self.trigger: bool = False
 
         # Register for on trigger actions
-        self._registered_on_trigger_actions: List[Union[Callable, Action]] = []
+        self._registered_on_trigger_actions: List[Union[Callable, BaseAction]] = []
 
         # Required topics registry
         self.__required_topics: List[Topic] = []
@@ -466,7 +470,7 @@ class Event:
         """
         return self.__last_processed_ids.get(topic_name, None)
 
-    def verify_required_action_topics(self, action: Action) -> None:
+    def verify_required_action_topics(self, action: BaseAction) -> None:
         """Verify the action topic parsers (if present) against an event.
            Raises a 'ValueError' if there is a mismatch.
 
@@ -508,7 +512,17 @@ class Event:
         try:
             # Execute all actions
             for action in self._registered_on_trigger_actions:
-                action(topics=global_topic_cache)
+                result = action(topics=global_topic_cache)
+                # This is the one funnel every event-triggered action passes
+                # through, so it is where a reported failure finally gets
+                # surfaced.
+                if isinstance(action, BaseAction) and result:
+                    succeeded, message = result
+                    if not succeeded:
+                        logger.error(
+                            f"Action '{action.action_name}' failed for event "
+                            f"'{self}': {message}"
+                        )
 
             # Handle the blocking delay inside the thread (so main loop isn't blocked)
             if self._keep_event_delay > 0:
@@ -526,18 +540,18 @@ class Event:
             self._processed_once = True
 
     def register_actions(
-        self, actions: Union[Action, Callable, List[Union[Action, Callable]]]
+        self, actions: Union[BaseAction, Callable, List[Union[BaseAction, Callable]]]
     ) -> None:
         """Register an Action or a set of Actions to execute on trigger
 
         :param actions: Action or a list of Actions
-        :type actions: Union[Action, List[Action]]
+        :type actions: Union[BaseAction, List[BaseAction]]
         """
         actions = actions if isinstance(actions, List) else [actions]
         # If it is a simple condition
         topics = self.get_involved_topics()
         for act in actions:
-            if len(topics) == 1 and isinstance(act, Action):
+            if len(topics) == 1 and isinstance(act, BaseAction):
                 # Setup any required automatic conversion from the event message type to the action inputs
                 act._setup_conversions(topics[0].name, topics[0].ros_msg_type)
             self._registered_on_trigger_actions.append(act)
@@ -609,7 +623,17 @@ class Event:
         if self._handle_once and self._processed_once:
             return
 
-        triggered = bool(self._action_condition())
+        # NOTE: the condition callable is invoked directly rather than through
+        # Action.__call__. A condition is a predicate returning bool, not an
+        # action returning (success, message)
+        try:
+            call_args, call_kwargs = self._action_condition._prepare_call()
+            triggered = bool(
+                self._action_condition.executable(*call_args, **call_kwargs)
+            )
+        except Exception as e:
+            logger.error(f"Error evaluating condition for event '{self}': {e}")
+            triggered = False
 
         if self._on_change and self._previous_trigger is not None:
             self.trigger = triggered and not self._previous_trigger

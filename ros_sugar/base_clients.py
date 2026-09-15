@@ -49,6 +49,11 @@ class ActionClientConfig(BaseAttrs):
     feedback_check_timeout: float = field(
         default=60.0, validator=base_validators.in_range(min_value=1e-9, max_value=1e9)
     )  # timeout if feedback is not received after x seconds
+    cancel_on_feedback_timeout: bool = field(
+        default=True
+    )  # cancel the goal when no new feedback arrives within feedback_check_timeout.
+    # Set False for action servers that legitimately publish no feedback, whose
+    # goals would otherwise be cancelled mid-execution
     callback_group: CallbackGroup = field(
         default=Factory(ReentrantCallbackGroup)
     )  # callback group for the feedback callback of the action
@@ -165,9 +170,17 @@ class ServiceClientHandler:
         self.request = req_msg
         self.future = self.client.call_async(self.request)
 
-        # Wait for service response
-        while not self.future.result():
+        # Wait for service response, bounded by the configured timeout.s
+        _response_wait: float = 0.0
+        while not self.future.done():
+            if _response_wait > self.config.timeout_secs:
+                self.node.get_logger().error(
+                    f"Service {self.config.name} did not respond within {self.config.timeout_secs} secs, Cancelling"
+                )
+                self.future.cancel()
+                return None
             time.sleep(0.01)
+            _response_wait += 0.01
 
         # return response
         return self.future.result()
@@ -233,10 +246,18 @@ class ActionClientHandler:
         self.goal_rejected = False
         self.goal_accepted = False
         self.action_returned = False
+        self.action_result = None
+        # Terminal status from the result. The goal handle's own status comes
+        # from the status topic, so it races the result future.
+        self.action_status: int = GoalStatus.STATUS_UNKNOWN
         self._feedback_timeout = False
         self._goal_handle = None
         self._old_status = self._status
         self._start_time_secs = None
+        self._stop_alive_timer()
+
+    def _stop_alive_timer(self) -> None:
+        """Destroy the feedback watchdog, if one is running"""
         if self._check_server_alive_timer:
             self.node.destroy_timer(self._check_server_alive_timer)
             self._check_server_alive_timer = None
@@ -306,6 +327,8 @@ class ActionClientHandler:
         :return: If action server is available
         :rtype: bool
         """
+        # Clear the previous goal's terminal state, so this one is not read off it
+        self.reset()
         # Making request to the server
         _path_timeout_count: float = 0.0
         # Wait until the server is available
@@ -339,7 +362,7 @@ class ActionClientHandler:
             request_msg, feedback_callback=self.action_feedback_callback
         )
 
-        self._start_time_secs = self.node.get_clock().now().seconds_nanoseconds()[0]
+        self._start_time_secs = self.node.get_clock().now().nanoseconds / 1e9
 
         # Add method when action is done
         self._send_goal_future.add_done_callback(self.action_response_callback)
@@ -350,7 +373,11 @@ class ActionClientHandler:
         )
 
         _timeout_counter = 0
-        while not self.goal_accepted and _timeout_counter < self.config.feedback_check_timeout:
+        while (
+            not self.goal_accepted
+            and not self.goal_rejected
+            and _timeout_counter < self.config.feedback_check_timeout
+        ):
             _timeout_counter += self.config.feedback_check_period
             time.sleep(self.config.feedback_check_period)
 
@@ -380,6 +407,9 @@ class ActionClientHandler:
         self._goal_handle = future.result()
         if not self._goal_handle.accepted:
             self.goal_rejected = True
+            # Rejection is terminal: wake anyone parked on the result
+            self._stop_alive_timer()
+            self._notify_feedback_listeners()
             return
         self.goal_accepted = True
 
@@ -395,8 +425,11 @@ class ActionClientHandler:
         :param future: Action result future
         :type future: Any
         """
-        self.action_result = future.result().result
+        response = future.result()
+        self.action_status = getattr(response, "status", GoalStatus.STATUS_UNKNOWN)
+        self.action_result = response.result
         self.action_returned = True
+        self._stop_alive_timer()
         # Notify listeners of the terminal transition (no further feedback).
         self._notify_feedback_listeners()
 
@@ -430,13 +463,18 @@ class ActionClientHandler:
 
     def _check_alive_callback(self):
         """Timed callback to check if server is sending a feedback"""
+        # The goal already reached a terminal state; nothing left to watch
+        if self.action_returned or self.goal_rejected:
+            self._stop_alive_timer()
+            return
         # New feedback got received within the timeout
         if self.feedback_count > self.old_feedback_count:
             self.old_feedback_count = self.feedback_count
         else:
             # No feedback is received
-            self.cancel_request()
             self._feedback_timeout = True
+            if self.config.cancel_on_feedback_timeout:
+                self.cancel_request()
 
     def got_new_feedback(self) -> bool:
         """
@@ -455,15 +493,21 @@ class ActionClientHandler:
             time.sleep(self.config.feedback_check_period)
         return False
 
-    def cancel_request(self) -> Tuple[bool, str]:
+    def cancel_request(self, wait: bool = True) -> Tuple[bool, str]:
         """Cancel an active action goal and return result
 
+        :param wait: Wait for the goal to return before reporting. Without it
+            the cancel request is only sent, which is all that can be done once
+            nothing spins to deliver the server's answer, e.g. at shutdown
+        :type wait: bool
         :return: If cancellation is successful
         :rtype: Tuple[bool, str]
         """
-        if self.goal_accepted:
+        if self.goal_accepted and self._goal_handle is not None:
             # self._send_goal_future.set_result(self.config.action_type.Result())
             self._goal_handle.cancel_goal_async()
+            if not wait:
+                return (True, "Action goal cancel requested")
             # Wait for action to return or timeout
             _check_counter: float = 0.0
             while (
@@ -474,6 +518,8 @@ class ActionClientHandler:
                 time.sleep(self.config.feedback_check_period)
             if _check_counter >= self.config.feedback_check_timeout:
                 return (False, "Failed to cancel goal")
+            # Wake parked waiters before reset() clears the terminal state
+            self._notify_feedback_listeners()
             self.reset()
             return (True, "Action goal cancelled successfully")
         else:
@@ -486,7 +532,7 @@ class ActionClientHandler:
         :return: _description_
         :rtype: Dict
         """
-        current_time = self.node.get_clock().now().seconds_nanoseconds()[0]
+        current_time = self.node.get_clock().now().nanoseconds / 1e9
         ui_dict = {
             "status": self._status,
             "feedback": self.feedback_msg.feedback if self.feedback_msg and hasattr(self.feedback_msg, "feedback") else None,
@@ -495,6 +541,8 @@ class ActionClientHandler:
             "duration_secs": (current_time - self._start_time_secs)
             if self._start_time_secs is not None
             else 0.0,
+            # The goal's result message, None until the goal ends
+            "result": self.action_result,
         }
         self._old_status = self._status
         return ui_dict

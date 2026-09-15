@@ -1217,7 +1217,7 @@ def _event_component(plugin, topic, name):
     component._robot_plugin = plugin
     component._use_robot_plugin()
     component._add_event_action_pair(
-        Event(topic.msg.data > 10), Action(method=lambda: None)
+        Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
     )
     return component
 
@@ -1301,7 +1301,7 @@ def test_event_on_a_sensor_topic_binds_to_that_sensor(rclpy_context):
     try:
         component._use_robot_plugin()
         component._add_event_action_pair(
-            Event(topic.msg.data > 10), Action(method=lambda: None)
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
         )
         component._turn_on_events_management()
 
@@ -1358,7 +1358,7 @@ def test_event_on_a_sensor_topic_binds_with_no_robot_plugin(rclpy_context):
         assert component._robot_plugin is None, "no robot plugin in this recipe"
         component._use_robot_plugin()
         component._add_event_action_pair(
-            Event(topic.msg.data > 10), Action(method=lambda: None)
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
         )
         component._turn_on_events_management()
 
@@ -2110,6 +2110,33 @@ def test_use_plugin_true_without_a_robot_plugin_is_caught_at_bringup(rclpy_conte
             launcher._validate_plugin_references()
     finally:
         component.destroy_node()
+
+
+def test_plugin_resources_are_released_when_setup_fails(monkeypatch):
+    """Setup opens the plugin hosts, bus and shared memory, so a failure after
+    that must still close them (issue #66)"""
+    from unittest.mock import MagicMock
+
+    from ros_sugar.core.component import BaseComponent
+
+    launcher = _launcher_with([BaseComponent(component_name="setup_fails_component")])
+    host, bus, shm = MagicMock(), MagicMock(), MagicMock()
+
+    def _failing_setup():
+        launcher._plugin_hosts.append(host)
+        launcher._plugin_bus, launcher._plugin_shm = bus, shm
+        raise RuntimeError("setup failed after opening the plugins")
+
+    monkeypatch.setattr(launcher, "setup_launch_description", _failing_setup)
+
+    with pytest.raises(RuntimeError, match="setup failed"):
+        launcher.bringup()
+
+    host.close.assert_called_once()
+    bus.close.assert_called_once()
+    shm.close.assert_called_once()
+    assert not launcher._plugin_hosts
+    assert launcher._plugin_bus is None and launcher._plugin_shm is None
 
 
 # ---------------------------------------------------------------------------

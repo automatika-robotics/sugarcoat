@@ -23,6 +23,7 @@ from typing import (
 )
 
 import rclpy.callback_groups as ros_callback_groups
+from action_msgs.srv import CancelGoal
 from automatika_ros_sugar.srv import (
     ChangeParameter,
     ChangeParameters,
@@ -42,10 +43,15 @@ from rclpy.lifecycle.node import LifecycleState, TransitionCallbackReturn
 from rclpy.publisher import Publisher as ROSPublisher
 from rclpy.subscription import Subscription
 from rclpy.utilities import try_shutdown
+from std_srvs.srv import Trigger
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
 from ..base_clients import ActionClientConfig
+from .action import Action
+from .event import Event, EventBlackboardEntry
+from .action import bind_monitored_actions
+from ..io.callbacks import GenericCallback
 from ..config.base_attrs import explicit_fields
 from ..config.base_config import (
     BaseAttrs,
@@ -54,20 +60,19 @@ from ..config.base_config import (
     ExternalProcessorType,
     QoSConfig,
 )
-from ..io.callbacks import GenericCallback
 from ..io.publisher import Publisher
-from ..io.supported_types import SupportedType
+from ..io.supported_types import SupportedType, add_additional_datatypes
 from ..io.topic import Topic
 from ..tf import TFListener, TFListenerConfig
 from ..utils import (
+    ActionReturnType,
     camel_to_snake_case,
     component_action,
     component_fallback,
     get_methods_with_decorator,
     log_srv,
+    parse_action_result,
 )
-from .action import Action
-from .event import Event, EventBlackboardEntry
 from .fallbacks import ComponentFallbacks, Fallback
 from .status import Status
 
@@ -185,6 +190,10 @@ class BaseComponent(lifecycle.Node):
         # TODO: add config parameter (one goal vs goal queue)
         self._main_goal_handle = None
         self._main_goal_lock = threading.Lock()
+        # Guards the event blackboard and the per topic event index, which a
+        # A monitored Action can extend at runtime from a worker thread when it
+        # starts watching its success condition
+        self._events_lock = threading.Lock()
         self._main_action_name: Optional[str] = None
         self._main_srv_name: Optional[str] = None
 
@@ -1002,11 +1011,22 @@ class BaseComponent(lifecycle.Node):
             node=self,
             action_type=self.action_type,
             action_name=action_name,
-            execute_callback=self.main_action_callback,
+            execute_callback=self._main_action_execute_callback,
             goal_callback=self._main_action_goal_callback,
             handle_accepted_callback=self._main_action_handle_accepted_callback,
             cancel_callback=self._main_action_cancel_callback,
             callback_group=action_callback_group,
+        )
+        # Cancels the ongoing goal for callers that do not hold its handle,
+        # through the action's own cancel service
+        self._main_action_cancel_client = self.create_client(
+            CancelGoal, f"{action_name}/_action/cancel_goal"
+        )
+        self._main_action_cancel_srv = self.create_service(
+            Trigger,
+            f"{self.get_name()}/cancel_main_action",
+            self._cancel_main_action_srv_callback,
+            callback_group=MutuallyExclusiveCallbackGroup(),
         )
 
     def create_all_action_clients(self):
@@ -1122,6 +1142,8 @@ class BaseComponent(lifecycle.Node):
             self, "action_server"
         ):
             self.action_server.destroy()
+            self.destroy_service(self._main_action_cancel_srv)
+            self.destroy_client(self._main_action_cancel_client)
 
     def destroy_all_action_clients(self):
         """
@@ -1380,21 +1402,51 @@ class BaseComponent(lifecycle.Node):
             # Register action to event to get executed on trigger when calling event.check_condition
             event.register_actions(actions)
 
+        # A monitored action watches its success condition as an event of its
+        # own, registered on first dispatch rather than here so that this
+        # component never subscribes to a success topic for an action that is
+        # never triggered
+        bind_monitored_actions(self.__actions, self)
+
         # Create ONE subscription per Topic
         self.__event_listeners = []
         for name, topic_obj in unique_topics.items():
-            # Handle events for non-ROS inputs served by the robot plugin
-            if name in self._external_topics:
-                self._subscribe_event_to_plugin_feedback(name, topic_obj)
-                continue
-            listener = self.create_subscription(
-                msg_type=topic_obj.ros_msg_type,
-                topic=topic_obj.name,
-                callback=partial(self.__event_topic_callback, name),
-                qos_profile=topic_obj.qos_profile.to_ros(),
-                callback_group=MutuallyExclusiveCallbackGroup(),
-            )
-            self.__event_listeners.append(listener)
+            self.__create_event_listener(name, topic_obj)
+
+    def __create_event_listener(self, name: str, topic_obj: Topic) -> None:
+        """Create the single subscription backing all events on a topic"""
+        # Handle events for non-ROS inputs served by the robot plugin
+        if name in self._external_topics:
+            self._subscribe_event_to_plugin_feedback(name, topic_obj)
+            return
+        listener = self.create_subscription(
+            msg_type=topic_obj.ros_msg_type,
+            topic=topic_obj.name,
+            callback=partial(self.__event_topic_callback, name),
+            qos_profile=topic_obj.qos_profile.to_ros(),
+            callback_group=MutuallyExclusiveCallbackGroup(),
+        )
+        self.__event_listeners.append(listener)
+
+    def add_runtime_event_listener(self, event: Event) -> None:
+        """Start monitoring an event that was not known at activation.
+
+        Unlike the events wired up in `_turn_on_events_management`, this is
+        called while the component is already running, from a worker thread.
+        Used by a monitored `Action` to begin watching its success condition on
+        first dispatch. Subscriptions created here live until the component is
+        deactivated, so repeat triggers and retries do not churn them.
+
+        :param event: Event to start monitoring
+        :type event: Event
+        """
+        with self._events_lock:
+            for topic in event.get_involved_topics():
+                if topic.name in self.__events_per_topic:
+                    self.__events_per_topic[topic.name].append(event)
+                    continue
+                self.__events_per_topic[topic.name] = [event]
+                self.__create_event_listener(topic.name, topic)
 
     def _subscribe_event_to_plugin_feedback(self, topic_name: str, topic_obj) -> None:
         """Drive an event from the robot plugin's feedback bus.
@@ -1482,31 +1534,37 @@ class BaseComponent(lifecycle.Node):
         1. Updates Cache of all required events topics
         2. Re-evaluates all events that depend on this topic
         """
-        # Update Blackboard with stamped entry
-        self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
-            msg=msg, timestamp=time.time()
-        )
+        # Guarded so that a monitored Action registering its success event from a
+        # worker thread cannot mutate the index while it is iterated here, nor
+        # the blackboard while it is lazily cleaned below.
+        # NOTE: check_condition only submits actions to a thread pool, so the
+        # lock is never held across an action's execution
+        with self._events_lock:
+            # Update Blackboard with stamped entry
+            self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
+                msg=msg, timestamp=time.time()
+            )
 
-        # READ & CLEAN: Identify events dependent on this topic
-        relevant_events = self.__events_per_topic.get(topic_name, [])
+            # READ & CLEAN: Identify events dependent on this topic
+            relevant_events = self.__events_per_topic.get(topic_name, [])
 
-        for event in relevant_events:
-            # Instead of passing the raw blackboard
-            # we perform a lazy cleanup right here for the topics THIS event needs.
+            for event in relevant_events:
+                # Instead of passing the raw blackboard
+                # we perform a lazy cleanup right here for the topics THIS event needs.
 
-            clean_cache_subset = {}
-            for topic in event.get_involved_topics():
-                # This call performs the check and DELETES expired data if necessary
-                valid_entry = EventBlackboardEntry.get(
-                    self._events_topics_blackboard,
-                    topic.name,
-                    topic.data_timeout,
-                    event.get_last_processed_id(topic.name),
-                )
-                if valid_entry:
-                    clean_cache_subset[topic.name] = valid_entry
-            # Pass the clean subset to the event
-            event.check_condition(clean_cache_subset)
+                clean_cache_subset = {}
+                for topic in event.get_involved_topics():
+                    # This call performs the check and DELETES expired data if necessary
+                    valid_entry = EventBlackboardEntry.get(
+                        self._events_topics_blackboard,
+                        topic.name,
+                        topic.data_timeout,
+                        event.get_last_processed_id(topic.name),
+                    )
+                    if valid_entry:
+                        clean_cache_subset[topic.name] = valid_entry
+                # Pass the clean subset to the event
+                event.check_condition(clean_cache_subset)
 
     def _add_event_action_pair(self, event: Event, action: Union[Action, List[Action]]):
         """Add an event/action pair.
@@ -1881,6 +1939,8 @@ class BaseComponent(lifecycle.Node):
                     )
                 # reparse the method using the given action name
                 method = getattr(self, action_dict["action_name"])
+                # Monitoring policy keys restore with their defaults when
+                # absent, so one class deserializes both plain and monitored
                 reconstructed_action = Action.deserialize_action(
                     serialized_action_dict=action_dict,
                     deserialized_method=method,
@@ -1934,6 +1994,7 @@ class BaseComponent(lifecycle.Node):
         :type value: str
         """
         serialized_types = json.loads(value)
+        new_types = []
         for s_t in serialized_types:
             module_name, _, class_name = s_t.rpartition(".")
             if not module_name:
@@ -1941,7 +2002,12 @@ class BaseComponent(lifecycle.Node):
             module = importlib.import_module(module_name)
             new_type = getattr(module, class_name)
             if issubclass(new_type, SupportedType):
-                self._additional_types.append(new_type)
+                new_types.append(new_type)
+        self._additional_types.extend(new_types)
+        # Topics look their type up in the supported types registry, which
+        # importing a type's module does not always fill (e.g. when a package
+        # registers its types in another module), so register them here
+        add_additional_datatypes(new_types)
 
     @property
     def _inputs_json(self) -> Union[str, bytes, bytearray]:
@@ -2133,14 +2199,22 @@ class BaseComponent(lifecycle.Node):
 
     def _main_action_goal_callback(self, _) -> GoalResponse:
         """
-        Goal callback for the main component action server
+        Goal callback for the main component action server. A new goal is
+        rejected while another one is ongoing: it has to finish or be canceled
+        first (see the 'cancel_main_action' service)
 
-        :param goal_request: _description_
+        :param goal_request: Incoming goal request
         :type goal_request: Any action goal handler type
-        :return: ACCEPT
+        :return: ACCEPT, or REJECT while a goal is ongoing
         :rtype: rclpy.action.GoalResponse
         """
-        # Cancel any ongoing action
+        with self._main_goal_lock:
+            ongoing = self._main_goal_handle is not None
+        if ongoing:
+            self.get_logger().warning(
+                "Rejected goal request: another goal is ongoing, cancel it first"
+            )
+            return GoalResponse.REJECT
         self.get_logger().info("Received goal request")
         return GoalResponse.ACCEPT
 
@@ -2149,13 +2223,44 @@ class BaseComponent(lifecycle.Node):
         Main component action server callback when handle is accepted
         """
         with self._main_goal_lock:
-            if self._main_goal_handle is not None and self._main_goal_handle.is_active:
-                # Abort the existing goal
-                self.get_logger().info("Aborting previous goal")
-                self._main_goal_handle.abort()
             self._main_goal_handle = goal_handle
             self.get_logger().info("Goal accepted")
             self._main_goal_handle.execute()
+
+    def _main_action_execute_callback(self, goal_handle):
+        """Runs the main action callback. The goal stays ongoing until the
+        callback returns, not only until it reaches a terminal state, so a new
+        goal never runs alongside the cleanup of the previous one
+        """
+        try:
+            return self.main_action_callback(goal_handle)
+        finally:
+            with self._main_goal_lock:
+                self._main_goal_handle = None
+
+    def _cancel_main_action_srv_callback(
+        self, _, response: Trigger.Response
+    ) -> Trigger.Response:
+        """Requests canceling the ongoing goal of the main action server, the
+        same way its action client would
+
+        :param response: Whether a cancel was requested, and why not
+        :type response: Trigger.Response
+        :rtype: Trigger.Response
+        """
+        with self._main_goal_lock:
+            goal_handle = self._main_goal_handle
+        if goal_handle is None or not goal_handle.is_active:
+            response.success = False
+            response.message = "No ongoing goal to cancel"
+            return response
+        request = CancelGoal.Request()
+        request.goal_info.goal_id = goal_handle.goal_id
+        # Not waited on: the cancel is carried out by the action server itself
+        self._main_action_cancel_client.call_async(request)
+        response.success = True
+        response.message = "Cancel requested for the ongoing goal"
+        return response
 
     def _main_action_cancel_callback(self, _) -> Optional[CancelResponse]:
         """Main component action server callback when handle is canceled
@@ -2675,28 +2780,15 @@ class BaseComponent(lifecycle.Node):
                 return response
         try:
             method = getattr(self, request.name)
-            result = method(**kwargs)
-            if isinstance(result, bool):
-                response.success = result
-                # TODO: If the error is caught in the method and it returns false
-                # we consider this a failure. This is for backward compatibility
-                # Thus component actions cannot return False as a legitimate
-                # response. We should ensure all component actions in downstream
-                # packages are modified before changing this behaviour.
-                if not result:
-                    response.error_msg = f"The method '{request.name}' executed but returned False, indicating failure without an exception."
-                else:
-                    response.response_json = json.dumps(result)
-            # NOTE: empty responses are considered successful
-            elif result is None:
-                response.success = True
+            # Actions return (success, message) per the action contract. The
+            # message carries a result when the action succeeded and an error
+            # when it failed
+            success, message = parse_action_result(method(**kwargs), request.name)
+            response.success = success
+            if success:
+                response.response_json = json.dumps(message)
             else:
-                response.success = True
-                try:
-                    response.response_json = json.dumps(result)
-                except (TypeError, ValueError) as e:
-                    response.response_json = ""
-                    response.error_msg = f"The method '{request.name}' returned a value that is not JSON serializable: {e}"
+                response.error_msg = message
         except Exception as e:
             response.success = False
             response.error_msg = f"Component {self.node_name} has a method with requested name '{request.name}' but the following error raised while running: {e}"
@@ -2882,16 +2974,16 @@ class BaseComponent(lifecycle.Node):
         return True
 
     @component_action
-    def start(self, **_) -> bool:
+    def start(self, **_) -> ActionReturnType:
         """
         Start the component - trigger_activate
 
-        :return: If the component is started
-        :rtype: bool
+        :return: If the component is started, with a reason when it is not
+        :rtype: ActionReturnType
         """
         if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE:
             # Component already active
-            return True
+            return True, f"Component '{self.node_name}' is already active"
 
         elif self.lifecycle_state in [
             LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
@@ -2903,20 +2995,29 @@ class BaseComponent(lifecycle.Node):
         transition_done = self.__wait_for_state_transition()
 
         if not transition_done:
-            return False
+            return (
+                False,
+                f"Component '{self.node_name}' is stuck in a lifecycle transition",
+            )
 
         # configured and inactive
         self.trigger_activate()
 
-        return self.__wait_for_node_start()
+        if not self.__wait_for_node_start():
+            return (
+                False,
+                f"Component '{self.node_name}' did not come up within "
+                f"{self.config.wait_for_restart_time} secs",
+            )
+        return True, f"Component '{self.node_name}' started"
 
     @component_action
-    def stop(self, **_) -> bool:
+    def stop(self, **_) -> ActionReturnType:
         """
         Stop the component - trigger_deactivate
 
-        :return: If the component is stopped
-        :rtype: bool
+        :return: If the component is stopped, with a reason when it is not
+        :rtype: ActionReturnType
         """
         if self.lifecycle_state in [
             LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED,
@@ -2924,19 +3025,24 @@ class BaseComponent(lifecycle.Node):
             LifecycleStateMsg.PRIMARY_STATE_FINALIZED,
         ]:
             # Already not active
-            return True
+            return True, f"Component '{self.node_name}' is already not active"
 
         transition_done = self.__wait_for_state_transition()
 
         if not transition_done:
-            return False
+            return (
+                False,
+                f"Component '{self.node_name}' is stuck in a lifecycle transition",
+            )
 
         self.trigger_deactivate()
 
-        return True
+        return True, f"Component '{self.node_name}' stopped"
 
     @component_action
-    def reconfigure(self, new_config: Any, keep_alive: bool = False, **_) -> bool:
+    def reconfigure(
+        self, new_config: Any, keep_alive: bool = False, **_
+    ) -> ActionReturnType:
         """
         Reconfigure the component - cleanup->stop->trigger_configure->start
 
@@ -2945,8 +3051,8 @@ class BaseComponent(lifecycle.Node):
         :param keep_alive: Reconfigure while the component is online, defaults to False
         :type keep_alive: bool, optional
 
-        :return: If the component is Reconfigured
-        :rtype: bool
+        :return: If the component is Reconfigured, with a reason when it is not
+        :rtype: ActionReturnType
         """
         self.get_logger().warning("Reconfiguring component...")
 
@@ -2956,7 +3062,7 @@ class BaseComponent(lifecycle.Node):
                 self.configure(config_file=new_config)
             elif isinstance(new_config, self.config.__class__):
                 self.config = new_config
-            return True
+            return True, f"Component '{self.node_name}' reconfigured in place"
 
         initial_state = self.lifecycle_state
 
@@ -2974,7 +3080,10 @@ class BaseComponent(lifecycle.Node):
         transition_done = self.__wait_for_state_transition()
 
         if not transition_done:
-            return False
+            return (
+                False,
+                f"Component '{self.node_name}' is stuck in a lifecycle transition",
+            )
 
         # set new config as params attr
         if isinstance(new_config, str):
@@ -2987,17 +3096,22 @@ class BaseComponent(lifecycle.Node):
 
         if reactivate:
             self.trigger_activate()
-            return self.__wait_for_node_start()
+            if not self.__wait_for_node_start():
+                return (
+                    False,
+                    f"Component '{self.node_name}' did not come back up after "
+                    "reconfiguring",
+                )
 
-        return True
+        return True, f"Component '{self.node_name}' reconfigured"
 
     @component_action
-    def restart(self, *, wait_time: Optional[float] = None, **_) -> bool:
+    def restart(self, *, wait_time: Optional[float] = None, **_) -> ActionReturnType:
         """
         Restart the component - stop->start
 
-        :return: If the component is Reconfigured
-        :rtype: bool
+        :return: If the component is restarted, with a reason when it is not
+        :rtype: ActionReturnType
         """
 
         if self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
@@ -3010,7 +3124,10 @@ class BaseComponent(lifecycle.Node):
 
         if not transition_done:
             # timeout
-            return False
+            return (
+                False,
+                f"Component '{self.node_name}' is stuck in a lifecycle transition",
+            )
 
         if wait_time:
             self.get_logger().warning(
@@ -3020,12 +3137,17 @@ class BaseComponent(lifecycle.Node):
 
         # not configured -> configure and start
         self.trigger_activate()
-        return self.__wait_for_node_start()
+        if not self.__wait_for_node_start():
+            return (
+                False,
+                f"Component '{self.node_name}' did not come back up after restarting",
+            )
+        return True, f"Component '{self.node_name}' restarted"
 
     @component_action
     def set_param(
         self, param_name: str, new_value: Any, keep_alive: bool = True, **_
-    ) -> bool:
+    ) -> ActionReturnType:
         """
         Change the value of one component parameter
 
@@ -3036,10 +3158,8 @@ class BaseComponent(lifecycle.Node):
         :param keep_alive: To keep the component running when updating value, defaults to True
         :type keep_alive: bool, optional
 
-        :raises Exception: Parameter could not be updated to given value
-
-        :return: Parameter updated
-        :rtype: bool
+        :return: Parameter updated, with the reason when it is not
+        :rtype: ActionReturnType
         """
         try:
             if keep_alive:
@@ -3048,14 +3168,14 @@ class BaseComponent(lifecycle.Node):
                 self.stop()
                 self.config.update_value(param_name, new_value)
                 self.start()
-        except Exception:
-            raise
-        return True
+        except Exception as e:
+            return False, f"Could not update parameter '{param_name}': {e}"
+        return True, f"Parameter '{param_name}' updated to '{new_value}'"
 
     @component_action
     def set_params(
         self, params_names: List[str], new_values: List, keep_alive: bool = True, **_
-    ) -> bool:
+    ) -> ActionReturnType:
         """
         Change the value of multiple component parameters
 
@@ -3066,10 +3186,8 @@ class BaseComponent(lifecycle.Node):
         :param keep_alive: To keep the component running when updating value, defaults to True
         :type keep_alive: bool, optional
 
-        :raises Exception: Parameter could not be updated to given value
-
-        :return: Parameter updated
-        :rtype: bool
+        :return: Parameters updated, with the reason when they are not
+        :rtype: ActionReturnType
         """
         try:
             if keep_alive:
@@ -3080,9 +3198,9 @@ class BaseComponent(lifecycle.Node):
                 for param_name, new_value in zip(params_names, new_values):
                     self.config.update_value(param_name, new_value)
                 self.start()
-        except Exception:
-            raise
-        return True
+        except Exception as e:
+            return False, f"Could not update parameters {params_names}: {e}"
+        return True, f"Parameters {params_names} updated"
 
     # END OF ACTIONS
 
@@ -3291,10 +3409,13 @@ class BaseComponent(lifecycle.Node):
             )
 
     @component_fallback
-    def broadcast_status(self, **_) -> None:
+    def broadcast_status(self, **_) -> ActionReturnType:
         """
         Component fallback defined to only broadcast the current state so it is handled by an external manager.
         Used as the default fallback strategy for any system (external) failure
+
+        :return: Whether the status was broadcast
+        :rtype: ActionReturnType
         """
         # If node is active publish status
         if (
@@ -3302,6 +3423,13 @@ class BaseComponent(lifecycle.Node):
             and self.lifecycle_state == LifecycleStateMsg.PRIMARY_STATE_ACTIVE
         ):
             self.health_status_publisher.publish(self.health_status())
+            return True, f"Broadcast status of '{self.node_name}'"
+        # NOTE: reported as a failure so the fallback ladder does not treat a
+        # status that was never published as a successful recovery
+        return (
+            False,
+            f"Cannot broadcast status of '{self.node_name}', it is not active",
+        )
 
     # LIFECYCLE ON TRANSITIONS CUSTOM METHODS
     @property

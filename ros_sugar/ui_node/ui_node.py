@@ -1,24 +1,25 @@
-from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List
-import os
-from attr import define, field, Factory
-import json
 import importlib
+import json
+import os
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
+from attr import Factory, define, field
+from automatika_ros_sugar.srv import ChangeParameters
+from rclpy.logging import get_logger
+
+from .. import base_clients
+from ..base_clients import (
+    ActionClientConfig,
+    ActionClientHandler,
+    ServiceClientConfig,
+    ServiceClientHandler,
+)
 from ..config.base_attrs import BaseAttrs
 from ..config.base_validators import in_range
 from ..core.component import BaseComponent, BaseComponentConfig
-from .. import base_clients
-from ..io.topic import Topic
-from ..base_clients import (
-    ServiceClientHandler,
-    ActionClientHandler,
-    ServiceClientConfig,
-    ActionClientConfig,
-)
 from ..io import supported_types
-from automatika_ros_sugar.srv import ChangeParameters
-
-from rclpy.logging import get_logger
+from ..io.topic import Topic
+from .utils import GoalInProgressError
 
 
 @define
@@ -117,6 +118,7 @@ class UINode(BaseComponent):
                 "name": client_config.name,
                 "type": client_config.srv_type.__name__,
                 "fields": request_fields,
+                "request_class": client_config.srv_type.Request,
             }
             clients_configs_dicts.append(config_dict)
         return clients_configs_dicts
@@ -136,6 +138,7 @@ class UINode(BaseComponent):
                 "name": client_config.name,
                 "type": client_config.action_type.__name__,
                 "fields": request_fields,
+                "goal_class": client_config.action_type.Goal,
             }
             clients_configs_dicts.append(config_dict)
         return clients_configs_dicts
@@ -167,7 +170,8 @@ class UINode(BaseComponent):
         """Return the latest UI elements for an action client, or ``None``.
 
         The returned dict has ``status``, ``feedback`` (a raw ROS message or
-        ``None``), ``timestep``, ``feedback_timeout`` and ``duration_secs``
+        ``None``), ``timestep``, ``feedback_timeout``, ``duration_secs`` and
+        ``result`` (the raw ROS result message, ``None`` until the goal ends)
         """
         client = self._ros_action_clients.get(action_name)
         if client is None:
@@ -363,15 +367,14 @@ class UINode(BaseComponent):
             if inp.client is not None:
                 self.destroy_client(inp.client)
 
-        for inp in self._ros_service_clients.items():
-            if inp.client is not None:
-                self.destroy_client(inp.client)
-                inp.client = None
-
-        for inp in self._ros_action_clients:
-            if inp.client is not None:
-                self.destroy_client(inp.client)
-                inp.client = None
+        for handler in self._ros_service_clients.values():
+            self.destroy_client(handler.client)
+        # Action clients are waitables, which destroy_client ignores
+        for handler in self._ros_action_clients.values():
+            handler.client.destroy()
+        # Recreated on activation. Until then the API reports them as not ready
+        self._ros_service_clients.clear()
+        self._ros_action_clients.clear()
 
         return super().custom_on_deactivate()
 
@@ -396,13 +399,18 @@ class UINode(BaseComponent):
         request fields. The raw ROS response object or None is returned.
 
         :param srv_call_data: ``{"srv_name": <name>, **request_fields}``.
-        :raises RuntimeError: If the service client is not ready.
+        :raises RuntimeError: If the service client is not ready, or no server
+            for the service is available.
         :return: The raw ROS response message, or ``None``.
         """
         srv_name = srv_call_data.pop("srv_name")
         client = self._ros_service_clients.get(srv_name)
         if client is None:
             raise RuntimeError(f"Service client '{srv_name}' is not ready")
+        # short timeout to make sure that clients exist if requested
+        # close to init
+        if not client.client.wait_for_service(timeout_sec=1.0):
+            raise RuntimeError(f"Service '{srv_name}' is not available")
         return client.send_request_from_dict(request_fields=srv_call_data)
 
     def send_action_goal(self, action_goal_data: Dict) -> Optional[bool]:
@@ -412,13 +420,26 @@ class UINode(BaseComponent):
         are the goal fields.
 
         :param action_goal_data: ``{"action_name": <name>, **goal_fields}``.
-        :raises RuntimeError: If the action client is not ready.
+        :raises RuntimeError: If the action client is not ready, or no server
+            for the action is available.
+        :raises GoalInProgressError: If the previous goal is still running.
         :return: True if the goal was accepted by the action server.
         """
         action_name = action_goal_data.pop("action_name")
         client = self._ros_action_clients.get(action_name)
         if client is None:
             raise RuntimeError(f"Action client '{action_name}' is not ready")
+        if not client.client.wait_for_server(timeout_sec=1.0):
+            raise RuntimeError(f"Action server '{action_name}' is not available")
+        # Check if an action is running
+        if (
+            client.goal_accepted
+            and not client.action_returned
+            and not client._feedback_timeout
+        ):
+            raise GoalInProgressError(
+                f"Action '{action_name}' is still running a goal. Cancel it first"
+            )
         return client.send_request_from_dict(
             request_fields=action_goal_data, wait_until_first_feedback=False
         )

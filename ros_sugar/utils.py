@@ -2,7 +2,7 @@ import inspect
 from enum import IntEnum as BaseIntEnum
 from functools import wraps
 import json
-from typing import Callable, List, Union, TypeVar, Optional, Dict
+from typing import Any, Callable, List, Union, TypeVar, Optional, Dict, Tuple
 
 from rclpy.utilities import ok as rclpy_is_ok
 from rclpy.lifecycle import Node as LifecycleNode
@@ -35,6 +35,75 @@ logger = logging.getLogger("Sugarcoat")
 MsgT = TypeVar("MsgT")
 
 
+# The return contract for every action: (success, message). The message carries a
+# result when the action succeeded and an error when it failed, and may hold JSON
+# if the action needs to return something structured.
+ActionReturnType = Tuple[bool, str]
+
+#: Deprecated spelling of :data:`ActionReturnType`. Kept so existing recipes keep importing and annotating
+ActionResult = ActionReturnType
+
+# Accepted spellings of the contract in a return annotation, including the string
+# forms produced by quoted annotations or `from __future__ import annotations`,
+# and the old name, so an annotation written against it still validates
+_ACTION_RETURN_ANNOTATIONS = (
+    ActionReturnType,
+    "ActionReturnType",
+    "ActionResult",
+    "Tuple[bool, str]",
+    "tuple[bool, str]",
+)
+
+
+def _validate_action_return(func: Callable, decorator_name: str) -> None:
+    """Reject an action whose signature does not promise the (bool, str) contract.
+
+    Checked once, at decoration time, so a component that does not follow the
+    contract fails at import rather than halfway through a mission.
+
+    :param func: The decorated method
+    :param decorator_name: Decorator name, for the error message
+    :raises TypeError: If the return annotation is missing or not Tuple[bool, str]
+    """
+    return_type = inspect.signature(func).return_annotation
+    if return_type in _ACTION_RETURN_ANNOTATIONS:
+        return
+    raise TypeError(
+        f"Method '{func.__name__}' cannot have '@{decorator_name}'. Actions must be "
+        f"annotated to return 'Tuple[bool, str]', where the bool reports success or "
+        f"failure and the string carries a result or an error message. Got "
+        f"'{return_type}'."
+    )
+
+
+def parse_action_result(value: Any, action_name: str) -> ActionReturnType:
+    """Coerce an action's return value into the (success, message) contract.
+
+    The single runtime enforcement point, so a return that does not follow the
+    contract is reported once and treated as a **failure**. Failing closed
+    matters here: every consumer used to test truthiness, and a malformed value
+    is truthy, so the alternative is silently reporting success.
+
+    :param value: Whatever the action returned
+    :param action_name: Action name, for the error message
+    :return: The validated (success, message) pair
+    :rtype: ActionReturnType
+    """
+    if (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], bool)
+        and isinstance(value[1], str)
+    ):
+        return value
+    error = (
+        f"Action '{action_name}' returned {value!r}, which does not follow the "
+        "(bool, str) action contract. Treating it as a failure."
+    )
+    logger.error(error)
+    return False, error
+
+
 class IncompatibleSetup(Exception):
     """Exception raised when a component is configured with incompatible parameter values"""
 
@@ -43,6 +112,16 @@ class IncompatibleSetup(Exception):
 
 class InvalidAction(Exception):
     """Exception raised when an Action is invalid or configured with incompatible values"""
+
+    pass
+
+
+class MissingActionArgument(Exception):
+    """Raised when an argument read from a topic has no value at dispatch time
+
+    Unlike InvalidAction this is not a recipe error: the action is well formed,
+    the data it needs has simply not arrived yet.
+    """
 
     pass
 
@@ -109,7 +188,11 @@ def component_action(
     """
     Decorator for components actions
     Verifies that the function is a valid Component method and that the Component is active.
-    Actions may return any JSON-serializable value, or None.
+
+    Actions must be annotated to return `Tuple[bool, str]`: the bool reports
+    success or failure, the string carries a result on success or an error
+    message on failure. The string may hold JSON if the action needs to return
+    something structured.
 
     Can be used as:
         @component_action
@@ -124,6 +207,8 @@ def component_action(
     """
 
     def _decorator(func: Callable):
+        _validate_action_return(func, "component_action")
+
         @wraps(func)
         def _wrapper(*args, **kwargs):
             if not args:
@@ -138,15 +223,20 @@ def component_action(
                 # check for active flag and if the flag is True, check lifecycle_state is 3 i.e. active
                 if not active or self._state_machine.current_state[1] == "active":
                     return func(*args, **kwargs)
-                else:
-                    logger.error(
-                        f"Cannot use component action method '{func.__name__}' without activating the Component"
-                    )
-                    return None
-            else:
-                logger.error(
-                    f"Cannot use component action method '{func.__name__}' without initializing rclpy and the Component"
+                # NOTE: these guard paths report a failure rather than returning
+                # None, so a caller cannot mistake 'the action never ran' for
+                # 'the action ran and did nothing'
+                error = (
+                    f"Cannot use component action method '{func.__name__}' without "
+                    "activating the Component"
                 )
+            else:
+                error = (
+                    f"Cannot use component action method '{func.__name__}' without "
+                    "initializing rclpy and the Component"
+                )
+            logger.error(error)
+            return False, error
 
         _wrapper.__name__ = func.__name__
         # Use the provided description or the function's docstring as the action description
@@ -180,6 +270,8 @@ def component_fallback(
     """
 
     def _decorator(func: Callable):
+        _validate_action_return(func, "component_fallback")
+
         @wraps(func)
         def _wrapper(*args, **kwargs):
             """_wrapper.
@@ -201,15 +293,21 @@ def component_fallback(
                     "activating",
                 ]:
                     return func(*args, **kwargs)
-                else:
-                    logger.error(
-                        f"{self._state_machine.current_state[1]} Cannot use component fallback method '{func.__name__}' without activating or configuring the Component"
-                    )
-                    return None
-            else:
-                logger.error(
-                    f"Cannot use component fallback method '{func.__name__}' without initializing rclpy and the Component"
+                # NOTE: these guard paths report a failure rather than returning
+                # None, so the fallback ladder cannot mistake 'never ran' for
+                # 'ran and recovered'
+                error = (
+                    f"{self._state_machine.current_state[1]} Cannot use component "
+                    f"fallback method '{func.__name__}' without activating or "
+                    "configuring the Component"
                 )
+            else:
+                error = (
+                    f"Cannot use component fallback method '{func.__name__}' without "
+                    "initializing rclpy and the Component"
+                )
+            logger.error(error)
+            return False, error
 
         _wrapper.__name__ = func.__name__
         # Use the provided description or the function's docstring as the action description
