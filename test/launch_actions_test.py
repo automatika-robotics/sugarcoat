@@ -5,15 +5,23 @@ OnShutdown handler that stops a component's executor runs on launch's asyncio
 loop, behind every event already queued there. A node firing events at rate
 kept that queue full, so the handler starved and the node kept spinning,
 feeding it further -- and launch never shut down.
+
+Also covers how `Launcher.bringup` ends a recipe whose launch failed.
 """
 
+import os
+import subprocess
+import sys
+import textwrap
 import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 import rclpy
 from launch import LaunchContext
 
+import ros_sugar
 from ros_sugar.core.component import BaseComponent
 from ros_sugar.launch.launch_actions import ComponentLaunchAction
 
@@ -73,3 +81,57 @@ def test_internal_events_are_dropped_once_shutdown_is_requested(running_action):
     context._set_is_shutdown(True)
     action._on_internal_event("some_event")
     assert loop.call_soon_threadsafe.call_count == 1, "event queued after shutdown"
+
+
+def test_a_failed_launch_exits_non_zero(tmp_path):
+    """Launch logs a failed action and returns 1 instead of raising, so the
+    recipe must exit with that code rather than 0 (issue #66)"""
+    recipe = tmp_path / "recipe.py"
+    recipe.write_text(
+        textwrap.dedent(
+            """
+            from launch.actions import OpaqueFunction
+            from ros_sugar import Launcher
+            from ros_sugar.core import BaseComponent
+
+
+            class Probe(BaseComponent):
+                def _execution_step(self):
+                    pass
+
+
+            def fail(context):
+                raise RuntimeError("probe: a launch action failed")
+
+
+            launcher = Launcher()
+            launcher.add_pkg(
+                components=[Probe(component_name="bringup_exit_probe")],
+                package_name="automatika_ros_sugar",
+                multiprocessing=False,
+            )
+            launcher._description.add_action(OpaqueFunction(function=fail))
+            launcher.bringup()
+            """
+        )
+    )
+    # The recipe imports this checkout, on its own ROS domain
+    repo = str(Path(ros_sugar.__file__).parents[1])
+    env = dict(
+        os.environ,
+        PYTHONPATH=os.pathsep.join(filter(None, [repo, os.environ.get("PYTHONPATH")])),
+        ROS_DOMAIN_ID="65",
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(recipe)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    output = proc.stdout + proc.stderr
+    assert proc.returncode == 1, output[-3000:]
+    assert "ALL COMPONENTS EXITED SUCCESSFULLY" not in output

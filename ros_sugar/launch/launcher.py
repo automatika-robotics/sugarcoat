@@ -1909,7 +1909,7 @@ class Launcher:
         )
         self._launch_group.append(component_action)
 
-    def _start_ros_launch(self, introspect: bool = True, debug: bool = False):
+    def _start_ros_launch(self, introspect: bool = True, debug: bool = False) -> int:
         """
         Launch all ros nodes
 
@@ -1917,6 +1917,8 @@ class Launcher:
         :type introspect: bool, optional
         :param debug: LaunchService debugger, defaults to True
         :type debug: bool, optional
+        :return: The launch's return code, non-zero if it failed
+        :rtype: int
         """
         if introspect:
             logger.info("-----------------------------------------------")
@@ -1933,7 +1935,7 @@ class Launcher:
         self.ls = LaunchService(debug=debug)
         self.ls.include_launch_description(self._description)
 
-        self.ls.run(shutdown_when_idle=False)
+        return self.ls.run(shutdown_when_idle=False)
 
     def configure(
         self,
@@ -2276,24 +2278,31 @@ class Launcher:
         if config_file:
             self.configure(config_file)
 
-        self.setup_launch_description()
+        try:
+            self.setup_launch_description()
 
-        self._start_ros_launch(introspect, launch_debug)
+            return_code = self._start_ros_launch(introspect, launch_debug)
+        finally:
+            # Release plugin hosts, bus and shared mem however the launch ends
+            # Tear down every plugin HOST, then the bus they shared
+            for host in self._plugin_hosts:
+                host.close()
+            self._plugin_hosts.clear()
+            if self._plugin_bus is not None:
+                self._plugin_bus.close()
+                self._plugin_bus = None
+            # Unlink the shared-memory segments once the writers (hosts) are down.
+            if self._plugin_shm is not None:
+                self._plugin_shm.close()
+                self._plugin_shm = None
 
-        # Tear down every plugin HOST, then the bus they shared
-        for host in self._plugin_hosts:
-            host.close()
-        self._plugin_hosts.clear()
-        if self._plugin_bus is not None:
-            self._plugin_bus.close()
-            self._plugin_bus = None
-        # Unlink the shared-memory segments once the writers (hosts) are down.
-        if self._plugin_shm is not None:
-            self._plugin_shm.close()
-            self._plugin_shm = None
+            if self._thread_pool:
+                self._thread_pool.shutdown()
 
-        if self._thread_pool:
-            self._thread_pool.shutdown()
+        # Exit with the non-zero code from launch
+        if return_code:
+            logger.error(f"Launch failed with return code {return_code}")
+            sys.exit(return_code)
 
         logger.info("------------------------------------")
         logger.info("ALL COMPONENTS EXITED SUCCESSFULLY")
