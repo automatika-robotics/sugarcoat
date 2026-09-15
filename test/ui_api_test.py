@@ -662,6 +662,17 @@ def test_send_goal_not_ready_503():
     assert resp.status_code == 503
 
 
+def test_send_goal_while_one_runs_409():
+    from ros_sugar.ui_node.utils import GoalInProgressError
+
+    node = _ApiNode()
+    node.goal_error = GoalInProgressError("Action 'navigate' is still running a goal")
+    client = _make_client(node)
+    resp = client.post("/api/actions/navigate", json={})
+    assert resp.status_code == 409
+    assert "still running" in resp.json()["error"]
+
+
 def test_send_goal_rejected_502():
     node = _ApiNode()
     node.goal_accepted = False
@@ -1012,6 +1023,32 @@ def test_ui_node_deactivates_with_service_and_action_clients(ui_node):
         ui_node.send_srv_call({"srv_name": "ui_node_test/reset"})
     with pytest.raises(RuntimeError, match="not ready"):
         ui_node.send_action_goal({"action_name": "ui_node_test/lookup"})
+
+
+def test_a_second_goal_leaves_the_running_goal_alone(ui_node):
+    """While a goal runs, another is refused before it can clear the running
+    goal's state. Once the goal returns, or its feedback times out, goals are
+    accepted again"""
+    from unittest.mock import MagicMock
+
+    from ros_sugar.ui_node.utils import GoalInProgressError
+
+    name = "ui_node_test/lookup"
+    handler = ui_node._ros_action_clients[name]
+    handler.client.wait_for_server = MagicMock(return_value=True)
+    handler.send_request_from_dict = MagicMock(return_value=True)
+    handler.goal_accepted = True  # a running goal
+
+    with pytest.raises(GoalInProgressError):
+        ui_node.send_action_goal({"action_name": name})
+    handler.send_request_from_dict.assert_not_called()
+    assert handler.goal_accepted
+
+    handler._feedback_timeout = True  # its server went quiet
+    assert ui_node.send_action_goal({"action_name": name})
+    handler._feedback_timeout = False
+    handler.action_returned = True  # it finished
+    assert ui_node.send_action_goal({"action_name": name})
 
 
 def test_missing_server_is_reported_at_once(ui_node):

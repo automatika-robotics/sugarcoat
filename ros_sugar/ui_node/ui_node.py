@@ -1,24 +1,25 @@
-from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List
-import os
-from attr import define, field, Factory
-import json
 import importlib
+import json
+import os
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
+from attr import Factory, define, field
+from automatika_ros_sugar.srv import ChangeParameters
+from rclpy.logging import get_logger
+
+from .. import base_clients
+from ..base_clients import (
+    ActionClientConfig,
+    ActionClientHandler,
+    ServiceClientConfig,
+    ServiceClientHandler,
+)
 from ..config.base_attrs import BaseAttrs
 from ..config.base_validators import in_range
 from ..core.component import BaseComponent, BaseComponentConfig
-from .. import base_clients
-from ..io.topic import Topic
-from ..base_clients import (
-    ServiceClientHandler,
-    ActionClientHandler,
-    ServiceClientConfig,
-    ActionClientConfig,
-)
 from ..io import supported_types
-from automatika_ros_sugar.srv import ChangeParameters
-
-from rclpy.logging import get_logger
+from ..io.topic import Topic
+from .utils import GoalInProgressError
 
 
 @define
@@ -421,6 +422,7 @@ class UINode(BaseComponent):
         :param action_goal_data: ``{"action_name": <name>, **goal_fields}``.
         :raises RuntimeError: If the action client is not ready, or no server
             for the action is available.
+        :raises GoalInProgressError: If the previous goal is still running.
         :return: True if the goal was accepted by the action server.
         """
         action_name = action_goal_data.pop("action_name")
@@ -429,6 +431,15 @@ class UINode(BaseComponent):
             raise RuntimeError(f"Action client '{action_name}' is not ready")
         if not client.client.wait_for_server(timeout_sec=1.0):
             raise RuntimeError(f"Action server '{action_name}' is not available")
+        # Check if an action is running
+        if (
+            client.goal_accepted
+            and not client.action_returned
+            and not client._feedback_timeout
+        ):
+            raise GoalInProgressError(
+                f"Action '{action_name}' is still running a goal. Cancel it first"
+            )
         return client.send_request_from_dict(
             request_fields=action_goal_data, wait_until_first_feedback=False
         )

@@ -22,6 +22,7 @@ from rosidl_runtime_py.convert import message_to_ordereddict
 from ..io.supported_types import get_ros_msg_fields_dict, validate_msg_fields
 
 from .ui_node import UINode
+from .utils import GoalInProgressError
 
 # All API routes are namespaced under this prefix
 API_BASE = "/api"
@@ -530,6 +531,8 @@ def _action_routes(ros_node: UINode) -> List:
                 # Route name last, so the body cannot pick another action
                 ros_node.send_action_goal, {**body, "action_name": name}
             )
+        except GoalInProgressError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
         except ValueError as e:
