@@ -641,14 +641,13 @@ class JointStateCallback(GenericCallback):
         return np.array(self.msg.position, dtype=np.float64)
 
     def _get_ui_content(self, **_) -> Dict:
-        """
-        Utility method to get UI compatible content.
-        To be used with external callbacks in UI Node
-        :returns:   Topic content
-        :rtype:     Any
-        """
-        output = self.get_output()
-        return {"data": output.tolist() if output is not None else None}
+        """Positions under ``data``, with the joint names, velocities and efforts"""
+        return {
+            "data": list(self.msg.position),
+            "names": list(self.msg.name),
+            "velocities": list(self.msg.velocity),
+            "efforts": list(self.msg.effort),
+        }
 
 
 class ImuCallback(GenericCallback):
