@@ -461,6 +461,15 @@ class Launcher:
         :type api_max_stream_rate: float, default 30.0
         """
 
+        # A type without a callback in a derived package cannot be a UI output
+        for topic in outputs or []:
+            if topic.msg_type.callback is None:
+                raise TypeError(
+                    f"UI output '{topic.name}' has type "
+                    f"'{topic.msg_type.__name__}', which has no callback, so it "
+                    "cannot be shown in the UI"
+                )
+
         # Fail fast if dependencies of the requested UI mode are missing
         from importlib.util import find_spec
 
