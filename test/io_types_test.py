@@ -1659,6 +1659,30 @@ def test_camera_info_message_passes_through():
 
 
 # ---------------------------------------------------------------------------
+# JointState
+# ---------------------------------------------------------------------------
+
+
+def test_joint_state_ui_content_names_the_joints():
+    """A client can tell which value belongs to which joint"""
+    from sensor_msgs.msg import JointState as ROSJointState
+
+    from ros_sugar.io.callbacks import JointStateCallback
+
+    callback = JointStateCallback(Topic(name="joints", msg_type="JointState"))
+    callback.msg = ROSJointState(
+        name=["shoulder", "elbow"], position=[0.1, 0.2], velocity=[0.5, 0.0]
+    )
+
+    assert callback._get_ui_content() == {
+        "data": [0.1, 0.2],
+        "names": ["shoulder", "elbow"],
+        "velocities": [0.5, 0.0],
+        "efforts": [],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Audio
 # ---------------------------------------------------------------------------
 

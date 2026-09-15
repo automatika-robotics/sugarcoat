@@ -325,6 +325,7 @@ def build_browser_app(
         ]
 
         last_seen: Dict[str, tuple] = {}
+        logged_results: Dict[str, Any] = {}
 
         async def _feedback_loop():
             try:
@@ -335,34 +336,51 @@ def build_browser_app(
                         fb = ros_node.get_action_feedback(name)
                         if fb is None:
                             continue
+                        ended = fb["status"] in ("aborted", "completed", "canceled")
                         # The card shows whole seconds, so a fraction is no change
                         key = (fb["status"], fb["timestep"], int(fb["duration_secs"]))
-                        if key == last_seen.get(name):
-                            continue
-                        last_seen[name] = key
-                        feedback = (
-                            ros_msg_to_str(fb["feedback"]) if fb["feedback"] else None
-                        )
-                        fh.action_clients_ft[name].update(
-                            status=fb["status"],
-                            feedback=feedback,
-                            duration=fb["duration_secs"],
-                            timestep=fb["timestep"],
-                        )
-                        await send(fh.action_clients_ft[name].card)
+                        if key != last_seen.get(name):
+                            last_seen[name] = key
+                            feedback = (
+                                ros_msg_to_str(fb["feedback"])
+                                if fb["feedback"]
+                                else None
+                            )
+                            fh.action_clients_ft[name].update(
+                                status=fb["status"],
+                                feedback=feedback,
+                                duration=fb["duration_secs"],
+                                timestep=fb["timestep"],
+                            )
+                            await send(fh.action_clients_ft[name].card)
 
-                        if fb["status"] in ("aborted", "completed", "canceled"):
-                            # display action aborted as an error on the main logging card
-                            if fb["status"] == "aborted":
-                                await log_data(
-                                    send,
-                                    f"Task '{name}' aborted: {feedback}"
-                                    if feedback
-                                    else f"Task '{name}' aborted",
-                                    data_type="String",
-                                    data_src="error",
-                                )
-                            fh.action_clients_ft[name].cleanup()
+                            if ended:
+                                # display action aborted as an error on the main logging card
+                                if fb["status"] == "aborted":
+                                    await log_data(
+                                        send,
+                                        f"Task '{name}' aborted: {feedback}"
+                                        if feedback
+                                        else f"Task '{name}' aborted",
+                                        data_type="String",
+                                        data_src="error",
+                                    )
+                                fh.action_clients_ft[name].cleanup()
+                        # The result can arrive after the ended status, so it is
+                        # checked on every wake and logged once per goal
+                        result = fb["result"]
+                        if (
+                            ended
+                            and result is not None
+                            and result is not logged_results.get(name)
+                        ):
+                            logged_results[name] = result
+                            await log_data(
+                                send,
+                                f"Task '{name}' result: {ros_msg_to_str(result)}",
+                                data_type="String",
+                                data_src="robot",
+                            )
             except (WebSocketDisconnect, RuntimeError):
                 pass
 

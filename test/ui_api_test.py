@@ -933,6 +933,18 @@ def ui_node():
         node.destroy_node()
 
 
+def test_enable_ui_rejects_an_output_type_without_a_callback(monkeypatch):
+    """The UI node could not read such an output, so the recipe fails at once
+    with a clear error instead of the UI failing to start"""
+    from ros_sugar import Launcher
+    from ros_sugar.io.supported_types import String
+
+    monkeypatch.setattr(String, "callback", None)  # a type without a callback
+
+    with pytest.raises(TypeError, match="'tracks' has type 'String'"):
+        Launcher().enable_ui(outputs=[Topic(name="tracks", msg_type="String")])
+
+
 def test_slow_output_content_does_not_block_other_requests():
     """Computing an output's content (e.g. a JPEG encode) must not hold up
     the rest of the server, for a latest read or a stream"""
