@@ -1656,3 +1656,19 @@ def test_camera_info_message_passes_through():
 
     info = _camera_info()
     assert CameraInfo.convert(info) is info
+
+
+# ---------------------------------------------------------------------------
+# Audio
+# ---------------------------------------------------------------------------
+
+
+def test_audio_convert_gives_one_bytes_object_per_byte():
+    """The message holds the clip byte by byte, from raw bytes or base64"""
+    from ros_sugar.io.supported_types import Audio
+
+    clip = bytes(range(256)) * 4
+    expected = [bytes([b]) for b in clip]
+
+    assert Audio.convert(clip).data == expected
+    assert Audio.convert(base64.b64encode(clip).decode()).data == expected

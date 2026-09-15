@@ -646,7 +646,8 @@ class Audio(SupportedType):
             output = base64.b64decode(output)
 
         msg = ByteMultiArray()
-        msg.data = [bytes([b]) for b in output]
+        # One bytes object per byte, as byte[] needs
+        msg.data = memoryview(output).cast("c").tolist()
         return msg
 
 
