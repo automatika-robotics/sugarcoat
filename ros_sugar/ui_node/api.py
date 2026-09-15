@@ -158,7 +158,8 @@ async def _stream_at_rate(websocket, default_rate, max_rate, sample) -> None:
 
     try:
         while True:
-            payload, done = sample()
+            # Off the event loop
+            payload, done = await asyncio.to_thread(sample)
             if payload is not None:
                 await websocket.send_json(payload)
             if done:
@@ -194,7 +195,8 @@ async def _stream_pushed(websocket, subscribe, unsubscribe, sample) -> None:
         while True:
             # Clear before reading so a message arriving mid-emit re-wakes
             updated.clear()
-            payload, done = sample()
+            # Off the event loop
+            payload, done = await asyncio.to_thread(sample)
             if payload is not None:
                 await websocket.send_json(payload)
             if done:
@@ -437,7 +439,8 @@ def _output_routes(ros_node: UINode) -> List:
             return JSONResponse(
                 {"error": f"Unknown output topic '{name}'"}, status_code=404
             )
-        content = ros_node.get_latest_output(name)
+        # Off the event loop
+        content = await asyncio.to_thread(ros_node.get_latest_output, name)
         if content is None:
             return JSONResponse(
                 {"error": f"No data received yet for '{name}'"}, status_code=404
@@ -652,7 +655,8 @@ def _world_routes(ros_node: UINode) -> List:
             while True:
                 now = loop.time()
                 # Grid
-                grid = ros_node.get_latest_output(name)
+                # Off the event loop
+                grid = await asyncio.to_thread(ros_node.get_latest_output, name)
                 if (
                     grid is not None
                     and grid is not last_grid
@@ -663,7 +667,9 @@ def _world_routes(ros_node: UINode) -> List:
                     last_grid_emit = now
                 # Overlays/paths. Emit each one only when its value changes.
                 for marker_name, marker_type in marker_topics:
-                    content = ros_node.get_latest_output(marker_name)
+                    content = await asyncio.to_thread(
+                        ros_node.get_latest_output, marker_name
+                    )
                     if content is None or content is last_marker.get(marker_name):
                         continue
                     last_marker[marker_name] = content

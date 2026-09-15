@@ -933,6 +933,39 @@ def ui_node():
         node.destroy_node()
 
 
+def test_slow_output_content_does_not_block_other_requests():
+    """Computing an output's content (e.g. a JPEG encode) must not hold up
+    the rest of the server, for a latest read or a stream"""
+    import threading
+    import time
+
+    node = _ApiNode()
+
+    def _slow_latest(name):
+        time.sleep(1.0)
+        return {"data": 1}
+
+    node.get_latest_output = _slow_latest
+
+    def _health_secs(client):
+        start = time.monotonic()
+        assert client.get("/api/health").status_code == 200
+        return time.monotonic() - start
+
+    with _make_client(node) as client:  # one event loop for all requests
+        reader = threading.Thread(
+            target=client.get, args=("/api/outputs/map/latest",), daemon=True
+        )
+        reader.start()
+        time.sleep(0.2)
+        assert _health_secs(client) < 0.5
+        reader.join()
+
+        with client.websocket_connect("/api/outputs/map"):  # a sampled stream
+            time.sleep(0.2)
+            assert _health_secs(client) < 0.5
+
+
 def test_action_duration_has_fractions_of_a_second(ui_node):
     """A goal running for part of a second reports that part, not 0"""
     import time
