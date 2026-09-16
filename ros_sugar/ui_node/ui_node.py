@@ -401,6 +401,7 @@ class UINode(BaseComponent):
         :param srv_call_data: ``{"srv_name": <name>, **request_fields}``.
         :raises RuntimeError: If the service client is not ready, or no server
             for the service is available.
+        :raises ValueError: If a request field cannot be set from its value.
         :return: The raw ROS response message, or ``None``.
         """
         srv_name = srv_call_data.pop("srv_name")
@@ -423,6 +424,7 @@ class UINode(BaseComponent):
         :raises RuntimeError: If the action client is not ready, or no server
             for the action is available.
         :raises GoalInProgressError: If the previous goal is still running.
+        :raises ValueError: If a goal field cannot be set from its value.
         :return: True if the goal was accepted by the action server.
         """
         action_name = action_goal_data.pop("action_name")

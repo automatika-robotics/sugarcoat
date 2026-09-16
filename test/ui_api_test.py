@@ -649,6 +649,41 @@ def test_boolean_fields_take_only_unambiguous_values():
             set_ros_msg_from_dict(Bool, {"data": value})
 
 
+def test_integer_fields_take_only_whole_numbers_in_range():
+    """int() truncated 2.9 to 2 and took True as 1, and an out of range value
+    wrapped when serialized: 300 as a uint8 arrived as 44"""
+    import numpy as np
+    from std_msgs.msg import Int32, UInt8
+
+    from ros_sugar.io.supported_types import set_ros_msg_from_dict
+
+    for value, expected in (
+        (3, 3), (-3, -3), (3.0, 3), ("3", 3), (" 3.0 ", 3), (np.int64(3), 3)
+    ):
+        assert set_ros_msg_from_dict(Int32, {"data": value}).data == expected, value
+    for value in (2.9, True, "2.9", "abc", None, float("nan"), 1e20):
+        with pytest.raises(ValueError, match="data"):
+            set_ros_msg_from_dict(Int32, {"data": value})
+
+    assert set_ros_msg_from_dict(UInt8, {"data": 255}).data == 255
+    for value in (300, -1):
+        with pytest.raises(ValueError, match=r"in \[0, 255\]"):
+            set_ros_msg_from_dict(UInt8, {"data": value})
+
+
+def test_float_fields_refuse_booleans():
+    """float() took True as 1.0"""
+    from std_msgs.msg import Float64
+
+    from ros_sugar.io.supported_types import set_ros_msg_from_dict
+
+    for value, expected in ((2, 2.0), (2.5, 2.5), ("2.5", 2.5)):
+        assert set_ros_msg_from_dict(Float64, {"data": value}).data == expected
+    for value in (True, "abc", None):
+        with pytest.raises(ValueError, match="data"):
+            set_ros_msg_from_dict(Float64, {"data": value})
+
+
 def test_set_ros_msg_from_dict_rejects_native_fatal_values():
     """Values that would build a Python-plausible but rmw-fatal message must
     raise ValueError (-> HTTP 400) instead of reaching the serializer."""
@@ -1127,11 +1162,19 @@ def test_ui_node_deactivates_with_service_and_action_clients(ui_node):
         ui_node.send_action_goal({"action_name": "ui_node_test/lookup"})
 
 
-def test_a_boolean_input_refuses_a_value_that_is_not_true_or_false():
-    """A real UI node builds the message, so the refusal reaches the client as 400"""
+def test_a_real_ui_node_reports_values_its_fields_cannot_hold():
+    """The UI node builds the messages, so a value a field cannot hold reaches the
+    client as 400 naming it, for a topic, a service and an action alike. The
+    clients used to log that error and return nothing, which the API reported as
+    a missing response or a rejected goal"""
+    from unittest.mock import MagicMock
+
     import rclpy
     from starlette.testclient import TestClient
+    from std_srvs.srv import SetBool
+    from tf2_msgs.action import LookupTransform
 
+    from ros_sugar.base_clients import ActionClientConfig, ServiceClientConfig
     from ros_sugar.ui_node.api import build_api_app
     from ros_sugar.ui_node.ui_node import UINode, UINodeConfig
 
@@ -1139,18 +1182,41 @@ def test_a_boolean_input_refuses_a_value_that_is_not_true_or_false():
         rclpy.init()
     node = UINode(
         config=UINodeConfig(),
-        inputs=[Topic(name="ui_node_test/flag", msg_type="Bool")],
+        inputs=[
+            Topic(name="ui_node_test/flag", msg_type="Bool"),
+            ServiceClientConfig(srv_type=SetBool, name="ui_node_test/set_flag"),
+            ActionClientConfig(action_type=LookupTransform, name="ui_node_test/lookup"),
+        ],
         outputs=[Topic(name="ui_node_test/status", msg_type="String")],
     )
     node.rclpy_init_node()
     node.create_all_publishers()
+    node.custom_on_activate()
+    service = node._ros_service_clients["ui_node_test/set_flag"]
+    service.client.wait_for_service = MagicMock(return_value=True)
+    service.send_request = MagicMock(return_value=SetBool.Response(success=True))
+    action = node._ros_action_clients["ui_node_test/lookup"]
+    action.client.wait_for_server = MagicMock(return_value=True)
+    action.send_request = MagicMock(return_value=True)
     try:
         client = TestClient(build_api_app(node))
-        refused = client.post("/api/inputs/ui_node_test/flag", json={"data": "yes"})
-        assert refused.status_code == 400
-        assert "expected true or false" in refused.json()["error"]
-        accepted = client.post("/api/inputs/ui_node_test/flag", json={"data": "false"})
-        assert accepted.status_code == 200
+        for url, body, reason in (
+            ("/api/inputs/ui_node_test/flag", {"data": "yes"}, "expected true or false"),
+            ("/api/services/ui_node_test/set_flag", {"data": "yes"}, "expected true or false"),
+            ("/api/actions/ui_node_test/lookup", {"timeout": {"sec": 2.5}}, "expected a whole number"),
+        ):
+            resp = client.post(url, json=body)
+            assert resp.status_code == 400, url
+            assert reason in resp.json()["error"], url
+        service.send_request.assert_not_called()
+        action.send_request.assert_not_called()
+
+        for url, body, status in (
+            ("/api/inputs/ui_node_test/flag", {"data": "false"}, 200),
+            ("/api/services/ui_node_test/set_flag", {"data": True}, 200),
+            ("/api/actions/ui_node_test/lookup", {"timeout": {"sec": 2}}, 202),
+        ):
+            assert client.post(url, json=body).status_code == status, url
     finally:
         node.destroy_node()
 

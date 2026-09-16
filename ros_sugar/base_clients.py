@@ -109,20 +109,14 @@ class ServiceClientHandler:
 
         :param request_fields: Request data [key, value]
         :type request_fields: Dict[str, Any]
+        :raises ValueError: If a field cannot be set from its value, naming both
         :return: Service result
         :rtype: Any
         """
-        try:
-            updated_message = set_ros_msg_from_dict(
-                msg_class=self.config.srv_type.Request, data_dict=request_fields
-            )
-            self.node.get_logger().debug(f"sending request {updated_message}")
-        except Exception as e:
-            self.node.get_logger().error(
-                f"Error creating service request from dict: {e}"
-            )
-            return None
-
+        updated_message = set_ros_msg_from_dict(
+            msg_class=self.config.srv_type.Request, data_dict=request_fields
+        )
+        self.node.get_logger().debug(f"sending request {updated_message}")
         return self.send_request(updated_message)
 
     def send_request(self, req_msg):
@@ -302,15 +296,12 @@ class ActionClientHandler:
 
         :param request_fields: Request data [key, value]
         :type request_fields: Dict[str, Any]
+        :raises ValueError: If a field cannot be set from its value, naming both.
+            Raised before anything is sent, so a running goal is left alone
         """
-        try:
-            updated_message = set_ros_msg_from_dict(
-                msg_class=self.config.action_type.Goal, data_dict=request_fields
-            )
-        except Exception as e:
-            self.node.get_logger().error(f"Error creating action goal from dict: {e}")
-            return None
-
+        updated_message = set_ros_msg_from_dict(
+            msg_class=self.config.action_type.Goal, data_dict=request_fields
+        )
         return self.send_request(updated_message, wait_until_first_feedback)
 
     def send_request(

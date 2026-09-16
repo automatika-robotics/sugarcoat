@@ -166,7 +166,7 @@ def build_browser_app(
         )
         try:
             response = ros_node.send_srv_call(data_dict)
-        except RuntimeError as e:
+        except (RuntimeError, ValueError) as e:
             fh.toasting(str(e), session, "error", duration=100000)
             return fh.get_main_page()
         if response is None:
@@ -212,7 +212,7 @@ def build_browser_app(
             return fh.get_main_page()
         try:
             accepted = ros_node.send_action_goal(data_dict)
-        except RuntimeError as e:
+        except (RuntimeError, ValueError) as e:
             fh.toasting(str(e), session, "error", duration=100000)
             return fh.get_main_page()
         if not accepted:

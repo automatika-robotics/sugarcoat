@@ -1,4 +1,5 @@
 from typing import List, Optional, Tuple, Dict, Callable, Union, Any
+import numbers
 import re
 import sys
 import base64
@@ -685,7 +686,7 @@ def run_external_processor(
 
 # NOTE: Scalar ROS field type names mapped when building messages from
 # JSON-shaped dicts. Conversion goes by the DECLARED field type (not the default
-# value's Python type).
+# value's Python type)
 _ROS_INT_TYPES = frozenset({
     "int8",
     "uint8",
@@ -714,16 +715,41 @@ def _split_ros_field_type(ros_type: str) -> Tuple[str, bool]:
     return ros_type, False
 
 
+def _convert_ros_int(value: Any) -> int:
+    """A whole number for a ROS integer field. Text holding a number is accepted,
+       since form fields arrive as text.
+    """
+    number = value
+    if isinstance(value, str):
+        try:
+            number = int(value.strip())
+        except ValueError:
+            try:
+                number = float(value.strip())
+            except ValueError:
+                raise ValueError(f"expected a whole number, got {value!r}") from None
+    if (
+        isinstance(number, (bool, np.bool_))
+        or not isinstance(number, numbers.Real)
+        or (not isinstance(number, numbers.Integral) and not float(number).is_integer())
+    ):
+        raise ValueError(f"expected a whole number, got {value!r}")
+    return int(number)
+
+
 def _convert_ros_scalar(base_type: str, value: Any) -> Any:
     """Convert a JSON value to the Python value of a scalar ROS field type."""
     if base_type in _ROS_INT_TYPES:
-        return int(value)
+        return _convert_ros_int(value)
     if base_type in _ROS_FLOAT_TYPES:
+        # refuse any bools being passed as floats
+        if isinstance(value, (bool, np.bool_)):
+            raise ValueError(f"expected a number, got {value!r}")
         return float(value)
     if base_type == "boolean":
         # Only unambiguous values. Text accepted
-        if isinstance(value, bool):
-            return value
+        if isinstance(value, (bool, np.bool_)):
+            return bool(value)
         if isinstance(value, int) and value in (0, 1):
             return bool(value)
         if isinstance(value, str) and value.strip().lower() in ("true", "false"):
@@ -733,7 +759,7 @@ def _convert_ros_scalar(base_type: str, value: Any) -> Any:
         # rclpy represents octet as a length-1 bytes object
         if isinstance(value, (bytes, bytearray)) and len(value) == 1:
             return bytes(value)
-        return bytes([int(value)])
+        return bytes([_convert_ros_int(value)])
     if base_type.startswith(("string", "wstring")):
         return str(value)
     raise ValueError(f"unsupported ROS field type '{base_type}'")

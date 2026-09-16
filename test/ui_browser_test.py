@@ -257,3 +257,36 @@ def test_a_boolean_request_field_is_a_checkbox_sending_true():
 
     assert 'type="checkbox"' in form
     assert 'name="data"' in form and 'value="true"' in form
+
+
+def test_a_form_value_a_field_cannot_hold_is_shown(tmp_path, monkeypatch):
+    """The error names the field, instead of the goal being reported as rejected
+    or the page failing"""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+    from tf2_msgs.action import LookupTransform
+
+    from ros_sugar.io.supported_types import get_ros_msg_fields_dict
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([])
+    node.actions = [{
+        "name": "tf/lookup",
+        "type": "LookupTransform",
+        "fields": get_ros_msg_fields_dict(LookupTransform.Goal),
+    }]
+
+    def _refuse(data):
+        raise ValueError(
+            "Invalid value for field 'sec' (int32): expected a whole number, got '2.5'"
+        )
+
+    node.send_action_goal = _refuse
+    client = TestClient(build_browser_app(node))
+
+    page = client.post("/action/goal", data={"action_name": "tf/lookup", "sec": "2.5"})
+
+    assert page.status_code == 200
+    assert "expected a whole number" in page.text

@@ -213,12 +213,6 @@ def validate_msg_fields(
 ) -> None:
     """Check that every key in a dict names a real field of a ROS message.
 
-    :meth:`set_ros_msg_from_dict` skips keys it does not recognise, which is
-    the right thing when it is filling a message and the wrong thing when a
-    person wrote the dict: a misspelt field silently leaves that part of the
-    message at its default. Somebody sending a navigation goal would get a
-    pose of all zeros and no indication anything was dropped.
-
     :param msg_class: The ROS message class the dict is meant to fill
     :param data_dict: The values, nested the same way the message is
     :param where: What to call the message in the error, for a caller who
@@ -271,8 +265,11 @@ def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
     :raises ValueError: If a value cannot be converted to its declared field type.
     :return: An instance of msg_class populated with data
     """
-    # Instantiate the message
-    msg = msg_class()
+    # Ask setters to check each field's type and range
+    try:
+        msg = msg_class(check_fields=True)
+    except AssertionError:
+        msg = msg_class()  # for Humble which doesnt have the argument and always checks
 
     # Get the type definitions
     msg_fields_types = msg_class.get_fields_and_field_types()

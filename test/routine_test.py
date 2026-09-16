@@ -1822,6 +1822,26 @@ class TestGoalVerdict(unittest.TestCase):
         assert settled["result"][0] is False
         assert "rejected" in settled["result"][1]
 
+    def test_a_goal_field_that_cannot_be_set_fails_naming_it(self):
+        """The dict path raises the field's error, which the step reports,
+        rather than returning nothing, which read as a refused goal"""
+        client = FakeClient()
+
+        def _refuse(fields):
+            raise ValueError(
+                "Invalid value for field 'x' (double): expected a number, got True"
+            )
+
+        client.send_request_from_dict = _refuse
+        step = ActionServerGoal(component="planner", goal={"x": True})
+        step.set_host(FakeHost(client))
+
+        settled, done = _run(step)
+
+        assert done.wait(WAIT)
+        assert settled["result"][0] is False
+        assert "Invalid value for field 'x'" in settled["result"][1]
+
     def test_a_dict_goal_goes_through_the_dict_path(self):
         client = FakeClient()
         step = ActionServerGoal(component="planner", goal={"pose.x": 2.0})
