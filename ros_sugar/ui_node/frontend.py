@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -14,6 +15,64 @@ except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
         "In order to use the dynamic web UI for your recipe, please install FastHTML & MonsterUI with `pip install python-fasthtml MonsterUI`"
     ) from e
+
+# Third-party scripts and styles
+_VENDOR = "/vendor"
+# The CDN files MonsterUI's theme loads
+_THEME_FILES = {
+    "https://cdn.jsdelivr.net/npm/franken-ui@2.0.0/dist/css/core.min.css",
+    "https://cdn.jsdelivr.net/npm/franken-ui@2.0.0/dist/js/core.iife.js",
+    "https://cdn.tailwindcss.com/3.4.17",
+    "https://cdn.jsdelivr.net/npm/franken-ui@2.0.0/dist/js/icon.iife.js",
+    "https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css",
+}
+
+
+def _static_file(directory: Path, name: str):
+    """The file ``name`` in ``directory``, or 404 when the name leads out of it"""
+    root = os.path.abspath(directory)
+    # Normalised without resolving symlinks
+    path = os.path.normpath(os.path.join(root, name))
+    if os.path.commonpath([root, path]) != root or not os.path.isfile(path):
+        return Response("404 Not Found", status_code=404)
+    return FileResponse(path)
+
+
+def _local_headers() -> List:
+    """The page headers, with third-party files served by the UI itself."""
+    theme = []
+    for header in Theme.red.headers():
+        url = header.attrs.get("src") or header.attrs.get("href") or ""
+        if not url.startswith(("http://", "https://")):
+            theme.append(header)
+        elif url not in _THEME_FILES:
+            logging.warning(
+                f"The UI does not load '{url}', which MonsterUI's theme asks for: "
+                "static/vendor has no copy of it"
+            )
+    return [
+        Meta(charset="utf-8"),
+        Meta(
+            name="viewport",
+            content="width=device-width, initial-scale=1, viewport-fit=cover",
+        ),
+        Script(src=f"{_VENDOR}/htmx-2.0.7.min.js"),
+        Script(src=f"{_VENDOR}/fasthtml-js-1.0.12.js"),
+        Script(src=f"{_VENDOR}/surreal-c68a69a.js"),
+        Script(src=f"{_VENDOR}/css-scope-inline-14e835e.js"),
+        Script(src=f"{_VENDOR}/htmx-ext-ws-2.0.3.js"),
+        Link(rel="stylesheet", href=f"{_VENDOR}/franken-ui-2.0.0-core.min.css"),
+        Script(type="module", src=f"{_VENDOR}/franken-ui-2.0.0-core.iife.js"),
+        Script(src=f"{_VENDOR}/tailwindcss-play-3.4.17.js"),
+        Script(type="module", src=f"{_VENDOR}/franken-ui-2.0.0-icon.iife.js"),
+        Link(rel="stylesheet", href=f"{_VENDOR}/daisyui-4.12.24-full.css"),
+        *theme,
+        # Map rendering
+        Script(src=f"{_VENDOR}/easeljs-1.0.0.min.js"),
+        Script(src=f"{_VENDOR}/eventemitter2-6.4.9.js"),
+        Script(src=f"{_VENDOR}/roslib-1.4.1.min.js"),
+        Script(src=f"{_VENDOR}/ros2d-0.10.0.min.js"),
+    ]
 
 
 class FHApp:
@@ -38,14 +97,7 @@ class FHApp:
             for t in (in_topics or []) + (out_topics or [])
         )
         hdrs = [
-            Theme.red.headers(),  # Get theme from MonsterUI
-            # --- 1. Add ROS Dependencies (CDN) ---
-            Script(src="https://code.createjs.com/1.0.0/easeljs.min.js"),
-            Script(
-                src="https://cdn.jsdelivr.net/npm/eventemitter2@6.4.9/lib/eventemitter2.min.js"
-            ),
-            Script(src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"),
-            Script(src="https://cdn.jsdelivr.net/npm/ros2d@0/build/ros2d.min.js"),
+            *_local_headers(),
             Script(
                 src="custom.js",
             ),
@@ -68,9 +120,17 @@ class FHApp:
             if session_key
             else {}
         )
-        self.app, self.rt = fast_app(
-            hdrs=hdrs, exts=["ws"], static_path=str(static_src), **session
+        self.app = FastHTML(
+            hdrs=hdrs,
+            # Loaded from static/vendor by the headers instead
+            default_hdrs=False,
+            **session,
         )
+        self.rt = self.app.route
+
+        @self.app.get("/{fname:path}.{ext:static}")
+        def _static(fname: str, ext: str):
+            return _static_file(static_src, f"{fname}.{ext}")
 
         if not configs:
             logging.warning("No component configs provided to the UI")
@@ -606,12 +666,12 @@ class FHApp:
             brand=Div(
                 # Dark Mode Logo (Visible by default)
                 Img(
-                    src="https://automatikarobotics.com/Emos_dark.png",
+                    src="/Emos_dark.png",
                     cls="brand-logo brand-dark",
                 ),
                 # Light Mode Logo (Hidden by default, shown when html.light exists)
                 Img(
-                    src="https://automatikarobotics.com/Emos_light.png",
+                    src="/Emos_light.png",
                     cls="brand-logo brand-light",
                 ),
             ),

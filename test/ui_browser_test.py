@@ -344,3 +344,95 @@ def test_the_robots_page_gives_its_browser_the_api(tmp_path, monkeypatch):
     # The front end's session is signed with the given secret, not a key file
     # written to the working directory
     assert not (tmp_path / ".sesskey").exists()
+
+
+def test_the_page_loads_nothing_from_other_hosts(tmp_path, monkeypatch):
+    """Scripts on the page can use the robot's API, and robots are often offline,
+    so every script, style and image comes from the UI itself"""
+    import re
+    from urllib.parse import urlsplit
+
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([
+        Topic(name="map", msg_type="OccupancyGrid"),
+        Topic(name="camera", msg_type="Image"),
+    ])
+    client = TestClient(build_browser_app(node))
+    page = client.get("/").text
+
+    urls = re.findall(r'<(?:script|link|img)\b[^>]*?\b(?:src|href)="([^"]+)"', page)
+    assert len(urls) > 10
+    for url in urls:
+        if url.startswith(("http://", "https://")):
+            # The canonical link names the page itself
+            assert urlsplit(url).hostname == "testserver", url
+        else:
+            assert client.get("/" + url.lstrip("/")).status_code == 200, url
+
+
+def test_the_page_serves_no_file_outside_its_static_folder(tmp_path, monkeypatch):
+    """A URL climbing out of the static folder with '..' must not reach other
+    files, as FastHTML's own static route lets it"""
+    import os
+
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+
+    import ros_sugar.ui_node.frontend as frontend
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not for the network")
+    static = os.path.join(os.path.dirname(os.path.realpath(frontend.__file__)), "static")
+    climb = os.path.relpath(secret, static)
+    client = TestClient(build_browser_app(_BrowserNode([])))
+
+    assert client.get("/custom.css").status_code == 200
+    for path in (
+        climb.replace("..", "%2E%2E"),
+        climb.replace("/", "%2F"),
+        "%2F" + str(secret).lstrip("/").replace("/", "%2F"),
+    ):
+        response = client.get(f"/{path}")
+        assert response.status_code == 404, path
+        assert "not for the network" not in response.text
+
+
+def test_fasthtml_and_monsterui_ask_for_the_bundled_front_end_files():
+    """The browser front end serves copies of the files FastHTML and MonsterUI
+    load from CDNs. Their Python code generates markup for those exact files, so
+    a release asking for other ones may no longer fit the copies, and needs the
+    copies updated or its version bounded"""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from fasthtml.core import def_hdrs, htmx_exts
+    from monsterui.all import Theme
+
+    from ros_sugar.ui_node.frontend import _THEME_FILES
+
+    def urls(headers):
+        return {
+            h.attrs.get("src") or h.attrs.get("href")
+            for h in headers
+            if (h.attrs.get("src") or h.attrs.get("href") or "").startswith("http")
+        }
+
+    fasthtml_files = urls(def_hdrs()) | {htmx_exts["ws"]}
+    assert fasthtml_files == {
+        "https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.js",
+        "https://cdn.jsdelivr.net/gh/answerdotai/fasthtml-js@1.0.12/fasthtml.js",
+        "https://cdn.jsdelivr.net/gh/answerdotai/surreal@main/surreal.js",
+        "https://cdn.jsdelivr.net/gh/gnat/css-scope-inline@main/script.js",
+        "https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.3/ws.js",
+    }, "FastHTML loads other files than static/vendor has copies of"
+    assert urls(Theme.red.headers()) == _THEME_FILES, (
+        "MonsterUI's theme loads other files than static/vendor has copies of"
+    )
