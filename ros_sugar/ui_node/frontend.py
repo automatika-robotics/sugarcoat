@@ -1,8 +1,9 @@
-from typing import Dict, Sequence, Optional, List, Tuple
 import logging
 from datetime import datetime
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ros_sugar.io.topic import Topic
+
 from . import elements
 
 try:
@@ -27,6 +28,7 @@ class FHApp:
         additional_output_elements: Optional[List[Tuple]] = None,
         hide_settings_panel: bool = False,
         system_info: Optional[Dict] = None,
+        session_key: Optional[str] = None,
     ):
         # --- Application Setup ---
         static_src = Path(__file__).resolve().parent / "static"
@@ -59,8 +61,15 @@ class FHApp:
             hdrs.append(Script(src="audio_manager.js"))
         if system_info is not None:
             hdrs.append(Script(src="system_graph.js"))
+        # A secure UI signs its session with its own key and sends the cookie
+        # over HTTPS only
+        session = (
+            {"secret_key": session_key, "same_site": "strict", "sess_https_only": True}
+            if session_key
+            else {}
+        )
         self.app, self.rt = fast_app(
-            hdrs=hdrs, exts=["ws"], static_path=str(static_src)
+            hdrs=hdrs, exts=["ws"], static_path=str(static_src), **session
         )
 
         if not configs:
@@ -344,9 +353,7 @@ class FHApp:
         )
 
         # SVG layer for connection edges (drawn by system_graph.js)
-        svg_overlay = NotStr(
-            '<svg id="topic-connections-svg"></svg>'
-        )
+        svg_overlay = NotStr('<svg id="topic-connections-svg"></svg>')
         graph_container(svg_overlay)
 
         # All graph nodes — components, events, and recipe actions — positioned by JS
@@ -359,7 +366,10 @@ class FHApp:
             is_monitor = "monitor" in node_name
             graph_nodes(
                 elements.system_component_card(
-                    node_name, comp_meta, is_managed, is_monitor,
+                    node_name,
+                    comp_meta,
+                    is_managed,
+                    is_monitor,
                 )
             )
 
@@ -371,9 +381,7 @@ class FHApp:
             for action in event_data.get("actions", []):
                 if not action.get("component"):
                     graph_nodes(
-                        elements.system_recipe_action_node(
-                            action, event_data["id"]
-                        )
+                        elements.system_recipe_action_node(action, event_data["id"])
                     )
 
         graph_container(graph_nodes)
@@ -498,8 +506,12 @@ class FHApp:
                         hx_get="/system/show",
                         hx_target="#main",
                         hx_swap="outerHTML",
-                        cls="glass-icon-btn" if self.toggle_system else "secondary-button",
-                        uk_tooltip="title: Close View; pos: bottom" if self.toggle_system else None,
+                        cls="glass-icon-btn"
+                        if self.toggle_system
+                        else "secondary-button",
+                        uk_tooltip="title: Close View; pos: bottom"
+                        if self.toggle_system
+                        else None,
                     ),
                 )
         # Case 2: System page is displayed
@@ -573,8 +585,12 @@ class FHApp:
                         hx_get="/system/show",
                         hx_target="#main",
                         hx_swap="outerHTML",
-                        cls="glass-icon-btn" if self.toggle_system else "secondary-button",
-                        uk_tooltip="title: Close View; pos: bottom" if self.toggle_system else None,
+                        cls="glass-icon-btn"
+                        if self.toggle_system
+                        else "secondary-button",
+                        uk_tooltip="title: Close View; pos: bottom"
+                        if self.toggle_system
+                        else None,
                     ),
                 )
         nav_bar = NavBar(

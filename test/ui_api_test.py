@@ -8,6 +8,7 @@ Covers:
   not pull in the web stack (fasthtml/starlette/uvicorn).
 """
 
+import datetime
 import json
 import subprocess
 import sys
@@ -187,6 +188,7 @@ class _ApiNode:
         self.feedback_listeners = {}  # action_name -> set of push listeners
         self.output_ready = True  # add_output_listener return value
         self.output_listeners = {}  # topic_name -> set of push listeners
+        self.logged = []  # (level, message) logged through get_logger
 
     def srv_clients_inputs_dicts(self):
         from std_srvs.srv import Trigger
@@ -267,6 +269,18 @@ class _ApiNode:
         """Simulate a message arriving on an output topic (invoke push listeners)."""
         for listener in list(self.output_listeners.get(name, ())):
             listener()
+
+    def get_logger(self):
+        node = self
+
+        class _Logger:
+            def info(self, message):
+                node.logged.append(("info", message))
+
+            def warning(self, message):
+                node.logged.append(("warning", message))
+
+        return _Logger()
 
 
 def _make_client(node):
@@ -1389,3 +1403,209 @@ def test_enable_ui_is_secure_by_default():
 
     launcher.enable_ui(serve_browser=False, secure=False)
     assert launcher._ui_node_config.secure is False
+
+
+# ---------------------------------------------------------------------------
+# API keys
+# ---------------------------------------------------------------------------
+def test_api_keys_are_stored_hashed_and_checked(tmp_path):
+    import stat
+
+    from ros_sugar.ui_node.security import ApiKeyError, ApiKeys
+
+    keys = ApiKeys(tmp_path)
+    stored, key = keys.create("mission-control", ["command", "read"])
+
+    assert key.startswith("sk_ui_")
+    assert key not in keys.path.read_text()
+    assert stat.S_IMODE(keys.path.stat().st_mode) == 0o600
+    assert stored.scopes == ("read", "command")
+    assert ApiKeys(tmp_path).find(key) == stored
+    assert keys.find(key + "x") is None
+    assert keys.find("") is None
+
+    for name, scopes, expires_at, error in (
+        ("mission-control", ["read"], None, "already exists"),
+        ("viewer", ["write"], None, "Scopes must be"),
+        ("viewer", [], None, "Scopes must be"),
+        ("viewer", ["read"], datetime.date(2020, 1, 1), "has passed"),
+        (" ", ["read"], None, "needs a name"),
+    ):
+        with pytest.raises(ApiKeyError, match=error):
+            keys.create(name, scopes, expires_at)
+
+
+def test_a_key_is_valid_through_its_expiry_date(tmp_path):
+    import attrs
+
+    from ros_sugar.ui_node.security import ApiKeys
+
+    keys = ApiKeys(tmp_path)
+    today = datetime.date.today()
+    stored, key = keys.create("mission-control", ["read"], today)
+    assert keys.find(key) == stored
+
+    keys._save([attrs.evolve(stored, expires_at=today - datetime.timedelta(days=1))])
+    assert keys.find(key) is None
+
+
+def test_keys_created_or_revoked_reach_a_running_ui(tmp_path):
+    """Revoking one key and creating another in quick succession can leave the
+    file's size and times unchanged, so the content is what is compared"""
+    from ros_sugar.ui_node.security import ApiKeys
+
+    running, command = ApiKeys(tmp_path), ApiKeys(tmp_path)
+    first, first_key = command.create("aaaa", ["read"])
+    assert running.find(first_key) == first
+
+    command.revoke(first.id)
+    second, second_key = command.create("bbbb", ["read"])
+
+    assert running.find(first_key) is None
+    assert running.find(second_key) == second
+
+
+def _make_secure_client(node, tmp_path):
+    """A client of an API that needs keys, and a command key and a read key"""
+    pytest.importorskip("httpx")
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.security import ApiKeys
+
+    keys = ApiKeys(tmp_path)
+    _, command_key = keys.create("mission-control", ["read", "command"])
+    _, read_key = keys.create("dashboard", ["read"])
+    client = TestClient(build_api_app(node, keys=keys), base_url="https://testserver")
+    return client, keys, command_key, read_key
+
+
+def test_the_api_needs_a_key_with_the_scope(tmp_path):
+    node = _ApiNode()
+    client, _, command_key, read_key = _make_secure_client(node, tmp_path)
+    body = {"linear": {"x": 1.0}}
+
+    assert client.get("/api/health").status_code == 200
+    for headers in ({}, {"Authorization": "Bearer sk_ui_wrong"}, {"Authorization": read_key}):
+        refused = client.get("/api/interfaces", headers=headers)
+        assert refused.status_code == 401, headers
+        assert refused.json() == {"error": "Missing or invalid API key"}
+        assert refused.headers["www-authenticate"] == "Bearer"
+
+    as_reader = {"Authorization": f"Bearer {read_key}"}
+    assert client.get("/api/interfaces", headers=as_reader).status_code == 200
+    refused = client.post("/api/inputs/cmd_vel", json=body, headers=as_reader)
+    assert refused.status_code == 403
+    assert refused.json() == {"error": "This key does not have the 'command' scope"}
+    assert not node.published
+
+    as_commander = {"Authorization": f"bearer {command_key}"}
+    for _ in range(2):
+        assert client.post("/api/inputs/cmd_vel", json=body, headers=as_commander).status_code == 200
+    assert len(node.published) == 2
+
+    # Once per key and address, not once per request
+    assert node.logged.count(("info", "API key 'mission-control' used from testclient")) == 1
+    assert [m for level, m in node.logged if level == "warning"] == [
+        "Refused API access from testclient: Missing or invalid API key"
+    ]
+
+
+def test_api_streams_need_a_key_with_the_scope(tmp_path):
+    from starlette.websockets import WebSocketDisconnect
+
+    node = _ApiNode()
+    node.latest["odom"] = {"frame_id": "odom", "data": [1.0, 2.0, 3.0]}
+    client, _, _, read_key = _make_secure_client(node, tmp_path)
+    as_reader = {"Authorization": f"Bearer {read_key}"}
+
+    with client.websocket_connect("/api/outputs/odom?rate=50") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Missing or invalid API key")
+
+    with client.websocket_connect("/api/outputs/odom?rate=50", headers=as_reader) as ws:
+        assert ws.receive_json()["topic"] == "odom"
+
+    with client.websocket_connect("/api/inputs/speech/audio", headers=as_reader) as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            # Without the refusal this is published and acknowledged
+            ws.send_json({"payload": "QUJD"})
+            ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (
+        1008,
+        "This key does not have the 'command' scope",
+    )
+    assert not node.audio_published
+
+
+def test_a_revoked_key_is_refused_at_once(tmp_path):
+    node = _ApiNode()
+    client, keys, command_key, _ = _make_secure_client(node, tmp_path)
+    as_commander = {"Authorization": f"Bearer {command_key}"}
+    assert client.get("/api/interfaces", headers=as_commander).status_code == 200
+
+    keys.revoke(next(k.id for k in keys.all() if k.name == "mission-control"))
+
+    assert client.get("/api/interfaces", headers=as_commander).status_code == 401
+
+
+def test_an_api_without_a_front_end_gives_no_cookie(tmp_path):
+    """The cookie grants the API to the browser that loaded the robot's page,
+    so an API served without the front end never sets it"""
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.security import ApiKeys, session_key
+
+    app = build_api_app(_ApiNode(), keys=ApiKeys(tmp_path), session_key=session_key(tmp_path))
+    client = TestClient(app, base_url="https://testserver")
+
+    assert "set-cookie" not in client.get("/").headers
+    assert client.get("/api/interfaces").status_code == 401
+
+
+def test_ui_security_manages_keys(tmp_path):
+    import os
+    import re
+    from pathlib import Path
+
+    from ros_sugar.ui_node.security import ApiKeys
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "ui_security"
+    env = {**os.environ, "SUGARCOAT_UI_DATA_DIR": str(tmp_path)}
+
+    def ui_security(*args):
+        return subprocess.run(
+            [sys.executable, str(script), *args], env=env, capture_output=True, text=True
+        )
+
+    created = ui_security("keys", "create", "--name", "mission-control", "--scopes", "read,command")
+    assert created.returncode == 0, created.stderr
+    key = re.search(r"sk_ui_\S+", created.stdout).group()
+    stored = ApiKeys(tmp_path).find(key)
+    assert (stored.name, stored.scopes) == ("mission-control", ("read", "command"))
+
+    duplicate = ui_security("keys", "create", "--name", "mission-control")
+    assert duplicate.returncode != 0
+    assert "already exists" in duplicate.stderr
+
+    listed = ui_security("keys", "list")
+    assert stored.id in listed.stdout and key not in listed.stdout
+
+    assert ui_security("keys", "revoke", stored.id).returncode == 0
+    assert ApiKeys(tmp_path).find(key) is None
+
+
+def test_logging_refusals_and_key_uses_with_a_ros_logger(tmp_path):
+    """An rclpy logger refuses different severities from one line of code, which
+    turned the first accepted request after a refusal into a 500"""
+    import rclpy.logging
+
+    node = _ApiNode()
+    node.get_logger = lambda: rclpy.logging.get_logger("ui_api_test")
+    client, _, command_key, _ = _make_secure_client(node, tmp_path)
+
+    assert client.get("/api/interfaces").status_code == 401
+    as_commander = {"Authorization": f"Bearer {command_key}"}
+    assert client.get("/api/interfaces", headers=as_commander).status_code == 200

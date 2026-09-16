@@ -62,6 +62,7 @@ def build_browser_app(
     additional_input_elements=None,
     additional_output_elements=None,
     system_info=None,
+    session_key=None,
 ):
     """Build the FastHTML browser app for the UI node.
 
@@ -69,6 +70,8 @@ def build_browser_app(
     :param additional_input_elements: UI input elements from derived packages.
     :param additional_output_elements: UI output elements from derived packages.
     :param system_info: System metadata for the visualization page.
+    :param session_key: Secret signing the session of a secure UI, sent over
+        HTTPS only. None uses FastHTML's key file in the working directory.
     :return: The FastHTML application (a Starlette app) to mount under ``/``.
     """
     ros_node_config = ros_node.config
@@ -83,6 +86,7 @@ def build_browser_app(
         additional_output_elements=additional_output_elements,  # Additional UI output elements from derived packages
         hide_settings_panel=ros_node_config.hide_settings,
         system_info=system_info,
+        session_key=session_key,
     )  # inputs and outputs are reversed
     app, _ = fh.get_app()
 

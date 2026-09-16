@@ -10,9 +10,13 @@ from ros_sugar.ui_node import UINode, UINodeConfig
 from ros_sugar.ui_node.api import build_api_app
 from ros_sugar.ui_node.api_utils import server_config
 from ros_sugar.ui_node.security import (
+    ApiKeyError,
+    ApiKeys,
     CertificateError,
     banner,
     resolve_certificate,
+    session_key,
+    state_dir,
 )
 from ros_sugar.utils import logger
 
@@ -50,14 +54,18 @@ def main():
 
     system_info = json.loads(args.system_info) if args.system_info else None
 
-    # A secure UI does not fall back to plain HTTP
-    certificate = None
-    certificate_error = None
+    # A secure UI does not fall back to plain HTTP, or to an API without keys
+    certificate = keys = browser_session_key = None
+    valid_keys = []
+    security_error = None
     if ros_node_config.secure:
         try:
             certificate = resolve_certificate()
-        except CertificateError as e:
-            certificate_error = e
+            keys = ApiKeys(state_dir())
+            valid_keys = [key for key in keys.all() if not key.expired()]
+            browser_session_key = session_key(state_dir())
+        except (CertificateError, ApiKeyError, OSError) as e:
+            security_error = e
 
     # Spin the ROS node in a background thread
     ros_thread = threading.Thread(
@@ -67,12 +75,10 @@ def main():
     )
     ros_thread.start()
 
-    if certificate_error is not None:
+    if security_error is not None:
         # The node stays up, so the recipe's other components are still
         # activated. Only the UI is not served
-        ros_node.get_logger().error(
-            f"The UI is not served: it has no TLS certificate. {certificate_error}"
-        )
+        ros_node.get_logger().error(f"The UI is not served: {security_error}")
         ros_thread.join()
         return
 
@@ -88,14 +94,26 @@ def main():
             additional_input_elements=additional_input_elements,
             additional_output_elements=additional_output_elements,
             system_info=system_info,
+            session_key=browser_session_key,
         )
 
     # Create the JSON/WebSocket API is the server host, server host
-    api_app = build_api_app(ros_node, browser_app=browser_app)
+    api_app = build_api_app(
+        ros_node,
+        browser_app=browser_app,
+        keys=keys,
+        session_key=browser_session_key,
+    )
 
     if certificate is not None:
         for line in banner(certificate):
             ros_node.get_logger().info(line)
+        if not valid_keys:
+            ros_node.get_logger().info(
+                "There are no valid API keys, so API use is not allowed."
+                " Create one with: ros2 run automatika_ros_sugar ui_security keys"
+                " create --name <name> --scopes read,command"
+            )
     else:
         # Not secure
         ros_node.get_logger().warning(

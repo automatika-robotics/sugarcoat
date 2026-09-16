@@ -21,6 +21,7 @@ from .api_utils import (
     GRID_TYPE,
     OVERLAY_TYPES,
     PATH_TYPE,
+    ApiKeyGuard,
     NoFraming,
     SameOriginGuard,
     content_to_jsonable,
@@ -33,6 +34,7 @@ from .api_utils import (
     stream_pushed,
     topic_schema,
 )
+from .security import ApiKeys
 from .ui_node import UINode
 from .utils import GoalInProgressError
 
@@ -512,7 +514,12 @@ def _world_routes(ros_node: UINode) -> List:
     return [WebSocketRoute(f"{API_BASE}/world/{{name:path}}", stream_world)]
 
 
-def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starlette:
+def build_api_app(
+    ros_node: UINode,
+    browser_app: Optional[Any] = None,
+    keys: Optional[ApiKeys] = None,
+    session_key: Optional[str] = None,
+) -> Starlette:
     """Build the application exposing the JSON / WS API.
 
     If ``browser_app`` is given, it is mounted under ``/`` as the last route,
@@ -520,6 +527,9 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
 
     :param ros_node: The running UI node providing the declared interfaces.
     :param browser_app: Optional FastHTML browser app to mount at ``/``.
+    :param keys: API keys the API requires. None serves it without keys
+    :param session_key: Secret of the cookie giving the browser front end the
+        API without a key. Used only with ``keys`` and a ``browser_app``
     :return: The Starlette API application.
     """
 
@@ -544,18 +554,27 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
     if browser_app is not None:
         routes.append(Mount("/", app=browser_app))
 
-    return Starlette(
-        routes=routes,
-        middleware=[
-            Middleware(NoFraming),
-            Middleware(
-                SameOriginGuard,
-                # Streams that only send data out stay open to other sites
-                open_streams=(
-                    f"{API_BASE}/outputs/*",
-                    f"{API_BASE}/world/*",
-                    f"{API_BASE}/actions/*/feedback",
-                ),
-            ),
-        ],
+    read_streams = (
+        f"{API_BASE}/outputs/*",
+        f"{API_BASE}/world/*",
+        f"{API_BASE}/actions/*/feedback",
     )
+    middleware = [
+        Middleware(NoFraming),
+        # Streams that only send data out stay open to other sites
+        Middleware(SameOriginGuard, open_streams=read_streams),
+    ]
+    if keys is not None:
+        middleware.append(
+            Middleware(
+                ApiKeyGuard,
+                keys=keys,
+                session_key=session_key if browser_app is not None else None,
+                prefix=f"{API_BASE}/",
+                open_paths=(f"{API_BASE}/health",),
+                read_streams=read_streams,
+                logger=ros_node.get_logger(),
+            )
+        )
+
+    return Starlette(routes=routes, middleware=middleware)

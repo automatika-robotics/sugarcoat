@@ -290,3 +290,57 @@ def test_a_form_value_a_field_cannot_hold_is_shown(tmp_path, monkeypatch):
 
     assert page.status_code == 200
     assert "expected a whole number" in page.text
+
+
+def test_the_robots_page_gives_its_browser_the_api(tmp_path, monkeypatch):
+    """A secure UI needs keys on its API, but the front end's scripts call the API
+    too: loading the page gives the browser a cookie for it, which other sites'
+    pages and other clients do not have"""
+    import logging
+
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.browser import build_browser_app
+    from ros_sugar.ui_node.security import ApiKeys, session_key
+
+    monkeypatch.chdir(tmp_path)
+    state = tmp_path / "state"
+    state.mkdir()
+    secret = session_key(state)
+    node = _BrowserNode([Topic(name="note", msg_type="String")])
+    node.get_logger = lambda: logging.getLogger("ui_browser_test")
+    node.publish("note", "hello")
+    app = build_api_app(
+        node,
+        build_browser_app(node, session_key=secret),
+        keys=ApiKeys(state),
+        session_key=secret,
+    )
+    browser = TestClient(app, base_url="https://testserver")
+
+    assert browser.get("/api/outputs/note/latest").status_code == 401
+
+    page = browser.get("/")
+    assert page.status_code == 200
+    cookie = next(
+        c for c in page.headers.get_list("set-cookie") if c.startswith("sugarcoat_ui=")
+    )
+    assert {"HttpOnly", "Secure", "SameSite=Strict"} <= set(cookie.split("; "))
+
+    assert browser.get("/api/outputs/note/latest").json()["payload"] == "hello"
+    # The test client opens WebSockets over ws://, where it holds back a Secure
+    # cookie that a browser sends over wss://, so the cookie is given explicitly
+    with browser.websocket_connect(
+        "/api/outputs/note", headers={"Cookie": cookie.split("; ")[0]}
+    ) as ws:
+        assert ws.receive_json()["payload"] == "hello"
+
+    forged = TestClient(app, base_url="https://testserver", cookies={"sugarcoat_ui": "forged"})
+    assert forged.get("/api/outputs/note/latest").status_code == 401
+
+    # The front end's session is signed with the given secret, not a key file
+    # written to the working directory
+    assert not (tmp_path / ".sesskey").exists()

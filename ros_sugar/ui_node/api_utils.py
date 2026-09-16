@@ -3,17 +3,20 @@
 import array
 import asyncio
 import base64
+import hashlib
+import hmac
 from fnmatch import fnmatchcase
 from typing import Any, Dict, Optional, Sequence
 from urllib.parse import urlsplit
 
 from rosidl_runtime_py.convert import message_to_ordereddict
-from starlette.datastructures import MutableHeaders
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.requests import cookie_parser
 from starlette.responses import JSONResponse
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..io.supported_types import get_ros_msg_fields_dict
-from .security import TLS_CIPHERS, TLS_MIN_VERSION, Certificate
+from .security import TLS_CIPHERS, TLS_MIN_VERSION, ApiKeys, Certificate
 
 # Composition of the /api/world map scene: an occupancy grid plus point-like
 # overlays and paths rendered on it
@@ -233,11 +236,21 @@ def server_config(app: Any, port: int, certificate: Optional[Certificate]):
     return config
 
 
+def is_command(scope, read_streams: Sequence[str]) -> bool:
+    """Whether a request is a command. Any request but GET, HEAD and OPTIONS,
+    and any WebSocket not in ``read_streams``."""
+    if scope["type"] == "http":
+        return scope["method"] not in ("GET", "HEAD", "OPTIONS")
+    if scope["type"] == "websocket":
+        return not any(fnmatchcase(scope["path"], p) for p in read_streams)
+    return False
+
+
 class SameOriginGuard:
     """Middleware refusing commands another site's page sends through a browser.
 
-    A command is any request but GET, HEAD and OPTIONS, and any WebSocket not in
-    ``open_streams``. One whose ``Origin`` host is not the request's ``Host`` or
+    A command is as `is_command` decides, with ``open_streams`` as the streams
+    that only send data out. One whose ``Origin`` host is not the request's ``Host`` or
     ``X-Forwarded-Host`` is refused with 403, or a WebSocket close 1008. Clients
     that are not browsers send no ``Origin`` and pass.
 
@@ -265,13 +278,7 @@ class SameOriginGuard:
             await response(scope, receive, send)
 
     def _is_foreign_command(self, scope) -> bool:
-        if scope["type"] == "http":
-            if scope["method"] in ("GET", "HEAD", "OPTIONS"):
-                return False
-        elif scope["type"] == "websocket":
-            if any(fnmatchcase(scope["path"], p) for p in self.open_streams):
-                return False
-        else:
+        if not is_command(scope, self.open_streams):
             return False
         headers = dict(scope["headers"])
         origin = headers.get(b"origin")
@@ -300,3 +307,121 @@ class NoFraming:
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
+
+
+class ApiKeyGuard:
+    """Middleware requiring an API key on the API, or the browser front end's cookie.
+
+    A request under ``prefix``, other than ``open_paths``, needs
+    ``Authorization: Bearer <key>`` with the ``command`` scope for a command (as
+    `is_command` decides) and the ``read`` scope otherwise. It is refused with
+    401 without a valid key and 403 without the scope, or a WebSocket close 1008.
+
+    With a ``session_key``, any other response sets a cookie granting the API
+    to the browser that loaded the page. It is HttpOnly, Secure and
+    SameSite=Strict, so other sites' pages cannot use it.
+
+    :param app: The ASGI app to guard
+    :param keys: The API keys
+    :param session_key: Secret the cookie is derived from. None when no browser
+        front end is served, so no cookie is set
+    :param prefix: Path prefix of the API
+    :param open_paths: Paths under the prefix open to anyone
+    :param read_streams: fnmatch patterns of WebSocket paths that only send data out
+    :param logger: Logs a key's first use from each address, and the first
+        refusal for each address
+    """
+
+    COOKIE = "sugarcoat_ui"
+
+    def __init__(
+        self,
+        app,
+        keys: ApiKeys,
+        session_key: Optional[str] = None,
+        prefix: str = "/api/",
+        open_paths: Sequence[str] = (),
+        read_streams: Sequence[str] = (),
+        logger: Any = None,
+    ):
+        self.app = app
+        self.keys = keys
+        self.cookie = (
+            hmac.new(
+                session_key.encode(), b"sugarcoat-ui-api", hashlib.sha256
+            ).hexdigest()
+            if session_key
+            else None
+        )
+        self.prefix = prefix
+        self.open_paths = open_paths
+        self.read_streams = read_streams
+        self.logger = logger
+        self._logged = set()
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+        headers = Headers(scope=scope)
+        has_cookie = self.cookie is not None and hmac.compare_digest(
+            cookie_parser(headers.get("cookie", "")).get(self.COOKIE, "").encode(),
+            self.cookie.encode(),
+        )
+        path = scope["path"]
+        if not path.startswith(self.prefix) or path in self.open_paths:
+            if scope["type"] == "http" and self.cookie is not None and not has_cookie:
+                send = self._with_cookie(send)
+            await self.app(scope, receive, send)
+            return
+        if has_cookie:
+            await self.app(scope, receive, send)
+            return
+
+        host = (scope.get("client") or ("an unknown address",))[0]
+        scheme, _, token = headers.get("authorization", "").partition(" ")
+        key = self.keys.find(token.strip()) if scheme.lower() == "bearer" else None
+        needed = "command" if is_command(scope, self.read_streams) else "read"
+        if key is None:
+            status, reason = 401, "Missing or invalid API key"
+        elif needed not in key.scopes:
+            status, reason = 403, f"This key does not have the '{needed}' scope"
+        else:
+            if self._first_time((key.id, host)):
+                self.logger.info(f"API key '{key.name}' used from {host}")
+            await self.app(scope, receive, send)
+            return
+
+        if self._first_time((None, host)):
+            self.logger.warning(f"Refused API access from {host}: {reason}")
+        if scope["type"] == "websocket":
+            await reject_websocket(WebSocket(scope, receive, send), reason)
+            return
+        response = JSONResponse(
+            {"error": reason},
+            status_code=status,
+            headers={"WWW-Authenticate": "Bearer"} if status == 401 else None,
+        )
+        await response(scope, receive, send)
+
+    def _with_cookie(self, send):
+        async def send_with_cookie(message):
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message).append(
+                    "Set-Cookie",
+                    f"{self.COOKIE}={self.cookie}; Path=/; HttpOnly; Secure; SameSite=Strict",
+                )
+            await send(message)
+
+        return send_with_cookie
+
+    def _first_time(self, key) -> bool:
+        """Whether an event is to be logged: the first time it happens, with a logger.
+
+        NOTE: Logging is left to the caller, as an rclpy logger refuses
+        different severities from the same line
+        """
+        if self.logger is None or key in self._logged:
+            return False
+        self._logged.add(key)
+        return True

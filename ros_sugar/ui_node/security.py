@@ -1,13 +1,17 @@
 """Security of the UI node's server."""
 
 import datetime
+import hashlib
+import hmac
 import ipaddress
+import json
 import os
+import secrets
 import socket
 import ssl
 import struct
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from attrs import define
 
@@ -26,10 +30,21 @@ TLS_MIN_VERSION = ssl.TLSVersion.TLSv1_2
 
 _MINTED_CERT = "tls.crt"
 _MINTED_KEY = "tls.key"
+_KEYS_FILE = "api_keys.json"
+_SESSION_KEY_FILE = "session.key"
+
+# Scopes an API key can carry: reading data, and commands that change something
+SCOPES = ("read", "command")
+# Recognisable prefix, so secret scanners catch leaked keys
+KEY_PREFIX = "sk_ui_"
 
 
 class CertificateError(RuntimeError):
     """A TLS certificate could not be found, read or minted"""
+
+
+class ApiKeyError(RuntimeError):
+    """API keys could not be read, created or revoked"""
 
 
 @define(frozen=True)
@@ -163,7 +178,9 @@ def load_certificate(cert_path: Path, key_path: Path, source: str) -> Certificat
         expires = cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
     try:
         names = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
-        addresses = tuple(str(a) for a in names.value.get_values_for_type(x509.IPAddress))
+        addresses = tuple(
+            str(a) for a in names.value.get_values_for_type(x509.IPAddress)
+        )
     except x509.ExtensionNotFound:
         addresses = ()
     fingerprint = ":".join(f"{b:02X}" for b in cert.fingerprint(hashes.SHA256()))
@@ -194,7 +211,8 @@ def _mint(
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, hostname)])
     now = datetime.datetime.now(datetime.timezone.utc)
     cert = (
-        x509.CertificateBuilder()
+        x509
+        .CertificateBuilder()
         .subject_name(name)
         .issuer_name(name)
         .public_key(key.public_key())
@@ -242,7 +260,164 @@ def _mint(
         )
         _write(cert_path, cert.public_bytes(serialization.Encoding.PEM), mode=0o644)
     except OSError as e:
-        raise CertificateError(f"Cannot write the certificate in '{cert_path.parent}': {e}") from e
+        raise CertificateError(
+            f"Cannot write the certificate in '{cert_path.parent}': {e}"
+        ) from e
+
+
+@define(frozen=True)
+class ApiKey:
+    """A third party's API key as stored hash"""
+
+    id: str
+    name: str
+    sha256: str
+    scopes: Tuple[str, ...]
+    created_at: datetime.date
+    # Last day the key is valid, None if doesnt not expire
+    expires_at: Optional[datetime.date] = None
+
+    def expired(self) -> bool:
+        return self.expires_at is not None and datetime.date.today() > self.expires_at
+
+
+class ApiKeys:
+    """The API keys kept in a state directory.
+
+    The file is read on every use, so a key created or revoked takes effect in
+    a running UI without a restart.
+    """
+
+    def __init__(self, directory: Path):
+        self.path = directory / _KEYS_FILE
+        self._content: Optional[bytes] = None
+        self._keys: List[ApiKey] = []
+
+    def all(self) -> List[ApiKey]:
+        """Every stored key, expired ones included
+
+        :raises ApiKeyError: If the file cannot be read
+        """
+        try:
+            content = self.path.read_bytes()
+        except FileNotFoundError:
+            self._content, self._keys = None, []
+            return []
+        except OSError as e:
+            raise ApiKeyError(f"Cannot read the API keys in '{self.path}': {e}") from e
+        # Parsed again only when the content changed.
+        if content != self._content:
+            self._keys = self._parse(content)
+            self._content = content
+        return list(self._keys)
+
+    def find(self, key: str) -> Optional[ApiKey]:
+        """The unexpired stored key `key` is, if any"""
+        digest = hashlib.sha256(key.encode()).hexdigest().encode()
+        match = None
+        # Compared with every key in constant time
+        for stored in self.all():
+            if hmac.compare_digest(stored.sha256.encode(), digest):
+                match = stored
+        return match if match is not None and not match.expired() else None
+
+    def create(
+        self,
+        name: str,
+        scopes: Sequence[str],
+        expires_at: Optional[datetime.date] = None,
+    ) -> Tuple[ApiKey, str]:
+        """Create a key. The key itself is returned only here and never stored
+
+        :return: The stored key and the key to give its holder
+        :raises ApiKeyError: If the name, scopes or expiry are not valid
+        """
+        keys = self.all()
+        name = name.strip()
+        if not name:
+            raise ApiKeyError("An API key needs a name")
+        if any(k.name == name for k in keys):
+            raise ApiKeyError(f"An API key named '{name}' already exists")
+        unknown = [s for s in scopes if s not in SCOPES]
+        if unknown or not scopes:
+            raise ApiKeyError(
+                f"Scopes must be one or more of {', '.join(SCOPES)}, got {list(scopes)}"
+            )
+        if expires_at is not None and expires_at < datetime.date.today():
+            raise ApiKeyError(f"The expiry date {expires_at} has passed")
+
+        ids = {k.id for k in keys}
+        key_id = f"k_{secrets.token_hex(3)}"
+        while key_id in ids:
+            key_id = f"k_{secrets.token_hex(3)}"
+        key = KEY_PREFIX + secrets.token_urlsafe(32)
+        stored = ApiKey(
+            id=key_id,
+            name=name,
+            sha256=hashlib.sha256(key.encode()).hexdigest(),
+            scopes=tuple(s for s in SCOPES if s in scopes),
+            created_at=datetime.date.today(),
+            expires_at=expires_at,
+        )
+        self._save(keys + [stored])
+        return stored, key
+
+    def revoke(self, key_id: str) -> ApiKey:
+        """Delete a key
+
+        :raises ApiKeyError: If there is no key with that id
+        """
+        keys = self.all()
+        revoked = next((k for k in keys if k.id == key_id), None)
+        if revoked is None:
+            raise ApiKeyError(f"There is no API key with id '{key_id}'")
+        self._save([k for k in keys if k is not revoked])
+        return revoked
+
+    def _parse(self, content: bytes) -> List[ApiKey]:
+        try:
+            return [
+                ApiKey(
+                    id=entry["id"],
+                    name=entry["name"],
+                    sha256=entry["sha256"],
+                    scopes=tuple(entry["scopes"]),
+                    created_at=datetime.date.fromisoformat(entry["created_at"]),
+                    expires_at=datetime.date.fromisoformat(entry["expires_at"])
+                    if entry.get("expires_at")
+                    else None,
+                )
+                for entry in json.loads(content)["keys"]
+            ]
+        except (ValueError, KeyError, TypeError) as e:
+            raise ApiKeyError(f"Cannot read the API keys in '{self.path}': {e}") from e
+
+    def _save(self, keys: List[ApiKey]) -> None:
+        entries = [
+            {
+                "id": k.id,
+                "name": k.name,
+                "sha256": k.sha256,
+                "scopes": list(k.scopes),
+                "created_at": k.created_at.isoformat(),
+                "expires_at": k.expires_at.isoformat() if k.expires_at else None,
+            }
+            for k in keys
+        ]
+        try:
+            _write(
+                self.path, json.dumps({"keys": entries}, indent=2).encode(), mode=0o600
+            )
+        except OSError as e:
+            raise ApiKeyError(f"Cannot write the API keys in '{self.path}': {e}") from e
+
+
+def session_key(directory: Path) -> str:
+    """The secret signing the browser front end's cookies, created on first use"""
+    path = directory / _SESSION_KEY_FILE
+    if not path.is_file():
+        _write(path, secrets.token_hex(32).encode(), mode=0o600)
+    return path.read_text().strip()
 
 
 def _write(path: Path, data: bytes, mode: int) -> None:
