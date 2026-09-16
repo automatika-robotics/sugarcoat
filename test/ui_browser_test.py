@@ -242,3 +242,18 @@ def test_other_sites_cannot_frame_the_ui(tmp_path, monkeypatch):
     assert page.status_code == 200
     assert page.headers["x-frame-options"] == "SAMEORIGIN"
     assert page.headers["content-security-policy"] == "frame-ancestors 'self'"
+
+
+def test_a_boolean_request_field_is_a_checkbox_sending_true():
+    """The schema names the type 'boolean'. Matched as 'bool', it rendered as a
+    text box, where typing 'false' sent true"""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from fasthtml.common import to_xml
+
+    from ros_sugar.ui_node.elements import _generic_message_form
+
+    form = to_xml(_generic_message_form({"data": "boolean"}))
+
+    assert 'type="checkbox"' in form
+    assert 'name="data"' in form and 'value="true"' in form

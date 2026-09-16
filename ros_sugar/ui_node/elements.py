@@ -1068,9 +1068,10 @@ def _generic_message_form(msg_fields: Dict[str, Dict[str, Dict]]) -> FT:
         ]:
             field_input_type = "number"
             default_value = "0"
-        elif field_type == "bool":
+        elif field_type == "boolean":
+            # Sent only when checked, and read as true. Unchecked, defaults false
             field_input_type = "checkbox"
-            default_value = "0"
+            default_value = "true"
         else:
             field_input_type = "text"
             default_value = ""

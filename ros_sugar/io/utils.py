@@ -721,7 +721,14 @@ def _convert_ros_scalar(base_type: str, value: Any) -> Any:
     if base_type in _ROS_FLOAT_TYPES:
         return float(value)
     if base_type == "boolean":
-        return bool(value)
+        # Only unambiguous values. Text accepted
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+            return value.strip().lower() == "true"
+        raise ValueError(f"expected true or false, got {value!r}")
     if base_type == "octet":
         # rclpy represents octet as a length-1 bytes object
         if isinstance(value, (bytes, bytearray)) and len(value) == 1:

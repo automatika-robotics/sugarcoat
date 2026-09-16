@@ -597,6 +597,21 @@ def test_set_ros_msg_from_dict_converts_by_declared_type():
     assert msg.layout.dim[0].label == "x" and msg.layout.dim[0].size == 1
 
 
+def test_boolean_fields_take_only_unambiguous_values():
+    """bool() is True for any non-empty string, so 'false' used to publish true"""
+    from std_msgs.msg import Bool
+
+    from ros_sugar.io.supported_types import set_ros_msg_from_dict
+
+    for value, expected in (
+        (True, True), (False, False), ("true", True), ("False", False), (1, True), (0, False)
+    ):
+        assert set_ros_msg_from_dict(Bool, {"data": value}).data is expected, value
+    for value in ("yes", "0", "", 2, 0.5, [1], None):
+        with pytest.raises(ValueError, match="data"):
+            set_ros_msg_from_dict(Bool, {"data": value})
+
+
 def test_set_ros_msg_from_dict_rejects_native_fatal_values():
     """Values that would build a Python-plausible but rmw-fatal message must
     raise ValueError (-> HTTP 400) instead of reaching the serializer."""
@@ -1073,6 +1088,34 @@ def test_ui_node_deactivates_with_service_and_action_clients(ui_node):
         ui_node.send_srv_call({"srv_name": "ui_node_test/reset"})
     with pytest.raises(RuntimeError, match="not ready"):
         ui_node.send_action_goal({"action_name": "ui_node_test/lookup"})
+
+
+def test_a_boolean_input_refuses_a_value_that_is_not_true_or_false():
+    """A real UI node builds the message, so the refusal reaches the client as 400"""
+    import rclpy
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.ui_node import UINode, UINodeConfig
+
+    if not rclpy.ok():
+        rclpy.init()
+    node = UINode(
+        config=UINodeConfig(),
+        inputs=[Topic(name="ui_node_test/flag", msg_type="Bool")],
+        outputs=[Topic(name="ui_node_test/status", msg_type="String")],
+    )
+    node.rclpy_init_node()
+    node.create_all_publishers()
+    try:
+        client = TestClient(build_api_app(node))
+        refused = client.post("/api/inputs/ui_node_test/flag", json={"data": "yes"})
+        assert refused.status_code == 400
+        assert "expected true or false" in refused.json()["error"]
+        accepted = client.post("/api/inputs/ui_node_test/flag", json={"data": "false"})
+        assert accepted.status_code == 200
+    finally:
+        node.destroy_node()
 
 
 def test_a_second_goal_leaves_the_running_goal_alone(ui_node):
