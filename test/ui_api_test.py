@@ -553,6 +553,43 @@ def test_unknown_fields_are_rejected():
     assert node.published == [] and node.service_calls == [] and node.goals == []
 
 
+def test_misspelt_fields_inside_lists_of_messages_are_found():
+    """A waypoint in a list is a message too. A misspelt field in one would
+    leave that pose at zero"""
+    from nav_msgs.msg import Path
+
+    from ros_sugar.io.supported_types import validate_msg_fields
+
+    pose = {"pose": {"position": {"x": 1.0}}}
+    validate_msg_fields(Path, {"poses": [pose, pose]})
+
+    misspelt = {"pose": {"positon": {"x": 1.0}}}
+    with pytest.raises(
+        ValueError,
+        match=r"'poses\[1\]\.pose' has no field 'positon'\. It has: orientation, position",
+    ):
+        validate_msg_fields(Path, {"poses": [pose, misspelt]})
+
+
+def test_a_goal_with_a_misspelt_waypoint_field_is_rejected():
+    from nav_msgs.msg import Path
+
+    node = _ApiNode()
+    # A goal holding a list of poses, like a mission's waypoints
+    node.action_clients_inputs_dicts = lambda: [
+        {"name": "navigate", "type": "Path", "fields": {}, "goal_class": Path}
+    ]
+    client = _make_client(node)
+
+    resp = client.post(
+        "/api/actions/navigate", json={"poses": [{"pose": {"positon": {"x": 1.0}}}]}
+    )
+
+    assert resp.status_code == 400
+    assert "'poses[0].pose' has no field 'positon'" in resp.json()["error"]
+    assert node.goals == []
+
+
 def test_malformed_json_body_is_rejected():
     """A body that is not valid JSON must not reach ROS as an empty request,
     which would publish a default message (e.g. a goal at the origin)."""

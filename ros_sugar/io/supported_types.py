@@ -223,21 +223,26 @@ def validate_msg_fields(
     :param data_dict: The values, nested the same way the message is
     :param where: What to call the message in the error, for a caller who
         cannot see which nested field is being checked
-    :raises ValueError: Naming the offending key and the fields that do exist
+    :raises ValueError: Naming the offending key, where it is (e.g. 'goals[1]'),
+        and the fields that do exist
     """
+    _validate_fields(msg_class, data_dict, where, path="")
+
+
+def _validate_fields(
+    msg_class: type, data_dict: Dict[str, Any], where: str, path: str
+) -> None:
+    """validate_msg_fields, for the message at `path` inside the checked one"""
     fields = msg_class.get_fields_and_field_types()
     for field_name, field_value in data_dict.items():
         if field_name not in fields:
+            owner = f"'{path}'" if path else where
             raise ValueError(
-                f"{where} has no field '{field_name}'. It has: "
+                f"{owner} has no field '{field_name}'. It has: "
                 f"{', '.join(sorted(fields))}"
             )
-        # TODO: Fields inside lists of messages are not checked. Recurse
-        # into each item of a message sequence as well
-        if not isinstance(field_value, dict):
-            continue
         base_type, _ = _split_ros_field_type(fields[field_name])
-        if "/" not in base_type:
+        if "/" not in base_type or not isinstance(field_value, (dict, list)):
             continue
         module_str_name, msg_str_name = base_type.split("/")
         try:
@@ -247,7 +252,14 @@ def validate_msg_fields(
         except (ImportError, AttributeError):
             # Not resolvable here; set_ros_msg_from_dict will report it
             continue
-        validate_msg_fields(nested_class, field_value, f"'{field_name}'")
+        field_path = f"{path}.{field_name}" if path else field_name
+        if isinstance(field_value, dict):
+            _validate_fields(nested_class, field_value, where, field_path)
+            continue
+        # A list of messages. Each item is checked
+        for index, item in enumerate(field_value):
+            if isinstance(item, dict):
+                _validate_fields(nested_class, item, where, f"{field_path}[{index}]")
 
 
 def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
