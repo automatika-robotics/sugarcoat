@@ -1262,3 +1262,130 @@ def test_missing_server_is_reported_at_once(ui_node):
         with pytest.raises(RuntimeError, match="not available"):
             call(data)
         assert time.monotonic() - start < 5.0
+
+
+# ---------------------------------------------------------------------------
+# UI server TLS
+# ---------------------------------------------------------------------------
+def test_a_certificate_is_minted_once_and_kept(tmp_path, monkeypatch):
+    """Without an environment certificate, Sugarcoat mints its own,
+    readable by the owner only, and reuses it so pinned clients keep working"""
+    import stat
+
+    from ros_sugar.ui_node import security
+
+    monkeypatch.setenv(security.DATA_DIR_ENV, str(tmp_path / "ui"))
+    monkeypatch.delenv(security.TLS_CERT_ENV, raising=False)
+    monkeypatch.delenv(security.TLS_KEY_ENV, raising=False)
+
+    first = security.resolve_certificate()
+
+    assert first.source == "minted"
+    assert stat.S_IMODE((tmp_path / "ui").stat().st_mode) == 0o700
+    assert stat.S_IMODE(first.key.stat().st_mode) == 0o600
+    assert {"127.0.0.1", "::1"} <= set(first.addresses)
+    assert security.uncovered_addresses(first) == []
+    assert len(first.fingerprint.split(":")) == 32
+    assert f"Fingerprint (SHA-256): {first.fingerprint}" in security.banner(first)
+
+    again = security.resolve_certificate()
+
+    assert (again.source, again.fingerprint) == ("stored", first.fingerprint)
+    assert security.banner(again) == []
+
+
+def test_a_certificate_near_expiry_is_renewed(tmp_path):
+    import datetime
+
+    from ros_sugar.ui_node import security
+
+    security._mint(tmp_path / "tls.crt", tmp_path / "tls.key", datetime.timedelta(days=10))
+    expiring = security.load_certificate(tmp_path / "tls.crt", tmp_path / "tls.key", "minted")
+
+    renewed = security.minted_certificate(tmp_path)
+
+    assert renewed.fingerprint != expiring.fingerprint
+    assert renewed.expires - expiring.expires > datetime.timedelta(days=600)
+
+
+def test_an_environment_certificate_comes_first(tmp_path, monkeypatch):
+    from ros_sugar.ui_node import security
+
+    monkeypatch.setenv(security.DATA_DIR_ENV, str(tmp_path / "ui"))
+    emos = security.minted_certificate(tmp_path / "emos")
+    other = security.minted_certificate(tmp_path / "other")
+
+    monkeypatch.setenv(security.TLS_CERT_ENV, str(emos.certificate))
+    monkeypatch.setenv(security.TLS_KEY_ENV, str(emos.key))
+    chosen = security.resolve_certificate()
+    assert (chosen.source, chosen.fingerprint) == ("environment", emos.fingerprint)
+
+    # A configured certificate that cannot be used is an error, not a fallback
+    monkeypatch.setenv(security.TLS_KEY_ENV, str(other.key))
+    with pytest.raises(security.CertificateError, match="cannot be used"):
+        security.resolve_certificate()
+    monkeypatch.setenv(security.TLS_CERT_ENV, str(tmp_path / "missing.crt"))
+    with pytest.raises(security.CertificateError, match="Cannot read"):
+        security.resolve_certificate()
+    monkeypatch.delenv(security.TLS_KEY_ENV)
+    with pytest.raises(security.CertificateError, match="set together"):
+        security.resolve_certificate()
+
+
+def test_the_server_speaks_only_modern_tls(tmp_path):
+    """TLS 1.2 or later, TLS 1.2 ciphers with forward secrecy and authenticated
+    encryption only, and a client that pins the certificate connects"""
+    import socket
+    import ssl
+    import threading
+    import time
+    import urllib.request
+
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+
+    from ros_sugar.ui_node import security
+    from ros_sugar.ui_node.api_utils import server_config
+
+    certificate = security.minted_certificate(tmp_path)
+    app = Starlette(routes=[Route("/", lambda request: PlainTextResponse("ok"))])
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    config = server_config(app, port, certificate)
+    assert config.ssl.minimum_version == ssl.TLSVersion.TLSv1_2
+    for cipher in config.ssl.get_ciphers():
+        if cipher["protocol"] == "TLSv1.2":
+            assert cipher["kea"] == "kx-ecdhe", cipher["name"]
+            assert "GCM" in cipher["name"] or "CHACHA20" in cipher["name"], cipher["name"]
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    try:
+        deadline = time.time() + 10
+        while not server.started and time.time() < deadline:
+            time.sleep(0.05)
+
+        pinned = ssl.create_default_context(cafile=str(certificate.certificate))
+        with urllib.request.urlopen(f"https://localhost:{port}/", context=pinned) as resp:
+            assert resp.read() == b"ok"
+        with socket.create_connection(("localhost", port)) as raw:
+            with pinned.wrap_socket(raw, server_hostname="localhost") as tls:
+                assert tls.version() in ("TLSv1.2", "TLSv1.3")
+
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+
+
+def test_enable_ui_is_secure_by_default():
+    from ros_sugar import Launcher
+
+    launcher = Launcher()
+    launcher.enable_ui(serve_browser=False)
+    assert launcher._ui_node_config.secure is True
+
+    launcher.enable_ui(serve_browser=False, secure=False)
+    assert launcher._ui_node_config.secure is False

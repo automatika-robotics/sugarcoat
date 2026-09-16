@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..io.supported_types import get_ros_msg_fields_dict
+from .security import TLS_CIPHERS, TLS_MIN_VERSION, Certificate
 
 # Composition of the /api/world map scene: an occupancy grid plus point-like
 # overlays and paths rendered on it
@@ -210,6 +211,26 @@ async def stream_pushed(websocket, subscribe, unsubscribe, sample) -> None:
             await websocket.close()
         except RuntimeError:
             pass
+
+
+def server_config(app: Any, port: int, certificate: Optional[Certificate]):
+    """The uvicorn configuration serving `app`, over TLS when a certificate is given."""
+    import uvicorn
+
+    tls = (
+        {
+            "ssl_certfile": str(certificate.certificate),
+            "ssl_keyfile": str(certificate.key),
+            "ssl_ciphers": TLS_CIPHERS,
+        }
+        if certificate is not None
+        else {}
+    )
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, loop="asyncio", **tls)
+    config.load()
+    if config.ssl is not None:
+        config.ssl.minimum_version = TLS_MIN_VERSION
+    return config
 
 
 class SameOriginGuard:

@@ -26,8 +26,7 @@ from .utils import GoalInProgressError
 class UINodeConfig(BaseComponentConfig):
     components: Dict[str, Dict] = field(default=Factory(dict))
     port: int = field(default=5001)
-    ssl_keyfile: str = field(default="key.pem")
-    ssl_certificate: str = field(default="cert.pem")
+    secure: bool = field(default=True)  # HTTPS with a certificate
     hide_settings: bool = field(default=False)
     # Serve the browser front-end alongside the API
     serve_browser: bool = field(default=True)

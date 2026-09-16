@@ -2,14 +2,19 @@
 import argparse
 import json
 import threading
-from pathlib import Path
-
-from ros_sugar.launch.executable import setup_component, run_component
-from ros_sugar.ui_node import UINode, UINodeConfig
-from ros_sugar.ui_node.api import build_api_app
-from ros_sugar.utils import logger
 
 import uvicorn
+
+from ros_sugar.launch.executable import run_component, setup_component
+from ros_sugar.ui_node import UINode, UINodeConfig
+from ros_sugar.ui_node.api import build_api_app
+from ros_sugar.ui_node.api_utils import server_config
+from ros_sugar.ui_node.security import (
+    CertificateError,
+    banner,
+    resolve_certificate,
+)
+from ros_sugar.utils import logger
 
 
 def main():
@@ -45,6 +50,15 @@ def main():
 
     system_info = json.loads(args.system_info) if args.system_info else None
 
+    # A secure UI does not fall back to plain HTTP
+    certificate = None
+    certificate_error = None
+    if ros_node_config.secure:
+        try:
+            certificate = resolve_certificate()
+        except CertificateError as e:
+            certificate_error = e
+
     # Spin the ROS node in a background thread
     ros_thread = threading.Thread(
         target=run_component,
@@ -52,6 +66,15 @@ def main():
         daemon=True,
     )
     ros_thread.start()
+
+    if certificate_error is not None:
+        # The node stays up, so the recipe's other components are still
+        # activated. Only the UI is not served
+        ros_node.get_logger().error(
+            f"The UI is not served: it has no TLS certificate. {certificate_error}"
+        )
+        ros_thread.join()
+        return
 
     # Build the optional FastHTML browser app. Mounts under "/"
     if not ros_node_config.serve_browser:
@@ -70,46 +93,23 @@ def main():
     # Create the JSON/WebSocket API is the server host, server host
     api_app = build_api_app(ros_node, browser_app=browser_app)
 
-    # Check if SSL certificates exist
-    if not (
-        Path(ros_node_config.ssl_keyfile).exists()
-        and Path(ros_node_config.ssl_certificate).exists()
-    ):
-        logger.warning("\n" + "=" * 80)
-        logger.warning("WARNING: SSL certificates (key.pem, cert.pem) not found.")
-        logger.warning(
-            "Microphone access will not work when accessing from another machine."
-        )
-        logger.warning(
-            "To enable microphone over the network, generate certificates by running"
-        )
-        logger.warning("the following command:")
-        logger.warning(
-            '\nopenssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes -subj "/CN=localhost"\n'
-        )
-        logger.warning(
-            "And give the path to the certificates to the launcher.enable_ui method"
-        )
-        logger.warning("=" * 80 + "\n")
-        key_file = None
-        certificate_file = None
-        protocol = "http"
+    if certificate is not None:
+        for line in banner(certificate):
+            ros_node.get_logger().info(line)
     else:
-        key_file = ros_node_config.ssl_keyfile
-        certificate_file = ros_node_config.ssl_certificate
-        protocol = "https"
+        # Not secure
+        ros_node.get_logger().warning(
+            "The UI is not secure (enable_ui(secure=False)). Use it only for development"
+            ". It is served over plain HTTP, and the microphone will not work"
+            " when accessing it from another machine."
+        )
 
-    logger.info(
+    protocol = "https" if certificate is not None else "http"
+    ros_node.get_logger().info(
         f"Access the recipe UI at: {protocol}://<IP_ADDRESS_OF_THE_ROBOT>:{ros_node_config.port}"
     )
-    uvicorn.run(
-        api_app,
-        host="0.0.0.0",
-        port=ros_node_config.port,
-        ssl_keyfile=key_file,
-        ssl_certfile=certificate_file,
-        loop="asyncio",
-    )
+
+    uvicorn.Server(server_config(api_app, ros_node_config.port, certificate)).run()
 
 
 if __name__ == "__main__":

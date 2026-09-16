@@ -400,12 +400,11 @@ class Launcher:
         ] = None,
         outputs: Optional[List[Topic]] = None,
         port: int = 5001,
-        ssl_keyfile_path: str = "key.pem",
-        ssl_certificate_path: str = "cert.pem",
         hide_settings_panel: bool = False,
         serve_browser: bool = True,
         api_stream_default_rate: float = 10.0,
         api_max_stream_rate: float = 30.0,
+        secure: bool = True,
     ):
         """
         Enables the user interface (UI) subsystem for recipes, initializing all UI extensions
@@ -431,15 +430,6 @@ class Launcher:
             Defaults to ``5001``.
         :type port: int
 
-        :param ssl_keyfile_path:
-            Path to the private key file used for SSL/TLS encryption. Defaults to ``"key.pem"``.
-        :type ssl_keyfile_path: str
-
-        :param ssl_certificate_path:
-            Path to the SSL/TLS certificate file used to authenticate the UI server.
-            Defaults to ``"cert.pem"``.
-        :type ssl_certificate_path: str
-
         :param hide_settings_panel:
             Disable the components settings panel in the UI.
         :type hide_settings_panel: bool, default False
@@ -459,6 +449,13 @@ class Launcher:
         :param api_max_stream_rate:
             Hard upper bound (Hz) for a client-requested API stream rate.
         :type api_max_stream_rate: float, default 30.0
+
+        :param secure:
+            Serve over HTTPS. The certificate is the one named by the
+            ``SUGARCOAT_UI_TLS_CERT`` and ``SUGARCOAT_UI_TLS_KEY`` environment
+            variables, else one minted and renewed by Sugarcoat. Set ``False``
+            only for development: the UI is then served over plain HTTP.
+        :type secure: bool, default True
         """
 
         # A type without a callback in a derived package cannot be a UI output
@@ -525,12 +522,11 @@ class Launcher:
 
         self._ui_node_config: UINodeConfig = UINodeConfig(
             port=port,
-            ssl_keyfile=ssl_keyfile_path,
-            ssl_certificate=ssl_certificate_path,
             hide_settings=hide_settings_panel,
             serve_browser=serve_browser,
             api_stream_default_rate=api_stream_default_rate,
             api_max_stream_rate=api_max_stream_rate,
+            secure=secure,
         )
 
     @property
