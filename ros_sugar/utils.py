@@ -40,7 +40,8 @@ MsgT = TypeVar("MsgT")
 # if the action needs to return something structured.
 ActionReturnType = Tuple[bool, str]
 
-#: Deprecated spelling of :data:`ActionReturnType`. Kept so existing recipes keep importing and annotating
+# Deprecated spelling of `ActionReturnType`. Kept so existing recipes keep
+# importing and annotating
 ActionResult = ActionReturnType
 
 # Accepted spellings of the contract in a return annotation, including the string
