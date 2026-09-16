@@ -913,6 +913,56 @@ def test_audio_input_unknown_closes():
     assert (closed.value.code, closed.value.reason) == (1008, "Not a declared Audio input")
 
 
+def test_a_command_from_another_site_is_refused():
+    """A page on another site can make a browser post plain text here without
+    asking first. Clients without an Origin, and pages served by the robot
+    itself or through a proxy, are unaffected."""
+    node = _ApiNode()
+    client = _make_client(node)
+
+    foreign = client.post(
+        "/api/inputs/cmd_vel",
+        content=b'{"linear": {"x": 1.0}}',
+        headers={"Content-Type": "text/plain", "Origin": "http://evil.example"},
+    )
+    assert foreign.status_code == 403
+    assert not node.published
+
+    for headers in (
+        {},
+        {"Origin": "http://testserver"},
+        {"Origin": "https://robot.example", "X-Forwarded-Host": "robot.example"},
+    ):
+        resp = client.post("/api/inputs/cmd_vel", json={"linear": {"x": 1.0}}, headers=headers)
+        assert resp.status_code == 200, headers
+    assert len(node.published) == 3
+
+
+def test_a_command_stream_from_another_site_is_refused():
+    """Browsers open WebSockets to any site, so a stream that publishes is
+    refused for another site's page. A stream that only sends data out is not."""
+    from starlette.websockets import WebSocketDisconnect
+
+    node = _ApiNode()
+    node.latest["odom"] = {"frame_id": "odom", "data": [1.0, 2.0, 3.0]}
+    client = _make_client(node)
+    foreign = {"Origin": "http://evil.example"}
+
+    with client.websocket_connect("/api/inputs/speech/audio", headers=foreign) as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            # Without the refusal this is published and acknowledged
+            ws.send_json({"payload": "QUJD"})
+            ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (
+        1008,
+        "Cross-origin connections are not allowed",
+    )
+    assert not node.audio_published
+
+    with client.websocket_connect("/api/outputs/odom?rate=50", headers=foreign) as ws:
+        assert ws.receive_json()["topic"] == "odom"
+
+
 # ---------------------------------------------------------------------------
 # UI node lifecycle
 # ---------------------------------------------------------------------------

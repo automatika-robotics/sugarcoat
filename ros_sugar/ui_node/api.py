@@ -4,13 +4,15 @@ import array
 import asyncio
 import base64
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 try:
     from starlette.applications import Starlette
     from starlette.concurrency import run_in_threadpool
+    from starlette.middleware import Middleware
     from starlette.responses import JSONResponse
     from starlette.routing import Mount, Route, WebSocketRoute
-    from starlette.websockets import WebSocketDisconnect
+    from starlette.websockets import WebSocket, WebSocketDisconnect
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
         "In order to serve the recipe API, please install Starlette and uvicorn "
@@ -137,6 +139,52 @@ async def _reject_websocket(websocket, reason: str) -> None:
     """
     await websocket.accept()
     await websocket.close(code=1008, reason=reason)
+
+
+class _SameOriginGuard:
+    """Middleware refusing commands another site's page sends through a browser.
+
+    A command is any request but GET, HEAD and OPTIONS, and any WebSocket except
+    streams that only send data out. One whose ``Origin`` host is not the
+    request's ``Host`` or ``X-Forwarded-Host`` is refused with 403, or a
+    WebSocket close 1008. Clients that are not browsers send no ``Origin`` and pass.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if not self._is_foreign_command(scope):
+            await self.app(scope, receive, send)
+        elif scope["type"] == "websocket":
+            await _reject_websocket(
+                WebSocket(scope, receive, send), "Cross-origin connections are not allowed"
+            )
+        else:
+            response = JSONResponse(
+                {"error": "Cross-origin requests are not allowed"}, status_code=403
+            )
+            await response(scope, receive, send)
+
+    @staticmethod
+    def _is_foreign_command(scope) -> bool:
+        if scope["type"] == "http":
+            if scope["method"] in ("GET", "HEAD", "OPTIONS"):
+                return False
+        elif scope["type"] == "websocket":
+            path = scope["path"]
+            if path.startswith((f"{API_BASE}/outputs/", f"{API_BASE}/world/")) or (
+                path.startswith(f"{API_BASE}/actions/") and path.endswith("/feedback")
+            ):
+                return False
+        else:
+            return False
+        headers = dict(scope["headers"])
+        origin = headers.get(b"origin")
+        if origin is None:
+            return False
+        hosts = {headers.get(b"host"), headers.get(b"x-forwarded-host")}
+        return urlsplit(origin.decode("latin-1")).netloc.encode("latin-1") not in hosts
 
 
 async def _stream_at_rate(websocket, default_rate, max_rate, sample) -> None:
@@ -723,4 +771,4 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
     if browser_app is not None:
         routes.append(Mount("/", app=browser_app))
 
-    return Starlette(routes=routes)
+    return Starlette(routes=routes, middleware=[Middleware(_SameOriginGuard)])

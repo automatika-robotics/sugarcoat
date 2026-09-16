@@ -184,3 +184,38 @@ def test_action_result_is_logged_once_when_it_arrives_after_the_end(
 
     assert logged and "child_frame_id: gripper" in logged[-1], "the result was not logged"
     assert not [f for f in later if "result" in f], "the result was logged twice"
+
+
+def test_a_browser_command_from_another_site_is_refused(tmp_path, monkeypatch):
+    """The front end's form routes take commands, and a page on another site can
+    make a browser post a form to them. The robot's own page is unaffected."""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+    from tf2_msgs.action import LookupTransform
+
+    from ros_sugar.io.supported_types import get_ros_msg_fields_dict
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([])
+    node.actions = [{
+        "name": "tf/lookup",
+        "type": "LookupTransform",
+        "fields": get_ros_msg_fields_dict(LookupTransform.Goal),
+        "goal_class": LookupTransform.Goal,
+    }]
+    cancelled = []
+    node.cancel_action = lambda name: (cancelled.append(name), (True, "cancelled"))[1]
+    # Served the way the UI node serves it: the front end mounted under the API
+    client = TestClient(build_api_app(node, build_browser_app(node)))
+
+    form = {"action_name": "tf/lookup"}
+    foreign = client.post("/action/cancel", data=form, headers={"Origin": "http://evil.example"})
+    assert foreign.status_code == 403
+    assert not cancelled
+
+    own = client.post("/action/cancel", data=form, headers={"Origin": "http://testserver"})
+    assert own.status_code == 200
+    assert cancelled == ["tf/lookup"]
