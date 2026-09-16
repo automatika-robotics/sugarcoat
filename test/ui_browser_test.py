@@ -219,3 +219,26 @@ def test_a_browser_command_from_another_site_is_refused(tmp_path, monkeypatch):
     own = client.post("/action/cancel", data=form, headers={"Origin": "http://testserver"})
     assert own.status_code == 200
     assert cancelled == ["tf/lookup"]
+
+
+def test_other_sites_cannot_frame_the_ui(tmp_path, monkeypatch):
+    """Another site could show the UI in a hidden frame and trick an operator
+    into clicking its controls, so browsers are told to allow only the UI's own
+    pages to frame it"""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([])
+    # Served the way the UI node serves it: the front end mounted under the API
+    client = TestClient(build_api_app(node, build_browser_app(node)))
+
+    page = client.get("/")
+
+    assert page.status_code == 200
+    assert page.headers["x-frame-options"] == "SAMEORIGIN"
+    assert page.headers["content-security-policy"] == "frame-ancestors 'self'"

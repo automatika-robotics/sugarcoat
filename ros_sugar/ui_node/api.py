@@ -1,10 +1,7 @@
 """JSON / WebSocket API for the UI node"""
 
-import array
 import asyncio
-import base64
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlsplit
 
 try:
     from starlette.applications import Starlette
@@ -12,265 +9,35 @@ try:
     from starlette.middleware import Middleware
     from starlette.responses import JSONResponse
     from starlette.routing import Mount, Route, WebSocketRoute
-    from starlette.websockets import WebSocket, WebSocketDisconnect
+    from starlette.websockets import WebSocketDisconnect
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
         "In order to serve the recipe API, please install Starlette and uvicorn "
         "with `pip install starlette uvicorn`"
     ) from e
 
-from rosidl_runtime_py.convert import message_to_ordereddict
-
-from ..io.supported_types import get_ros_msg_fields_dict, validate_msg_fields
-
+from ..io.supported_types import validate_msg_fields
+from .api_utils import (
+    GRID_TYPE,
+    OVERLAY_TYPES,
+    PATH_TYPE,
+    NoFraming,
+    SameOriginGuard,
+    content_to_jsonable,
+    json_body,
+    marker_from_content,
+    msg_to_jsonable,
+    name_param,
+    reject_websocket,
+    stream_at_rate,
+    stream_pushed,
+    topic_schema,
+)
 from .ui_node import UINode
 from .utils import GoalInProgressError
 
 # All API routes are namespaced under this prefix
 API_BASE = "/api"
-
-# Composition of the /api/world map scene: an occupancy grid plus point-like
-# overlays and paths rendered on it
-_GRID_TYPE = "OccupancyGrid"
-_PATH_TYPE = "Path"
-_OVERLAY_TYPES = frozenset({"Point", "PointStamped", "Pose", "PoseStamped", "Odometry"})
-
-
-def _topic_schema(topic) -> Dict[str, Any]:
-    """Field schema for a topic's ROS message type (empty dict on failure)."""
-    try:
-        return get_ros_msg_fields_dict(topic.ros_msg_type)
-    except Exception:
-        return {}
-
-
-def _coerce(value: Any) -> Any:
-    """Coerce ``bytes``/``array.array`` (from message_to_ordereddict) to JSON-safe values."""
-    if isinstance(value, (bytes, bytearray)):
-        return base64.b64encode(bytes(value)).decode("ascii")
-    if isinstance(value, array.array):
-        return value.tolist()
-    if isinstance(value, dict):
-        return {key: _coerce(val) for key, val in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_coerce(item) for item in value]
-    return value
-
-
-def _msg_to_jsonable(msg: Any) -> Any:
-    """JSON-serializable representation of a ROS message (e.g. a service response)."""
-    return _coerce(message_to_ordereddict(msg))
-
-
-def _content_to_jsonable(content: Any) -> Any:
-    """JSON-serialize cached output content.
-
-    Specialized callbacks already return JSON-native content; types without a
-    specialized ``_get_ui_content`` yield a raw ROS message, which is
-    converted here.
-    """
-    if hasattr(content, "get_fields_and_field_types"):
-        return _msg_to_jsonable(content)
-    return _coerce(content)
-
-
-def _marker_from_content(
-    topic_name: str, type_name: str, content: Any
-) -> Optional[Dict]:
-    """Turn an overlay/path payload into a map op.
-
-    Point/Pose/Odometry become ``{op:"overlay", x, y[, theta]}`` markers; Path
-    becomes ``{op:"path", points}``. Returns ``None`` if there is nothing to render.
-    """
-    if not isinstance(content, dict):
-        return None
-    data = content.get("data")
-    if not data:
-        return None
-    frame_id = content.get("frame_id", "")
-    if type_name == _PATH_TYPE:
-        return {"op": "path", "id": topic_name, "frame_id": frame_id, "points": data}
-    if type_name in ("Point", "PointStamped"):
-        return {
-            "op": "overlay",
-            "id": topic_name,
-            "frame_id": frame_id,
-            "x": data[0],
-            "y": data[1],
-        }
-    # Pose / PoseStamped / Odometry -> data is [x, y, z, heading, ...]
-    return {
-        "op": "overlay",
-        "id": topic_name,
-        "frame_id": frame_id,
-        "x": data[0],
-        "y": data[1],
-        "theta": data[3],
-    }
-
-
-def _name_param(conn) -> str:
-    """Interface name from the URL path, normalized like ``Topic`` names.
-    Routes use ``{name:path}`` so namespaced names (ns/topic) stay
-    addressable."""
-    return conn.path_params["name"].lstrip("/")
-
-
-async def _json_body(request) -> Any:
-    """Parse a request's JSON body.
-
-    An empty body is an empty request, ``{}``, so body-less calls (e.g. a
-    Trigger service) still work. A body that is not valid JSON is ``None``,
-    which callers reject: treating it as ``{}`` would publish a default message.
-    """
-    if not (await request.body()).strip():
-        return {}
-    try:
-        return await request.json()
-    except ValueError:
-        return None
-
-
-async def _reject_websocket(websocket, reason: str) -> None:
-    """Refuse a WebSocket for a name the recipe did not declare.
-
-    Accepted first and then closed with 1008 and a reason. Closing before
-    accepting makes the server answer the handshake with a bare HTTP 403.
-    """
-    await websocket.accept()
-    await websocket.close(code=1008, reason=reason)
-
-
-class _SameOriginGuard:
-    """Middleware refusing commands another site's page sends through a browser.
-
-    A command is any request but GET, HEAD and OPTIONS, and any WebSocket except
-    streams that only send data out. One whose ``Origin`` host is not the
-    request's ``Host`` or ``X-Forwarded-Host`` is refused with 403, or a
-    WebSocket close 1008. Clients that are not browsers send no ``Origin`` and pass.
-    """
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if not self._is_foreign_command(scope):
-            await self.app(scope, receive, send)
-        elif scope["type"] == "websocket":
-            await _reject_websocket(
-                WebSocket(scope, receive, send), "Cross-origin connections are not allowed"
-            )
-        else:
-            response = JSONResponse(
-                {"error": "Cross-origin requests are not allowed"}, status_code=403
-            )
-            await response(scope, receive, send)
-
-    @staticmethod
-    def _is_foreign_command(scope) -> bool:
-        if scope["type"] == "http":
-            if scope["method"] in ("GET", "HEAD", "OPTIONS"):
-                return False
-        elif scope["type"] == "websocket":
-            path = scope["path"]
-            if path.startswith((f"{API_BASE}/outputs/", f"{API_BASE}/world/")) or (
-                path.startswith(f"{API_BASE}/actions/") and path.endswith("/feedback")
-            ):
-                return False
-        else:
-            return False
-        headers = dict(scope["headers"])
-        origin = headers.get(b"origin")
-        if origin is None:
-            return False
-        hosts = {headers.get(b"host"), headers.get(b"x-forwarded-host")}
-        return urlsplit(origin.decode("latin-1")).netloc.encode("latin-1") not in hosts
-
-
-async def _stream_at_rate(websocket, default_rate, max_rate, sample) -> None:
-    """Accept a websocket and push sampled JSON at the client's requested rate.
-
-    Reads an optional ``?rate=<hz>`` query param (clamped to ``max_rate``).
-    ``sample()`` returns ``(payload, done)``: ``payload`` is sent as JSON when
-    not ``None``; the loop stops when ``done`` is True or the client
-    disconnects. The caller must validate the resource before calling this
-    (it accepts the connection).
-    """
-    await websocket.accept()
-    try:
-        rate = float(websocket.query_params.get("rate", default_rate))
-    except (TypeError, ValueError):
-        rate = default_rate
-    if rate <= 0:
-        rate = default_rate
-    period = 1.0 / min(rate, max_rate)
-
-    try:
-        while True:
-            # Off the event loop
-            payload, done = await asyncio.to_thread(sample)
-            if payload is not None:
-                await websocket.send_json(payload)
-            if done:
-                break
-            # NOTE: Wait one period for a client message. A timeout is the
-            # normal tick (inbound messages are ignored). Disconnect ends
-            # the stream.
-            try:
-                await asyncio.wait_for(websocket.receive(), timeout=period)
-            except asyncio.TimeoutError:
-                pass
-    except (WebSocketDisconnect, RuntimeError):
-        return
-    try:
-        await websocket.close()
-    except RuntimeError:
-        pass
-
-
-async def _stream_pushed(websocket, subscribe, unsubscribe, sample) -> None:
-    """Accept a websocket and push JSON the moment new data arrives (no sampling)"""
-    await websocket.accept()
-    loop = asyncio.get_running_loop()
-    updated = asyncio.Event()
-
-    def _on_update():  # fired in the ROS executor thread
-        loop.call_soon_threadsafe(updated.set)
-
-    if not subscribe(_on_update):
-        await websocket.close(code=1011)  # resource not ready
-        return
-    try:
-        while True:
-            # Clear before reading so a message arriving mid-emit re-wakes
-            updated.clear()
-            # Off the event loop
-            payload, done = await asyncio.to_thread(sample)
-            if payload is not None:
-                await websocket.send_json(payload)
-            if done:
-                break
-            # Wait for the next message event or a client disconnect.
-            recv = asyncio.ensure_future(websocket.receive())
-            wake = asyncio.ensure_future(updated.wait())
-            try:
-                finished, _ = await asyncio.wait(
-                    {recv, wake}, return_when=asyncio.FIRST_COMPLETED
-                )
-            finally:
-                for task in (recv, wake):
-                    if not task.done():
-                        task.cancel()
-            if recv in finished and recv.exception() is not None:
-                break  # client disconnected
-    except (WebSocketDisconnect, RuntimeError):
-        pass
-    finally:
-        unsubscribe(_on_update)
-        try:
-            await websocket.close()
-        except RuntimeError:
-            pass
 
 
 def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
@@ -285,7 +52,7 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
             "name": topic.name,
             "kind": "topic",
             "msg_type": topic.msg_type.__name__,
-            "schema": _topic_schema(topic),
+            "schema": topic_schema(topic),
             "publish": f"POST {API_BASE}/inputs/{topic.name}",
         }
         if topic.msg_type.__name__ == "Audio":
@@ -300,7 +67,7 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
             "name": topic.name,
             "kind": "topic",
             "msg_type": type_name,
-            "schema": _topic_schema(topic),
+            "schema": topic_schema(topic),
             "stream": f"WS {API_BASE}/outputs/{topic.name}",
             "mode": "sampled" if topic.msg_type._ui_rate_sampled else "push",
             "latest": f"GET {API_BASE}/outputs/{topic.name}/latest",
@@ -333,7 +100,7 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
     overlay_outputs = [
         {"name": t.name, "msg_type": t.msg_type.__name__}
         for t in (ros_node.in_topics or [])
-        if t.msg_type.__name__ in _OVERLAY_TYPES or t.msg_type.__name__ == _PATH_TYPE
+        if t.msg_type.__name__ in OVERLAY_TYPES or t.msg_type.__name__ == PATH_TYPE
     ]
     worlds = [
         {
@@ -343,7 +110,7 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
             "stream": f"WS {API_BASE}/world/{topic.name}",
         }
         for topic in (ros_node.in_topics or [])
-        if topic.msg_type.__name__ == _GRID_TYPE
+        if topic.msg_type.__name__ == GRID_TYPE
     ]
 
     return {
@@ -361,7 +128,9 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
 
 def _input_routes(ros_node: UINode) -> List:
     """Routes for publishing to the declared input topics."""
-    input_types = {topic.name: topic.ros_msg_type for topic in (ros_node.out_topics or [])}
+    input_types = {
+        topic.name: topic.ros_msg_type for topic in (ros_node.out_topics or [])
+    }
     # Declared Audio input topics, which accept uploads over a dedicated WS.
     audio_input_names = {
         t.name for t in (ros_node.out_topics or []) if t.msg_type.__name__ == "Audio"
@@ -369,12 +138,12 @@ def _input_routes(ros_node: UINode) -> List:
 
     async def publish_input(request):
         """Publish a JSON message (matching the topic schema) to an input topic."""
-        name = _name_param(request)
+        name = name_param(request)
         if name not in input_types:
             return JSONResponse(
                 {"error": f"Unknown input topic '{name}'"}, status_code=404
             )
-        body = await _json_body(request)
+        body = await json_body(request)
         if not isinstance(body, dict):
             return JSONResponse(
                 {"error": "Request body must be a JSON object"}, status_code=400
@@ -396,9 +165,9 @@ def _input_routes(ros_node: UINode) -> List:
     async def stream_audio_input(websocket):
         """Receive base64 audio frames from the client and publish them to a
         declared Audio input topic. Acks each frame"""
-        name = _name_param(websocket)
+        name = name_param(websocket)
         if name not in audio_input_names:
-            await _reject_websocket(websocket, "Not a declared Audio input")
+            await reject_websocket(websocket, "Not a declared Audio input")
             return
         await websocket.accept()
         try:
@@ -440,21 +209,24 @@ def _service_routes(ros_node: UINode) -> List:
 
     async def call_service(request):
         """Call a service with a JSON request body and return its JSON response."""
-        name = _name_param(request)
+        name = name_param(request)
         if name not in request_classes:
             return JSONResponse({"error": f"Unknown service '{name}'"}, status_code=404)
-        body = await _json_body(request)
+        body = await json_body(request)
         if not isinstance(body, dict):
             return JSONResponse(
                 {"error": "Request body must be a JSON object"}, status_code=400
             )
         try:
-            validate_msg_fields(request_classes[name], body, f"The request for '{name}'")
+            validate_msg_fields(
+                request_classes[name], body, f"The request for '{name}'"
+            )
             # send_srv_call blocks on the ROS future, so offload it off the event
             # loop to keep the server responsive.
             response = await run_in_threadpool(
                 # Route name last, so the body cannot pick another service
-                ros_node.send_srv_call, {**body, "srv_name": name}
+                ros_node.send_srv_call,
+                {**body, "srv_name": name},
             )
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=503)
@@ -466,7 +238,7 @@ def _service_routes(ros_node: UINode) -> List:
             return JSONResponse(
                 {"error": f"No response from service '{name}'"}, status_code=502
             )
-        return JSONResponse({"service": name, "response": _msg_to_jsonable(response)})
+        return JSONResponse({"service": name, "response": msg_to_jsonable(response)})
 
     return [Route(f"{API_BASE}/services/{{name:path}}", call_service, methods=["POST"])]
 
@@ -483,7 +255,7 @@ def _output_routes(ros_node: UINode) -> List:
 
     async def output_latest(request):
         """Return the most recent value of an output topic as JSON."""
-        name = _name_param(request)
+        name = name_param(request)
         if name not in output_names:
             return JSONResponse(
                 {"error": f"Unknown output topic '{name}'"}, status_code=404
@@ -494,7 +266,7 @@ def _output_routes(ros_node: UINode) -> List:
             return JSONResponse(
                 {"error": f"No data received yet for '{name}'"}, status_code=404
             )
-        return JSONResponse({"topic": name, "payload": _content_to_jsonable(content)})
+        return JSONResponse({"topic": name, "payload": content_to_jsonable(content)})
 
     async def stream_output(websocket):
         """Stream an output topic as JSON.
@@ -504,9 +276,9 @@ def _output_routes(ros_node: UINode) -> List:
         rate (clamped to the max), ``?rate=0`` forces push. Multiple clients can
         stream the same topic independently.
         """
-        name = _name_param(websocket)
+        name = name_param(websocket)
         if name not in output_names:
-            await _reject_websocket(websocket, "Unknown output topic")
+            await reject_websocket(websocket, "Unknown output topic")
             return
 
         try:
@@ -529,18 +301,18 @@ def _output_routes(ros_node: UINode) -> List:
             if content is None or (not push and content is last_sent):
                 return None, False
             last_sent = content
-            return {"topic": name, "payload": _content_to_jsonable(content)}, False
+            return {"topic": name, "payload": content_to_jsonable(content)}, False
 
         if push:
             # Lossless event push
-            await _stream_pushed(
+            await stream_pushed(
                 websocket,
                 lambda cb: ros_node.add_output_listener(name, cb),
                 lambda cb: ros_node.remove_output_listener(name, cb),
                 sample,
             )
         else:
-            await _stream_at_rate(
+            await stream_at_rate(
                 websocket,
                 ros_node.config.api_stream_default_rate,
                 ros_node.config.api_max_stream_rate,
@@ -564,10 +336,10 @@ def _action_routes(ros_node: UINode) -> List:
 
     async def send_goal(request):
         """Send a JSON goal to an action; returns 202 once the server accepts it."""
-        name = _name_param(request)
+        name = name_param(request)
         if name not in goal_classes:
             return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
-        body = await _json_body(request)
+        body = await json_body(request)
         if not isinstance(body, dict):
             return JSONResponse(
                 {"error": "Request body must be a JSON object"}, status_code=400
@@ -577,7 +349,8 @@ def _action_routes(ros_node: UINode) -> List:
             # send_action_goal blocks until the goal is accepted/rejected.
             accepted = await run_in_threadpool(
                 # Route name last, so the body cannot pick another action
-                ros_node.send_action_goal, {**body, "action_name": name}
+                ros_node.send_action_goal,
+                {**body, "action_name": name},
             )
         except GoalInProgressError as e:
             return JSONResponse({"error": str(e)}, status_code=409)
@@ -602,7 +375,7 @@ def _action_routes(ros_node: UINode) -> List:
 
     async def cancel_goal(request):
         """Cancel the ongoing goal of an action."""
-        name = _name_param(request)
+        name = name_param(request)
         if name not in goal_classes:
             return JSONResponse({"error": f"Unknown action '{name}'"}, status_code=404)
         try:
@@ -619,9 +392,9 @@ def _action_routes(ros_node: UINode) -> List:
         The stream ends on a terminal state (completed/aborted/canceled) or when
         the client disconnects.
         """
-        name = _name_param(websocket)
+        name = name_param(websocket)
         if name not in goal_classes:
-            await _reject_websocket(websocket, "Unknown action")
+            await reject_websocket(websocket, "Unknown action")
             return
 
         def sample():
@@ -630,19 +403,19 @@ def _action_routes(ros_node: UINode) -> List:
                 return None, False
             payload = {
                 "status": fb["status"],
-                "feedback": _content_to_jsonable(fb["feedback"])
+                "feedback": content_to_jsonable(fb["feedback"])
                 if fb.get("feedback") is not None
                 else None,
                 "timestep": fb["timestep"],
                 "duration_secs": fb["duration_secs"],
                 "feedback_timeout": fb["feedback_timeout"],
-                "result": _content_to_jsonable(fb["result"])
+                "result": content_to_jsonable(fb["result"])
                 if fb.get("result") is not None
                 else None,
             }
             return payload, fb["status"] in ("completed", "aborted", "canceled")
 
-        await _stream_pushed(
+        await stream_pushed(
             websocket,
             lambda cb: ros_node.add_action_feedback_listener(name, cb),
             lambda cb: ros_node.remove_action_feedback_listener(name, cb),
@@ -665,13 +438,13 @@ def _action_routes(ros_node: UINode) -> List:
 def _world_routes(ros_node: UINode) -> List:
     """Route streaming the composable map scene(s): grid + overlay/path markers."""
     grid_names = {
-        t.name for t in (ros_node.in_topics or []) if t.msg_type.__name__ == _GRID_TYPE
+        t.name for t in (ros_node.in_topics or []) if t.msg_type.__name__ == GRID_TYPE
     }
     # Overlay/path output topics composed onto every world map
     marker_topics = [
         (t.name, t.msg_type.__name__)
         for t in (ros_node.in_topics or [])
-        if t.msg_type.__name__ in _OVERLAY_TYPES or t.msg_type.__name__ == _PATH_TYPE
+        if t.msg_type.__name__ in OVERLAY_TYPES or t.msg_type.__name__ == PATH_TYPE
     ]
 
     async def stream_world(websocket):
@@ -680,9 +453,9 @@ def _world_routes(ros_node: UINode) -> List:
         The ``?rate`` query param caps the grid rate. Markers are checked at
         the max rate so they stay responsive.
         """
-        name = _name_param(websocket)
+        name = name_param(websocket)
         if name not in grid_names:
-            await _reject_websocket(websocket, "Not a declared OccupancyGrid output")
+            await reject_websocket(websocket, "Not a declared OccupancyGrid output")
             return
         await websocket.accept()
 
@@ -724,7 +497,7 @@ def _world_routes(ros_node: UINode) -> List:
                     if content is None or content is last_marker.get(marker_name):
                         continue
                     last_marker[marker_name] = content
-                    marker = _marker_from_content(marker_name, marker_type, content)
+                    marker = marker_from_content(marker_name, marker_type, content)
                     if marker is not None:
                         await websocket.send_json(marker)
                 # NOTE: Wait one tick for a client message. A timeout is the
@@ -771,4 +544,18 @@ def build_api_app(ros_node: UINode, browser_app: Optional[Any] = None) -> Starle
     if browser_app is not None:
         routes.append(Mount("/", app=browser_app))
 
-    return Starlette(routes=routes, middleware=[Middleware(_SameOriginGuard)])
+    return Starlette(
+        routes=routes,
+        middleware=[
+            Middleware(NoFraming),
+            Middleware(
+                SameOriginGuard,
+                # Streams that only send data out stay open to other sites
+                open_streams=(
+                    f"{API_BASE}/outputs/*",
+                    f"{API_BASE}/world/*",
+                    f"{API_BASE}/actions/*/feedback",
+                ),
+            ),
+        ],
+    )

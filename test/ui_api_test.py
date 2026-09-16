@@ -345,11 +345,11 @@ def test_msg_to_jsonable_handles_arrays():
     pytest.importorskip("starlette")
     from sensor_msgs.msg import LaserScan
 
-    from ros_sugar.ui_node.api import _msg_to_jsonable
+    from ros_sugar.ui_node.api_utils import msg_to_jsonable
 
     scan = LaserScan()
     scan.ranges = [0.1, 0.2, 0.3]  # float32[] -> array.array internally
-    out = _msg_to_jsonable(scan)
+    out = msg_to_jsonable(scan)
     assert out["ranges"] == [pytest.approx(0.1), pytest.approx(0.2), pytest.approx(0.3)]
     json.dumps(out)  # must not raise
 
@@ -620,14 +620,14 @@ def test_content_to_jsonable_passes_through_and_converts():
     pytest.importorskip("starlette")
     from sensor_msgs.msg import LaserScan
 
-    from ros_sugar.ui_node.api import _content_to_jsonable
+    from ros_sugar.ui_node.api_utils import content_to_jsonable
 
     # JSON-native content (from a specialized _get_ui_content) passes through
-    assert _content_to_jsonable({"data": [1.0, 2.0]}) == {"data": [1.0, 2.0]}
+    assert content_to_jsonable({"data": [1.0, 2.0]}) == {"data": [1.0, 2.0]}
     # A raw ROS message (unspecialized type) is faithfully converted
     scan = LaserScan()
     scan.ranges = [0.5]
-    out = _content_to_jsonable(scan)
+    out = content_to_jsonable(scan)
     assert out["ranges"] == [pytest.approx(0.5)]
     json.dumps(out)
 
