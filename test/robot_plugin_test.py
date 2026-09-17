@@ -538,6 +538,14 @@ def test_native_mapping_reaches_describe():
     assert mapping["resolution"] == 0.05
 
 
+def test_native_mapping_declares_where_the_imu_sits_in_the_lidar():
+    decl = NativeMapping(cloud="lidar", imu="lidar_imu", imu_xyz=(0.011, 0.023, -0.044))
+    spec = decl.spec()
+    assert list(spec["imu_xyz"]) == [0.011, 0.023, -0.044]
+    assert list(spec["imu_rpy"]) == [0.0, 0.0, 0.0]
+    assert NativeMapping(cloud="lidar").spec()["imu_xyz"] is None
+
+
 def test_mapping_spec_is_json_serializable():
     """``describe`` crosses into the CLI as JSON, so the mapping block must
     survive the trip with nothing exotic in it."""
