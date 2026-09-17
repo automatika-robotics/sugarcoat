@@ -638,15 +638,26 @@ class Launcher:
             self._mounts.append(sensor_mount)
 
     def _publish_mounts(self) -> None:
-        """Hand every declared mount to the Monitor as a static transform to be published to /tf_static."""
-        if not self._mounts:
+        """Hand every declared mount to the Monitor as a static transform to be
+        published to /tf_static."""
+        mounts = list(self._mounts)
+        robot = self._robot_plugin
+        if robot is not None and robot.base_frame and robot.base_height is not None:
+            mounts.append(
+                Mount(
+                    parent=robot.footprint_frame,
+                    child=robot.base_frame,
+                    xyz=(0.0, 0.0, robot.base_height),
+                )
+            )
+        if not mounts:
             return
         from geometry_msgs.msg import TransformStamped
 
         from ..robot.mount import quaternion_from_euler
 
         transforms = []
-        for mount in self._mounts:
+        for mount in mounts:
             transform = TransformStamped()
             transform.header.frame_id = mount.parent_frame
             transform.child_frame_id = mount.child_frame
