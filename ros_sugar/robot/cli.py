@@ -12,7 +12,7 @@ import sys
 from typing import Any, List, Optional
 
 
-def _load_plugin_class(target: str) -> Any:
+def load_plugin_class(target: str) -> Any:
     """Resolve a ``package.module:ClassName`` string to the plugin class."""
     if ":" not in target:
         raise ValueError(
@@ -43,7 +43,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.command == "inspect":
         try:
-            plugin_cls = _load_plugin_class(args.target)
+            plugin_cls = load_plugin_class(args.target)
         except (ImportError, AttributeError, ValueError) as e:
             print(f"error: could not load plugin '{args.target}': {e}", file=sys.stderr)
             return 1
