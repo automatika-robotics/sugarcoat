@@ -538,6 +538,14 @@ def test_native_mapping_reaches_describe():
     assert mapping["resolution"] == 0.05
 
 
+def test_native_mapping_declares_where_the_imu_sits_in_the_lidar():
+    decl = NativeMapping(cloud="lidar", imu="lidar_imu", imu_xyz=(0.011, 0.023, -0.044))
+    spec = decl.spec()
+    assert list(spec["imu_xyz"]) == [0.011, 0.023, -0.044]
+    assert list(spec["imu_rpy"]) == [0.0, 0.0, 0.0]
+    assert NativeMapping(cloud="lidar").spec()["imu_xyz"] is None
+
+
 def test_mapping_spec_is_json_serializable():
     """``describe`` crosses into the CLI as JSON, so the mapping block must
     survive the trip with nothing exotic in it."""
@@ -2313,6 +2321,58 @@ def test_launcher_collects_mounts_from_add_plugin(rclpy_context):
     assert mount.parent_frame == "base_link"
     # the child is filled in from the plugin, so a recipe never repeats it
     assert mount.child_frame == "front_cam_frame"
+
+
+class _StaticTransforms:
+    """Receives what the launcher publishes to /tf_static."""
+
+    def __init__(self):
+        self.transforms = []
+
+    def set_static_transforms(self, transforms):
+        self.transforms = transforms
+
+
+def test_the_launcher_places_the_base_frame_on_its_footprint(rclpy_context):
+    """The geometry is centred on the base frame, so the footprint is half the
+    robot's height below it: what Kompass's collision checking assumes, made
+    visible on TF for everything else."""
+    import numpy as np
+
+    from ros_sugar.config import RobotConfig, RobotGeometryType, RobotType
+    from ros_sugar.config.robot import AngularCtrlLimits, LinearCtrlLimits
+
+    robot = MockPlugin(state_port=_free_port(), cmd_port=_free_port(), id="lite3")
+    robot.base_frame = "body"
+    robot.robot_config = RobotConfig(
+        model_type=RobotType.DIFFERENTIAL_DRIVE,
+        geometry_type=RobotGeometryType.BOX,
+        geometry_params=np.array([0.61, 0.37, 0.4]),
+        ctrl_vx_limits=LinearCtrlLimits(max_vel=1.0, max_acc=2.5, max_decel=7.5),
+        ctrl_omega_limits=AngularCtrlLimits(max_omega=1.5, max_acc=2.5, max_decel=4.0, max_ang=1.57),
+    )
+    assert robot.base_height == 0.2
+
+    launcher = _launcher_with([])
+    launcher.add_plugin(robot)
+    launcher.monitor_node = _StaticTransforms()
+    launcher._publish_mounts()
+
+    (footprint,) = launcher.monitor_node.transforms
+    assert (footprint.header.frame_id, footprint.child_frame_id) == ("base_footprint", "body")
+    assert footprint.transform.translation.z == 0.2
+    assert footprint.transform.rotation.w == 1.0
+
+
+def test_a_robot_without_a_geometry_gets_no_footprint(rclpy_context):
+    robot = MockPlugin(state_port=_free_port(), cmd_port=_free_port(), id="lite3")
+    robot.base_frame = "body"
+    assert robot.base_height is None
+    launcher = _launcher_with([])
+    launcher.add_plugin(robot)
+    launcher.monitor_node = _StaticTransforms()
+    launcher._publish_mounts()
+    assert launcher.monitor_node.transforms == []
 
 
 def test_a_sensor_needs_no_mount_when_tf_already_has_its_frame(rclpy_context):

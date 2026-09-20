@@ -652,6 +652,17 @@ class RobotPlugin(Plugin):
         # publishes them as static transforms, so consumers can resolve where
         # a built-in sensor sits without a URDF.
         self.mounts: List[Mount] = []
+        # Frame on the ground under the base frame. The launcher publishes it
+        # `base_height` below the base frame.
+        self.footprint_frame: str = "base_footprint"
+
+    @property
+    def base_height(self) -> Optional[float]:
+        """Height of the base frame above the ground. Half the robot's height,
+        since the geometry is centred on the base frame. None without a geometry."""
+        if self.robot_config is None:
+            return None
+        return self.robot_config.height / 2
 
 
 class SensorPlugin(Plugin):

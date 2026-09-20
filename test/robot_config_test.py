@@ -213,3 +213,14 @@ def test_zero_minimum_velocities_are_rejected():
         AngularCtrlLimits(
             max_omega=5.0, max_ang=math.pi, max_acc=10.0, max_decel=10.0, min_omega=0.0
         )
+
+
+# ---- Height ---------------------------------------------------------------
+
+
+def test_height_is_the_extent_along_z_of_each_shape():
+    assert robot_config().height == 1.0  # a cylinder's length
+    assert robot_config(geometry_type=RobotGeometryType.BOX, geometry_params=[0.61, 0.37, 0.4]).height == 0.4
+    assert robot_config(geometry_type=RobotGeometryType.SPHERE, geometry_params=[0.3]).height == 0.6
+    assert robot_config(geometry_type=RobotGeometryType.ELLIPSOID, geometry_params=[0.3, 0.2, 0.25]).height == 0.5
+    assert robot_config(geometry_type=RobotGeometryType.CAPSULE, geometry_params=[0.2, 0.8]).height == 0.8
