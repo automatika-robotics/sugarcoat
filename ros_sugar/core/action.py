@@ -438,6 +438,19 @@ class Action(BaseAction):
         self._host.add_runtime_event_listener(self._success_event)
         self._watching = True
 
+    def stop_watching(self) -> None:
+        """Ask the host to stop monitoring the success event.
+
+        For an action that will not be triggered again, such as a step of a
+        routine being removed. Triggering it again watches the event anew.
+        """
+        if self._success_event is None or not self._watching:
+            return
+        remove = getattr(self._host, "remove_runtime_event_listener", None)
+        if remove is not None:
+            remove(self._success_event)
+        self._watching = False
+
     # ---- Running the action ------------------------------------------------
 
     def start(
