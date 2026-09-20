@@ -17,6 +17,7 @@ steps, covering the sequencing and policy logic that needs no stack.
 """
 
 import json
+import socket
 import threading
 import time
 import unittest
@@ -29,7 +30,7 @@ import pytest
 from tf2_msgs.action import LookupTransform
 from rclpy.action.server import GoalStatus
 from rclpy.qos import DurabilityPolicy
-from std_msgs.msg import String
+from std_msgs.msg import Float32, String
 
 from types import SimpleNamespace
 from unittest import mock
@@ -82,6 +83,16 @@ goals_cancelled = []
 
 # The live Monitor, so the tests can query and control routines by name
 monitor_node = None
+
+# The live arm, so a test can build a recipe style step on it and watch where
+# the Monitor ends up running it
+arm_component = None
+
+#: Threads the arm's steps ran on, by step name
+run_threads = []
+
+#: Arguments the arm's steps were handed, as the component received them
+received_messages = []
 
 # Started by name from the cursor delivery test, so that test causes the
 # transition it is watching for instead of racing a scheduled one
@@ -161,6 +172,20 @@ class ArmComponent(BaseComponent):
         """Step of the routine the latching test finishes before subscribing"""
         latch_probe_calls.append(1)
         return True, "Latch probe done"
+
+    def note_thread(self, **_) -> ActionReturnType:
+        """Records the thread it ran on, which says who dispatched it"""
+        run_threads.append(threading.current_thread().name)
+        return True, "Noted"
+
+    def take_message(self, reading=None, **_) -> ActionReturnType:
+        """Records what actually arrived, to show it survived the trip"""
+        received_messages.append(reading)
+        return True, f"Took {type(reading).__name__}"
+
+    def cancel_note(self, **_) -> ActionReturnType:
+        """Only ever used as a step's cancel method"""
+        return True, "Note cancelled"
 
 
 class GripperComponent(BaseComponent):
@@ -425,8 +450,9 @@ def generate_test_description():
 
     launcher.setup_launch_description()
 
-    global monitor_node
+    global monitor_node, arm_component
     monitor_node = launcher.monitor_node
+    arm_component = arm
 
     launcher._description.add_action(launch_testing.actions.ReadyToTest())
     return launcher._description
@@ -493,6 +519,40 @@ class Recorder:
         return _step
 
 
+def _cancel_into(cancelled: ThreadingEvent):
+    """A cancel method that records having been called"""
+
+    def _cancel(**_) -> ActionReturnType:
+        cancelled.set()
+        return True, "stopped"
+
+    return _cancel
+
+
+def _routine_with_blocking_fallback(
+    rec: "Recorder", released: ThreadingEvent, cancelled: ThreadingEvent
+) -> Routine:
+    """A routine whose first step fails into a fallback that keeps running.
+
+    Its fallback is what is in flight while it recovers, so it is what pausing
+    or aborting has to stop.
+    """
+    return Routine(
+        "pick",
+        steps=[
+            Action(
+                rec.step("grasp", succeeds=False),
+                on_fail="fallback",
+                fallback=Action(
+                    rec.blocking("reopen", released),
+                    cancel_method=_cancel_into(cancelled),
+                ),
+            ),
+            Action(rec.step("lift")),
+        ],
+    )
+
+
 def _resolver(**named):
     """Turn {'ref': 'x'} into a named Action, the way a host would."""
 
@@ -503,6 +563,25 @@ def _resolver(**named):
         return Action(named[ref], name=spec.get("name") or ref.replace("/", "_"))
 
     return _resolve
+
+
+class PausingStep(Action):
+    """A step that pauses its routine the instant its own verdict is in.
+
+    `set_feedback_sink(None)` is called once the step has settled and before the
+    routine moves on, which is exactly the window where a pause arriving from
+    another thread races the step boundary.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.routine = None
+        self.paused = False
+
+    def set_feedback_sink(self, sink):
+        if sink is None and self.routine is not None and not self.paused:
+            self.paused = True
+            self.routine.pause()
 
 
 class FeedbackStep(Action):
@@ -753,6 +832,22 @@ class TestRoutine(unittest.TestCase):
         assert not found
         assert "no_such_routine" in message
 
+    def test_a_routine_whose_name_has_no_topic_is_not_registered(cls):
+        """Its name is also its cursor topic. Registering first and creating the
+        topic afterwards left a routine that the caller was told did not
+        register: addressable by name, and reporting nowhere"""
+        name = "not a topic name"
+        added, message = monitor_node.add_routine(
+            Routine(name, steps=[Action(arm_component.note_thread)])
+        )
+
+        assert not added, message
+        found, _ = monitor_node.get_routine_state(name)
+        assert not found, "the routine stayed registered after a failed add"
+        listed, payload = monitor_node.list_routines()
+        assert listed
+        assert name not in payload
+
 
 # ==========================================================================
 # Routine steps that drive a component's main action server
@@ -825,6 +920,98 @@ class TestActionServerStep(unittest.TestCase):
         ), "the server never saw a cancel request"
         assert wait_for(
             lambda: routine_state("cancel_goal")["status"] == "aborted", self.wait_time
+        )
+
+
+class TestRoutineComponentRouting(unittest.TestCase):
+    """A recipe hands a routine a component's bound method. The Monitor does not
+    call that object: it sends the call to the component, the same way a routine
+    registered from a spec does"""
+
+    wait_time = 15.0
+
+    def host(self, name: str, *steps) -> Routine:
+        """Register a recipe style routine on the live Monitor"""
+        routine = Routine(name, steps=list(steps))
+        added, message = monitor_node.add_routine(routine)
+        assert added, message
+        self.addCleanup(monitor_node.remove_routine, name, True)
+        return routine
+
+    def run_routine(self, routine: Routine) -> str:
+        started, message = monitor_node.start_routine(routine.name)
+        assert started, message
+        return wait_until_done(routine, self.wait_time)
+
+    def test_a_step_runs_on_its_component_not_on_the_dispatch_worker(self):
+        """Called directly it would run on the Monitor's own pool, alongside
+        whatever the component is doing on its executor"""
+        run_threads.clear()
+        routine = self.host("routed_thread", Action(arm_component.note_thread))
+
+        assert self.run_routine(routine) == RoutineStatus.COMPLETED
+
+        assert run_threads, "the step never ran"
+        assert "action_dispatch_worker" not in run_threads[-1], (
+            f"the step ran on the Monitor's dispatch pool: {run_threads[-1]}"
+        )
+
+    def test_a_positional_argument_is_named_for_the_call(self):
+        """A service carries keywords only, so the step's signature is what
+        turns a positional argument into one"""
+        recorded_targets.clear()
+        routine = self.host(
+            "routed_args", Action(arm_component.record_target, args=[7.5])
+        )
+
+        assert self.run_routine(routine) == RoutineStatus.COMPLETED
+        assert recorded_targets == [7.5]
+
+    def test_a_keyword_argument_reaches_the_component(self):
+        recorded_targets.clear()
+        routine = self.host(
+            "routed_kwargs",
+            Action(arm_component.record_target, kwargs={"target": 4.5}),
+        )
+
+        assert self.run_routine(routine) == RoutineStatus.COMPLETED
+        assert recorded_targets == [4.5]
+
+    def test_a_ros_message_argument_arrives_as_that_message(self):
+        """An argument is sent to the component, so a value that is not JSON by
+        itself - a ROS message - has to be carried and rebuilt, not refused"""
+        received_messages.clear()
+        routine = self.host(
+            "routed_message",
+            Action(
+                arm_component.take_message,
+                kwargs={"reading": Float32(data=2.5)},
+            ),
+        )
+
+        assert self.run_routine(routine) == RoutineStatus.COMPLETED
+
+        assert received_messages, "the step never ran"
+        arrived = received_messages[-1]
+        assert isinstance(arrived, Float32), f"arrived as {type(arrived).__name__}"
+        assert arrived.data == 2.5
+
+    def test_the_cancel_method_is_routed_with_the_step(self):
+        """Preempting a step means telling its component, not calling the copy
+        of it the recipe happens to hold"""
+        step = Action(
+            arm_component.note_thread,
+            timeout=5.0,
+            cancel_method=arm_component.cancel_note,
+        )
+
+        self.host("routed_cancel", step)
+
+        assert getattr(step.executable, "__self__", None) is None, (
+            "the step still calls the component object directly"
+        )
+        assert getattr(step._cancel_method, "__self__", None) is None, (
+            "the cancel method still calls the component object directly"
         )
 
 
@@ -1115,6 +1302,118 @@ class TestRoutineControl(unittest.TestCase):
         # Re-entered, so the step ran twice
         assert rec.calls == ["blocking", "blocking", "lift"]
 
+    def test_abort_preempts_the_fallback_in_flight(self):
+        """The step has already settled, so the fallback is what is running.
+        Left alone it keeps driving the robot after the abort said it stopped."""
+        rec, released, cancelled = Recorder(), ThreadingEvent(), ThreadingEvent()
+        routine = _routine_with_blocking_fallback(rec, released, cancelled)
+        routine()
+        assert wait_for(lambda: "reopen" in rec.calls), "the fallback never started"
+
+        aborted, _ = routine.abort("operator stopped it")
+
+        assert aborted
+        assert cancelled.wait(WAIT), "the fallback was left running after the abort"
+        assert routine.state["status"] == RoutineStatus.ABORTED
+        # Its late verdict cannot carry the routine on to the next step
+        released.set()
+        time.sleep(0.2)
+        assert "lift" not in rec.calls
+
+    def test_pause_preempts_the_fallback_and_resume_re_enters_the_step(self):
+        rec, released, cancelled = Recorder(), ThreadingEvent(), ThreadingEvent()
+        routine = _routine_with_blocking_fallback(rec, released, cancelled)
+        routine()
+        assert wait_for(lambda: "reopen" in rec.calls)
+
+        paused, _ = routine.pause()
+
+        assert paused
+        assert cancelled.wait(WAIT), "the fallback kept running while paused"
+
+        released.set()
+        routine.resume()
+        assert wait_until_done(routine) == RoutineStatus.COMPLETED
+        # Resuming re-enters the step, which fails into its fallback again
+        assert rec.calls[:3] == ["grasp", "reopen", "grasp"]
+        assert rec.calls[-1] == "lift"
+
+    def test_taking_a_routine_down_preempts_its_terminal_action(self):
+        """on_complete and on_abort are dispatched like any other action, so a
+        host tearing the routine down has to be able to stop them too"""
+        rec, released, cancelled = Recorder(), ThreadingEvent(), ThreadingEvent()
+        routine = Routine(
+            "pick",
+            steps=[Action(rec.step("grasp"))],
+            on_complete=Action(
+                rec.blocking("on_complete", released),
+                cancel_method=_cancel_into(cancelled),
+            ),
+        )
+        routine()
+        assert wait_for(lambda: "on_complete" in rec.calls)
+
+        routine.halt_in_flight()
+
+        assert cancelled.wait(WAIT), "the terminal action was left running"
+        released.set()
+
+    def test_a_routine_taken_down_does_not_run_on_abort(self):
+        """An action dispatched into a node that is going away reports into
+        nothing and holds a worker doing it"""
+        rec, released = Recorder(), ThreadingEvent()
+        routine = Routine(
+            "pick",
+            steps=[Action(rec.blocking("move", released))],
+            on_abort=Action(rec.step("on_abort")),
+        )
+        routine()
+        assert wait_for(lambda: "move" in rec.calls)
+
+        aborted, _ = routine.abort("the Monitor is shutting down", run_on_abort=False)
+
+        assert aborted
+        assert routine.state["status"] == RoutineStatus.ABORTED
+        released.set()
+        time.sleep(0.2)
+        assert "on_abort" not in rec.calls
+
+    def test_a_pause_on_a_step_boundary_resumes_at_the_next_step(self):
+        """The step had already succeeded when the pause landed, so resuming
+        must not run it again: for a physical step that repeats the motion"""
+        rec = Recorder()
+        first = PausingStep(rec.step("grasp"))
+        routine = Routine("pick", steps=[first, Action(rec.step("lift"))])
+        first.routine = routine
+
+        routine()
+
+        assert wait_for(lambda: routine.state["status"] == RoutineStatus.PAUSED)
+        assert rec.calls == ["grasp"]
+
+        resumed, _ = routine.resume()
+
+        assert resumed
+        assert wait_until_done(routine) == RoutineStatus.COMPLETED
+        assert rec.calls == ["grasp", "lift"], "the finished step ran again"
+
+    def test_a_pause_after_the_last_step_resumes_into_completion(self):
+        """The same boundary, at the end: there is no step left to re-enter"""
+        rec = Recorder()
+        only = PausingStep(rec.step("grasp"))
+        routine = Routine("pick", steps=[only], on_complete=Action(rec.step("done")))
+        only.routine = routine
+
+        routine()
+
+        assert wait_for(lambda: routine.state["status"] == RoutineStatus.PAUSED)
+        routine.resume()
+
+        assert wait_until_done(routine) == RoutineStatus.COMPLETED
+        # on_complete is dispatched once the routine reports finished
+        assert wait_for(lambda: "done" in rec.calls)
+        assert rec.calls == ["grasp", "done"], "the finished step ran again"
+
     def test_pause_and_abort_are_rejected_when_not_running(self):
         routine = Routine("pick", steps=[Action(Recorder().step("one"))])
         assert routine.pause() == (False, "Routine 'pick' is not running")
@@ -1375,9 +1674,9 @@ class TestRoutineLauncherGuards(unittest.TestCase):
         with pytest.raises(InvalidAction, match="unknown or not added"):
             launcher._setup_events_actions()
 
-    def test_a_step_targeting_an_own_process_component_is_rejected(self):
-        """The Monitor holds an unspun copy of a multiprocess component, so calling
-        its method directly would do nothing at all. Rejected, not silent."""
+    def test_a_step_on_an_own_process_component_is_accepted(self):
+        """The step is sent to the component over its own service, so which
+        process the component runs in makes no difference"""
         arm = _GuardArm(component_name="arm_mp_case")
 
         routine = Routine("pick", steps=[Action(arm.move)])
@@ -1390,7 +1689,70 @@ class TestRoutineLauncherGuards(unittest.TestCase):
             events_actions={_trigger(): routine},
         )
 
-        with pytest.raises(InvalidAction, match="own process"):
+        launcher._setup_events_actions()
+
+    def test_an_argument_the_component_cannot_be_given_is_rejected(self):
+        """A socket has nothing to send: it belongs to this process only.
+        Refused here rather than mid routine"""
+        arm = _GuardArm(component_name="arm_json_case")
+
+        routine = Routine(
+            "pick", steps=[Action(arm.move, kwargs={"link": socket.socket()})]
+        )
+        launcher = Launcher()
+        launcher.add_pkg(components=[arm], events_actions={_trigger(): routine})
+
+        with pytest.raises(InvalidAction, match="cannot be"):
+            launcher._setup_events_actions()
+
+    def test_a_message_argument_is_accepted_whole_or_by_field(self):
+        """Both travel: the message carries its type, the field is a float"""
+        arm = _GuardArm(component_name="arm_json_ok_case")
+        reading = Topic(name="battery", msg_type="Float32")
+
+        routine = Routine(
+            "pick",
+            steps=[
+                Action(arm.move, kwargs={"reading": reading.msg}),
+                Action(arm.move, kwargs={"reading": reading.msg.data}, name="by_field"),
+            ],
+        )
+        launcher = Launcher()
+        launcher.add_pkg(components=[arm], events_actions={_trigger(): routine})
+
+        launcher._setup_events_actions()
+
+    def test_a_fallback_targeting_an_unknown_component_is_rejected(self):
+        """A fallback is dispatched by the same Monitor as the step it recovers,
+        so it has to be reachable in the same way"""
+        arm = _GuardArm(component_name="arm_fallback_case")
+        stray = _GuardGripper(component_name="gripper_fallback_not_added")
+
+        routine = Routine(
+            "pick",
+            steps=[
+                Action(arm.move, on_fail="fallback", fallback=Action(stray.close))
+            ],
+        )
+        launcher = Launcher()
+        launcher.add_pkg(components=[arm], events_actions={_trigger(): routine})
+
+        with pytest.raises(InvalidAction, match="unknown or not added"):
+            launcher._setup_events_actions()
+
+    def test_an_on_abort_that_cannot_send_its_arguments_is_rejected(self):
+        """The steps are fine here; only the terminal action cannot be called"""
+        arm = _GuardArm(component_name="arm_on_abort_case")
+
+        routine = Routine(
+            "pick",
+            steps=[Action(arm.move)],
+            on_abort=Action(arm.move, kwargs={"link": socket.socket()}),
+        )
+        launcher = Launcher()
+        launcher.add_pkg(components=[arm], events_actions={_trigger(): routine})
+
+        with pytest.raises(InvalidAction, match="cannot be"):
             launcher._setup_events_actions()
 
     def test_two_routines_cannot_share_a_name(self):

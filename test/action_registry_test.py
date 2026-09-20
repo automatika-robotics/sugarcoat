@@ -280,6 +280,26 @@ class TestActionResolution(unittest.TestCase):
             monitor_node._action_from_spec({"kwargs": {}})
         assert "ref" in str(caught.exception)
 
+    def test_a_spec_that_carries_a_fallback_uses_it(self):
+        """Defaulting on_fail to 'abort' here would resolve the fallback, warn
+        that it can never run, and abort the routine it was written to save"""
+        step = monitor_node._action_from_spec({
+            "ref": "driver/refuse",
+            "fallback": {"ref": "driver/move_to_unblock"},
+        })
+
+        assert step.on_fail == "fallback"
+        assert step.fallback is not None
+
+    def test_a_spec_may_still_say_what_to_do_instead(self):
+        step = monitor_node._action_from_spec({
+            "ref": "driver/refuse",
+            "fallback": {"ref": "driver/move_to_unblock"},
+            "on_fail": "skip",
+        })
+
+        assert step.on_fail == "skip"
+
     def test_a_fallback_may_not_nest_without_end(self):
         """A recovery chain belongs in a routine, where it is visible"""
         with self.assertRaises(ValueError) as caught:
