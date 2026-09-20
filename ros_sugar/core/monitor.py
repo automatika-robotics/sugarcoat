@@ -1,6 +1,8 @@
 """Monitor"""
 
 import os
+import inspect
+import math
 import threading
 from functools import partial
 import time
@@ -28,6 +30,7 @@ from .component import BaseComponent
 from ..config import BaseConfig, QoSConfig
 from ..io.supported_types import validate_msg_fields
 from ..io.topic import Topic
+from ..io.utils import to_jsonable
 from .event import Event, EventBlackboardEntry
 from .action import Action, ActionServerGoal
 from .action import bind_monitored_actions
@@ -43,6 +46,88 @@ from ._action_registry import (
 from .routine import Routine, RoutineStatus
 from ..utils import ActionReturnType, parse_action_result
 from ..launch import logger
+
+
+def _owning_component(method: Optional[Callable]) -> Optional[str]:
+    """The component a bound method belongs to, or None for anything else
+
+    :rtype: Optional[str]
+    """
+    owner = getattr(method, "__self__", None)
+    if not isinstance(owner, BaseComponent):
+        return None
+    return owner.node_name
+
+
+def _as_keyword_arguments(
+    signature: Optional[inspect.Signature],
+    args: Tuple,
+    kwargs: Dict,
+    ref: str,
+) -> Tuple[Dict, Optional[str]]:
+    """Name every argument of a call, since a service carries keywords only.
+
+    :param signature: Signature of the method being called, if it has one
+    :param ref: What is being called, for the error message
+    :return: The named arguments, and why they could not be named
+    :rtype: Tuple[Dict, Optional[str]]
+    """
+    if not args:
+        return dict(kwargs), None
+    if signature is None:
+        return {}, (
+            f"Cannot call '{ref}' with positional arguments: its signature is "
+            "unknown, and the call is sent as named arguments"
+        )
+    try:
+        bound = signature.bind_partial(*args, **kwargs)
+    except TypeError as e:
+        return {}, f"Cannot call '{ref}': {e}"
+
+    named: Dict = {}
+    for key, value in bound.arguments.items():
+        kind = signature.parameters[key].kind
+        if kind is inspect.Parameter.VAR_KEYWORD:
+            named.update(value)
+        elif kind is inspect.Parameter.VAR_POSITIONAL:
+            if value:
+                return {}, (
+                    f"Cannot call '{ref}' with the extra positional arguments "
+                    f"{list(value)}: they have no name to be sent under"
+                )
+        else:
+            named[key] = value
+    return named, None
+
+
+def _on_fail_policy(spec: Dict, fallback: Optional[Any]) -> str:
+    """What a step does when it fails, as its spec asked for it.
+
+    A spec that carries a fallback and says nothing else means to use it:
+    defaulting to "abort" there would resolve the fallback, warn that it can
+    never run, and then abort the routine the fallback was written to save.
+
+    :rtype: str
+    """
+    declared = spec.get("on_fail")
+    if declared:
+        return declared
+    return "fallback" if fallback is not None else "abort"
+
+
+#: Seconds a step's call is given past its own timeout, so the action's watch
+#: is what decides it has taken too long, not the service client
+_CALL_GRACE = 5.0
+
+
+def _call_timeout(action) -> float:
+    """How long to wait for the component to answer one of a routine's actions.
+
+    :rtype: float
+    """
+    if action._timeout is None:
+        return math.inf
+    return action._timeout + _CALL_GRACE
 
 
 def _is_sendable(value: Any) -> bool:
@@ -704,15 +789,16 @@ class Monitor(Node):
         component_name: str,
         method_name: str,
         kwargs: Dict,
+        timeout: Optional[float] = None,
     ) -> ActionReturnType:
         srv_client: base_clients.ServiceClientHandler = (
             self._execute_component_method_srv_client[component_name]
         )
         srv_request = ExecuteMethod.Request()
         srv_request.name = method_name
-        srv_request.kwargs_json = json.dumps(kwargs)
+        srv_request.kwargs_json = json.dumps(to_jsonable(kwargs))
         return self._result_from_srv_response(
-            srv_client.send_request(req_msg=srv_request),
+            srv_client.send_request(req_msg=srv_request, timeout=timeout),
             f"Method '{method_name}' on component '{component_name}'",
         )
 
@@ -941,18 +1027,34 @@ class Monitor(Node):
         Monitor has no object for most components, and the ones it does hold
         may be running in another process.
         """
-        if entry.owner not in self._execute_component_method_srv_client:
+        return self.__call_component_method(entry.owner, entry.name, kwargs, entry.ref)
+
+    def __call_component_method(
+        self,
+        owner: str,
+        name: str,
+        kwargs: Dict,
+        ref: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ) -> ActionReturnType:
+        """Send one method call to the component that owns it.
+
+        The one place a component method is called from, whether it was named in
+        a spec or written as a bound method in a recipe.
+        """
+        ref = ref or f"{owner}/{name}"
+        if owner not in self._execute_component_method_srv_client:
             return (
                 False,
-                f"No method service for component '{entry.owner}'. Components "
+                f"No method service for component '{owner}'. Components "
                 f"reachable: {sorted(self._execute_component_method_srv_client)}",
             )
         try:
-            return self.execute_component_method(entry.owner, entry.name, kwargs)
+            return self.execute_component_method(owner, name, kwargs, timeout=timeout)
         except TypeError as e:
             # The arguments have to survive being JSON, and a caller who sent
             # something that cannot needs to be told which action refused it
-            return False, f"Arguments for '{entry.ref}' are not serializable: {e}"
+            return False, f"Arguments for '{ref}' are not serializable: {e}"
 
     def __resolve_monitor_method(
         self, entry: RegisteredAction
@@ -1083,7 +1185,7 @@ class Monitor(Node):
             "on_timeout": spec.get("on_timeout", "retry"),
             "max_retries": spec.get("max_retries", 0),
             "retry_delay": spec.get("retry_delay", 0.0),
-            "on_fail": spec.get("on_fail", "abort"),
+            "on_fail": _on_fail_policy(spec, fallback),
         }
         return Action.deserialize_action(
             serialized,
@@ -1129,7 +1231,7 @@ class Monitor(Node):
             on_timeout=spec.get("on_timeout", "fail"),
             max_retries=spec.get("max_retries", 0),
             retry_delay=spec.get("retry_delay", 0.0),
-            on_fail=spec.get("on_fail", "abort"),
+            on_fail=_on_fail_policy(spec, fallback),
             fallback=fallback,
             name=spec.get("name") or entry.name,
             description=spec.get("description", None),
@@ -1506,9 +1608,109 @@ class Monitor(Node):
         Registering is what makes a routine addressable by name: the control
         actions, the cursor query and the runtime API all find it this way.
         """
+        publish_state = self.__routine_state_publisher(routine.name)
         self.__routines[routine.name] = routine
         routine.set_host(self)
-        routine.set_state_publisher(self.__routine_state_publisher(routine.name))
+        # Steps, fallbacks and terminal actions
+        for action in routine.actions():
+            self.__route_routine_action(action)
+        routine.set_state_publisher(publish_state)
+
+    def __route_routine_action(self, action: Action) -> None:
+        """Point one of a routine's actions at whatever really runs it.
+
+        A recipe hands a routine the bound method itself, and a system action as
+        a placeholder plus a name. Neither can be dispatched as it stands:
+
+        - a component method goes over that component's own `execute_method`
+          service, so it runs on the component's executor, in whatever process
+          the component is in, exactly as a routine registered at runtime does
+        - a system action becomes the Monitor's own method
+
+        A routine registered at runtime arrives already resolved, and is left
+        alone: its executables are this Monitor's, not a component's.
+        """
+        if getattr(action, "_routed_by_monitor", False):
+            return
+        action._routed_by_monitor = True
+
+        if getattr(action, "_is_monitor_action", False):
+            method = getattr(self, action.action_name, None)
+            if not callable(method):
+                logger.error(
+                    f"Action '{action.action_name}' of a routine is a system action "
+                    "this Monitor does not have. The routine will fail when it "
+                    "reaches it"
+                )
+            else:
+                action.executable = partial(
+                    method, *action._args, **action._kwargs
+                )
+        elif _owning_component(action.executable):
+            # The action's own timeout is what ends it, so the call waits past
+            # that rather than on the client's fixed budget
+            action.executable = self.__component_call(
+                action.executable, timeout=_call_timeout(action)
+            )
+            self.__warn_if_uncancellable(action)
+
+        # A cancel method belongs to its component too, and is the only thing
+        # that can stop a step that outlives its call
+        if _owning_component(action._cancel_method):
+            action._cancel_method = self.__component_call(action._cancel_method)
+
+    def __component_call(
+        self, method: Callable, timeout: Optional[float] = None
+    ) -> Callable[..., ActionReturnType]:
+        """Turn a component's bound method into a call over its own service.
+
+        The method itself is used only for its name and its signature: what runs
+        is the component's, on the component's executor.
+
+        :param timeout: How long to wait for the component to answer. The
+            client's configured budget when not given, which is what a cancel
+            method wants: one that takes longer than that is broken
+        """
+        owner = _owning_component(method)
+        name = method.__name__
+        try:
+            signature = inspect.signature(method)
+        except (TypeError, ValueError):
+            signature = None
+
+        def _call(*args, **kwargs) -> ActionReturnType:
+            call_kwargs, error = _as_keyword_arguments(
+                signature, args, kwargs, f"{owner}/{name}"
+            )
+            if error is not None:
+                logger.error(error)
+                return False, error
+            return self.__call_component_method(
+                owner, name, call_kwargs, timeout=timeout
+            )
+
+        _call.__name__ = name
+        return _call
+
+    @staticmethod
+    def __warn_if_uncancellable(action: Action) -> None:
+        """A timed out call that nothing can stop keeps running.
+
+        Not refused, because most steps do return long before their timeout, but
+        the one that does not leaves work behind, and on the default
+        `on_timeout='retry'` the retry runs alongside it.
+        """
+        if action._timeout is None or action._cancel_method is not None:
+            return
+        logger.warning(
+            f"Action '{action.action_name}' has a timeout but no 'cancel_method'. "
+            "If its call outlives the timeout, nothing can stop it"
+            + (
+                ", and the retry will run alongside it"
+                if action._on_timeout == "retry"
+                else ""
+            )
+        )
 
     def __routine_state_publisher(self, routine_name: str) -> Callable[[str], None]:
         """Publisher for one routine's cursor.
@@ -1720,7 +1922,9 @@ class Monitor(Node):
         :param force: Remove it even if it is running, aborting it first.
             Without this a running routine is kept, because removing one
             mid-step would leave whatever it started running with nothing
-            watching it
+            watching it. The `on_abort` action is *not* run: the routine, its
+            cursor and its success watches are going away, so an action
+            dispatched now would report into nothing
         :rtype: ActionReturnType
         """
         with self._blackboard_lock:
@@ -1737,7 +1941,11 @@ class Monitor(Node):
                     f"Routine '{routine_name}' is {routine.state['status']}. Pass "
                     "force to abort and remove it"
                 )
-            routine.abort(reason="routine removed")
+            routine.abort(reason="routine removed", run_on_abort=False)
+
+        # Nothing of a removed routine keeps running: a terminal action left
+        # over from an earlier finish would outlive its cursor and its watches
+        routine.halt_in_flight()
 
         with self._blackboard_lock:
             self.__routines.pop(routine_name, None)
@@ -2023,9 +2231,15 @@ class Monitor(Node):
         with self._blackboard_lock:
             routines = list(self.__routines.values())
         for routine in routines:
-            # Routines that are not running report it and are left as they are
             try:
-                routine.abort(reason="the Monitor is shutting down")
+                # No on_abort: an action dispatched now would run against a node
+                # that is going away, and would hold a worker doing it
+                routine.abort(
+                    reason="the Monitor is shutting down", run_on_abort=False
+                )
+                # Also catches a routine that already finished and still has its
+                # terminal action running
+                routine.halt_in_flight()
             except Exception as e:
                 logger.error(f"Failed to abort routine '{routine.name}' at shutdown: {e}")
         return super().destroy_node()
