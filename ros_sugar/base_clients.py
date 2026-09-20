@@ -126,16 +126,22 @@ class ServiceClientHandler:
         self.node.get_logger().debug(f"sending request {updated_message}")
         return self.send_request(updated_message)
 
-    def send_request(self, req_msg):
+    def send_request(self, req_msg, timeout: Optional[float] = None):
         """
         Sends a request to the service returns the response
         In case of failure, the method attempts sending the request again multiple time according to the given config
 
         :param req_msg: Service request msg
         :type req_msg: Any
+        :param timeout: Seconds to wait for the response, instead of the
+            configured timeout. `math.inf` waits for as long as the node lives,
+            for a caller that has a deadline of its own and whose call may
+            legitimately take longer than any fixed budget
+        :type timeout: Optional[float]
         :return: Service result
         :rtype: Any
         """
+        response_timeout = self.config.timeout_secs if timeout is None else timeout
         _timeout_count: float = 0.0  # timeout counter
 
         # Check if the service is available every attempt_period_secs
@@ -167,24 +173,31 @@ class ServiceClientHandler:
             )
             return None
 
-        # send request
+        # send request. The future is kept locally as well as on the handler:
+        # several callers can have a request in flight on one client, and each
+        # has to wait for its own response rather than for the latest one
         self.request = req_msg
-        self.future = self.client.call_async(self.request)
+        future = self.client.call_async(req_msg)
+        self.future = future
 
-        # Wait for service response, bounded by the configured timeout.s
+        # Wait for service response, bounded by the timeout this call was given
         _response_wait: float = 0.0
-        while not self.future.done():
-            if _response_wait > self.config.timeout_secs:
+        while not future.done():
+            if _response_wait > response_timeout:
                 self.node.get_logger().error(
-                    f"Service {self.config.name} did not respond within {self.config.timeout_secs} secs, Cancelling"
+                    f"Service {self.config.name} did not respond within {response_timeout} secs, Cancelling"
                 )
-                self.future.cancel()
+                future.cancel()
+                return None
+            if not self.node.context.ok():
+                # Nothing will deliver the response now. Without this, a call
+                # with no deadline would hold its thread past shutdown
                 return None
             time.sleep(0.01)
             _response_wait += 0.01
 
         # return response
-        return self.future.result()
+        return future.result()
 
 
 class ActionClientHandler:
