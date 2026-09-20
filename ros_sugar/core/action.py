@@ -1031,6 +1031,11 @@ class ActionServerGoal(Action):
                     return False, f"Server '{self.target}' rejected the goal"
                 return False, f"Server '{self.target}' did not accept the goal"
 
+            if self._abandoned:
+                # Halted while the goal was on its way out
+                self._cancel()
+                return False, f"Goal on '{self.target}' was canceled"
+
             while not self._settled.wait(self._POLL_PERIOD):
                 if self._condition_met():
                     # Succeeded early: stop the goal rather than leave it
@@ -1102,17 +1107,20 @@ class ActionServerGoal(Action):
     # ---- Preemption -------------------------------------------------------
 
     def _cancel(self, **_) -> ActionReturnType:
-        """Cancel the goal in flight and release the waiting dispatch"""
+        """Cancel the goal in flight and release the waiting dispatch.
+
+        The cancel is sent, not waited for. Whoever halted the step - a pause,
+        an abort, the runtime API - gets their answer straight away, and a goal
+        still stopping is waited for by the next goal sent on that client,
+        which is the only place the wait is needed.
+        """
         self._abandoned = True
         client = self._client
-        if client is None:
-            result = (True, "nothing to cancel")
-        elif getattr(self._host, "is_shutting_down", False):
-            # Nothing spins to deliver the server's answer any more, so waiting
-            # for it would only hold the shutdown up
-            result = client.cancel_request(wait=False)
-        else:
-            result = client.cancel_request()
+        result = (
+            client.cancel_request(wait=False)
+            if client is not None
+            else (True, "nothing to cancel")
+        )
         self._settled.set()
         return result
 

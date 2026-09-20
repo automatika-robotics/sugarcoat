@@ -1,6 +1,8 @@
 """ROS Service/Action Client Wrapper"""
 
+import threading
 import time
+from functools import partial
 from typing import Any, Callable, Optional, Dict, Tuple
 from attrs import Factory, define, field
 
@@ -225,6 +227,10 @@ class ActionClientHandler:
         # message and on terminal state, so feedback can be pushed to multiple
         # consumers can push feedback as it arrives instead of polling.
         self._feedback_listeners = set()
+        # Identify the goal this handler is tracking
+        self._goal_generation = 0
+        # Guards claiming and releasing the one goal this handler tracks.
+        self._goal_lock = threading.Lock()
         self.reset()
 
         if not config and (action_name and action_type):
@@ -266,6 +272,11 @@ class ActionClientHandler:
         self.action_status: int = GoalStatus.STATUS_UNKNOWN
         self._feedback_timeout = False
         self._goal_handle = None
+        # If any goal is currently accepted, a second goal may not be sent over the top of it
+        self._goal_in_flight = False
+        # A cancel that arrived before the server answered, carried out as soon
+        # as there is a goal handle to cancel
+        self._cancel_pending = False
         self._old_status = self._status
         self._start_time_secs = None
         self._stop_alive_timer()
@@ -324,6 +335,74 @@ class ActionClientHandler:
         )
         return self.send_request(updated_message, wait_until_first_feedback)
 
+    def __for_goal(self, generation: int, callback: Callable, payload: Any) -> None:
+        """Run a callback only while it is still about the goal in hand.
+
+        A cancelled goal answers after the client has been taken for the next
+        one. Read as the current goal's, that answer overwrites its handle and
+        its result, and the new goal becomes untrackable.
+        """
+        if generation != self._goal_generation:
+            return
+        callback(payload)
+
+    def __claim_for_new_goal(self) -> bool:
+        """Take the client for a new goal, once the last one has finished.
+
+        This handler tracks one goal: its handle, its feedback and its result.
+        Clearing that while a goal is still running used to lose the handle of
+        a goal the server was still executing, so nothing could cancel it any
+        more. A goal on its way out is waited for - a cancelled step re-sending
+        is the ordinary case, and a cancel takes as long as the server needs to
+        notice it - and a goal still running past the feedback timeout, by
+        which point the server counts as unresponsive anyway, keeps the client.
+
+        :return: Whether the client is now this caller's
+        :rtype: bool
+        """
+        waited: float = 0.0
+        while self._goal_in_flight and waited < self.config.feedback_check_timeout:
+            time.sleep(self.config.feedback_check_period)
+            waited += self.config.feedback_check_period
+        with self._goal_lock:
+            if self._goal_in_flight:
+                return False
+            # Clears the previous goal's terminal state, so this one is not
+            # read off it
+            self.reset()
+            self._goal_in_flight = True
+            # Everything the server says about the previous goal arrives after
+            # this, and belongs to a goal this client no longer tracks
+            self._goal_generation += 1
+        return True
+
+    def wait_until_idle(self, timeout: float) -> bool:
+        """Wait for the goal this client has on the server to end.
+
+        For a caller tearing things down: the cancels it sent are on their way,
+        and a server told to stop is worth waiting for before its node goes.
+
+        :param timeout: Seconds to wait
+        :return: Whether the client ended up with no goal in flight
+        :rtype: bool
+        """
+        waited: float = 0.0
+        while self._goal_in_flight and waited < timeout:
+            time.sleep(self.config.feedback_check_period)
+            waited += self.config.feedback_check_period
+        return not self._goal_in_flight
+
+    def __release_claim(self) -> None:
+        """Give the client back without a goal having reached the server.
+
+        Every way out of a send that leaves nothing running has to come through
+        here: a claim held for a goal that was never sent refuses every later
+        goal on this client, for good.
+        """
+        with self._goal_lock:
+            self._goal_in_flight = False
+            self._cancel_pending = False
+
     def send_request(
         self, request_msg: Any, wait_until_first_feedback: bool = False
     ) -> bool:
@@ -338,8 +417,12 @@ class ActionClientHandler:
         :return: If action server is available
         :rtype: bool
         """
-        # Clear the previous goal's terminal state, so this one is not read off it
-        self.reset()
+        if not self.__claim_for_new_goal():
+            self.node.get_logger().error(
+                f"Cannot send a goal to '{self.config.name}': a goal of this "
+                "client's is still running on the server. Cancel it first"
+            )
+            return False
         # Making request to the server
         _path_timeout_count: float = 0.0
         # Wait until the server is available
@@ -357,6 +440,7 @@ class ActionClientHandler:
                 self.node.get_logger().error(
                     "Server node is not available - cannot start action service"
                 )
+                self.__release_claim()
                 return False
 
         self.node.get_logger().debug(f"Sending request to {self.config.name}")
@@ -366,17 +450,24 @@ class ActionClientHandler:
             self.node.get_logger().error(
                 f"Invalid request message for action '{self.config.name}'. Service takes request message of type '{self.config.action_type.Goal}', got '{type(request_msg)}'"
             )
+            self.__release_claim()
             return False
 
         # If available, send request and get future response, and feedback callback method
+        goal = self._goal_generation
         self._send_goal_future = self.client.send_goal_async(
-            request_msg, feedback_callback=self.action_feedback_callback
+            request_msg,
+            feedback_callback=partial(
+                self.__for_goal, goal, self.action_feedback_callback
+            ),
         )
 
         self._start_time_secs = self.node.get_clock().now().nanoseconds / 1e9
 
         # Add method when action is done
-        self._send_goal_future.add_done_callback(self.action_response_callback)
+        self._send_goal_future.add_done_callback(
+            partial(self.__for_goal, goal, self.action_response_callback)
+        )
 
         self._check_server_alive_timer = self.node.create_timer(
             timer_period_sec=self.config.feedback_check_timeout,
@@ -391,6 +482,16 @@ class ActionClientHandler:
         ):
             _timeout_counter += self.config.feedback_check_period
             time.sleep(self.config.feedback_check_period)
+
+        if not self.goal_accepted and not self.goal_rejected:
+            # The server never answered. Nothing of ours is running there, and
+            # holding the client for it would refuse every later goal
+            self.node.get_logger().error(
+                f"No answer from '{self.config.name}' within "
+                f"{self.config.feedback_check_timeout}s of sending the goal"
+            )
+            self.__release_claim()
+            return False
 
         if wait_until_first_feedback:
             # Wait until the server sent the first feedback message
@@ -419,13 +520,30 @@ class ActionClientHandler:
         if not self._goal_handle.accepted:
             self.goal_rejected = True
             # Rejection is terminal: wake anyone parked on the result
+            with self._goal_lock:
+                self._goal_in_flight = False
+                self._cancel_pending = False
             self._stop_alive_timer()
             self._notify_feedback_listeners()
             return
         self.goal_accepted = True
 
+        with self._goal_lock:
+            cancel_now = self._cancel_pending
+            self._cancel_pending = False
+        if cancel_now:
+            # Cancelled while it was on its way to the server. Without this the
+            # goal runs on, with whoever cancelled it believing it stopped
+            self.node.get_logger().warning(
+                f"Cancelling the goal on '{self.config.name}': it was cancelled "
+                "before the server accepted it"
+            )
+            self._goal_handle.cancel_goal_async()
+
         self._get_result_future = self._goal_handle.get_result_async()
-        self._get_result_future.add_done_callback(self.action_result_callback)
+        self._get_result_future.add_done_callback(
+            partial(self.__for_goal, self._goal_generation, self.action_result_callback)
+        )
         return
 
     # METHOD TO GET THE RESULT WHEN DONE
@@ -440,6 +558,8 @@ class ActionClientHandler:
         self.action_status = getattr(response, "status", GoalStatus.STATUS_UNKNOWN)
         self.action_result = response.result
         self.action_returned = True
+        with self._goal_lock:
+            self._goal_in_flight = False
         self._stop_alive_timer()
         # Notify listeners of the terminal transition (no further feedback).
         self._notify_feedback_listeners()
@@ -514,28 +634,38 @@ class ActionClientHandler:
         :return: If cancellation is successful
         :rtype: Tuple[bool, str]
         """
-        if self.goal_accepted and self._goal_handle is not None:
-            # self._send_goal_future.set_result(self.config.action_type.Result())
-            self._goal_handle.cancel_goal_async()
-            if not wait:
-                return (True, "Action goal cancel requested")
-            # Wait for action to return or timeout
-            _check_counter: float = 0.0
-            while (
-                not self.action_returned
-                and _check_counter < self.config.feedback_check_timeout
-            ):
-                _check_counter += self.config.feedback_check_period
-                time.sleep(self.config.feedback_check_period)
-            if _check_counter >= self.config.feedback_check_timeout:
-                return (False, "Failed to cancel goal")
-            # Wake parked waiters before reset() clears the terminal state
-            self._notify_feedback_listeners()
-            self.reset()
-            return (True, "Action goal cancelled successfully")
-        else:
-            # Goal is already canceled
-            return (True, "No ongoing action goal to cancel")
+        with self._goal_lock:
+            if not self._goal_in_flight:
+                # Nothing was sent, or it has already finished
+                return (True, "No ongoing action goal to cancel")
+            handle = self._goal_handle if self.goal_accepted else None
+            if handle is None:
+                # Sent, but the server has not answered yet, so there is no
+                # handle to cancel. Cancelled the moment one arrives, rather
+                # than reported as nothing to do while the goal starts running
+                self._cancel_pending = True
+
+        if handle is not None:
+            handle.cancel_goal_async()
+        if not wait:
+            return (True, "Action goal cancel requested")
+
+        # Wait for the goal to end, however it ends: cancelled, returned or
+        # rejected. Whichever it is, the client is free afterwards
+        _check_counter: float = 0.0
+        while (
+            not self.action_returned
+            and not self.goal_rejected
+            and _check_counter < self.config.feedback_check_timeout
+        ):
+            _check_counter += self.config.feedback_check_period
+            time.sleep(self.config.feedback_check_period)
+        if not self.action_returned and not self.goal_rejected:
+            return (False, "Failed to cancel goal")
+        # Wake parked waiters before reset() clears the terminal state
+        self._notify_feedback_listeners()
+        self.reset()
+        return (True, "Action goal cancelled successfully")
 
     def get_ui_elements(self) -> Dict:
         """Get updated client elements for the UI
@@ -546,7 +676,9 @@ class ActionClientHandler:
         current_time = self.node.get_clock().now().nanoseconds / 1e9
         ui_dict = {
             "status": self._status,
-            "feedback": self.feedback_msg.feedback if self.feedback_msg and hasattr(self.feedback_msg, "feedback") else None,
+            "feedback": self.feedback_msg.feedback
+            if self.feedback_msg and hasattr(self.feedback_msg, "feedback")
+            else None,
             "timestep": self.feedback_count,
             "feedback_timeout": self._feedback_timeout,
             "duration_secs": (current_time - self._start_time_secs)

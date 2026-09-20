@@ -91,7 +91,12 @@ def generate_test_description():
     launcher.add_pkg(
         components=[
             DriverComponent(component_name="driver"),
-            CountingComponent(component_name="counter"),
+            # Named apart from the counter in routine_test: both modules run in
+            # one process and one ROS domain, and a client looking for
+            # 'counter/count' can otherwise find the previous module's server,
+            # still in the graph a moment after its node is gone, and send its
+            # goal there
+            CountingComponent(component_name="api_counter"),
             ReadingPublisher(component_name="publisher", outputs=[reading_topic]),
         ]
     )
@@ -165,7 +170,7 @@ class TestRuntimeApi(unittest.TestCase):
         assert response.success, response.error_msg
         refs = {entry["ref"] for entry in json.loads(response.response_json)}
         assert "driver/note" in refs
-        assert "counter/count" in refs
+        assert "api_counter/count" in refs
         assert "monitor/start_routine" in refs
 
     def test_the_listing_is_readable_without_decoding_twice(self):
@@ -184,7 +189,7 @@ class TestRuntimeApi(unittest.TestCase):
                 "name": "over_the_wire",
                 "steps": [
                     {"ref": "driver/note", "kwargs": {"value": "one"}, "name": "first"},
-                    {"ref": "counter/count", "goal": {"target_frame": "2"}, "name": "count"},
+                    {"ref": "api_counter/count", "goal": {"target_frame": "2"}, "name": "count"},
                     {"ref": "driver/note", "kwargs": {"value": "two"}, "name": "last"},
                 ],
             },
@@ -208,7 +213,7 @@ class TestRuntimeApi(unittest.TestCase):
             "add_routine",
             routine={
                 "name": "controllable",
-                "steps": [{"ref": "counter/count", "goal": {"target_frame": "40"}}],
+                "steps": [{"ref": "api_counter/count", "goal": {"target_frame": "40"}}],
             },
         ).success
 
@@ -307,7 +312,7 @@ class TestRuntimeApi(unittest.TestCase):
             "add_routine",
             routine={
                 "name": "typo",
-                "steps": [{"ref": "counter/count", "goal": {"targt_frame": "2"}}],
+                "steps": [{"ref": "api_counter/count", "goal": {"targt_frame": "2"}}],
             },
         )
         assert not response.success

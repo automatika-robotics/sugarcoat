@@ -2091,6 +2091,7 @@ class TestFeedbackWatchdog(unittest.TestCase):
         self.handler._goal_handle = goal_handle
         self.handler.goal_accepted = True
         self.handler.action_returned = False
+        self.handler._goal_in_flight = True
         self.handler.config.cancel_on_feedback_timeout = True
         self.handler.config.feedback_check_timeout = 0.05
         self.handler.config.feedback_check_period = 0.01
@@ -2130,6 +2131,7 @@ class TestGoalCancelling(unittest.TestCase):
         self.handler._goal_handle = FakeGoalHandle()
         self.handler.goal_accepted = True
         self.handler.action_returned = True
+        self.handler._goal_in_flight = True
         seen = []
         self.handler.add_feedback_listener(lambda: seen.append(self.handler.action_returned))
 
@@ -2146,6 +2148,7 @@ class TestGoalCancelling(unittest.TestCase):
         self.handler._goal_handle = goal_handle
         self.handler.goal_accepted = True
         self.handler.action_returned = False
+        self.handler._goal_in_flight = True
         # A regression to waiting fails fast rather than sitting out 60s
         self.handler.config.feedback_check_timeout = 0.5
         self.handler.config.feedback_check_period = 0.01
@@ -2154,6 +2157,83 @@ class TestGoalCancelling(unittest.TestCase):
 
         assert succeeded, message
         assert goal_handle.cancel_calls == 1
+
+
+class TestGoalHandover(unittest.TestCase):
+    """One client, one goal at a time.
+
+    The Monitor hands the same handler to every caller, and a routine that
+    pauses and resumes re-sends through it. Losing the running goal's handle
+    here leaves the robot executing a goal nothing can cancel any more.
+    """
+
+    def setUp(self):
+        """monkeypatch is a pytest fixture; unittest patches and cleans up"""
+        patcher = mock.patch(
+            "ros_sugar.base_clients.ActionClient", lambda *a, **k: SimpleNamespace()
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.handler = ActionClientHandler(
+            client_node=FakeNode(),
+            config=ActionClientConfig(action_type=SimpleNamespace, name="fake_action"),
+        )
+        # A goal sent and accepted, as send_request would leave it
+        self.handler.config.feedback_check_timeout = 0.05
+        self.handler.config.feedback_check_period = 0.01
+
+    def _goal_is_running(self) -> FakeGoalHandle:
+        goal_handle = FakeGoalHandle()
+        self.handler._goal_in_flight = True
+        self.handler._goal_handle = goal_handle
+        self.handler.goal_accepted = True
+        return goal_handle
+
+    def test_a_second_goal_does_not_take_the_running_goal_s_handle(self):
+        goal_handle = self._goal_is_running()
+
+        sent = self.handler.send_request(SimpleNamespace())
+
+        assert not sent, "the second goal was sent over a running one"
+        assert self.handler._goal_handle is goal_handle, (
+            "the running goal's handle was cleared, so nothing can cancel it"
+        )
+        assert self.handler.cancel_request(wait=False)[0]
+        assert goal_handle.cancel_calls == 1
+
+    def test_the_client_is_free_once_the_goal_has_returned(self):
+        """The ordinary case: a step ends, the next one sends its goal"""
+        self._goal_is_running()
+
+        self.handler.action_result_callback(
+            _future(SimpleNamespace(status=GoalStatus.STATUS_SUCCEEDED, result=None))
+        )
+
+        assert not self.handler._goal_in_flight
+
+    def test_a_cancel_before_the_server_answers_is_carried_out(self):
+        """A step halted in the moment between sending and acceptance. Reported
+        as nothing to cancel, the goal would run on with nobody watching it"""
+        self.handler._goal_in_flight = True  # sent, no handle yet
+
+        cancelled, message = self.handler.cancel_request(wait=False)
+
+        assert cancelled, message
+        goal_handle = FakeGoalHandle()
+        self.handler.action_response_callback(_future(goal_handle))
+
+        assert goal_handle.cancel_calls == 1, (
+            "the goal was accepted after the cancel and never stopped"
+        )
+
+    def test_a_rejected_goal_frees_the_client(self):
+        self.handler._goal_in_flight = True
+
+        self.handler.action_response_callback(_future(FakeGoalHandle(accepted=False)))
+
+        assert not self.handler._goal_in_flight, (
+            "a rejected goal left the client claimed, so nothing else can send"
+        )
 
 
 class TestGoalVerdict(unittest.TestCase):
@@ -2348,8 +2428,10 @@ class TestGoalPreemption(unittest.TestCase):
         assert settled["outcome"] == ActionOutcome.TIMEOUT
         assert client.cancels == 1
 
-    def test_halting_waits_for_the_server_while_the_host_runs(self):
-        """So a routine resumed or moved on does not race a goal still ending"""
+    def test_halting_sends_the_cancel_without_waiting_for_the_server(self):
+        """Whoever halted the step - a pause, an abort, the runtime API - is
+        answered at once. A goal still stopping is waited for by the next goal
+        sent on that client, which is where the wait belongs"""
         client = FakeClient()
         step = ActionServerGoal(component="planner", goal={"x": 1.0})
         step.set_host(FakeHost(client))
@@ -2360,24 +2442,9 @@ class TestGoalPreemption(unittest.TestCase):
 
         assert done.wait(WAIT)
         assert settled["outcome"] == ActionOutcome.PREEMPTED
-        assert client.cancel_waits == [True]
-
-    def test_halting_while_the_host_shuts_down_does_not_wait(self):
-        """The Monitor aborts its routines while being destroyed, when no answer
-        from the server can arrive any more"""
-        client = FakeClient()
-        host = FakeHost(client)
-        step = ActionServerGoal(component="planner", goal={"x": 1.0})
-        step.set_host(host)
-
-        settled, done = _run(step)
-        assert wait_for(lambda: client.sent)
-        host.is_shutting_down = True
-        step.halt()
-
-        assert done.wait(WAIT)
-        assert settled["outcome"] == ActionOutcome.PREEMPTED
-        assert client.cancel_waits == [False]
+        assert client.cancel_waits == [False], (
+            "halting blocked its caller on the server's answer"
+        )
 
     def test_no_host_fails_cleanly(self):
         step = ActionServerGoal(component="planner", goal={"x": 1.0})
