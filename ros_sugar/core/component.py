@@ -61,7 +61,11 @@ from ..config.base_config import (
     QoSConfig,
 )
 from ..io.publisher import Publisher
-from ..io.supported_types import SupportedType, add_additional_datatypes
+from ..io.supported_types import (
+    SupportedType,
+    add_additional_datatypes,
+    from_jsonable,
+)
 from ..io.topic import Topic
 from ..tf import TFListener, TFListenerConfig
 from ..utils import (
@@ -2771,11 +2775,13 @@ class BaseComponent(lifecycle.Node):
         kwargs = {}
         if request.kwargs_json:
             try:
-                kwargs = json.loads(request.kwargs_json)
-            except json.decoder.JSONDecodeError as e:
+                # Rebuilds anything the caller could not send as plain JSON,
+                # such as a ROS message, into the value the method expects
+                kwargs = from_jsonable(json.loads(request.kwargs_json))
+            except (json.decoder.JSONDecodeError, ValueError) as e:
                 response.success = False
                 response.error_msg = (
-                    f"Expecting json style keyword arguments, got {request.kwargs_json}"
+                    f"Could not read the arguments of '{request.name}': {e}"
                 )
                 self.get_logger().warning(f"Error parsing request parameters: {e}")
                 return response
