@@ -205,6 +205,9 @@ class Monitor(Node):
         # __events_per_topic because a routine subscribes topics its steps read
         # without any event being indexed under them
         self.__subscribed_topics: set = set()
+        # Topics subscribed only for events added at runtime, released once
+        # nothing reads them
+        self.__runtime_topics: set = set()
 
         # Routines routed to the Monitor, keyed by name so the control actions
         # and the cursor query can find them
@@ -1689,6 +1692,8 @@ class Monitor(Node):
             self.__routines.pop(routine_name, None)
             publisher = self.__routine_publishers.pop(routine_name, None)
 
+        # Once popped, so its own topics are no longer counted as required
+        routine.stop_watching()
         routine.set_state_publisher(None)
         if publisher is not None:
             self.destroy_publisher(publisher)
@@ -1990,7 +1995,8 @@ class Monitor(Node):
         # topic once. The same path a runtime registration takes, so an event
         # added later is watched exactly like one declared in the recipe
         self.__events_per_topic: Dict[str, List[Event]] = {}
-        self.__event_listeners = []
+        # The single subscription behind each subscribed topic, by topic name
+        self.__event_listeners: Dict[str, Any] = {}
         for event in self.__events:
             self.__attach_event_topics_locked(event)
 
@@ -2011,7 +2017,7 @@ class Monitor(Node):
             qos_profile=topic_obj.qos_profile.to_ros(),
             callback_group=MutuallyExclusiveCallbackGroup(),
         )
-        self.__event_listeners.append(listener)
+        self.__event_listeners[name] = listener
 
     def __attach_event_topics_locked(self, event: Event) -> None:
         """Index an event under every topic it reads, subscribing as needed.
@@ -2040,10 +2046,50 @@ class Monitor(Node):
         Unlike the events wired up in `_activate_event_monitoring`, this is
         called while the Monitor is already running, from a worker thread. Used
         by a monitored `Action` to begin watching its success condition on first
-        dispatch. Subscriptions created here live for the life of the node.
+        dispatch. A topic subscribed here is released by
+        `remove_runtime_event_listener` once nothing reads it anymore.
 
         :param event: Event to start monitoring
         :type event: Event
         """
         with self._blackboard_lock:
+            for topic in event.get_involved_topics():
+                if topic.name not in self.__subscribed_topics:
+                    self.__runtime_topics.add(topic.name)
             self.__attach_event_topics_locked(event)
+
+    def remove_runtime_event_listener(self, event: Event) -> None:
+        """Stop monitoring an event added with `add_runtime_event_listener`.
+
+        A topic that was subscribed for runtime events is released along with
+        the last event reading it, unless a registered routine still needs it.
+        Topics subscribed at activation are kept.
+
+        :param event: Event to stop monitoring
+        :type event: Event
+        """
+        released = []
+        with self._blackboard_lock:
+            required = {
+                topic.name
+                for routine in self.__routines.values()
+                for topic in routine.get_required_topics()
+            }
+            for topic in event.get_involved_topics():
+                name = topic.name
+                watching = self.__events_per_topic.get(name, [])
+                if event in watching:
+                    watching.remove(event)
+                if watching or name not in self.__runtime_topics or name in required:
+                    continue
+                self.__runtime_topics.discard(name)
+                self.__subscribed_topics.discard(name)
+                self.__events_per_topic.pop(name, None)
+                # A later subscription must not start from this one's last message
+                self._events_topics_blackboard.pop(name, None)
+                listener = self.__event_listeners.pop(name, None)
+                if listener is not None:
+                    released.append(listener)
+        # Outside the lock, which the subscription callback takes
+        for listener in released:
+            self.destroy_subscription(listener)
