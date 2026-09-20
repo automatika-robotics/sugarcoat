@@ -215,6 +215,15 @@ class Routine:
         actions.extend(a for a in (self.on_complete, self.on_abort) if a)
         return actions
 
+    def stop_watching(self) -> None:
+        """Stop monitoring the success conditions of every action of the routine.
+
+        Called when the routine is removed, so the conditions of a routine that
+        is gone are not evaluated on every message of their topics.
+        """
+        for action in self.__all_actions():
+            action.stop_watching()
+
     def get_required_topics(self) -> List[Topic]:
         """Topics needed by the routine, which is every topic its steps need.
 
