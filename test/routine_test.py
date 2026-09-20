@@ -465,6 +465,10 @@ def generate_test_description():
 
 WAIT = 5.0
 
+#: How long a step blocks when the test is the one that releases it. Well past
+#: every wait above, so a test never races its own blocking step
+BLOCK = 60.0
+
 
 def wait_for(predicate, timeout: float = WAIT) -> bool:
     """Poll until the routine has settled, rather than sleeping a fixed time"""
@@ -512,7 +516,7 @@ class Recorder:
     def blocking(self, name: str, release: ThreadingEvent):
         def _step(**_) -> ActionReturnType:
             self.calls.append(name)
-            release.wait(WAIT)
+            release.wait(BLOCK)
             return True, f"{name} released"
 
         _step.__name__ = name

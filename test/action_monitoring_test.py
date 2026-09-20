@@ -106,7 +106,15 @@ gripper_component = None
 
 # --- Helpers for the driver level tests at the end of this file ---------
 
-WAIT = 5.0
+#: How long a test waits for an outcome. Generous on purpose: what is asserted
+#: is which verdict arrives, never how quickly, and a 0.1s timer thread can be
+#: scheduled seconds late on a machine running the whole suite
+WAIT = 15.0
+
+#: How long a dispatch stays in flight when the test is the one that ends it.
+#: Well past every wait above, so a test never races its own blocking step:
+#: one that returns just as the test gives up settles the action behind its back
+BLOCK = 60.0
 
 
 class Verdict:
@@ -228,7 +236,7 @@ def _blocking(release: ThreadingEvent):
     """A dispatch that outlives its timeout, like a goal on a server."""
 
     def _step(**_) -> ActionReturnType:
-        release.wait(WAIT)
+        release.wait(BLOCK)
         return True, "finished eventually"
 
     _step.__name__ = "blocking_step"
@@ -655,7 +663,7 @@ class TestActionAsyncCore(unittest.TestCase):
 
     def test_a_second_run_is_refused_while_one_is_in_flight(self):
         release = ThreadingEvent()
-        action = Action(lambda **_: (release.wait(WAIT), "done"))
+        action = Action(lambda **_: (release.wait(BLOCK), "done"))
 
         first = Verdict()
         action.start(first)
@@ -712,7 +720,7 @@ class TestActionPreemption(unittest.TestCase):
 
     def test_halt_preempts_a_run_in_flight(self):
         release = ThreadingEvent()
-        action = Action(lambda **_: (release.wait(WAIT), "done"))
+        action = Action(lambda **_: (release.wait(BLOCK), "done"))
         verdict = Verdict()
         action.start(verdict)
 
@@ -733,7 +741,7 @@ class TestActionPreemption(unittest.TestCase):
             return True, "arm stopped"
 
         action = Action(
-            lambda **_: (release.wait(WAIT), "done"), cancel_method=_cancel
+            lambda **_: (release.wait(BLOCK), "done"), cancel_method=_cancel
         )
         action.start(Verdict())
         action.halt()
@@ -747,7 +755,7 @@ class TestActionPreemption(unittest.TestCase):
 
         def _slow_failure(**_) -> ActionReturnType:
             calls.append(1)
-            release.wait(WAIT)
+            release.wait(BLOCK)
             return False, "no"
 
         action = Action(_slow_failure, max_retries=5)
