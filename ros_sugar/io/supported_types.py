@@ -48,6 +48,7 @@ from std_msgs.msg import (
 
 from . import callbacks
 from .datatypes import CameraIntrinsics
+from .utils import BYTES_KEY, ROS_MSG_KEY, get_ros_msg_class
 from .utils import _convert_ros_scalar, _split_ros_field_type
 from .utils import bytes_to_array, image_encoding, numpy_to_multiarray, stamp_header
 
@@ -334,6 +335,33 @@ def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
             ) from e
 
     return msg
+
+
+def from_jsonable(value: Any) -> Any:
+    """Rebuild what `utils.to_jsonable` was given.
+
+    Lives here rather than beside its other half because rebuilding a message is
+    `set_ros_msg_from_dict`; the encoding side needs nothing from this module.
+
+    Anything without one of the markers is returned as it arrived, so a plain
+    JSON payload, which is what most callers send, passes through untouched.
+
+    :param value: A decoded JSON value
+    :raises ValueError: If a marked message names a type that cannot be found,
+        or carries fields that do not fit it
+    :rtype: Any
+    """
+    if isinstance(value, dict):
+        if ROS_MSG_KEY in value:
+            return set_ros_msg_from_dict(
+                get_ros_msg_class(value[ROS_MSG_KEY]), value.get("fields") or {}
+            )
+        if BYTES_KEY in value:
+            return base64.b64decode(value[BYTES_KEY])
+        return {key: from_jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [from_jsonable(item) for item in value]
+    return value
 
 
 # SUPPORTED TYPES

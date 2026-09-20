@@ -45,6 +45,57 @@ from ..utils import ActionReturnType, parse_action_result
 from ..launch import logger
 
 
+def _is_sendable(value: Any) -> bool:
+    """Whether a value reaches a component intact.
+
+    Not whether it is JSON: a ROS message, an array or raw bytes are carried as
+    JSON by `to_jsonable` and rebuilt on arrival. This is about what is left
+    over, such as an open socket or an object of a class the component would
+    have to guess at.
+    """
+    try:
+        json.dumps(to_jsonable(value))
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def unroutable_arguments(action) -> Optional[str]:
+    """Why an action's arguments cannot reach its component, or None.
+
+    An action of a component is run by that component, so its arguments are sent
+    to it. ROS messages, arrays and bytes all travel, so what is left is a value
+    written into the recipe that has no representation to send at all: an open
+    socket, a file handle, an instance of a class only this process knows.
+
+    Only the values the recipe wrote are checked. An argument read from a topic
+    is some field of a ROS message, and every one of those can be sent.
+
+    Worth catching before launch rather than at dispatch, because the step that
+    carries it may be a fallback or an on_abort: one that runs only when
+    something has already gone wrong.
+
+    :param action: The action to check, a component action
+    :rtype: Optional[str]
+    """
+    offenders: List[str] = []
+    for index, value in enumerate(action._args):
+        if not _is_sendable(value):
+            offenders.append(f"argument {index} ({type(value).__name__})")
+    for key, value in action._kwargs.items():
+        if not _is_sendable(value):
+            offenders.append(f"'{key}' ({type(value).__name__})")
+
+    if not offenders:
+        return None
+    return (
+        f"Action '{action.action_name}' is run by the component it belongs to, so "
+        f"its arguments are sent to it, and these cannot be: "
+        f"{', '.join(offenders)}. Pass something the component can be given, "
+        "such as a ROS message, a number or a string"
+    )
+
+
 class Monitor(Node):
     """
     Monitor is a ROS2 Node (not Lifecycle) responsible of monitoring the status of the stack (rest of the running nodes) and managing requests/responses from the Orchestrator.
