@@ -218,6 +218,41 @@ class TestRuntimeRegistration(unittest.TestCase):
         assert not found
         assert "declared" in message
 
+    def test_removing_routines_releases_the_topics_their_conditions_read(self):
+        """A caller can name a new condition topic in every routine it adds.
+        Without this, each of them stays subscribed for the life of the node"""
+        topic_name = "go_ahead_once"
+
+        def holding(routine_name: str) -> Routine:
+            condition = Topic(name=topic_name, msg_type="Bool").msg.data.is_true()
+            hold = monitor_node._action_from_spec({
+                "ref": "monitor/wait",
+                "name": "hold",
+                "kwargs": {"duration": 0.0},
+                "success": condition.to_dict(),
+            })
+            return Routine(routine_name, steps=[hold])
+
+        for name in ("holds_first", "holds_second"):
+            assert monitor_node.add_routine(holding(name))[0]
+            assert monitor_node.start_routine(name)[0]
+        # The condition is watched once its step starts
+        assert wait_for(lambda: monitor_node.count_subscribers(topic_name) == 1), (
+            "the condition's topic was never subscribed"
+        )
+
+        # Still read by the other routine
+        assert monitor_node.remove_routine("holds_first", force=True)[0]
+        time.sleep(0.5)
+        assert monitor_node.count_subscribers(topic_name) == 1, (
+            "the topic was released while a routine still reads it"
+        )
+
+        assert monitor_node.remove_routine("holds_second", force=True)[0]
+        assert wait_for(lambda: monitor_node.count_subscribers(topic_name) == 0), (
+            "the topic is still subscribed after the last routine reading it was removed"
+        )
+
     # ---- Events -------------------------------------------------------
 
     def test_an_event_added_at_runtime_fires_its_action(self):
