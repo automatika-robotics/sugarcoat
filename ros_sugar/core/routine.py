@@ -129,6 +129,16 @@ class Routine:
         self._started_at: Optional[float] = None
         self._run_kwargs: Dict = {}
 
+        # What the routine has running right now
+        self._in_flight: Optional[Action] = None
+
+        # Where to resume, after a pause
+        self._resume_at: Optional[int] = None
+
+        # Bumped every time what is in flight is preempted, so an action that
+        # was being dispatched at that moment is stopped rather than missed
+        self._generation = 0
+
         # Triggers arriving while the routine is running. Counted so that an
         # event on a high rate topic reports being ignored once rather than
         # every time a message lands
@@ -195,7 +205,7 @@ class Routine:
         :param host: A node exposing `add_runtime_event_listener`
         """
         self._host = host
-        for action in self.__all_actions():
+        for action in self.actions():
             action.set_host(host)
 
     def set_state_publisher(self, publish: Optional[Callable[[str], None]]) -> None:
@@ -208,8 +218,16 @@ class Routine:
         """
         self._state_publisher = publish
 
-    def __all_actions(self) -> List[Action]:
-        """Every action this routine can run"""
+    def actions(self) -> List[Action]:
+        """Every action this routine can run: its steps, their fallbacks and
+        its terminal actions.
+
+        What a host has to reach to register, verify or tear down a routine:
+        anything in here can be dispatched, so all of it has to be accounted
+        for, not only the steps.
+
+        :rtype: List[Action]
+        """
         actions = list(self.steps)
         actions.extend(step.fallback for step in self.steps if step.fallback)
         actions.extend(a for a in (self.on_complete, self.on_abort) if a)
@@ -221,7 +239,7 @@ class Routine:
         Called when the routine is removed, so the conditions of a routine that
         is gone are not evaluated on every message of their topics.
         """
-        for action in self.__all_actions():
+        for action in self.actions():
             action.stop_watching()
 
     def get_required_topics(self) -> List[Topic]:
@@ -233,7 +251,7 @@ class Routine:
         :rtype: List[Topic]
         """
         unique: Dict[str, Topic] = {}
-        for action in self.__all_actions():
+        for action in self.actions():
             for topic in action.get_required_topics():
                 unique[topic.name] = topic
         return list(unique.values())
@@ -308,6 +326,7 @@ class Routine:
             self._ignored_triggers = 0
             self._status = RoutineStatus.RUNNING
             self._index = 0
+            self._resume_at = None
             self._message = ""
             self._run_kwargs = kwargs
             self._started_at = time.time()
@@ -331,7 +350,9 @@ class Routine:
             step = self.steps[self._index]
             self._status = RoutineStatus.PAUSED
             self._message = f"paused at step '{step.action_name}'"
-        step.halt()
+        # A step being recovered has its fallback in flight, not the step, and
+        # that is what has to stop. Resuming re-enters the step either way
+        self.halt_in_flight()
         info_str = f"Routine '{self.name}' paused at step '{step.action_name}'"
         logger.info(info_str)
         self.__publish_state()
@@ -347,27 +368,99 @@ class Routine:
                 return False, f"Routine '{self.name}' is not paused"
             self._status = RoutineStatus.RUNNING
             self._message = ""
-            index = self._index
-            step_name = self.steps[index].action_name
-        info_str = f"Routine '{self.name}' resumed at step '{step_name}'"
+            # Normally the step that was in flight. If the pause landed between
+            # two steps, the one the routine had got to instead: a step that
+            # already succeeded must not run a second time
+            index = self._index if self._resume_at is None else self._resume_at
+            self._resume_at = None
+            step_name = (
+                self.steps[index].action_name if index < len(self.steps) else None
+            )
+        info_str = (
+            f"Routine '{self.name}' resumed at step '{step_name}'"
+            if step_name
+            else f"Routine '{self.name}' resumed after its last step"
+        )
         logger.info(info_str)
         self.__publish_state()
         self.__enter_step(index)
         return True, info_str
 
-    def abort(self, reason: str = "aborted by request", **_) -> ActionReturnType:
-        """End the routine now, preempting the step in flight and running `on_abort`
+    def abort(
+        self, reason: str = "aborted by request", run_on_abort: bool = True, **_
+    ) -> ActionReturnType:
+        """End the routine now, preempting whatever it is running and running `on_abort`
 
         :param reason: Recorded in the cursor and logged
+        :param run_on_abort: Dispatch the `on_abort` action. A host tearing the
+            routine down passes False: an action dispatched into a node that is
+            going away cannot report back, and would outlive the node it calls
         :rtype: ActionReturnType
         """
         with self._lock:
             if self._status not in (RoutineStatus.RUNNING, RoutineStatus.PAUSED):
                 return False, f"Routine '{self.name}' is not running"
-            step = self.steps[self._index]
-        step.halt()
-        self.__finish(RoutineStatus.ABORTED, reason)
+        self.halt_in_flight()
+        self.__finish(RoutineStatus.ABORTED, reason, run_terminal=run_on_abort)
         return True, f"Routine '{self.name}' aborted: {reason}"
+
+    def halt_in_flight(self) -> None:
+        """Preempt whatever the routine has running right now.
+
+        That is the step, the fallback recovering it, or a terminal action:
+        every one of them is dispatched the same way and can outlive the
+        routine, so every one of them has to be stoppable. Used by `pause` and
+        `abort`, and by a host taking the routine down.
+        """
+        with self._lock:
+            action = self._in_flight
+            self._in_flight = None
+            # An action being dispatched right now is not in flight yet, and
+            # would be missed. The generation tells its dispatch to stop it
+            self._generation += 1
+        if action is not None:
+            # A cancel method that fails is reported by halt() itself
+            action.halt()
+
+    def __dispatch(
+        self,
+        action: Action,
+        on_done: Callable,
+        call_kwargs: Dict,
+        when_running: bool = True,
+    ) -> None:
+        """Start one action as the routine's in-flight action.
+
+        Starting is not instantaneous, and a pause or an abort can land while it
+        happens: before, in which case there is nothing to dispatch, or during,
+        in which case the action is started and then stopped again. Either way
+        nothing is left running behind a routine that has stopped.
+
+        :param when_running: False for a terminal action, which runs precisely
+            because the routine is no longer running
+        """
+        with self._lock:
+            if when_running and self._status != RoutineStatus.RUNNING:
+                return
+            generation = self._generation
+            self._in_flight = action
+
+        action.start(on_done, **call_kwargs)
+
+        with self._lock:
+            preempted = generation != self._generation
+        if preempted:
+            action.halt()
+
+    def __clear_in_flight(self, action: Action) -> None:
+        """Forget a settled action, unless something else is already running.
+
+        Guarded by identity: a verdict arriving late, after the routine has
+        dispatched something else, must not clear that one.
+        """
+        with self._lock:
+            if self._in_flight is action:
+                self._in_flight = None
 
     # ---- The driver --------------------------------------------------------
 
@@ -375,7 +468,12 @@ class Routine:
         """Dispatch step `index`, or finish if the sequence is done"""
         with self._lock:
             if self._status != RoutineStatus.RUNNING:
+                if self._status == RoutineStatus.PAUSED:
+                    # A pause that landed between two steps: this is where the
+                    # routine got to, and where resuming has to pick it up
+                    self._resume_at = index
                 return
+            self._resume_at = None
             done = index >= len(self.steps)
             if not done:
                 self._index = index
@@ -394,7 +492,7 @@ class Routine:
         # Republish the cursor as this step reports progress.
         step.set_feedback_sink(partial(self.__on_step_feedback, index))
         self.__publish_state()
-        step.start(partial(self.__on_step_done, index), **call_kwargs)
+        self.__dispatch(step, partial(self.__on_step_done, index), call_kwargs)
 
     def __on_step_feedback(self, index: int) -> None:
         """A step reported progress: put it in the cursor.
@@ -437,8 +535,10 @@ class Routine:
         step.set_feedback_sink(None)
         if stale or outcome == ActionOutcome.PREEMPTED:
             # The verdict of a step the routine has already moved past, paused
-            # or aborted cannot advance it
+            # or aborted cannot advance it. What is in flight is left alone:
+            # whoever moved the routine on owns it now
             return
+        self.__clear_in_flight(step)
 
         if succeeded:
             logger.info(
@@ -458,9 +558,10 @@ class Routine:
             self.__enter_step(index + 1)
             return
         if step.on_fail == "fallback":
-            step.fallback.start(
+            self.__dispatch(
+                step.fallback,
                 partial(self.__on_fallback_done, index, message),
-                **self.__step_kwargs(),
+                self.__step_kwargs(),
             )
             return
         self.__finish(
@@ -477,6 +578,7 @@ class Routine:
             step = self.steps[index]
         if stale or outcome == ActionOutcome.PREEMPTED:
             return
+        self.__clear_in_flight(step.fallback)
         if recovered:
             logger.warning(
                 f"Routine '{self.name}' step '{step.action_name}' recovered by its "
@@ -490,8 +592,14 @@ class Routine:
             f"({message})",
         )
 
-    def __finish(self, status: RoutineStatus, message: str) -> None:
-        """End the run, publish the final cursor and run the terminal action"""
+    def __finish(
+        self, status: RoutineStatus, message: str, run_terminal: bool = True
+    ) -> None:
+        """End the run, publish the final cursor and run the terminal action
+
+        :param run_terminal: Dispatch `on_complete` / `on_abort`. False when the
+            routine is being taken down with its host
+        """
         with self._lock:
             if self._status.is_terminal():
                 return
@@ -507,15 +615,33 @@ class Routine:
             terminal = self.on_abort
 
         self.__publish_state()
-        if terminal is None:
+        if terminal is None or not run_terminal:
+            if terminal is not None:
+                logger.warning(
+                    f"Routine '{self.name}' is being taken down, so its "
+                    f"on_{'complete' if status == RoutineStatus.COMPLETED else 'abort'} "
+                    f"action '{terminal.action_name}' was not run"
+                )
             return
-        terminal.start(partial(self.__on_terminal_done, status), **call_kwargs)
+        # In flight like any other action, so taking the routine down preempts
+        # it rather than leaving it running against a node that is going away
+        self.__dispatch(
+            terminal,
+            partial(self.__on_terminal_done, status, terminal),
+            call_kwargs,
+            when_running=False,
+        )
 
     def __on_terminal_done(
-        self, status: RoutineStatus, result: ActionReturnType, _outcome: ActionOutcome
+        self,
+        status: RoutineStatus,
+        terminal: Action,
+        result: ActionReturnType,
+        _outcome: ActionOutcome,
     ) -> None:
         """Report an on_complete / on_abort action that did not work"""
         succeeded, message = result
+        self.__clear_in_flight(terminal)
         if succeeded:
             return
         logger.error(
