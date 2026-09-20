@@ -70,6 +70,7 @@ class ServiceClientHandler:
         config: Optional[ServiceClientConfig] = None,
         srv_name: Optional[str] = None,
         srv_type: Optional[type] = None,
+        callback_group: Optional[CallbackGroup] = None,
     ) -> None:
         """
         Init the client
@@ -78,6 +79,10 @@ class ServiceClientHandler:
         :type client_node: Node
         :param config: Service client configuration
         :type srv_name: ServiceClientConfig
+        :param callback_group: Group the responses are processed in, defaults
+            to the node's default group. A client called while that group is
+            busy, for instance from a lifecycle transition, needs its own
+        :type callback_group: Optional[CallbackGroup]
 
         """
         if not config and not srv_name and not srv_type:
@@ -99,7 +104,9 @@ class ServiceClientHandler:
         self.node.get_logger().debug(
             f"creating client for {self.config.name} of type {self.config.srv_type}"
         )
-        self.client = self.node.create_client(self.config.srv_type, self.config.name)
+        self.client = self.node.create_client(
+            self.config.srv_type, self.config.name, callback_group=callback_group
+        )
 
     def send_request_from_dict(
         self,
