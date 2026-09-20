@@ -2369,12 +2369,13 @@ class BaseComponent(lifecycle.Node):
                 callback=self._configure_from_file_srv_callback,
                 callback_group=MutuallyExclusiveCallbackGroup(),
             ),
-            # Run component method
+            # Run component method.
+            # NOTE: Using reentrant, unlike the configuration services above, in order to execute a cancel method and stop
             self.create_service(
                 srv_type=ExecuteMethod,
                 srv_name=f"{self.get_name()}/execute_method",
                 callback=self._execute_method_srv_callback,
-                callback_group=MutuallyExclusiveCallbackGroup(),
+                callback_group=ReentrantCallbackGroup(),
             ),
         ]
 
