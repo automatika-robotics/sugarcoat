@@ -63,7 +63,7 @@ from ..config.base_config import ComponentRunType
 from ..core.action import Action
 from ..core.routine import Routine
 from ..core.component import BaseComponent
-from ..core.monitor import Monitor
+from ..core.monitor import Monitor, unroutable_arguments
 from ..core.event import OnInternalEvent, Event
 from ..core._action_registry import SystemActionRegistry
 from .launch_actions import ComponentLaunchAction
@@ -1105,12 +1105,13 @@ class Launcher:
             self._internal_events.append(event)
 
     def __verify_routine(self, routine: Routine) -> None:
-        """Check that every step of a routine is reachable from the Monitor.
+        """Check that everything a routine runs is reachable from the Monitor.
 
         :param routine: The routine being routed
         :type routine: Routine
-        :raises InvalidAction: If a step targets an unknown component, or one
-            running in its own process, or another routine already uses the name
+        :raises InvalidAction: If an action targets an unknown component, or
+            carries an argument that cannot be sent to it, or another routine
+            already uses the name
         """
         # Names identify a routine in its cursor topic and to the control
         # actions, so two routines cannot share one. The same routine object
@@ -1128,27 +1129,24 @@ class Launcher:
                         "control actions, so they must be unique"
                     )
         known_components = [component.node_name for component in self._components]
-        for step in routine.steps:
-            owner = step.parent_component
+        # Every action the routine can run, not only its steps: a fallback or a
+        # terminal action reaching a component the Monitor cannot call fails the
+        # same way, at the worst possible moment
+        for action in routine.actions():
+            owner = action.parent_component
             if not owner:
                 continue
             if owner not in known_components:
                 raise InvalidAction(
-                    f"Step '{step.action_name}' of routine '{routine.name}' targets "
+                    f"Action '{action.action_name}' of routine '{routine.name}' targets "
                     f"component '{owner}', which is unknown or not added to the Launcher"
                 )
-            if owner in self._pkg_executable:
-                # The Monitor holds an unspun copy of a component that runs in
-                # its own process, so calling its method directly would do
-                # nothing at all. Dispatching such a step over the component's
-                # ExecuteMethod service is the fix; until then this is rejected
-                # rather than silently doing nothing
-                raise InvalidAction(
-                    f"Step '{step.action_name}' of routine '{routine.name}' targets "
-                    f"component '{owner}', which runs in its own process. Routines "
-                    "cannot yet drive components across processes; add that component "
-                    "with multiprocessing=False to run this routine"
-                )
+            # The Monitor dispatches the action over its component's own
+            # service, which is what makes the process the component runs in
+            # irrelevant, and what makes the arguments have to survive JSON
+            reason = unroutable_arguments(action)
+            if reason:
+                raise InvalidAction(f"In routine '{routine.name}': {reason}")
 
     def __rewrite_actions_for_components(
         self,
