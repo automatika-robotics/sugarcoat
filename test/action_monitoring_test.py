@@ -149,9 +149,13 @@ class Verdict:
 
 
 
-def _slow_action(**policy) -> Action:
-    """An action that never settles on its own within the timeout"""
-    return Action(lambda **_: (time.sleep(2.0), (True, "late"))[1], **policy)
+def _slow_action(release: ThreadingEvent, **policy) -> Action:
+    """An action that cannot settle on its own before its timeout.
+
+    It returns only once the test releases it. A fixed sleep raced the timeout
+    instead, and lost whenever the timer thread was not scheduled in time
+    """
+    return Action(_blocking(release), **policy)
 
 
 
@@ -669,17 +673,17 @@ class TestActionAsyncCore(unittest.TestCase):
     def test_a_second_run_is_refused_while_one_is_in_flight(self):
         release = ThreadingEvent()
         action = Action(lambda **_: (release.wait(BLOCK), "done"))
+        try:
+            first = Verdict()
+            action.start(first)
+            assert not first.settled.is_set()
 
-        first = Verdict()
-        action.start(first)
-        assert not first.settled.is_set()
-
-        second = Verdict()
-        action.start(second)
-        assert second.wait(1.0), "The refused run must report immediately"
-        assert "already running" in second.result[1]
-
-        release.set()
+            second = Verdict()
+            action.start(second)
+            assert second.wait(1.0), "The refused run must report immediately"
+            assert "already running" in second.result[1]
+        finally:
+            release.set()
         assert first.wait()
 
 
@@ -687,37 +691,57 @@ class TestActionTimeoutPolicies(unittest.TestCase):
     """What a timeout means, per the on_timeout policy"""
 
     def test_timeout_is_terminal_when_configured_to_fail(self):
+        release = ThreadingEvent()
         verdict = Verdict()
-        _slow_action(timeout=0.2, on_timeout="fail", max_retries=3).start(verdict)
+        try:
+            _slow_action(
+                release, timeout=0.2, on_timeout="fail", max_retries=3
+            ).start(verdict)
 
-        assert verdict.wait()
-        assert verdict.outcome == ActionOutcome.TIMEOUT
-        assert verdict.result[0] is False
+            assert verdict.wait()
+            assert verdict.outcome == ActionOutcome.TIMEOUT
+            assert verdict.result[0] is False
+        finally:
+            release.set()
 
     def test_timeout_can_be_reported_as_success(self):
+        release = ThreadingEvent()
         verdict = Verdict()
-        _slow_action(timeout=0.2, on_timeout="succeed").start(verdict)
+        try:
+            _slow_action(release, timeout=0.2, on_timeout="succeed").start(verdict)
 
-        assert verdict.wait()
-        assert verdict.outcome == ActionOutcome.SUCCESS
-        assert verdict.result[0] is True
+            assert verdict.wait()
+            assert verdict.outcome == ActionOutcome.SUCCESS
+            assert verdict.result[0] is True
+        finally:
+            release.set()
 
     def test_timeout_spends_the_retry_budget_when_configured_to_retry(self):
         calls = []
+        release = ThreadingEvent()
 
         def _slow(**_) -> ActionReturnType:
             calls.append(1)
-            time.sleep(2.0)
+            release.wait(BLOCK)
             return True, "late"
 
         verdict = Verdict()
-        Action(_slow, timeout=0.2, on_timeout="retry", max_retries=1).start(
-            verdict
-        )
+        try:
+            Action(_slow, timeout=0.2, on_timeout="retry", max_retries=1).start(
+                verdict
+            )
 
-        assert verdict.wait()
-        assert len(calls) == 2
-        assert verdict.result[0] is False
+            assert verdict.wait()
+            assert verdict.result[0] is False
+            # The first dispatch and its one retry. The retry runs on a worker
+            # of its own, which may only get to record its call once both
+            # attempts have already timed out, so the call is waited for
+            deadline = time.time() + WAIT
+            while len(calls) < 2 and time.time() < deadline:
+                time.sleep(0.01)
+            assert len(calls) == 2, f"expected 2 dispatches, got {len(calls)}"
+        finally:
+            release.set()
 
 
 class TestActionPreemption(unittest.TestCase):
@@ -726,16 +750,18 @@ class TestActionPreemption(unittest.TestCase):
     def test_halt_preempts_a_run_in_flight(self):
         release = ThreadingEvent()
         action = Action(lambda **_: (release.wait(BLOCK), "done"))
-        verdict = Verdict()
-        action.start(verdict)
+        try:
+            verdict = Verdict()
+            action.start(verdict)
 
-        halted, message = action.halt()
+            halted, message = action.halt()
 
-        assert halted, message
-        assert verdict.wait()
-        assert verdict.outcome == ActionOutcome.PREEMPTED
-        assert verdict.result[0] is False
-        release.set()
+            assert halted, message
+            assert verdict.wait()
+            assert verdict.outcome == ActionOutcome.PREEMPTED
+            assert verdict.result[0] is False
+        finally:
+            release.set()
 
     def test_halt_runs_the_cancel_method(self):
         cancelled = ThreadingEvent()
@@ -748,11 +774,13 @@ class TestActionPreemption(unittest.TestCase):
         action = Action(
             lambda **_: (release.wait(BLOCK), "done"), cancel_method=_cancel
         )
-        action.start(Verdict())
-        action.halt()
+        try:
+            action.start(Verdict())
+            action.halt()
 
-        assert cancelled.is_set()
-        release.set()
+            assert cancelled.is_set()
+        finally:
+            release.set()
 
     def test_a_preempted_run_does_not_retry_or_settle_late(self):
         calls = []
@@ -766,15 +794,22 @@ class TestActionPreemption(unittest.TestCase):
         action = Action(_slow_failure, max_retries=5)
         verdict = Verdict()
         action.start(verdict)
-        while not calls:
-            time.sleep(0.01)
+        try:
+            deadline = time.time() + WAIT
+            while not calls and time.time() < deadline:
+                time.sleep(0.01)
+            assert calls, "the action was never dispatched"
 
-        action.halt()
-        assert verdict.wait()
-        assert verdict.outcome == ActionOutcome.PREEMPTED
+            action.halt()
+            assert verdict.wait()
+            assert verdict.outcome == ActionOutcome.PREEMPTED
+        finally:
+            # Also on a failure above, or the blocked worker is held for BLOCK
+            # seconds and every later test shares a smaller pool
+            release.set()
 
-        # The dispatch is still running: its late failure must not start a retry
-        release.set()
+        # The dispatch was still running, and its late failure must not start
+        # a retry
         time.sleep(0.3)
         assert len(calls) == 1
         assert not action.running
@@ -874,7 +909,7 @@ class TestActionPolicySerialization(unittest.TestCase):
 
     def test_success_condition_round_trips(self):
         g = _Gripper()
-        closed = Topic(name="gripper_closed", msg_type="Bool")
+        closed = Topic(name="monitoring_gripper_closed", msg_type="Bool")
         action = Action(g.close, success=closed.msg.data.is_true(), timeout=3.0)
 
         restored = Action.deserialize_action(action.dictionary, g.close)
@@ -882,7 +917,7 @@ class TestActionPolicySerialization(unittest.TestCase):
         assert restored.is_monitored
         assert restored.success_event is not None
         watched = [t.name for t in restored.success_event.get_involved_topics()]
-        assert watched == ["gripper_closed"]
+        assert watched == ["monitoring_gripper_closed"]
 
     def test_plain_action_round_trips_unmonitored(self):
         g = _Gripper()

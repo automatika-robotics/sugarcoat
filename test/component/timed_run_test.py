@@ -54,7 +54,7 @@ class ChildComponent(BaseComponent):
 @launch_testing.markers.keep_alive
 def generate_test_description():
     # Component publishing to the event topic
-    component = ChildComponent(component_name="test_component")
+    component = ChildComponent(component_name="timed_test_component")
 
     component.loop_rate = 10.0  # Hz
     component.run_type = "Timed"

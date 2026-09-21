@@ -516,10 +516,8 @@ class Recorder:
     def __init__(self) -> None:
         self.calls = []
 
-    def step(self, name: str, succeeds: bool = True, delay: float = 0.0):
+    def step(self, name: str, succeeds: bool = True):
         def _step(**_) -> ActionReturnType:
-            if delay:
-                time.sleep(delay)
             self.calls.append(name)
             return succeeds, f"{name} {'done' if succeeds else 'failed'}"
 
@@ -1142,13 +1140,21 @@ class TestRoutineSequencing(unittest.TestCase):
         assert rec.calls == ["one", "two"]
 
     def test_starting_reports_the_start_not_the_outcome(self):
-        """The routine returns as soon as the first step is dispatched"""
+        """The routine returns as soon as the first step is dispatched.
+
+        The step holds until the test lets it go: one that merely took a while
+        could finish before the next line ran, on a busy enough machine
+        """
         rec = Recorder()
-        routine = Routine("slow", steps=[Action(rec.step("one", delay=0.3))])
-        success, message = routine()
-        assert success
-        assert "started" in message
-        assert routine.state["status"] == RoutineStatus.RUNNING
+        release = ThreadingEvent()
+        routine = Routine("slow", steps=[Action(rec.blocking("one", release))])
+        try:
+            success, message = routine()
+            assert success
+            assert "started" in message
+            assert routine.state["status"] == RoutineStatus.RUNNING
+        finally:
+            release.set()
         assert wait_until_done(routine) == RoutineStatus.COMPLETED
 
     def test_a_step_can_be_renamed_for_the_cursor(self):
@@ -1254,12 +1260,16 @@ class TestRoutineControl(unittest.TestCase):
 
     def test_triggering_a_running_routine_is_ignored(self):
         rec = Recorder()
-        routine = Routine("pick", steps=[Action(rec.step("slow", delay=0.4))])
-        routine()
-        success, message = routine()
+        release = ThreadingEvent()
+        routine = Routine("pick", steps=[Action(rec.blocking("slow", release))])
+        try:
+            routine()
+            success, message = routine()
 
-        assert success
-        assert "already running" in message
+            assert success
+            assert "already running" in message
+        finally:
+            release.set()
         assert wait_until_done(routine) == RoutineStatus.COMPLETED
         assert rec.calls == ["slow"]
 
@@ -1914,13 +1924,14 @@ class FakeClient:
         self._listeners = set()
 
     # -- the bits the step calls
-    def send_request(self, goal) -> bool:
+    def send_request(self, goal, still_wanted=None) -> bool:
+        if still_wanted is not None and not still_wanted():
+            return False
         self.sent.append(goal)
         return self.accept
 
-    def send_request_from_dict(self, fields) -> bool:
-        self.sent.append(fields)
-        return self.accept
+    def send_request_from_dict(self, fields, still_wanted=None) -> bool:
+        return self.send_request(fields, still_wanted)
 
     def add_feedback_listener(self, listener):
         self._listeners.add(listener)
@@ -2256,6 +2267,126 @@ class TestGoalHandover(unittest.TestCase):
             "a rejected goal left the client claimed, so nothing else can send"
         )
 
+    def test_a_caller_that_stops_while_it_waits_sends_nothing(self):
+        """A step paused while the goal before it is still stopping. Sent once
+        the client came free, its goal would start after the pause, with
+        nothing watching it"""
+        self._goal_is_running()
+        self.handler.config.feedback_check_timeout = WAIT
+        wanted = threading.Event()
+        wanted.set()
+        outcome = []
+        sender = threading.Thread(
+            target=lambda: outcome.append(
+                self.handler.send_request(
+                    SimpleNamespace(), still_wanted=wanted.is_set
+                )
+            )
+        )
+        sender.start()
+        time.sleep(0.1)
+
+        wanted.clear()
+        # And the goal before it ends just then
+        self.handler.action_result_callback(
+            _future(SimpleNamespace(status=GoalStatus.STATUS_CANCELED, result=None))
+        )
+        sender.join(WAIT)
+
+        assert outcome == [False], "the goal was sent after its caller stopped"
+        assert not self.handler._goal_in_flight, "the client was left claimed"
+
+
+class HandoverClient(FakeClient):
+    """A client whose last goal is still stopping, as ActionClientHandler has
+    it: a new goal waits for that one to end, and its end reaches every
+    listener already registered on the client"""
+
+    def __init__(self):
+        super().__init__()
+        #: Set by the test when the goal before ends
+        self.previous_ends = threading.Event()
+        self._previous_running = True
+        self._handover = threading.Lock()
+
+    def send_request_from_dict(self, fields, still_wanted=None) -> bool:
+        self.previous_ends.wait(WAIT)
+        with self._handover:
+            if self._previous_running:
+                self._previous_running = False
+                self.action_returned = True
+                self.action_status = GoalStatus.STATUS_CANCELED
+                self._notify()
+            if still_wanted is not None and not still_wanted():
+                return False
+            # Claimed: this goal starts from a clean slate
+            self.action_returned = False
+            self.action_status = GoalStatus.STATUS_UNKNOWN
+            self.sent.append(fields)
+            return True
+
+
+class TestGoalAfterGoal(unittest.TestCase):
+    """A step sending on a client whose last goal is still stopping.
+
+    The ordinary case, not an edge: a pause cancels the goal without waiting,
+    and resuming, retrying or running on_abort sends the next one straight
+    away, while a planner notices a cancel only once per loop.
+    """
+
+    @staticmethod
+    def _step(client) -> ActionServerGoal:
+        step = ActionServerGoal(component="planner", goal={"x": 1.0}, name="go")
+        step.set_host(FakeHost(client))
+        return step
+
+    def test_the_goal_is_followed_to_its_own_end(self):
+        """The goal before ends while this one waits, and says so to this step.
+        Read as this goal's end, the step failed at once with no status while
+        its goal drove on"""
+        client = HandoverClient()
+        settled, done = _run(self._step(client))
+        time.sleep(0.1)
+
+        client.previous_ends.set()
+
+        assert not done.wait(0.5), f"settled before its goal ended: {settled}"
+        client.finish(GoalStatus.STATUS_SUCCEEDED)
+        assert done.wait(WAIT)
+        assert settled["result"][0] is True, settled
+
+    def test_a_step_stopped_while_it_waits_sends_nothing(self):
+        client = HandoverClient()
+        step = self._step(client)
+        _run(step)
+        time.sleep(0.1)
+
+        step.halt()
+        client.previous_ends.set()
+
+        time.sleep(0.5)
+        assert client.sent == [], "the goal was sent after the step was stopped"
+
+    def test_resuming_sends_the_goal_once(self):
+        """Pause and resume start the same step again while the paused
+        attempt's worker is still waiting. Only the new attempt may send"""
+        client = HandoverClient()
+        step = self._step(client)
+        _run(step)
+        time.sleep(0.1)
+        step.halt()
+        settled, done = _run(step)
+        time.sleep(0.1)
+
+        client.previous_ends.set()
+
+        assert wait_for(lambda: client.sent)
+        time.sleep(0.3)
+        assert len(client.sent) == 1, f"sent {len(client.sent)} goals"
+        client.finish(GoalStatus.STATUS_SUCCEEDED)
+        assert done.wait(WAIT)
+        assert settled["result"][0] is True, settled
+
 
 class TestGoalVerdict(unittest.TestCase):
     """Verdict from the server"""
@@ -2294,7 +2425,7 @@ class TestGoalVerdict(unittest.TestCase):
         rather than returning nothing, which read as a refused goal"""
         client = FakeClient()
 
-        def _refuse(fields):
+        def _refuse(fields, **_):
             raise ValueError(
                 "Invalid value for field 'x' (double): expected a number, got True"
             )

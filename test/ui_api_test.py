@@ -1068,9 +1068,10 @@ def test_a_command_stream_from_another_site_is_refused():
 # UI node lifecycle
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def ui_node():
+def ui_node(request):
     """A real, activated UI node with one service and one action client, neither
-    of which has a server running."""
+    of which has a server running. Named after the test, since a lifecycle node
+    stays in the graph once destroyed"""
     import rclpy
     from std_srvs.srv import Trigger
     from tf2_msgs.action import LookupTransform
@@ -1081,6 +1082,7 @@ def ui_node():
     if not rclpy.ok():
         rclpy.init()
     node = UINode(
+        component_name=f"ui_{request.node.name}",
         config=UINodeConfig(),
         inputs=[
             ServiceClientConfig(srv_type=Trigger, name="ui_node_test/reset"),
@@ -1109,35 +1111,56 @@ def test_enable_ui_rejects_an_output_type_without_a_callback(monkeypatch):
 
 def test_slow_output_content_does_not_block_other_requests():
     """Computing an output's content (e.g. a JPEG encode) must not hold up
-    the rest of the server, for a latest read or a stream"""
+    the rest of the server, for a latest read or a stream.
+
+    The content is held until the test lets it go, and another request has to
+    be answered in the meantime. Timing that request instead failed whenever
+    the machine was busy enough to slow it down on its own
+    """
     import threading
-    import time
 
     node = _ApiNode()
+    entered = threading.Event()
+    release = threading.Event()
 
-    def _slow_latest(name):
-        time.sleep(1.0)
+    def _held_latest(name):
+        entered.set()
+        release.wait(10.0)
         return {"data": 1}
 
-    node.get_latest_output = _slow_latest
+    node.get_latest_output = _held_latest
 
-    def _health_secs(client):
-        start = time.monotonic()
-        assert client.get("/api/health").status_code == 200
-        return time.monotonic() - start
+    def _answered_meanwhile(client) -> bool:
+        """Whether /api/health answers while the content is still held"""
+        answers = []
+        asker = threading.Thread(
+            target=lambda: answers.append(client.get("/api/health").status_code),
+            daemon=True,
+        )
+        asker.start()
+        asker.join(5.0)
+        return answers == [200]
 
     with _make_client(node) as client:  # one event loop for all requests
         reader = threading.Thread(
             target=client.get, args=("/api/outputs/map/latest",), daemon=True
         )
         reader.start()
-        time.sleep(0.2)
-        assert _health_secs(client) < 0.5
-        reader.join()
+        assert entered.wait(5.0), "the latest read never got to the content"
+        try:
+            assert _answered_meanwhile(client), "a latest read held up the server"
+        finally:
+            release.set()
+            reader.join()
 
+        entered.clear()
+        release.clear()
         with client.websocket_connect("/api/outputs/map"):  # a sampled stream
-            time.sleep(0.2)
-            assert _health_secs(client) < 0.5
+            assert entered.wait(5.0), "the stream never got to the content"
+            try:
+                assert _answered_meanwhile(client), "a stream held up the server"
+            finally:
+                release.set()
 
 
 def test_action_duration_has_fractions_of_a_second(ui_node):
@@ -1153,10 +1176,17 @@ def test_action_duration_has_fractions_of_a_second(ui_node):
         return MagicMock()
 
     handler.client.send_goal_async = _accept
+    started = time.monotonic()
     assert handler.send_request(handler.config.action_type.Goal())
     time.sleep(0.3)
 
-    assert 0.3 <= handler.get_ui_elements()["duration_secs"] < 1.0
+    duration = handler.get_ui_elements()["duration_secs"]
+    elapsed = time.monotonic() - started
+    # Between the sleep and the time that really went by, however busy the
+    # machine was, and not rounded to whole seconds. The small margin covers
+    # the node's clock and this one being read a moment apart
+    assert 0.3 <= duration <= elapsed + 0.05
+    assert duration != round(duration)
     handler.reset()
 
 
@@ -1195,6 +1225,7 @@ def test_a_real_ui_node_reports_values_its_fields_cannot_hold():
     if not rclpy.ok():
         rclpy.init()
     node = UINode(
+        component_name="ui_field_errors",
         config=UINodeConfig(),
         inputs=[
             Topic(name="ui_node_test/flag", msg_type="Bool"),

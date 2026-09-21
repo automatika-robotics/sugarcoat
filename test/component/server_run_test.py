@@ -98,18 +98,20 @@ class CountingComponent(BaseComponent):
 @launch_testing.markers.keep_alive
 def generate_test_description():
     # Component publishing to the event topic
-    component = ChildComponent(component_name="test_component")
+    component = ChildComponent(component_name="server_test_component")
 
     component.loop_rate = 10.0  # Hz
     component.run_type = ComponentRunType.SERVER
 
     # health status topic
-    status_topic = Topic(name="test_component/status", msg_type="ComponentStatus")
+    status_topic = Topic(
+        name="server_test_component/status", msg_type="ComponentStatus"
+    )
 
     # Dummy event to send an automatic service call to the component main service post launch
     event_on_health_status = Event(status_topic, handle_once=True)
     srv_call = actions.send_srv_request(
-        srv_name="test_component/set_map",
+        srv_name="server_test_component/set_map",
         srv_request_msg=SetMap.Request(),
         srv_type=SetMap,
     )

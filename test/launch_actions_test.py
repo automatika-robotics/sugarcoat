@@ -27,9 +27,13 @@ from ros_sugar.launch.launch_actions import ComponentLaunchAction
 
 
 @pytest.fixture
-def running_action():
-    """A component spinning in its executor thread, the way launch runs it."""
-    component = BaseComponent(component_name="launch_action_component")
+def running_action(request):
+    """A component spinning in its executor thread, the way launch runs it.
+
+    Named after the test: a lifecycle node stays in the graph once destroyed,
+    so each test's component is apart from the one before
+    """
+    component = BaseComponent(component_name=f"launch_action_{request.node.name}")
     action = ComponentLaunchAction(node=component, name=component.node_name)
     context = LaunchContext()
     action.execute(context)
@@ -115,12 +119,14 @@ def test_a_failed_launch_exits_non_zero(tmp_path):
             """
         )
     )
-    # The recipe imports this checkout, on its own ROS domain
+    # The recipe imports this checkout, on a ROS domain apart from the suite's,
+    # where the nodes earlier tests left in the graph cannot reach it
     repo = str(Path(ros_sugar.__file__).parents[1])
+    suite_domain = int(os.environ.get("ROS_DOMAIN_ID", "0"))
     env = dict(
         os.environ,
         PYTHONPATH=os.pathsep.join(filter(None, [repo, os.environ.get("PYTHONPATH")])),
-        ROS_DOMAIN_ID="65",
+        ROS_DOMAIN_ID=str(suite_domain % 101 + 1),
     )
 
     proc = subprocess.run(

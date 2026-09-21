@@ -49,8 +49,8 @@ class _DriverPlugin(RobotPlugin):
             ),
         }
         self.commands = {
-            "cmd_vel": RobotCommand(
-                key="cmd_vel", msg_type=Twist, transport=transport,
+            "processes_cmd_vel": RobotCommand(
+                key="processes_cmd_vel", msg_type=Twist, transport=transport,
                 encoder=lambda out: b"",
             )
         }
@@ -129,11 +129,14 @@ def test_demand_resolves_by_unique_type_fallback():
 def test_demand_resolves_commands_from_out_topics():
     plugin = _DriverPlugin()
     comp = _FakeComponent(
-        "a", out_topics=[Topic(name="cmd_vel", msg_type="Twist", use_plugin=True)]
+        "a",
+        out_topics=[
+            Topic(name="processes_cmd_vel", msg_type="Twist", use_plugin=True)
+        ],
     )
     _launcher_with(plugin, [comp])._resolve_plugin_demand()
 
-    assert plugin.requested_commands == frozenset({"cmd_vel"})
+    assert plugin.requested_commands == frozenset({"processes_cmd_vel"})
     assert plugin.requested_feedbacks == frozenset()
 
 
@@ -221,7 +224,10 @@ def test_declared_driver_becomes_a_launch_action(driver_installed):
 def test_no_driver_when_no_component_wants_the_feedback():
     plugin = _DriverPlugin()
     comp = _FakeComponent(
-        "a", out_topics=[Topic(name="cmd_vel", msg_type="Twist", use_plugin=True)]
+        "a",
+        out_topics=[
+            Topic(name="processes_cmd_vel", msg_type="Twist", use_plugin=True)
+        ],
     )
     launcher = _launcher_with(plugin, [comp])
     launcher._resolve_plugin_demand()

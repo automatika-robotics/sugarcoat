@@ -29,7 +29,7 @@ from ros_sugar.core import BaseComponent, Monitor
 from ros_sugar.io import Topic
 from ros_sugar.utils import ActionReturnType, component_action
 
-READING_TOPIC = "reading"
+READING_TOPIC = "api_reading"
 
 # What the driver was asked to do, so a registration can be shown to have acted
 driver_calls = []
@@ -90,14 +90,14 @@ def generate_test_description():
     launcher = Launcher()
     launcher.add_pkg(
         components=[
-            DriverComponent(component_name="driver"),
+            DriverComponent(component_name="api_driver"),
             # Named apart from the counter in routine_test: both modules run in
             # one process and one ROS domain, and a component stays in the
             # graph by name after its launch ends, for as long as the process
             # lives. The Monitor takes a component it finds there as up, so it
             # could act on the one nothing answers any more
             CountingComponent(component_name="api_counter"),
-            ReadingPublisher(component_name="publisher", outputs=[reading_topic]),
+            ReadingPublisher(component_name="api_publisher", outputs=[reading_topic]),
         ]
     )
     launcher.setup_launch_description()
@@ -169,7 +169,7 @@ class TestRuntimeApi(unittest.TestCase):
         response = self.call("list_actions")
         assert response.success, response.error_msg
         refs = {entry["ref"] for entry in json.loads(response.response_json)}
-        assert "driver/note" in refs
+        assert "api_driver/note" in refs
         assert "api_counter/count" in refs
         assert "monitor/start_routine" in refs
 
@@ -188,9 +188,17 @@ class TestRuntimeApi(unittest.TestCase):
             routine={
                 "name": "over_the_wire",
                 "steps": [
-                    {"ref": "driver/note", "kwargs": {"value": "one"}, "name": "first"},
+                    {
+                        "ref": "api_driver/note",
+                        "kwargs": {"value": "one"},
+                        "name": "first",
+                    },
                     {"ref": "api_counter/count", "goal": {"target_frame": "2"}, "name": "count"},
-                    {"ref": "driver/note", "kwargs": {"value": "two"}, "name": "last"},
+                    {
+                        "ref": "api_driver/note",
+                        "kwargs": {"value": "two"},
+                        "name": "last",
+                    },
                 ],
             },
         )
@@ -246,7 +254,7 @@ class TestRuntimeApi(unittest.TestCase):
                 "condition": (reading.msg.data > 1.0).to_dict(),
                 "handle_once": True,
             },
-            actions={"ref": "driver/note", "kwargs": {"value": "from_service"}},
+            actions={"ref": "api_driver/note", "kwargs": {"value": "from_service"}},
             event_id="reading_high",
         )
         assert response.success, response.error_msg
@@ -263,9 +271,17 @@ class TestRuntimeApi(unittest.TestCase):
             routine={
                 "name": "dwells",
                 "steps": [
-                    {"ref": "driver/note", "kwargs": {"value": "before"}, "name": "before"},
+                    {
+                        "ref": "api_driver/note",
+                        "kwargs": {"value": "before"},
+                        "name": "before",
+                    },
                     {"ref": "monitor/wait", "kwargs": {"duration": 1.0}, "name": "dwell"},
-                    {"ref": "driver/note", "kwargs": {"value": "after"}, "name": "after"},
+                    {
+                        "ref": "api_driver/note",
+                        "kwargs": {"value": "after"},
+                        "name": "after",
+                    },
                 ],
             },
         )
@@ -292,10 +308,10 @@ class TestRuntimeApi(unittest.TestCase):
     def test_an_unknown_action_ref_lists_what_the_component_offers(self):
         response = self.call(
             "add_routine",
-            routine={"name": "bad_ref", "steps": [{"ref": "driver/fly"}]},
+            routine={"name": "bad_ref", "steps": [{"ref": "api_driver/fly"}]},
         )
         assert not response.success
-        assert "driver/note" in response.error_msg
+        assert "api_driver/note" in response.error_msg
 
     def test_a_step_naming_nothing_is_refused(self):
         response = self.call(
@@ -344,7 +360,7 @@ class TestRuntimeApi(unittest.TestCase):
         response = self.call(
             "add_event",
             event={"handle_once": True},
-            actions={"ref": "driver/note"},
+            actions={"ref": "api_driver/note"},
             event_id="impossible",
         )
         assert not response.success

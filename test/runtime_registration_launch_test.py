@@ -25,7 +25,7 @@ from ros_sugar.core import Action, BaseComponent, Event, Routine
 from ros_sugar.io import Topic
 from ros_sugar.utils import ActionReturnType, component_action
 
-READING_TOPIC = "reading"
+READING_TOPIC = "registration_reading"
 
 # What the driver was asked to do, in order
 driver_calls = []
@@ -63,8 +63,10 @@ def idle_step(**_) -> ActionReturnType:
 @launch_testing.markers.keep_alive
 def generate_test_description():
     reading_topic = Topic(name=READING_TOPIC, msg_type="Float32")
-    publisher = ReadingPublisher(component_name="publisher", outputs=[reading_topic])
-    driver = DriverComponent(component_name="driver")
+    publisher = ReadingPublisher(
+        component_name="registration_publisher", outputs=[reading_topic]
+    )
+    driver = DriverComponent(component_name="registration_driver")
 
     # Declared so the Monitor has a routine from the recipe to contrast with
     declared = Routine("declared", steps=[Action(method=idle_step)])
@@ -105,7 +107,7 @@ def reading_topic() -> Topic:
 def note_step(name: str, value=None) -> Action:
     """A step that calls the driver, built the way a caller would"""
     return monitor_node._action_from_spec({
-        "ref": "driver/note",
+        "ref": "registration_driver/note",
         "kwargs": {"value": value} if value is not None else {},
         "name": name,
     })
@@ -140,7 +142,7 @@ class TestRuntimeRegistration(unittest.TestCase):
         reading = Topic(name=READING_TOPIC, msg_type="Float32")
         step = Action(
             monitor_node._executable_for(
-                monitor_node._action_registry.get("driver/note")
+                monitor_node._action_registry.get("registration_driver/note")
             ),
             kwargs={"value": reading.msg.data},
             name="from_topic",
@@ -200,17 +202,18 @@ class TestRuntimeRegistration(unittest.TestCase):
     def test_a_running_routine_is_kept_unless_forced(self):
         """Removing one mid-step would leave what it started unwatched"""
         slow = Routine(
-            "slow", steps=[note_step("wait"), Action(method=idle_step, timeout=30.0)]
+            "slow_to_remove",
+            steps=[note_step("wait"), Action(method=idle_step, timeout=30.0)],
         )
         assert monitor_node.add_routine(slow)[0]
-        assert monitor_node.start_routine("slow")[0]
-        assert wait_for(lambda: routine_state("slow")["status"] == "running")
+        assert monitor_node.start_routine("slow_to_remove")[0]
+        assert wait_for(lambda: routine_state("slow_to_remove")["status"] == "running")
 
-        found, message = monitor_node.remove_routine("slow")
+        found, message = monitor_node.remove_routine("slow_to_remove")
         assert not found
         assert "force" in message
 
-        found, message = monitor_node.remove_routine("slow", force=True)
+        found, message = monitor_node.remove_routine("slow_to_remove", force=True)
         assert found, message
 
     def test_removing_an_unknown_routine_says_which_exist(self):
@@ -260,7 +263,7 @@ class TestRuntimeRegistration(unittest.TestCase):
         reading = Topic(name=READING_TOPIC, msg_type="Float32")
         action = Action(
             monitor_node._executable_for(
-                monitor_node._action_registry.get("driver/note")
+                monitor_node._action_registry.get("registration_driver/note")
             ),
             kwargs={"value": "from_event"},
             name="on_reading",
@@ -281,7 +284,7 @@ class TestRuntimeRegistration(unittest.TestCase):
         reading = Topic(name=READING_TOPIC, msg_type="Float32")
         action = Action(
             monitor_node._executable_for(
-                monitor_node._action_registry.get("driver/note")
+                monitor_node._action_registry.get("registration_driver/note")
             ),
             kwargs={"value": "transient"},
             name="transient",
@@ -418,5 +421,5 @@ class TestRuntimeRegistration(unittest.TestCase):
         found, payload = monitor_node.list_actions()
         assert found
         refs = {entry["ref"] for entry in json.loads(payload)}
-        assert "driver/note" in refs
+        assert "registration_driver/note" in refs
         assert "monitor/start_routine" in refs
