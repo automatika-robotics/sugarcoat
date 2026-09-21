@@ -293,15 +293,7 @@ class Event:
             self._action_condition: Optional[BaseAction] = None
             self._is_action_based: bool = False
             self.check_rate: Optional[float] = None
-            self._condition = Condition(
-                topic_name=event_condition.name,
-                topic_msg_type=event_condition.msg_type.__name__,
-                topic_qos_config=event_condition.qos_profile.to_dict(),
-                topic_use_plugin=event_condition.use_plugin,
-                attribute_path=[],
-                operator_func=None,
-                ref_value=None,
-            )
+            self._condition = Condition.on_any(event_condition)
             self._on_any = True
         # Case 3: Callable-based polling: action return value is the boolean condition
         elif isinstance(event_condition, Callable):

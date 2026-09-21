@@ -290,15 +290,7 @@ class Action(BaseAction):
             return success
         if isinstance(success, Topic):
             # Topic = On Any
-            return Condition(
-                topic_name=success.name,
-                topic_msg_type=success.msg_type.__name__,
-                topic_qos_config=success.qos_profile.to_dict(),
-                topic_use_plugin=success.use_plugin,
-                attribute_path=[],
-                operator_func=None,
-                ref_value=None,
-            )
+            return Condition.on_any(success)
         raise TypeError(
             "'success' must be a Condition on a Topic (e.g. topic.msg.data.is_true()) "
             f"or a Topic, got {type(success)}"
@@ -953,15 +945,7 @@ class ActionServerGoal(Action):
         if success is None or isinstance(success, Condition):
             return success
         if isinstance(success, Topic):
-            return Condition(
-                topic_name=success.name,
-                topic_msg_type=success.msg_type.__name__,
-                topic_qos_config=success.qos_profile.to_dict(),
-                topic_use_plugin=success.use_plugin,
-                attribute_path=[],
-                operator_func=None,
-                ref_value=None,
-            )
+            return Condition.on_any(success)
         raise TypeError(
             f"'success' must be a Condition or a Topic, got {type(success)}"
         )
