@@ -189,7 +189,8 @@ class Gripper(BaseComponent):
 ```
 
 `ActionReturnType` is a plain alias for `Tuple[bool, str]` — actions return an ordinary tuple, nothing
-more. An action that needs to return something structured serializes it into the string:
+more. The annotation is read by shape, so `tuple[bool, str]`, `Tuple[bool, str]` and the alias are all
+accepted, quoted or not. An action that needs to return something structured serializes it into the string:
 
 ```python
     @component_action
@@ -209,14 +210,14 @@ Launcher `@action_handler` returns ROS launch entities.
 :::
 
 ```python
-from ros_sugar.utils import component_action
+from ros_sugar.utils import ActionReturnType, component_action
 
 class Navigator(BaseComponent):
     # Basic usage
     @component_action
-    def stop(self) -> bool:
+    def stop(self) -> ActionReturnType:
         self.cmd_vel_publisher.publish(Twist())
-        return True
+        return True, "Stopped"
 
     # With an OpenAI-compatible tool description (for LLM orchestration)
     @component_action(description={

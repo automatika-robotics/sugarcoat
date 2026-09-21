@@ -86,6 +86,22 @@ def main_action_callback(self, goal_handle):
     return result
 ```
 
+**One goal at a time.** A new goal is rejected while another is ongoing, rather than replacing it: a component executing a motion should finish or be stopped, not have a second motion started on top of it. A goal counts as ongoing until its callback returns, not merely until it reaches a terminal state, so the cleanup of one goal never overlaps the start of the next.
+
+To stop the ongoing goal without holding its handle, the component offers `cancel_main_goal` as an ordinary component action. It is therefore reachable everywhere a component action is: from an event, as a routine step, over the runtime API, from the UI, and as an LLM tool.
+
+```python
+launcher.on(obstacle_detected, Action(my_component.cancel_main_goal))
+```
+
+The same operation is also served as a plain `std_srvs/Trigger` service, for a terminal or a node that knows nothing about this framework:
+
+```bash
+ros2 service call /my_component/cancel_main_action std_srvs/srv/Trigger
+```
+
+Finding nothing to cancel is a **success**: what the caller asked for is that no goal is running, and none is, so a routine step that stops a component does not fail because it had already stopped. A goal that has been cancelled but whose callback has not returned reports success with "the ongoing goal is already stopping": that is the window in which new goals are still refused. Only a component whose run type is `ACTION_SERVER` advertises the action.
+
 ### `main_service_callback()` — SERVER mode
 
 Called when a service request is received. Required when `run_type == ComponentRunType.SERVER`:
@@ -314,6 +330,8 @@ class MyComponent(BaseComponent):
 
 - `@component_action`: Validates lifecycle state before execution. **Must be annotated to return `Tuple[bool, str]`** (aliased as `ActionReturnType`) — the bool reports success, the string carries a result or an error message. When an action is invoked remotely through the `ExecuteMethod` service, the bool becomes the response's `success`; see the [built-in services](../advanced/srvs.md).
 - `@component_fallback`: Validates the component is in a valid state (active, inactive, or activating).
+
+A fallback action is a **plain** action. Declaring one as a monitored `Action` — with `success`, `timeout`, `max_retries` or `cancel_method` — is refused where it is set, because a fallback runs from the fallback loop when the component has already failed, with nothing there to watch a success condition or to run retries. A recovery that needs those belongs in a `Routine`, whose steps can be monitored and can have fallbacks of their own.
 
 ### Tool Descriptions for LLM Orchestration
 
