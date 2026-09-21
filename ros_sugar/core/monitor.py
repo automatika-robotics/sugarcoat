@@ -1476,8 +1476,12 @@ class Monitor(Node):
         2. Re-evaluates all events that depend on this topic
 
         Guarded by ``_blackboard_lock`` so ROS executor callbacks and robot
-        plugin feedback-bus ingress threads do not race on the blackboard.
+        plugin feedback-bus ingress threads do not race on the blackboard. The
+        guard covers reading the blackboard, not evaluating what was read: held
+        across evaluation, one slow condition stalled every other topic the
+        Monitor watches.
         """
+        to_evaluate = []
         with self._blackboard_lock:
             # Update Blackboard
             self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
@@ -1502,9 +1506,12 @@ class Monitor(Node):
                     )
                     if valid_entry:
                         clean_cache_subset[topic.name] = valid_entry
-                # Pass the clean subset to the event
                 if not event._is_action_based:
-                    event.check_condition(clean_cache_subset)
+                    to_evaluate.append((event, clean_cache_subset))
+
+        # Pass each event the clean subset it was given, outside the lock
+        for event, clean_cache_subset in to_evaluate:
+            event.check_condition(clean_cache_subset)
 
     def register_external_topic(self, topic: Topic) -> None:
         """Register a topic fed by a robot plugin feedback bus rather than a ROS

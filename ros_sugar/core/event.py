@@ -2,8 +2,10 @@
 
 import inspect
 import json
+import threading
 import time
 import uuid
+from functools import partial
 from attrs import define, field
 from typing import Any, Callable, Dict, List, Union, Optional
 from launch.event import Event as ROSLaunchEvent
@@ -12,6 +14,7 @@ from copy import copy
 from concurrent.futures import ThreadPoolExecutor
 
 from ..io.topic import Topic
+
 # NOTE: events build on BaseAction, never on the full Action: the full class
 # watches its success condition *as* an Event, so importing it here would be a
 # cycle. Everything an event does with an action is base surface, and a
@@ -279,6 +282,15 @@ class Event:
         self._on_any: bool = False
         self._previous_trigger = None
         self.__under_processing = False
+
+        # NOTE: The event stays under processing until the last one of the actions reports, so it
+        # does not fire again on top of an action still running
+        self.__outstanding = (
+            0  # Monitored actions dispatched for this trigger and not settled yet.
+        )
+        self._outstanding_lock = threading.Lock()
+        # One evaluation of this event at a time, whichever topic arrived
+        self._evaluation_lock = threading.Lock()
         self._processed_once: bool = False
 
         # Case 1: Init from Condition Expression (topic.msg.data > 5)
@@ -496,14 +508,40 @@ class Event:
                 self._async_action_wrapper, global_topic_cache
             )
 
+    def __getstate__(self) -> Dict:
+        """What of this event travels, leaving its locks behind.
+
+        An event is deep-copied when a component reads its events back from
+        JSON, and carried to a component in another process. A lock is neither
+        copyable nor picklable, and means nothing on the other side anyway.
+        """
+        state = self.__dict__.copy()
+        state.pop("_outstanding_lock", None)
+        state.pop("_evaluation_lock", None)
+        return state
+
+    def __setstate__(self, state: Dict) -> None:
+        """Rebuild the copy's own locks, which guard only its own state"""
+        self.__dict__.update(state)
+        self._outstanding_lock = threading.Lock()
+        self._evaluation_lock = threading.Lock()
+
     def _async_action_wrapper(self, global_topic_cache: Dict) -> None:
         """
         The actual execution logic running in the background thread.
         Handles the execution, delay, and flag resetting.
         """
+        monitored: List[BaseAction] = []
         try:
             # Execute all actions
             for action in self._registered_on_trigger_actions:
+                if isinstance(action, BaseAction) and getattr(
+                    action, "is_monitored", False
+                ):
+                    # Waiting here for its verdict would park this worker, and
+                    # the verdict itself arrives through this same pool
+                    monitored.append(action)
+                    continue
                 result = action(topics=global_topic_cache)
                 # This is the one funnel every event-triggered action passes
                 # through, so it is where a reported failure finally gets
@@ -525,11 +563,39 @@ class Event:
         except Exception as e:
             logger.error(f"Error executing actions for event '{self}': {e}")
         finally:
-            # Reset the flag only after work + delay are done
-            self.under_processing = False
             # NOTE: We set this to true even if the consequent action failed
             # with an error
             self._processed_once = True
+            if not monitored:
+                # Reset the flag only after work + delay are done
+                self.under_processing = False
+
+        # Counted before any of them starts: one that settles at once must not
+        # clear the flag while the rest are still being dispatched
+        with self._outstanding_lock:
+            self.__outstanding = len(monitored)
+        for action in monitored:
+            action.start(
+                partial(self.__on_monitored_settled, action),
+                topics=global_topic_cache,
+            )
+
+    def __on_monitored_settled(self, action, result, _outcome) -> None:
+        """Report what a dispatched action ended up doing, and free the event.
+
+        The event is under processing until the last of them reports, so a
+        repeating trigger cannot start an action that is still running.
+        """
+        succeeded, message = result
+        if not succeeded:
+            logger.error(
+                f"Action '{action.action_name}' failed for event '{self}': {message}"
+            )
+        with self._outstanding_lock:
+            self.__outstanding -= 1
+            done = self.__outstanding <= 0
+        if done:
+            self.under_processing = False
 
     def register_actions(
         self, actions: Union[BaseAction, Callable, List[Union[BaseAction, Callable]]]
@@ -558,7 +624,19 @@ class Event:
         """
         Replaces existing trigger logic.
         Evaluates the root Condition tree against the global cache.
+
+        Serialized per event: its host no longer holds one lock across every
+        event it owns, so two topics of this event's own can arrive at once,
+        and deciding whether it fires reads and writes state that only makes
+        sense one evaluation at a time.
         """
+        with self._evaluation_lock:
+            self.__check_condition(global_topic_cache)
+
+    def __check_condition(
+        self, global_topic_cache: Dict[str, EventBlackboardEntry]
+    ) -> None:
+        """Decide whether this event fires on what its topics currently hold"""
         # Dont keep on checking for handle once events after they have been processed
         if self._handle_once and self._processed_once:
             return

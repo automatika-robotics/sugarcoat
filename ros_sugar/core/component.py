@@ -1541,8 +1541,11 @@ class BaseComponent(lifecycle.Node):
         # Guarded so that a monitored Action registering its success event from a
         # worker thread cannot mutate the index while it is iterated here, nor
         # the blackboard while it is lazily cleaned below.
-        # NOTE: check_condition only submits actions to a thread pool, so the
-        # lock is never held across an action's execution
+        # NOTE: the lock covers reading the blackboard, not evaluating the
+        # conditions read from it: held across evaluation, one slow condition
+        # stalled every other topic this component watches. Each event
+        # serializes its own evaluation
+        to_evaluate = []
         with self._events_lock:
             # Update Blackboard with stamped entry
             self._events_topics_blackboard[topic_name] = EventBlackboardEntry(
@@ -1567,8 +1570,11 @@ class BaseComponent(lifecycle.Node):
                     )
                     if valid_entry:
                         clean_cache_subset[topic.name] = valid_entry
-                # Pass the clean subset to the event
-                event.check_condition(clean_cache_subset)
+                to_evaluate.append((event, clean_cache_subset))
+
+        # Pass each event the clean subset it was given, outside the lock
+        for event, clean_cache_subset in to_evaluate:
+            event.check_condition(clean_cache_subset)
 
     def _add_event_action_pair(self, event: Event, action: Union[Action, List[Action]]):
         """Add an event/action pair.
