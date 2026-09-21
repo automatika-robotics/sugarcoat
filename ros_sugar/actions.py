@@ -81,6 +81,7 @@ __all__ = [
     "pause_routine",
     "resume_routine",
     "abort_routine",
+    "wait",
 ]
 
 
@@ -625,3 +626,38 @@ def abort_routine(
     return __routine_action(
         "abort_routine", routine_name=routine_name, reason=reason
     )
+
+
+def wait(*, duration: float, name: Optional[str] = None) -> Action:
+    """Action to dwell for a while, as a step of a routine.
+
+    Every other step settles as soon as it is called, so "hold here for thirty
+    seconds" has no other spelling. Stopping the step, by aborting or pausing
+    its routine, ends the wait at once and gives back the worker it holds.
+
+    ```python
+    patrol = Routine(
+        "patrol",
+        steps=[
+            Action(arm.go_home),
+            wait(duration=30.0, name="settle"),
+            Action(arm.scan),
+            wait(duration=5.0, name="settle_again"),
+            Action(arm.go_home, name="back_home"),
+        ],
+    )
+    ```
+
+    :param duration: Seconds to wait
+    :type duration: float
+    :param name: Name of the step, which a routine needs when it waits more
+        than once, since step names must be unique. Defaults to "wait"
+    :type name: Optional[str]
+    :rtype: Action
+    """
+    stack_action = __routine_action("wait", duration=duration)
+    if name:
+        # The step is named apart; the Monitor method it runs stays the same
+        stack_action.action_name = name
+        stack_action._monitor_method = "wait"
+    return stack_action
