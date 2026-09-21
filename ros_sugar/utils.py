@@ -3,6 +3,7 @@ from enum import IntEnum as BaseIntEnum
 from functools import wraps
 import json
 from typing import Any, Callable, List, Union, TypeVar, Optional, Dict, Tuple
+from typing import get_args, get_origin
 
 from rclpy.utilities import ok as rclpy_is_ok
 from rclpy.lifecycle import Node as LifecycleNode
@@ -44,16 +45,31 @@ ActionReturnType = Tuple[bool, str]
 # importing and annotating
 ActionResult = ActionReturnType
 
-# Accepted spellings of the contract in a return annotation, including the string
-# forms produced by quoted annotations or `from __future__ import annotations`,
-# and the old name, so an annotation written against it still validates
-_ACTION_RETURN_ANNOTATIONS = (
-    ActionReturnType,
+# Spellings of the contract that reach this as text
+_ACTION_RETURN_TEXT = frozenset({
     "ActionReturnType",
     "ActionResult",
-    "Tuple[bool, str]",
-    "tuple[bool, str]",
-)
+    "Tuple[bool,str]",
+    "tuple[bool,str]",
+    "typing.Tuple[bool,str]",
+})
+
+
+def _promises_action_return(annotation: Any) -> bool:
+    """Whether a return annotation promises the (bool, str) contract.
+
+    Read by shape rather than by spelling: `Tuple[bool, str]`, the builtin
+    `tuple[bool, str]` and the `ActionReturnType` alias are three ways of
+    writing one type, and they are not equal to each other. Comparing against a
+    list of spellings rejected the builtin form, which is the one a modern
+    codebase writes.
+
+    :param annotation: The return annotation, as a type or as text
+    :rtype: bool
+    """
+    if isinstance(annotation, str):
+        return "".join(annotation.split()) in _ACTION_RETURN_TEXT
+    return get_origin(annotation) is tuple and get_args(annotation) == (bool, str)
 
 
 def _validate_action_return(func: Callable, decorator_name: str) -> None:
@@ -67,7 +83,7 @@ def _validate_action_return(func: Callable, decorator_name: str) -> None:
     :raises TypeError: If the return annotation is missing or not Tuple[bool, str]
     """
     return_type = inspect.signature(func).return_annotation
-    if return_type in _ACTION_RETURN_ANNOTATIONS:
+    if _promises_action_return(return_type):
         return
     raise TypeError(
         f"Method '{func.__name__}' cannot have '@{decorator_name}'. Actions must be "
