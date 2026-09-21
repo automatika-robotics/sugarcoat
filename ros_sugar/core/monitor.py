@@ -337,6 +337,9 @@ class Monitor(Node):
                 monitor_class=type(self),
             )
         )
+        # Whether a registry was handed in. The Launcher hands one over later to
+        # a Monitor built without it, see `set_action_registry`
+        self._registry_given = action_registry is not None
 
         # The runtime API refuses calls until the clients it dispatches through
         # exist, which is the end of activate()
@@ -2007,6 +2010,20 @@ class Monitor(Node):
         return True, f"Removed routine '{routine_name}'"
 
     # ---- What is available, for a caller that cannot read the recipe -------
+
+    def set_action_registry(self, registry: SystemActionRegistry) -> None:
+        """Install what the stack can be asked to do by name.
+
+        For the Launcher, when the Monitor that an override of its
+        `_init_monitor_node` installed was built without the registry. Must
+        happen before activation, which is when anything is first resolved
+        against it
+
+        :param registry: The stack's registry
+        :type registry: SystemActionRegistry
+        """
+        self._action_registry = registry
+        self._registry_given = True
 
     def list_actions(self, **_) -> ActionReturnType:
         """Every action addressable by name, as JSON"""

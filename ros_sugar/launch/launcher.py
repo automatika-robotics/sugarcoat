@@ -1506,6 +1506,34 @@ class Launcher:
             )
             self._description.add_action(internal_events_handler)
 
+    def _hand_registry_to_monitor(self) -> None:
+        """Give the Monitor the stack's action registry if it was built without one.
+
+        An override of `_init_monitor_node` that builds its own monitor and
+        does not pass the registry on left that monitor knowing only its own
+        methods: every component action was unknown to the runtime API, and
+        nothing said so. A registry the override passed on purpose is kept.
+        """
+        monitor = self.monitor_node
+        if not isinstance(monitor, Monitor) or getattr(
+            monitor, "_registry_given", True
+        ):
+            return
+        # Built again for the monitor actually installed, so the actions of a
+        # subclass are addressable too, and from the components as the override
+        # left them: it may have taken one out to be the monitor itself
+        self._action_registry = SystemActionRegistry.from_components(
+            self._components,
+            monitor_methods=type(monitor).RUNTIME_MONITOR_ACTIONS,
+            monitor_class=type(monitor),
+            out_of_process=list(self._pkg_executable),
+        )
+        monitor.set_action_registry(self._action_registry)
+        logger.debug(
+            f"Monitor '{monitor.node_name}' was built without the action registry, "
+            "handed it the stack's"
+        )
+
     def _init_monitor_node(
         self,
         components_names: List[str],
@@ -1576,7 +1604,8 @@ class Launcher:
         # of them is launched.
         # NOTE: handed over as an attribute rather than an argument, because
         # downstream packages override _init_monitor_node to install their own
-        # monitor and a new parameter would break them
+        # monitor and a new parameter would break them. An override that does
+        # not pass it on is handed it afterwards, by _hand_registry_to_monitor
         self._action_registry = SystemActionRegistry.from_components(
             self._components,
             monitor_methods=Monitor.RUNTIME_MONITOR_ACTIONS,
@@ -1590,6 +1619,7 @@ class Launcher:
             action_components=action_components,
             all_components_to_activate_on_start=all_components_to_activate_on_start,
         )
+        self._hand_registry_to_monitor()
 
         # Register a activation event
         internal_events_handler_activate = launch.actions.RegisterEventHandler(
