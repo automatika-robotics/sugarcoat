@@ -100,6 +100,23 @@ def _as_keyword_arguments(
     return named, None
 
 
+#: Monitoring policy an action reads from its own arguments. Named here only to
+#: be picked out of a spec; what each one defaults to belongs to the class
+_POLICY_KEYS = ("timeout", "on_timeout", "max_retries", "retry_delay")
+
+
+def _declared_policy(spec: Dict) -> Dict:
+    """The monitoring policy a spec actually declared, and nothing else.
+
+    A key the spec left out is left out here too, so the action class applies
+    its own default: a method step retries on a timeout, an action server step
+    fails, and neither of those decisions is repeated in this file.
+
+    :rtype: Dict
+    """
+    return {key: spec[key] for key in _POLICY_KEYS if key in spec}
+
+
 def _on_fail_policy(spec: Dict, fallback: Optional[Any]) -> str:
     """What a step does when it fails, as its spec asked for it.
 
@@ -132,6 +149,23 @@ def _call_timeout(action) -> float:
     if action._timeout is None:
         return math.inf
     return action._timeout + _CALL_GRACE
+
+
+def _decoded_message(response_json: str) -> str:
+    """The message a component put in `response_json`, without its JSON quotes.
+
+    Anything that is not a JSON string is handed back as it arrived: a payload
+    the component wrote as an object stays JSON for the caller to parse.
+
+    :rtype: str
+    """
+    if not response_json:
+        return ""
+    try:
+        decoded = json.loads(response_json)
+    except (TypeError, ValueError):
+        return response_json
+    return decoded if isinstance(decoded, str) else response_json
 
 
 def _is_sendable(value: Any) -> bool:
@@ -780,10 +814,15 @@ class Monitor(Node):
         """
         if response is None:
             return False, f"{description} got no response from the service"
-        message = getattr(response, "error_msg", "") or getattr(
-            response, "response_json", ""
-        )
-        return bool(response.success), message or description
+        error = getattr(response, "error_msg", "")
+        if error:
+            return bool(response.success), error
+        # The component writes the message with json.dumps, so the string it
+        # returned arrives quoted. Read back, the caller gets what the action
+        # said - `done`, not `"done"` - and structured results stay JSON
+        return bool(response.success), _decoded_message(
+            getattr(response, "response_json", "")
+        ) or description
 
     def execute_component_method(
         self,
@@ -1182,11 +1221,11 @@ class Monitor(Node):
                 for key, value in (spec.get("input_topics") or {}).items()
             },
             "success": self.__as_json_text(spec.get("success")),
-            "timeout": spec.get("timeout", None),
-            "on_timeout": spec.get("on_timeout", "retry"),
-            "max_retries": spec.get("max_retries", 0),
-            "retry_delay": spec.get("retry_delay", 0.0),
             "on_fail": _on_fail_policy(spec, fallback),
+            # Only what the spec actually said: restating the defaults here is
+            # a second copy of the policy that has to be kept in step with the
+            # class that owns it
+            **_declared_policy(spec),
         }
         return Action.deserialize_action(
             serialized,
@@ -1228,11 +1267,10 @@ class Monitor(Node):
             goal=goal,
             success=Condition.from_dict(success) if success else None,
             success_grace=spec.get("success_grace", 1.0),
-            timeout=spec.get("timeout", None),
-            on_timeout=spec.get("on_timeout", "fail"),
-            max_retries=spec.get("max_retries", 0),
-            retry_delay=spec.get("retry_delay", 0.0),
             on_fail=_on_fail_policy(spec, fallback),
+            # A goal step's own defaults differ from a method step's - it fails
+            # on a timeout rather than retrying - so they are left to it
+            **_declared_policy(spec),
             fallback=fallback,
             name=spec.get("name") or entry.name,
             description=spec.get("description", None),
