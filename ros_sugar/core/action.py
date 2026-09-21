@@ -33,6 +33,10 @@ ON_TIMEOUT_POLICIES = ("fail", "succeed", "retry")
 # good. Only a Routine reads these.
 ON_FAIL_POLICIES = ("abort", "skip", "fallback")
 
+# The attempt each dispatch worker is running, as (action, attempt id), for an
+# executable that has to ask whether its attempt is still wanted
+_worker_attempt = threading.local()
+
 
 class ActionOutcome(StrEnum):
     """Why a run ended.
@@ -588,18 +592,23 @@ class Action(BaseAction):
         # still bounded by the timeout
         self.__arm_timer(self._timeout, self.__on_timeout, attempt_id)
         future = self._dispatch_executor.submit(
-            self.__dispatch, prepared_args, prepared_kwargs
+            self.__dispatch, attempt_id, prepared_args, prepared_kwargs
         )
         future.add_done_callback(partial(self.__on_dispatch_done, attempt_id))
 
-    def __dispatch(self, call_args: List, call_kwargs: Dict) -> ActionReturnType:
+    def __dispatch(
+        self, attempt_id: int, call_args: List, call_kwargs: Dict
+    ) -> ActionReturnType:
         """Run the executable and read its verdict off the (bool, str) contract"""
+        _worker_attempt.current = (self, attempt_id)
         try:
             result = self.executable(*call_args, **call_kwargs)
         except Exception as e:
             error = f"Error executing action '{self.action_name}': {e}"
             logger.error(error)
             return False, error
+        finally:
+            _worker_attempt.current = None
         succeeded, message = parse_action_result(result, self.action_name)
         if not succeeded:
             logger.warning(
@@ -624,6 +633,30 @@ class Action(BaseAction):
             ActionOutcome.SUCCESS if succeeded else ActionOutcome.FAILURE,
             message,
         )
+
+    def _attempt_is_live(self) -> bool:
+        """Whether the attempt the calling dispatch worker runs is still wanted.
+
+        A halt, a timeout and a run started over all end the attempt a worker
+        was dispatched for, and the worker does not stop with it: it may start
+        late, or be parked waiting. Resuming a paused routine starts the same
+        action again while the halted attempt's worker can still be waiting,
+        so a flag on the action would be cleared by the new attempt. Anything
+        the old worker started afterwards would run with nothing watching it.
+
+        :return: True outside a dispatch of this action, where there is no
+            attempt to ask about
+        :rtype: bool
+        """
+        current = getattr(_worker_attempt, "current", None)
+        if current is None or current[0] is not self:
+            return True
+        with self._run_lock:
+            return (
+                self._running
+                and self._attempt_open
+                and current[1] == self._attempt_id
+            )
 
     def _abandon_attempt(self) -> None:
         """Drop work an attempt left in flight. No-op for a plain method call.
@@ -942,10 +975,10 @@ class ActionServerGoal(Action):
         self._success_check = self.__as_condition(success)
         self._success_grace = success_grace
 
-        # Per-dispatch state
+        # Per-dispatch state. Whether the goal is still wanted is not kept
+        # here: it belongs to the attempt, see `_attempt_is_live`
         self._client = None
         self._settled = threading.Event()
-        self._abandoned = False
         self._feedback_sink: Optional[Callable[[], None]] = None
 
         super().__init__(
@@ -1008,16 +1041,22 @@ class ActionServerGoal(Action):
         return self._host.get_action_client(self._server_name, self._server_type)
 
     def _dispatch_goal(self, client, call_kwargs: Dict) -> bool:
-        """Send the goal, in whichever of the three shapes it was given"""
+        """Send the goal, in whichever of the three shapes it was given.
+
+        The client can hold it back until the goal before it has ended, and a
+        step stopped in the meantime must not send it once the client is free
+        """
         goal = self._goal_spec
         if goal is None:
             # Filled from the call arguments, or an empty goal
             goal = call_kwargs.get("goal", None)
         if goal is None:
-            return client.send_request(client.config.action_type.Goal())
+            goal = client.config.action_type.Goal()
         if isinstance(goal, dict):
-            return client.send_request_from_dict(goal)
-        return client.send_request(goal)
+            return client.send_request_from_dict(
+                goal, still_wanted=self._attempt_is_live
+            )
+        return client.send_request(goal, still_wanted=self._attempt_is_live)
 
     def _send_and_wait(self, **kwargs) -> ActionReturnType:
         """Send the goal and block until it, or the success condition, settles.
@@ -1025,13 +1064,15 @@ class ActionServerGoal(Action):
         Blocking is safe here: dispatches run on their own worker pool, never
         on the ROS executor. The deadline belongs to this action's own timeout.
         """
+        if not self._attempt_is_live():
+            # Stopped before this worker got to it
+            return False, f"Goal on '{self.target}' was canceled"
         try:
             client = self._resolve_client()
         except Exception as e:
             return False, str(e)
 
         self._client = client
-        self._abandoned = False
         self._settled.clear()
         # A listener of this attempt's own. Registering the bound method meant
         # every attempt shared one entry, and the attempt that timed out took
@@ -1040,24 +1081,31 @@ class ActionServerGoal(Action):
         listener = partial(self._on_client_event)
         client.add_feedback_listener(listener)
         try:
-            if not self._dispatch_goal(client, kwargs):
+            sent = self._dispatch_goal(client, kwargs)
+            if not self._attempt_is_live():
+                if sent:
+                    # Stopped while the goal was on its way out
+                    self._cancel()
+                return False, f"Goal on '{self.target}' was canceled"
+            if not sent:
                 if client.goal_rejected:
                     return False, f"Server '{self.target}' rejected the goal"
                 return False, f"Server '{self.target}' did not accept the goal"
 
-            if self._abandoned:
-                # Halted while the goal was on its way out
-                self._cancel()
-                return False, f"Goal on '{self.target}' was canceled"
-
-            while not self._settled.wait(self._POLL_PERIOD):
+            # The client wakes this up, but whether the goal ended is read off
+            # the client itself. The goal before this one on the same client
+            # can end while this one waits to be sent, and wakes it before it
+            # has even started
+            while not (client.action_returned or client.goal_rejected):
+                if not self._attempt_is_live():
+                    break
                 if self._condition_met():
                     # Succeeded early: stop the goal rather than leave it
                     # running while the routine moves on
                     self._cancel()
                     return True, f"Success condition met while '{self.target}' ran"
-                if client.action_returned or client.goal_rejected or self._abandoned:
-                    break
+                self._settled.wait(self._POLL_PERIOD)
+                self._settled.clear()
 
             if self._condition_met():
                 return True, f"Success condition met as '{self.target}' returned"
@@ -1089,7 +1137,7 @@ class ActionServerGoal(Action):
         while time.time() < deadline:
             if self._condition_met():
                 return True, f"Success condition met after '{self.target}' returned"
-            if self._abandoned:
+            if not self._attempt_is_live():
                 break
             # Slept, not waited on `_settled`: the goal has already returned, so
             # that event is set and waiting on it returns at once, which spun
@@ -1130,7 +1178,6 @@ class ActionServerGoal(Action):
         still stopping is waited for by the next goal sent on that client,
         which is the only place the wait is needed.
         """
-        self._abandoned = True
         client = self._client
         result = (
             client.cancel_request(wait=False)

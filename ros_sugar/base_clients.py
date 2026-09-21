@@ -322,18 +322,22 @@ class ActionClientHandler:
         self,
         request_fields: Dict[str, Any],
         wait_until_first_feedback: bool = False,
+        still_wanted: Optional[Callable[[], bool]] = None,
     ) -> Optional[bool]:
         """Send an action request using a serialized Dict request data
 
         :param request_fields: Request data [key, value]
         :type request_fields: Dict[str, Any]
+        :param still_wanted: See `send_request`
         :raises ValueError: If a field cannot be set from its value, naming both.
             Raised before anything is sent, so a running goal is left alone
         """
         updated_message = set_ros_msg_from_dict(
             msg_class=self.config.action_type.Goal, data_dict=request_fields
         )
-        return self.send_request(updated_message, wait_until_first_feedback)
+        return self.send_request(
+            updated_message, wait_until_first_feedback, still_wanted=still_wanted
+        )
 
     def __for_goal(self, generation: int, callback: Callable, payload: Any) -> None:
         """Run a callback only while it is still about the goal in hand.
@@ -346,7 +350,7 @@ class ActionClientHandler:
             return
         callback(payload)
 
-    def __claim_for_new_goal(self) -> bool:
+    def __claim_for_new_goal(self, still_wanted: Callable[[], bool]) -> bool:
         """Take the client for a new goal, once the last one has finished.
 
         This handler tracks one goal: its handle, its feedback and its result.
@@ -357,13 +361,21 @@ class ActionClientHandler:
         notice it - and a goal still running past the feedback timeout, by
         which point the server counts as unresponsive anyway, keeps the client.
 
+        :param still_wanted: Asked while waiting. A caller that has stopped in
+            the meantime gives up the wait rather than send once the client is
+            free
         :return: Whether the client is now this caller's
         :rtype: bool
         """
         waited: float = 0.0
         while self._goal_in_flight and waited < self.config.feedback_check_timeout:
+            if not still_wanted():
+                return False
             time.sleep(self.config.feedback_check_period)
             waited += self.config.feedback_check_period
+        # Asked outside the lock: it takes the caller's own lock
+        if not still_wanted():
+            return False
         with self._goal_lock:
             if self._goal_in_flight:
                 return False
@@ -404,7 +416,10 @@ class ActionClientHandler:
             self._cancel_pending = False
 
     def send_request(
-        self, request_msg: Any, wait_until_first_feedback: bool = False
+        self,
+        request_msg: Any,
+        wait_until_first_feedback: bool = False,
+        still_wanted: Optional[Callable[[], bool]] = None,
     ) -> bool:
         """
         Sends a request to an action server
@@ -413,11 +428,23 @@ class ActionClientHandler:
         :type request_msg: Action_Type.Goal
         :param wait_until_first_feedback: Wait until the server returns its first feedback, defaults to True
         :type wait_until_first_feedback: bool, optional
+        :param still_wanted: Asked while the request waits for the client and
+            for the server, and once more just before it is sent. Once it says
+            no, nothing is sent: a caller that stopped while it waited would
+            otherwise start a goal that nothing is watching any more
+        :type still_wanted: Callable[[], bool], optional
 
         :return: If action server is available
         :rtype: bool
         """
-        if not self.__claim_for_new_goal():
+        wanted = still_wanted or (lambda: True)
+        if not self.__claim_for_new_goal(wanted):
+            if not wanted():
+                self.node.get_logger().debug(
+                    f"Not sending a goal to '{self.config.name}': its caller "
+                    "stopped while it waited"
+                )
+                return False
             self.node.get_logger().error(
                 f"Cannot send a goal to '{self.config.name}': a goal of this "
                 "client's is still running on the server. Cancel it first"
@@ -429,6 +456,9 @@ class ActionClientHandler:
         while not self.client.wait_for_server(
             timeout_sec=self.config.attempt_period_secs
         ):
+            if not wanted():
+                self.__release_claim()
+                return False
             self.node.get_logger().info(
                 "Waiting for Server node to become available...", once=True
             )
@@ -450,6 +480,10 @@ class ActionClientHandler:
             self.node.get_logger().error(
                 f"Invalid request message for action '{self.config.name}'. Service takes request message of type '{self.config.action_type.Goal}', got '{type(request_msg)}'"
             )
+            self.__release_claim()
+            return False
+
+        if not wanted():
             self.__release_claim()
             return False
 
