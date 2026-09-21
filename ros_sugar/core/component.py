@@ -2242,28 +2242,53 @@ class BaseComponent(lifecycle.Node):
             with self._main_goal_lock:
                 self._main_goal_handle = None
 
+    @component_action
+    def cancel_main_goal(self, **_) -> ActionReturnType:
+        """Stop the goal the main action server is running, for a caller that
+        does not hold its handle.
+
+        An action rather than only a service, so stopping a component is
+        reachable the way everything else about it is: from an event, a routine
+        step, the runtime API, the UI and an LLM tool. The `cancel_main_action`
+        service calls this too.
+
+        :return: (success, message). What the caller asked for is that no goal
+            is running, so finding none already running is a success. A
+            component that has no action server at all is a different matter,
+            and is reported as a failure
+        :rtype: ActionReturnType
+        """
+        if self.run_type != ComponentRunType.ACTION_SERVER:
+            return False, f"Component '{self.node_name}' has no action server"
+        with self._main_goal_lock:
+            goal_handle = self._main_goal_handle
+        if goal_handle is None:
+            return True, "No ongoing goal to cancel"
+        if not goal_handle.is_active:
+            # Cancelled or finished, but its callback has not returned, so the
+            # goal is still the ongoing one and new goals are still rejected.
+            # Answering "nothing to cancel" here, while the server refuses
+            # goals there, is two answers read off one state
+            return True, "The ongoing goal is already stopping"
+        request = CancelGoal.Request()
+        request.goal_info.goal_id = goal_handle.goal_id
+        # Not waited on: the cancel is carried out by the action server itself
+        self._main_action_cancel_client.call_async(request)
+        return True, "Cancel requested for the ongoing goal"
+
     def _cancel_main_action_srv_callback(
         self, _, response: Trigger.Response
     ) -> Trigger.Response:
-        """Requests canceling the ongoing goal of the main action server, the
-        same way its action client would
+        """Serve `cancel_main_goal` over a plain Trigger service.
+
+        The same operation with a second door on it: a `Trigger` is what a
+        terminal or another node reaches for, without knowing this framework
 
         :param response: Whether a cancel was requested, and why not
         :type response: Trigger.Response
         :rtype: Trigger.Response
         """
-        with self._main_goal_lock:
-            goal_handle = self._main_goal_handle
-        if goal_handle is None or not goal_handle.is_active:
-            response.success = False
-            response.message = "No ongoing goal to cancel"
-            return response
-        request = CancelGoal.Request()
-        request.goal_info.goal_id = goal_handle.goal_id
-        # Not waited on: the cancel is carried out by the action server itself
-        self._main_action_cancel_client.call_async(request)
-        response.success = True
-        response.message = "Cancel requested for the ongoing goal"
+        response.success, response.message = self.cancel_main_goal()
         return response
 
     def _main_action_cancel_callback(self, _) -> Optional[CancelResponse]:
@@ -2930,7 +2955,11 @@ class BaseComponent(lifecycle.Node):
         :return: Methods names
         :rtype: List[str]
         """
-        return get_methods_with_decorator(self, decorator_name="component_action")
+        actions = get_methods_with_decorator(self, decorator_name="component_action")
+        if self.run_type != ComponentRunType.ACTION_SERVER:
+            # Every component inherits it, only one kind of component can do it
+            actions = [name for name in actions if name != "cancel_main_goal"]
+        return actions
 
     def __wait_for_node_start(self) -> bool:
         """Executes a waiting loop until the node is discoverable in ROS
