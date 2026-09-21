@@ -11,6 +11,7 @@ condition being met, the method reporting failure, and the wait expiring. Call
 counts are what distinguish them, which is why each triggering event fires once.
 """
 
+import functools
 import time
 import unittest
 from threading import Event as ThreadingEvent
@@ -898,6 +899,23 @@ class TestActionPolicySerialization(unittest.TestCase):
         restored = Action.deserialize_action(legacy, g.close)
         assert not restored.is_monitored
         assert restored.action_name == "close"
+
+    def test_a_partial_cancel_method_does_not_break_serialization(self):
+        """A partial has no `__name__`. Reading one off it took down the whole
+        launch, for an action that only had to say it cannot be cancelled there"""
+        g = _Gripper()
+
+        bare = Action(g.close, cancel_method=functools.partial(g.abort))
+        with_arguments = Action(
+            g.close, cancel_method=functools.partial(g.abort, force=True)
+        )
+
+        # A partial of the method is that method, and travels under its name
+        assert bare.dictionary["cancel"] == "abort"
+        # One carrying arguments is not: only the name would arrive
+        assert with_arguments.dictionary["cancel"] is None
+        # Either way it still cancels in this process
+        assert with_arguments._cancel_method() == (True, "stopped")
 
     def test_unresolvable_cancel_method_is_dropped_not_fatal(self):
         """A cancel method that does not exist on the method's owner is reported

@@ -2474,6 +2474,62 @@ class TestGoalPreemption(unittest.TestCase):
         assert pings[-1]["target"] == "planner"
 
 
+class TestGoalRetryListener(unittest.TestCase):
+    """What a retry inherits from the attempt before it"""
+
+    def test_a_retry_still_hears_its_own_server(self):
+        """Both attempts used to register the same listener, so the timed out
+        attempt's cleanup took it away from the retry that had just added it,
+        and the retry heard nothing from the goal it had sent"""
+        client = FakeClient()
+        step = ActionServerGoal(
+            component="planner",
+            goal={"x": 1.0},
+            timeout=0.3,
+            on_timeout="retry",
+            max_retries=1,
+        )
+        step.set_host(FakeHost(client))
+        pings = []
+        step.set_feedback_sink(lambda: pings.append(1))
+
+        _run(step)
+        # The first attempt times out and the second goal goes out
+        assert wait_for(lambda: len(client.sent) == 2), f"sent: {client.sent}"
+        pings.clear()
+
+        client.send_feedback()
+
+        assert pings, "the retry was left with no listener on its client"
+
+
+class TestGoalSuccessGrace(unittest.TestCase):
+    """The window kept open after the goal returns"""
+
+    def test_waiting_out_the_grace_window_costs_nothing(self):
+        """It used to wait on an event that the returned goal had already set,
+        so the loop spun at full CPU for the whole window"""
+        client = FakeClient()
+        step = ActionServerGoal(
+            component="planner",
+            goal={"x": 1.0},
+            success=_bool_condition(),
+            success_grace=0.5,
+        )
+        step.set_host(FakeHost(client, snapshot={}))
+        step._settled.set()  # as it is once the goal has returned
+
+        # This thread's own CPU: the launch keeps other threads busy, and
+        # process_time would count those too
+        started, cpu_started = time.time(), time.thread_time()
+        succeeded, _ = step._verdict_from_condition(client)
+        waited, burnt = time.time() - started, time.thread_time() - cpu_started
+
+        assert not succeeded  # the condition never held
+        assert waited >= 0.4, f"the window was not waited out: {waited:.2f}s"
+        assert burnt < waited / 4, f"spun for {burnt:.2f}s of {waited:.2f}s"
+
+
 class TestGoalFeedback(unittest.TestCase):
     """Feedback"""
 

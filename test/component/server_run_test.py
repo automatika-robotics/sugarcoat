@@ -10,6 +10,7 @@ from action_msgs.msg import GoalStatus
 from tf2_msgs.action import LookupTransform
 from rclpy.action import ActionClient
 from std_srvs.srv import Trigger
+from automatika_ros_sugar.srv import ExecuteMethod
 
 from ros_sugar.core import BaseComponent, Event
 from ros_sugar import Launcher
@@ -162,8 +163,10 @@ class TestActionServer(unittest.TestCase):
         cls.executor.add_node(cls.node)
         cls.client = ActionClient(cls.node, LookupTransform, "counter/count")
         cls.cancel = cls.node.create_client(Trigger, "counter/cancel_main_action")
+        cls.execute = cls.node.create_client(ExecuteMethod, "counter/execute_method")
         assert cls.client.wait_for_server(timeout_sec=30.0), "no action server"
         assert cls.cancel.wait_for_service(timeout_sec=30.0), "no cancel service"
+        assert cls.execute.wait_for_service(timeout_sec=30.0), "no method service"
 
     @classmethod
     def tearDownClass(cls):
@@ -220,7 +223,46 @@ class TestActionServer(unittest.TestCase):
         # Once canceled, the server takes the next goal
         assert self.wait(self.send(2)).status == GoalStatus.STATUS_SUCCEEDED
 
+    def test_cancelling_twice_says_the_goal_is_already_stopping(self):
+        """Between a goal being cancelled and its callback returning, the server
+        still refuses new goals. Answering "nothing to cancel" there told the
+        caller the opposite of what the goal callback was doing"""
+        result = self.send(200)
+        self.wait_until_started(200)
+        assert self.cancel_ongoing().success
+
+        # The window: cancelled, not finished. Whether it is still open by now
+        # is a race, so any of the three answers is fine - as long as asking
+        # again never reports a failure
+        second = self.cancel_ongoing()
+        assert self.wait(result).status == GoalStatus.STATUS_CANCELED
+        assert second.success, second.message
+
+    def test_the_cancel_is_reachable_as_a_component_action(self):
+        """The same operation by name, which is how an event, a routine step,
+        the API, the UI and an LLM tool reach everything else a component does"""
+        result = self.send(200)
+        self.wait_until_started(200)
+
+        response = self.wait(
+            self.execute.call_async(ExecuteMethod.Request(name="cancel_main_goal"))
+        )
+
+        assert response.success, response.error_msg
+        assert self.wait(result).status == GoalStatus.STATUS_CANCELED
+
+    def test_nothing_to_cancel_is_what_the_caller_asked_for(self):
+        """The caller wants no goal running, and none is. A routine step that
+        stops a component must not fail because it had already stopped"""
+        response = self.wait(
+            self.execute.call_async(ExecuteMethod.Request(name="cancel_main_goal"))
+        )
+
+        assert response.success, response.error_msg
+        assert "No ongoing goal" in response.response_json
+
     def test_canceling_with_no_ongoing_goal_says_so(self):
+        """Reported, but as a success: what was asked for is already true"""
         response = self.cancel_ongoing()
-        assert not response.success
+        assert response.success
         assert "No ongoing goal" in response.message

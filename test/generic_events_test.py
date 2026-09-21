@@ -1,5 +1,8 @@
+import json
+import pickle
 import time
 import unittest
+from copy import deepcopy
 from threading import Event as ThreadingEvent
 import launch_testing
 import launch_testing.actions
@@ -265,3 +268,53 @@ class TestActionBasedEvents(unittest.TestCase):
         assert dynamic_arg_comp_py_event.wait(cls.wait_time), (
             "Action-based event with dynamic args in the component failed to trigger"
         )
+
+
+# ==========================================================================
+# Getting an event to a component in another process
+#
+# A multiprocess component is handed its events as JSON on the command line and
+# rebuilds them there, deep-copying each one. Anything an event carries that
+# cannot be copied stops that component from starting at all.
+# ==========================================================================
+
+
+class TestEventTravels(unittest.TestCase):
+    """What an event has to survive to reach a component process"""
+
+    def test_an_event_can_be_deep_copied(self):
+        """A component copies every event it reads back from JSON"""
+        event = Event(Topic(name="clicked_point", msg_type="PointStamped"))
+
+        copied = deepcopy(event)
+
+        assert isinstance(copied, Event)
+        # Its own guards, not the original's, and both still usable
+        assert copied._evaluation_lock is not event._evaluation_lock
+        copied.check_condition({})
+        event.check_condition({})
+
+    def test_an_event_can_be_pickled(self):
+        event = Event(Topic(name="clicked_point", msg_type="PointStamped"))
+
+        restored = pickle.loads(pickle.dumps(event))
+
+        assert isinstance(restored, Event)
+        restored.check_condition({})
+
+    def test_a_component_rebuilds_the_events_it_is_handed(self):
+        """The path a multiprocess component takes at startup, which is where
+        an uncopyable event shows up as the component failing to launch"""
+
+        class _Component(BaseComponent):
+            def _execution_step(self):
+                pass
+
+        component = _Component(component_name="events_from_json")
+        event = Event(Topic(name="clicked_point", msg_type="PointStamped"))
+
+        component._events_json = json.dumps([event.to_json()])
+
+        rebuilt = component._BaseComponent__events
+        assert len(rebuilt) == 1
+        assert rebuilt[0].get_involved_topics()[0].name == "clicked_point"

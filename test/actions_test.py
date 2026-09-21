@@ -1,3 +1,5 @@
+import threading
+import time
 import unittest
 from threading import Event as threadingEvent
 import launch_testing
@@ -16,7 +18,7 @@ from ros_sugar import Launcher
 from ros_sugar.utils import ActionReturnType, component_action, component_fallback
 from ros_sugar.actions import Action, publish_message
 
-from std_msgs.msg import Float32
+from std_msgs.msg import Bool, Float32
 from launch.actions import LogInfo
 
 # Threading Events
@@ -283,6 +285,38 @@ class TestFallbackHealthReporting(unittest.TestCase):
         assert fallbacks.latest_status == ComponentStatus.STATUS_HEALTHY
 
 
+class TestFallbackPolicy(unittest.TestCase):
+    """What a component fallback is allowed to be"""
+
+    def test_a_monitored_action_is_refused_as_a_fallback(self):
+        """A monitored action watches its own outcome, and a fallback has
+        nowhere to watch from: it runs from the fallback loop, when the
+        component has already failed. Refused where it is declared, rather
+        than failing at the moment it was supposed to save the component"""
+        for case, policy in [
+            ("timeout", {"timeout": 2.0}),
+            ("max_retries", {"max_retries": 1}),
+            ("cancel_method", {"cancel_method": _succeeding_fallback}),
+        ]:
+            with self.subTest(case=case):
+                with pytest.raises(TypeError, match="cannot be a monitored action"):
+                    Fallback(action=Action(_succeeding_fallback, **policy))
+
+    def test_a_monitored_action_among_several_is_refused_too(self):
+        """A ladder of fallbacks is checked action by action"""
+        with pytest.raises(TypeError, match="cannot be a monitored action"):
+            Fallback(
+                action=[
+                    Action(_succeeding_fallback),
+                    Action(_failing_fallback, timeout=1.0),
+                ]
+            )
+
+    def test_a_plain_action_is_still_a_fallback(self):
+        fallback = Fallback(action=Action(_succeeding_fallback))
+        assert not fallback.action.is_monitored
+
+
 class TestActionContractEnforcement(unittest.TestCase):
     """The (bool, str) contract is enforced at decoration time"""
 
@@ -305,6 +339,28 @@ class TestActionContractEnforcement(unittest.TestCase):
                     return True, "done"
 
                 assert hasattr(act, "_action_description")
+
+    def test_the_builtin_tuple_annotation_is_accepted(self):
+        """`tuple[bool, str]` is the same type written the modern way, and is
+        not equal to `Tuple[bool, str]`. Matching spellings rejected it"""
+        for decorator in DECORATORS:
+            with self.subTest(decorator=decorator.__name__):
+
+                @decorator
+                def act(self, **_) -> tuple[bool, str]:
+                    return True, "done"
+
+                assert hasattr(act, "_action_description")
+
+    def test_a_tuple_of_the_wrong_types_is_rejected(self):
+        """Read by shape, so the shape has to be the contract's"""
+        for decorator in DECORATORS:
+            with self.subTest(decorator=decorator.__name__):
+                with pytest.raises(TypeError, match="must be"):
+
+                    @decorator
+                    def act(self, **_) -> tuple[str, str]:
+                        return "done", "done"
 
     def test_string_annotation_is_accepted(self):
         """Quoted annotations, as produced by `from __future__ import annotations`"""
@@ -405,3 +461,99 @@ class TestMissingTopicArgument(unittest.TestCase):
 
         assert succeeded, message
         assert calls == [2.5]
+
+
+# ==========================================================================
+# What an event does with the action it triggers
+#
+# Events run their actions on one pool shared by every event in the process,
+# and a monitored action's verdict comes back through that same pool. Who
+# waits where is therefore not a detail: it decides whether the system can
+# still serve events while an action is running.
+# ==========================================================================
+
+
+def _event_on(topic_name: str) -> Event:
+    return Event(Topic(name=topic_name, msg_type="Bool"))
+
+
+class TestEventActionDispatch(unittest.TestCase):
+    """How an event's worker treats a monitored action"""
+
+    def test_a_monitored_action_does_not_park_the_event_worker(self):
+        """Ten parked here and no event in the process can be served, including
+        the ones carrying the verdicts those actions are waiting for"""
+        release = threadingEvent()
+        action = Action(
+            lambda **_: (release.wait(10.0), "done")[1] and (True, "done"),
+            timeout=30.0,
+        )
+        event = _event_on("trigger")
+        event.register_actions(action)
+        event.under_processing = True
+
+        started = time.time()
+        event._async_action_wrapper({})
+        handed_back = time.time() - started
+
+        assert handed_back < 1.0, f"the worker was held for {handed_back:.2f}s"
+        # Still busy, so a repeating trigger cannot start it a second time
+        assert event.under_processing
+        assert action.running
+
+        release.set()
+        deadline = time.time() + 10.0
+        while event.under_processing and time.time() < deadline:
+            time.sleep(0.02)
+        assert not event.under_processing, "the event never came back"
+
+    def test_a_plain_action_still_runs_to_completion_first(self):
+        """Nothing to wait for, so it keeps the straightforward path"""
+        calls = []
+
+        def act(**_) -> ActionReturnType:
+            calls.append(1)
+            return True, "ran"
+
+        event = _event_on("trigger")
+        event.register_actions(Action(act))
+        event.under_processing = True
+
+        event._async_action_wrapper({})
+
+        assert calls == [1]
+        assert not event.under_processing
+
+
+class TestComponentEventLocking(unittest.TestCase):
+    """The component's blackboard lock covers reading, not evaluating"""
+
+    def test_a_slow_condition_does_not_stall_another_topic(self):
+        """Held across evaluation, one slow condition stopped every other topic
+        this component watches from being looked at at all"""
+        component = ChildComponent(component_name="locking_case")
+        slow, fast = _event_on("slow"), _event_on("fast")
+        evaluating = threadingEvent()
+        fast_calls = []
+
+        def slow_check(_cache):
+            evaluating.set()
+            time.sleep(0.6)
+
+        slow.check_condition = slow_check
+        fast.check_condition = lambda _cache: fast_calls.append(1)
+
+        # What activation would have set up
+        component._events_topics_blackboard = {}
+        component._BaseComponent__events_per_topic = {"slow": [slow], "fast": [fast]}
+        callback = component._BaseComponent__event_topic_callback
+
+        threading.Thread(target=callback, args=("slow", Bool(data=True)), daemon=True).start()
+        assert evaluating.wait(2.0), "the slow condition never started"
+
+        started = time.time()
+        callback("fast", Bool(data=True))
+        waited = time.time() - started
+
+        assert fast_calls == [1]
+        assert waited < 0.3, f"the other topic waited {waited:.2f}s for it"

@@ -174,6 +174,15 @@ class TestActionResolution(unittest.TestCase):
         # Its own methods too, so a routine can drive other routines
         assert f"{MONITOR_OWNER}/start_routine" in registry
 
+    def test_stopping_an_action_server_is_advertised_like_any_action(self):
+        """Reachable by name, so an event or a routine can stop a component
+        without anyone writing a client for its cancel service"""
+        registry = monitor_node._action_registry
+        assert "counter/cancel_main_goal" in registry
+        # A component with no goals to cancel does not offer it
+        assert "driver/cancel_main_goal" not in registry
+        assert "mapper/cancel_main_goal" not in registry
+
     # ---- Resolving a name ---------------------------------------------
 
     def test_a_resolved_method_reaches_the_component(self):
@@ -183,6 +192,14 @@ class TestActionResolution(unittest.TestCase):
         assert wait_for(lambda: ("move_to_unblock", 0.5) in driver_calls), (
             f"the component never ran it, calls: {driver_calls}"
         )
+
+    def test_the_result_arrives_as_the_action_wrote_it(self):
+        """The component writes its message as JSON, so read back it is the
+        string the action returned, not that string wrapped in quotes"""
+        succeeded, message = resolve("driver/move_to_unblock")(distance=0.25)
+
+        assert succeeded, message
+        assert message == "moved 0.25", f"got {message!r}"
 
     def test_a_reported_failure_survives_the_trip(self):
         """A method that says no must not read as success on the way back"""
