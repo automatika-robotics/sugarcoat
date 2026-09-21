@@ -126,7 +126,11 @@ class MapperComponent(BaseComponent):
 @launch_testing.markers.keep_alive
 def generate_test_description():
     driver = DriverComponent(component_name="driver")
-    counter = CountingComponent(component_name="counter")
+    # Named apart from the counters of the other modules: they share one
+    # process and one ROS domain, and a component stays in the graph by name
+    # after its launch ends. The Monitor takes a component it finds there as
+    # up, so it could act on the one nothing answers any more
+    counter = CountingComponent(component_name="registry_counter")
     mapper = MapperComponent(component_name="mapper")
 
     # Never triggered: it exists so a monitor method resolved by name has a
@@ -170,7 +174,7 @@ class TestActionResolution(unittest.TestCase):
         """Without this the Monitor knows only its own actions"""
         registry = monitor_node._action_registry
         assert "driver/move_to_unblock" in registry
-        assert "counter/count" in registry
+        assert "registry_counter/count" in registry
         # Its own methods too, so a routine can drive other routines
         assert f"{MONITOR_OWNER}/start_routine" in registry
 
@@ -178,7 +182,7 @@ class TestActionResolution(unittest.TestCase):
         """Reachable by name, so an event or a routine can stop a component
         without anyone writing a client for its cancel service"""
         registry = monitor_node._action_registry
-        assert "counter/cancel_main_goal" in registry
+        assert "registry_counter/cancel_main_goal" in registry
         # A component with no goals to cancel does not offer it
         assert "driver/cancel_main_goal" not in registry
         assert "mapper/cancel_main_goal" not in registry
@@ -251,7 +255,7 @@ class TestActionResolution(unittest.TestCase):
     def test_an_action_server_is_not_resolved_as_a_callable(self):
         """A goal outlives the call, so it cannot be a plain function"""
         with self.assertRaises(KeyError) as caught:
-            resolve("counter/count")
+            resolve("registry_counter/count")
         assert "action server step" in str(caught.exception)
 
     # ---- Building a step from JSON ------------------------------------
@@ -279,7 +283,7 @@ class TestActionResolution(unittest.TestCase):
     def test_an_action_server_step_built_from_json_drives_the_server(self):
         """A goal named in JSON has to reach the same server a recipe would"""
         step = monitor_node._action_from_spec({
-            "ref": "counter/count",
+            "ref": "registry_counter/count",
             "goal": {"target_frame": "2"},
             "name": "count_a_little",
             "timeout": 20.0,

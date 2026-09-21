@@ -117,7 +117,11 @@ def generate_test_description():
     launcher = Launcher()
 
     launcher.add_pkg(
-        components=[component, CountingComponent(component_name="counter")],
+        # Named apart from the counters of the other modules: they share one
+        # process and one ROS domain, and a component stays in the graph by
+        # name after its launch ends. The Monitor takes a component it finds
+        # there as up, so it could act on the one nothing answers any more
+        components=[component, CountingComponent(component_name="server_counter")],
         events_actions={event_on_health_status: srv_call},
         multiprocessing=False,
         ros_log_level="debug",
@@ -161,9 +165,13 @@ class TestActionServer(unittest.TestCase):
         cls.node = rclpy.create_node("action_server_client", context=cls.context)
         cls.executor = rclpy.executors.SingleThreadedExecutor(context=cls.context)
         cls.executor.add_node(cls.node)
-        cls.client = ActionClient(cls.node, LookupTransform, "counter/count")
-        cls.cancel = cls.node.create_client(Trigger, "counter/cancel_main_action")
-        cls.execute = cls.node.create_client(ExecuteMethod, "counter/execute_method")
+        cls.client = ActionClient(cls.node, LookupTransform, "server_counter/count")
+        cls.cancel = cls.node.create_client(
+            Trigger, "server_counter/cancel_main_action"
+        )
+        cls.execute = cls.node.create_client(
+            ExecuteMethod, "server_counter/execute_method"
+        )
         assert cls.client.wait_for_server(timeout_sec=30.0), "no action server"
         assert cls.cancel.wait_for_service(timeout_sec=30.0), "no cancel service"
         assert cls.execute.wait_for_service(timeout_sec=30.0), "no method service"

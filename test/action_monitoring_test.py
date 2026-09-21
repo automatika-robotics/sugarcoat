@@ -301,11 +301,15 @@ def generate_test_description():
     closed_topic = Topic(name=SUCCESS_TOPIC, msg_type="Bool")
     never_closed_topic = Topic(name=NEVER_TRUE_TOPIC, msg_type="Bool")
 
+    # Both named apart from the gripper and state publisher in routine_test:
+    # the modules share one process and one ROS domain, and a module's nodes
+    # stay in the graph after its launch ends. The Monitor takes a component
+    # found by name as up, so it could activate the one nothing answers any more
     publisher = StatePublisher(
-        component_name="state_publisher",
+        component_name="monitoring_state_publisher",
         outputs=[closed_topic, never_closed_topic],
     )
-    gripper = GripperComponent(component_name="gripper")
+    gripper = GripperComponent(component_name="monitoring_gripper")
 
     global gripper_component
     gripper_component = gripper

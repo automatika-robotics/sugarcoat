@@ -63,6 +63,12 @@ hold_calls = []
 pick_completed = ThreadingEvent()
 hold_aborted = ThreadingEvent()
 
+# Set by the gripper's `close`, and only then reported on the closed topic.
+# Published unconditionally, the state satisfied the grasp step's condition as
+# soon as the step started, before its routed `close` had reached the gripper,
+# and the routine moved on to `lift` with `close` still on its way
+gripper_closed = ThreadingEvent()
+
 # Released at teardown so the blocking steps cannot outlive their runs
 hold_release = ThreadingEvent()
 cancelme_release = ThreadingEvent()
@@ -199,6 +205,7 @@ class GripperComponent(BaseComponent):
 
     def close(self, **_) -> ActionReturnType:
         step_calls.append("close")
+        gripper_closed.set()
         return True, "Gripper close commanded"
 
 
@@ -210,7 +217,7 @@ class StatePublisher(BaseComponent):
 
     def _execution_step(self):
         if self.publishers_dict.get(CLOSED_TOPIC):
-            self.publishers_dict[CLOSED_TOPIC].publish(True)
+            self.publishers_dict[CLOSED_TOPIC].publish(gripper_closed.is_set())
         if self.publishers_dict.get(TARGET_TOPIC):
             self.publishers_dict[TARGET_TOPIC].publish(TARGET_VALUE)
 
@@ -319,6 +326,20 @@ def generate_test_description():
 
         return _condition
 
+    pick_floor = _after("pick", 4)
+
+    def _pick_ready(**_) -> bool:
+        """The poll floor, and the target already in the Monitor's snapshot.
+
+        set_target reads its argument from that snapshot when it is entered.
+        How soon the first message gets there depends on discovery, not on the
+        clock, so a routine started on the floor alone could hand the step its
+        default instead
+        """
+        if not pick_floor():
+            return False
+        return monitor_node.get_topics_snapshot().get(TARGET_TOPIC) is not None
+
     pick = Routine(
         "pick",
         steps=[
@@ -423,7 +444,7 @@ def generate_test_description():
     launcher.add_pkg(
         components=[arm, gripper, publisher, counter, failer, runner, reporter],
         events_actions={
-            Event(_after("pick", 4), check_rate=CHECK_RATE, handle_once=True): [pick],
+            Event(_pick_ready, check_rate=CHECK_RATE, handle_once=True): [pick],
             Event(_after("hold", 4), check_rate=CHECK_RATE, handle_once=True): [hold],
             Event(_after("cancelme", 4), check_rate=CHECK_RATE, handle_once=True): [cancelme],
             Event(_after("estop", 8), check_rate=CHECK_RATE, handle_once=True): [

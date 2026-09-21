@@ -92,10 +92,10 @@ def generate_test_description():
         components=[
             DriverComponent(component_name="driver"),
             # Named apart from the counter in routine_test: both modules run in
-            # one process and one ROS domain, and a client looking for
-            # 'counter/count' can otherwise find the previous module's server,
-            # still in the graph a moment after its node is gone, and send its
-            # goal there
+            # one process and one ROS domain, and a component stays in the
+            # graph by name after its launch ends, for as long as the process
+            # lives. The Monitor takes a component it finds there as up, so it
+            # could act on the one nothing answers any more
             CountingComponent(component_name="api_counter"),
             ReadingPublisher(component_name="publisher", outputs=[reading_topic]),
         ]
