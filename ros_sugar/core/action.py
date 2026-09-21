@@ -782,10 +782,35 @@ class Action(BaseAction):
         # NOTE: 'fallback' is not serialized. It is a whole action of its own,
         # and it is only read by a Routine, which does not round-trip yet
         # Only the name travels.
-        dict_value["cancel"] = (
-            self._cancel_method.__name__ if self._cancel_method else None
-        )
+        dict_value["cancel"] = self.__cancel_method_name()
         return dict_value
+
+    def __cancel_method_name(self) -> Optional[str]:
+        """The name the cancel method is restored by, where it has one.
+
+        A cancel method travels as a name, looked up on the owner of the action
+        at the other end. Anything whose name does not identify it there cannot
+        make the trip, and saying so is the point: reading `__name__` off it and
+        hoping used to raise `AttributeError` on a `functools.partial`, which
+        took the whole launch down with it.
+        """
+        cancel = self._cancel_method
+        if cancel is None:
+            return None
+        name = getattr(cancel, "__name__", None)
+        if name is not None:
+            return name
+        # A partial of the method itself is that method; one that carries
+        # arguments is not, since only the name would arrive
+        target = getattr(cancel, "func", None)
+        if target is not None and not getattr(cancel, "args", ()) and not getattr(cancel, "keywords", {}):
+            return getattr(target, "__name__", None)
+        logger.warning(
+            f"The cancel method of '{self.action_name}' has no name to be "
+            "restored by, so it does not travel with the action. Give the "
+            "component a method for it if the action runs in another process"
+        )
+        return None
 
     @classmethod
     def deserialize_action(
@@ -1008,7 +1033,12 @@ class ActionServerGoal(Action):
         self._client = client
         self._abandoned = False
         self._settled.clear()
-        client.add_feedback_listener(self._on_client_event)
+        # A listener of this attempt's own. Registering the bound method meant
+        # every attempt shared one entry, and the attempt that timed out took
+        # it away from the retry that had just registered it, leaving the retry
+        # deaf to its own goal
+        listener = partial(self._on_client_event)
+        client.add_feedback_listener(listener)
         try:
             if not self._dispatch_goal(client, kwargs):
                 if client.goal_rejected:
@@ -1035,7 +1065,7 @@ class ActionServerGoal(Action):
                 return self._verdict_from_condition(client)
             return self._verdict_from_status(client)
         finally:
-            client.remove_feedback_listener(self._on_client_event)
+            client.remove_feedback_listener(listener)
 
     def _condition_met(self) -> bool:
         """Whether the success condition holds against the host's latest data"""
@@ -1057,12 +1087,14 @@ class ActionServerGoal(Action):
         """
         deadline = time.time() + self._success_grace
         while time.time() < deadline:
-            if self._settled.wait(min(self._POLL_PERIOD, self._success_grace)):
-                pass
             if self._condition_met():
                 return True, f"Success condition met after '{self.target}' returned"
             if self._abandoned:
                 break
+            # Slept, not waited on `_settled`: the goal has already returned, so
+            # that event is set and waiting on it returns at once, which spun
+            # this loop at full CPU for the whole grace window
+            time.sleep(min(self._POLL_PERIOD, self._success_grace))
         return (
             False,
             f"Success condition not met within {self._success_grace}s of "
