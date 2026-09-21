@@ -249,6 +249,7 @@ Provided by the `ros_sugar.actions` module and executed by the Monitor node:
 | `publish_message(topic, msg, ...)` | Publishes a message on a topic (optionally at a rate for a duration) |
 | `send_srv_request(srv_name, srv_type, srv_request_msg)` | Sends a ROS2 service request |
 | `send_action_goal(server_name, server_type, request_msg)` | Sends a ROS2 action goal |
+| `wait(duration, name=None)` | Dwells for `duration` seconds, as a step of a routine |
 
 #### Dynamic Arguments from Topics
 
@@ -393,7 +394,7 @@ Dispatches also run on a pool of 10 workers shared by all monitored actions, so 
 
 A step that sends a goal to an action server (`ActionServerGoal`) can be stopped for real: `halt()` cancels the goal on the server. Every step driving one server shares its client, which tracks one goal at a time, so a goal sent while the one before is still stopping — after a pause, a retry or an abort, since a server notices a cancel only when it next checks — waits for that goal to end. A step halted during that wait sends nothing, and the step that does send is followed to its own goal's end, not the end of the one it waited for.
 
-An executable of your own that waits before starting something can ask the same question with `self._attempt_is_live()`. It turns false once the attempt the executable was dispatched for has been halted, has timed out, or has been replaced by a new run — resuming a paused routine starts the same action again while the halted attempt's worker may still be waiting.
+An executable of your own that waits before starting something can ask the same question with `self._attempt_is_live()`, or, when it does not hold its action, with `current_attempt_is_live()` from `ros_sugar.core.action`. Either turns false once the attempt the executable was dispatched for has been halted, has timed out, or has been replaced by a new run — resuming a paused routine starts the same action again while the halted attempt's worker may still be waiting. `Monitor.wait`, the dwell step, checks it between its 0.2 s slices, so an abort or a pause gives its worker back at once instead of when the wait would have ended.
 
 ---
 
@@ -440,6 +441,8 @@ Once that budget is gone, `on_fail` decides what the **sequence around the step*
 | `"fallback"` | The action's `fallback` runs; the routine carries on if it succeeds and aborts if it does not |
 
 `name` renames the action for the cursor, where the method name is not what you want it to say. Step names must be unique within a routine.
+
+A routine dwells with `actions.wait(duration=30.0)`, the one step that runs for as long as it was asked to rather than settling when called. A routine that waits more than once names each wait, `actions.wait(duration=5.0, name="settle")`, since they would otherwise all be called `wait`. Aborting or pausing the routine ends a wait at once; resuming starts it over.
 
 A step may also be given as a bare callable, which is wrapped in an unmonitored `Action` — a fire-and-dispatch step whose return value is its verdict.
 

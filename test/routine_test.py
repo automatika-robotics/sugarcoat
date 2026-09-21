@@ -36,7 +36,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from ros_sugar import Launcher
-from ros_sugar.actions import abort_routine
+from ros_sugar.actions import abort_routine, wait
 from ros_sugar.base_clients import ActionClientConfig, ActionClientHandler
 from ros_sugar.condition import Condition
 from ros_sugar.config import ComponentRunType, QoSConfig
@@ -45,6 +45,7 @@ from ros_sugar.core import (
     ActionServerGoal,
     BaseComponent,
     Event,
+    Monitor,
     Routine,
     RoutineStatus,
 )
@@ -107,6 +108,9 @@ cursor_probe_calls = []
 # Run to completion by the latching test before it subscribes, so the only way
 # to see its state is a retained sample
 latch_probe_calls = []
+
+# When the steps on either side of a recipe routine's waits ran
+dwell_marks = []
 
 
 def on_pick_complete(**_) -> ActionReturnType:
@@ -178,6 +182,11 @@ class ArmComponent(BaseComponent):
         """Step of the routine the latching test finishes before subscribing"""
         latch_probe_calls.append(1)
         return True, "Latch probe done"
+
+    def mark_dwell(self, **_) -> ActionReturnType:
+        """Records when it ran, on either side of a routine's waits"""
+        dwell_marks.append(time.monotonic())
+        return True, "Marked"
 
     def note_thread(self, **_) -> ActionReturnType:
         """Records the thread it ran on, which says who dispatched it"""
@@ -381,6 +390,18 @@ def generate_test_description():
     cursor_probe = Routine("cursor_probe", steps=[Action(arm.probe_cursor)])
     latched_probe = Routine("latched_probe", steps=[Action(arm.probe_latch)])
 
+    # A recipe routine that dwells twice, so each wait needs a name of its own.
+    # Started by name from the test
+    dwell_in_recipe = Routine(
+        "dwell_in_recipe",
+        steps=[
+            Action(arm.mark_dwell, name="mark_before"),
+            wait(duration=0.5, name="settle"),
+            wait(duration=0.2, name="settle_again"),
+            Action(arm.mark_dwell, name="mark_after"),
+        ],
+    )
+
     # --- Routines whose step drives a component's main action server ---
 
     # A goal that succeeds: its terminal status is the step's verdict
@@ -457,6 +478,7 @@ def generate_test_description():
                 manual,
                 cursor_probe,
                 latched_probe,
+                dwell_in_recipe,
             ],
             Event(_after("counts", 4), check_rate=CHECK_RATE, handle_once=True): [counts],
             Event(_after("fails", 4), check_rate=CHECK_RATE, handle_once=True): [fails],
@@ -818,6 +840,25 @@ class TestRoutine(unittest.TestCase):
             10.0,
         ), f"No cursor message arrived on the topic, got: {received}"
         assert cursor_probe_calls == [1]
+
+    def test_a_recipe_routine_dwells_between_steps(cls):
+        """actions.wait, twice in one routine under names of its own, resolved
+        on the Monitor as its wait method"""
+        started, message = monitor_node.start_routine("dwell_in_recipe")
+        assert started, message
+        assert wait_for(
+            lambda: routine_state("dwell_in_recipe")["status"] == "completed", 15.0
+        ), f"cursor: {routine_state('dwell_in_recipe')}"
+
+        assert routine_state("dwell_in_recipe")["steps"] == [
+            "mark_before",
+            "settle",
+            "settle_again",
+            "mark_after",
+        ]
+        assert len(dwell_marks) == 2
+        # Both waits happened between the two steps
+        assert dwell_marks[1] - dwell_marks[0] >= 0.7
 
     def test_a_late_subscriber_receives_the_current_cursor(cls):
         """The cursor publishes on transitions only.
@@ -1464,6 +1505,70 @@ class TestRoutineControl(unittest.TestCase):
         assert wait_for(lambda: rec.calls == ["one", "one"])
 
 
+class _Awake:
+    """Stands in for a Monitor whose context is still up"""
+
+    context = SimpleNamespace(ok=lambda: True)
+
+
+def _dwell(entered: list, returned: list):
+    """A step that dwells through the Monitor's own wait, and records when it
+    started and what it returned. Asked for longer than any test runs, so a
+    wait that is not cut short outlives the test"""
+
+    def dwell(**_) -> ActionReturnType:
+        entered.append(time.monotonic())
+        result = Monitor.wait(_Awake(), duration=4 * WAIT)
+        returned.append(result)
+        return result
+
+    return dwell
+
+
+class TestRoutineDwell(unittest.TestCase):
+    """A dwell holds one of the shared dispatch workers while it waits.
+
+    One that waited out its time after its routine stopped kept that worker
+    from every other action, and a routine paused and resumed held two.
+    """
+
+    def test_aborting_a_dwell_gives_its_worker_back(self):
+        entered, returned = [], []
+        routine = Routine("dwell_abort", steps=[Action(_dwell(entered, returned))])
+        routine()
+        assert wait_for(lambda: entered), "the dwell never started"
+
+        routine.abort("stopped by the test")
+
+        assert wait_for(lambda: returned), "the dwell kept its worker after the abort"
+        succeeded, message = returned[0]
+        assert not succeeded
+        assert "Stopped" in message
+
+    def test_pausing_a_dwell_does_not_leave_it_running(self):
+        entered, returned = [], []
+        routine = Routine("dwell_pause", steps=[Action(_dwell(entered, returned))])
+        routine()
+        assert wait_for(lambda: entered), "the dwell never started"
+
+        routine.pause()
+        assert wait_for(lambda: returned), "the paused dwell kept its worker"
+
+        # Resuming dwells again, on the one worker the paused dwell gave back
+        routine.resume()
+        assert wait_for(lambda: len(entered) == 2), "resuming did not dwell again"
+        assert len(returned) == 1
+
+        routine.abort("stopped by the test")
+        assert wait_for(lambda: len(returned) == 2)
+
+    def test_a_dwell_nothing_stops_waits_its_time(self):
+        """Outside any routine there is no step to stop with, and nothing changes"""
+        started = time.monotonic()
+        assert Monitor.wait(_Awake(), duration=0.3)[0]
+        assert time.monotonic() - started >= 0.3
+
+
 class TestRoutineCursor(unittest.TestCase):
     """What the routine reports about where it has got to"""
 
@@ -1528,6 +1633,22 @@ class TestRoutineDeclaration(unittest.TestCase):
     def test_fallback_policy_needs_a_fallback(self):
         with pytest.raises(ValueError, match="no 'fallback' action"):
             Action(Recorder().step("grasp"), on_fail="fallback")
+
+    def test_a_routine_that_waits_twice_names_its_waits(self):
+        """Both would be called 'wait', and step names must be unique"""
+        with pytest.raises(ValueError, match="duplicate step names"):
+            Routine("dwell_twice", steps=[wait(duration=1.0), wait(duration=2.0)])
+
+        routine = Routine(
+            "dwell_twice",
+            steps=[wait(duration=1.0), wait(duration=2.0, name="settle")],
+        )
+        assert routine.state["steps"] == ["wait", "settle"]
+        # Named apart, both still run the Monitor's wait
+        assert [step.monitor_method for step in routine.actions()] == [
+            "wait",
+            "wait",
+        ]
 
     def test_a_routine_cannot_be_a_step(self):
         rec = Recorder()
