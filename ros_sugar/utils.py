@@ -5,6 +5,8 @@ import json
 from typing import Any, Callable, List, Union, TypeVar, Optional, Dict, Tuple
 from typing import get_args, get_origin
 
+from rclpy.action import ActionClient, ActionServer
+from rclpy.node import Node
 from rclpy.utilities import ok as rclpy_is_ok
 from rclpy.lifecycle import Node as LifecycleNode
 from launch import LaunchContext
@@ -458,3 +460,31 @@ def camel_to_snake_case(text: str) -> str:
         else:
             result += char
     return result.lstrip("_")
+
+
+def destroy_action_entities(node: Node) -> None:
+    """Destroy the action servers and action clients still on a node.
+
+    rclpy's `destroy_node` destroys a node's publishers, subscriptions,
+    services, clients and timers, but not its waitables, which is what action
+    servers and clients are. One left alive keeps serving its action by name
+    for as long as the process lives, and keeps the node's handle in use, so a
+    client looking for that action can send its goal there, where nothing
+    answers any more.
+
+    Called by a node about to be destroyed. Only what is still registered on
+    the node is destroyed, since destroying an action server or client a second
+    time raises: a component deactivated earlier has already destroyed its own.
+
+    :param node: The node about to be destroyed
+    :type node: Node
+    """
+    for waitable in list(node.waitables):
+        if not isinstance(waitable, (ActionServer, ActionClient)):
+            continue
+        try:
+            waitable.destroy()
+        except Exception as e:
+            logger.error(
+                f"Failed to destroy an action entity of node '{node.get_name()}': {e}"
+            )

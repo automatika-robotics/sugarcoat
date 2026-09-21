@@ -73,6 +73,7 @@ from ..utils import (
     camel_to_snake_case,
     component_action,
     component_fallback,
+    destroy_action_entities,
     get_methods_with_decorator,
     log_srv,
     parse_action_result,
@@ -1158,6 +1159,23 @@ class BaseComponent(lifecycle.Node):
     def destroy_all_service_clients(self):
         """destroy_all_service_clients."""
         pass
+
+    def destroy_node(self):
+        """Destroy the node, with the action servers and clients rclpy leaves.
+
+        Left alive, the main action server kept serving its action by name
+        after the launch ended, and a client looking for it later could send
+        its goal there, where nothing answers.
+
+        NOTE: rclpy leaves the lifecycle state machine too, and with it the
+        node's name and its lifecycle services in the graph, which is still
+        enough for a component started later under the same name to be taken
+        for up before it is. It is not destroyed here: rclpy reads the state
+        machine without checking that it still exists, so a thread reading it
+        afterwards would crash the process instead of raising
+        """
+        destroy_action_entities(self)
+        super().destroy_node()
 
     def config_from_file(self, config_file: str):
         """

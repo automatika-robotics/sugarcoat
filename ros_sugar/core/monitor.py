@@ -44,7 +44,7 @@ from ._action_registry import (
     SystemActionRegistry,
 )
 from .routine import Routine, RoutineStatus
-from ..utils import ActionReturnType, parse_action_result
+from ..utils import ActionReturnType, destroy_action_entities, parse_action_result
 from ..launch import logger
 
 
@@ -2286,6 +2286,9 @@ class Monitor(Node):
             + list(self._extra_action_clients.values())
         ):
             client.wait_until_idle(_SHUTDOWN_GOAL_GRACE)
+        # rclpy does not destroy action clients with the node, and one left
+        # alive keeps the node in the graph for as long as the process lives
+        destroy_action_entities(self)
         return super().destroy_node()
 
     def _activate_event_monitoring(self) -> None:
