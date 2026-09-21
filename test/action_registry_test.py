@@ -28,6 +28,7 @@ from ros_sugar.core import (
     Action,
     BaseComponent,
     Event,
+    Monitor,
     Routine,
 )
 from ros_sugar.core.action import ActionServerGoal
@@ -739,3 +740,89 @@ class TestActionRegistryEntryPoints(unittest.TestCase):
         )
         assert "planner/lookup_transform" in registry
         assert len(registry.list(kind=COMPONENT_ACTION_SERVER)) == 1
+
+
+class _WiderMonitor(Monitor):
+    """A downstream package's monitor, with an action of its own"""
+
+    RUNTIME_MONITOR_ACTIONS = Monitor.RUNTIME_MONITOR_ACTIONS + ("summarize",)
+
+    def summarize(self, **_) -> ActionReturnType:
+        """Report on the stack"""
+        return True, "summary"
+
+
+class _ForgetfulLauncher(Launcher):
+    """Installs its own monitor, as EmbodiedAgents does, and does not pass the
+    registry on"""
+
+    def _init_monitor_node(
+        self,
+        components_names,
+        services_components,
+        action_components,
+        all_components_to_activate_on_start,
+    ) -> None:
+        self.monitor_node = _WiderMonitor(
+            components_names=components_names,
+            events_actions=self._monitor_events_actions,
+            events_to_emit=self._internal_events,
+            services_components=services_components,
+            action_servers_components=action_components,
+            activate_on_start=all_components_to_activate_on_start,
+        )
+
+
+class _OwnRegistryLauncher(Launcher):
+    """Installs its own monitor with a registry of its own"""
+
+    def _init_monitor_node(
+        self,
+        components_names,
+        services_components,
+        action_components,
+        all_components_to_activate_on_start,
+    ) -> None:
+        self.own_registry = SystemActionRegistry.from_components(
+            [], monitor_methods=["start_routine"], monitor_class=Monitor
+        )
+        self.monitor_node = Monitor(
+            components_names=components_names,
+            action_registry=self.own_registry,
+            events_actions=self._monitor_events_actions,
+            events_to_emit=self._internal_events,
+        )
+
+
+class TestMonitorOverride(unittest.TestCase):
+    """A Launcher subclass that installs its own monitor.
+
+    The registry reaches the Monitor as a Launcher attribute, so an override of
+    `_init_monitor_node` has to pass it on. One that forgot used to leave its
+    monitor knowing only its own methods, and nothing said so.
+    """
+
+    def test_a_monitor_built_without_the_registry_is_handed_it(self):
+        launcher = _ForgetfulLauncher()
+        launcher.add_pkg(
+            components=[_RegistryDriver(component_name="forgetful_driver")]
+        )
+
+        launcher.setup_launch_description()
+
+        registry = launcher.monitor_node._action_registry
+        assert "forgetful_driver/move_to_unblock" in registry
+        # Built for the monitor actually installed, not for the base class
+        assert f"{MONITOR_OWNER}/summarize" in registry
+        assert f"{MONITOR_OWNER}/start_routine" in registry
+
+    def test_a_registry_passed_on_purpose_is_kept(self):
+        launcher = _OwnRegistryLauncher()
+        launcher.add_pkg(
+            components=[_RegistryDriver(component_name="own_registry_driver")]
+        )
+
+        launcher.setup_launch_description()
+
+        assert launcher.monitor_node._action_registry is launcher.own_registry
+        assert "own_registry_driver/move_to_unblock" not in launcher.own_registry

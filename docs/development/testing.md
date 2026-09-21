@@ -32,13 +32,15 @@ python3 -m pytest test/io_types_test.py -p no:anyio -q -k image
 Things worth knowing:
 
 - Launch-based tests print the whole launch log. Use `-q` and redirect to a file when running the full suite.
-- Launch-based tests discover nodes by name over DDS. Two suites running at the same time on one machine see each other's nodes; give each its own `ROS_DOMAIN_ID`.
+- Launch-based tests discover nodes by name over DDS. Each run therefore picks a `ROS_DOMAIN_ID` of its own, shown in the pytest header, so it never shares the graph with a stack running on the machine or with another run. Set `ROS_DOMAIN_ID` yourself to rerun on a given domain.
+- Every node, service, action, routine and topic name a test module brings up belongs to that module alone. The modules share one process and one domain, and a module's lifecycle nodes stay in the graph after its launch ends, where the Monitor could take one for a later module's component of the same name. `test/unique_names_test.py` fails when two modules share a name. A component that a fixture builds for each test is named after the test.
+- A step that has to outlast its timeout, or still be running when the test checks on it, waits on a `threading.Event` that the test sets in a `finally`, rather than sleeping. A busy machine can stall a thread for over a second, and a sleep then loses the race it was meant to win.
 - ROS 2 Humble's generated message classes check field types on every assignment, newer distributions only when `ROS_PYTHON_CHECK_FIELDS=1` is set. Run with that variable before pushing to catch mistakes such as assigning `0` to a `bool` field, which fails only on Humble in CI otherwise.
 - CI (`.github/workflows/tests.yml`) runs the suite inside `ros:humble`, `jazzy`, `kilted`, `lyrical` and `rolling` containers after a `colcon build`.
 
 ## rclpy Fixtures
 
-Each test module owns its rclpy setup; there is no shared `conftest.py`. Other modules in the same session may already have initialized rclpy (`Launcher.__init__` does, and never shuts it down), so fixtures tolerate a live context instead of asserting on it:
+Each test module owns its rclpy setup; the shared `test/conftest.py` only picks the run's ROS domain and arms a per-test watchdog. Other modules in the same session may already have initialized rclpy (`Launcher.__init__` does, and never shuts it down), so fixtures tolerate a live context instead of asserting on it:
 
 ```python
 import pytest

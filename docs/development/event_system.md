@@ -391,6 +391,10 @@ A dispatched call that is already executing cannot be interrupted — Python off
 Dispatches also run on a pool of 10 workers shared by all monitored actions, so a long-running action holds one of those workers for its whole lifetime.
 :::
 
+A step that sends a goal to an action server (`ActionServerGoal`) can be stopped for real: `halt()` cancels the goal on the server. Every step driving one server shares its client, which tracks one goal at a time, so a goal sent while the one before is still stopping — after a pause, a retry or an abort, since a server notices a cancel only when it next checks — waits for that goal to end. A step halted during that wait sends nothing, and the step that does send is followed to its own goal's end, not the end of the one it waited for.
+
+An executable of your own that waits before starting something can ask the same question with `self._attempt_is_live()`. It turns false once the attempt the executable was dispatched for has been halted, has timed out, or has been replaced by a new run — resuming a paused routine starts the same action again while the halted attempt's worker may still be waiting.
+
 ---
 
 ### Routines
