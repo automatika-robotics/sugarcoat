@@ -142,6 +142,16 @@ def build_browser_app(
         # update UI
         form_data = await request.form()
         result = ros_node.update_configs(dict(form_data.items()))
+        if result is None:
+            # The component never answered: no server, or it took too long.
+            # Reading `success` off that is how this page used to fall over
+            fh.toasting(
+                "No answer from the component, so nothing was changed",
+                session,
+                "error",
+                duration=100000,
+            )
+            return fh.get_main_page()
         success = all(result.success)
         if not success:
             item_names = list(form_data.keys())
