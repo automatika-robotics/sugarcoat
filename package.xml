@@ -13,6 +13,7 @@
 
   <depend>rclpy</depend>
   <depend>rclcpp</depend>
+  <depend>rosidl_runtime_py</depend>
   <depend>tf2_ros</depend>
   <depend>lifecycle_msgs</depend>
   <depend>action_msgs</depend>
