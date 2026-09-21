@@ -291,6 +291,9 @@ class BaseAction:
         )
         self._function = method
         self._is_monitor_action = False
+        # The Monitor method a system level action runs, when the action is
+        # named something else, as a routine step with a name of its own is
+        self._monitor_method: Optional[str] = None
         self._is_lifecycle_action = False
         self._description = description
 
@@ -584,6 +587,18 @@ class BaseAction:
         self.__action_keyname = value
 
     @property
+    def monitor_method(self) -> str:
+        """Name of the Monitor method this system level action runs.
+
+        The action's own name, unless it was named something else: two steps
+        of one routine running the same Monitor method need names that tell
+        them apart
+
+        :rtype: str
+        """
+        return self._monitor_method or self.action_name
+
+    @property
     def component_action(self) -> bool:
         """component_action.
 
@@ -700,10 +715,10 @@ class BaseAction:
         """
         # Check if it is a stack action and update the executable from the monitor node
         if self._is_monitor_action and monitor_node:
-            if not hasattr(monitor_node, self.action_name):
-                raise ValueError(f"Unknown stack action: {self.action_name}")
+            if not hasattr(monitor_node, self.monitor_method):
+                raise ValueError(f"Unknown stack action: {self.monitor_method}")
             # Get executable from monitor
-            self.executable = getattr(monitor_node, self.action_name)
+            self.executable = getattr(monitor_node, self.monitor_method)
 
         elif self._is_monitor_action and not monitor_node:
             raise ValueError("Monitor node should be provided to parse stack action")

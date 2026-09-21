@@ -33,7 +33,7 @@ from ..io.topic import Topic
 from ..io.utils import to_jsonable
 from .event import Event, EventBlackboardEntry
 from .action import Action, ActionServerGoal
-from .action import bind_monitored_actions
+from .action import bind_monitored_actions, current_attempt_is_live
 from ..condition import Condition
 from ._action_registry import (
     COMPONENT_ACTION_SERVER,
@@ -1605,7 +1605,7 @@ class Monitor(Node):
                     # by name against the Monitor. Anything else - a routine
                     # included - already holds the callable it is meant to run
                     if getattr(action, "_is_monitor_action", False):
-                        method = getattr(self, action.action_name)
+                        method = getattr(self, action.monitor_method)
                         action.executable = partial(
                             method, *action._args, **action._kwargs
                         )
@@ -1684,12 +1684,12 @@ class Monitor(Node):
         action._routed_by_monitor = True
 
         if getattr(action, "_is_monitor_action", False):
-            method = getattr(self, action.action_name, None)
+            method = getattr(self, action.monitor_method, None)
             if not callable(method):
                 logger.error(
-                    f"Action '{action.action_name}' of a routine is a system action "
-                    "this Monitor does not have. The routine will fail when it "
-                    "reaches it"
+                    f"Action '{action.action_name}' of a routine runs the system "
+                    f"action '{action.monitor_method}', which this Monitor does not "
+                    "have. The routine will fail when it reaches it"
                 )
             else:
                 action.executable = partial(
@@ -1810,10 +1810,11 @@ class Monitor(Node):
         reached. Waiting on a condition is different and needs no help, since
         a step's success condition already holds it open.
 
-        NOTE: this holds one of the dispatch pool's workers for the duration.
-        It is the seconds-to-minutes dwell of a mission, not a scheduler. An
-        abort ends the routine at once but does not cut the wait short; the
-        worker is released when it expires, and its verdict is discarded.
+        NOTE: this holds one of the dispatch pool's workers while it waits.
+        It is the seconds-to-minutes dwell of a mission, not a scheduler. A
+        wait stopped with its step, by an abort, a pause or its routine being
+        removed, returns within one slice and gives its worker back; waiting
+        out the time used to keep that worker from every other action.
 
         :param duration: Seconds to wait
         :rtype: ActionReturnType
@@ -1825,7 +1826,7 @@ class Monitor(Node):
         if seconds < 0:
             return False, f"Cannot wait for {seconds} seconds"
 
-        # In slices, so a shutdown mid-dwell is not held up by it
+        # In slices, so neither a shutdown nor its step stopping is held up
         deadline = time.monotonic() + seconds
         while True:
             remaining = deadline - time.monotonic()
@@ -1833,6 +1834,8 @@ class Monitor(Node):
                 return True, f"Waited {seconds}s"
             if not self.context.ok():
                 return False, f"Shut down after waiting {seconds - remaining:.1f}s"
+            if not current_attempt_is_live():
+                return False, f"Stopped after waiting {seconds - remaining:.1f}s"
             time.sleep(min(0.2, remaining))
 
     # ---- Registering behaviour while the stack is running ------------------
@@ -1867,7 +1870,7 @@ class Monitor(Node):
                     # A stack action carries a placeholder; the real method is
                     # resolved by name here, as it is for recipe declared ones
                     action.executable = partial(
-                        getattr(self, action.action_name),
+                        getattr(self, action.monitor_method),
                         *action._args,
                         **action._kwargs,
                     )

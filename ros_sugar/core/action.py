@@ -24,6 +24,7 @@ __all__ = [
     "OpaqueCoroutine",
     "OpaqueFunction",
     "bind_monitored_actions",
+    "current_attempt_is_live",
 ]
 
 # Accepted policies for what a timeout means
@@ -36,6 +37,23 @@ ON_FAIL_POLICIES = ("abort", "skip", "fallback")
 # The attempt each dispatch worker is running, as (action, attempt id), for an
 # executable that has to ask whether its attempt is still wanted
 _worker_attempt = threading.local()
+
+
+def current_attempt_is_live() -> bool:
+    """Whether the attempt the calling dispatch worker runs is still wanted.
+
+    For code that runs inside an action's dispatch without holding the action,
+    such as a Monitor method used as a routine step. A halt, a timeout or a run
+    started over each end the attempt, and the worker should stop with it
+
+    :return: True outside any dispatch, where there is no attempt to ask about
+    :rtype: bool
+    """
+    current = getattr(_worker_attempt, "current", None)
+    if current is None:
+        return True
+    action, attempt_id = current
+    return action._is_current_attempt(attempt_id)
 
 
 class ActionOutcome(StrEnum):
@@ -402,6 +420,7 @@ class Action(BaseAction):
         lifted.action_name = action.action_name
         lifted.parent_component = action.parent_component
         lifted._is_monitor_action = action._is_monitor_action
+        lifted._monitor_method = action._monitor_method
         lifted._is_lifecycle_action = action._is_lifecycle_action
         lifted._reset_args_kwargs(
             action._args, action._kwargs, action._dynamic_input_topics
@@ -651,11 +670,15 @@ class Action(BaseAction):
         current = getattr(_worker_attempt, "current", None)
         if current is None or current[0] is not self:
             return True
+        return self._is_current_attempt(current[1])
+
+    def _is_current_attempt(self, attempt_id: int) -> bool:
+        """Whether this run is still on the given attempt, and it is still open"""
         with self._run_lock:
             return (
                 self._running
                 and self._attempt_open
-                and current[1] == self._attempt_id
+                and attempt_id == self._attempt_id
             )
 
     def _abandon_attempt(self) -> None:
