@@ -7,7 +7,15 @@ from .monitor import Monitor
 from .event import Event
 from .action import Action, ActionOutcome, ActionServerGoal
 from .routine import Routine, RoutineStatus
-from ._action_registry import SystemActionRegistry
+from ._action_registry import (
+    COMPONENT_ACTION_SERVER,
+    COMPONENT_METHOD,
+    COMPONENT_SERVICE,
+    MONITOR_METHOD,
+    MONITOR_OWNER,
+    RegisteredAction,
+    SystemActionRegistry,
+)
 
 __all__ = [
     "BaseComponent",
@@ -22,4 +30,10 @@ __all__ = [
     "Routine",
     "RoutineStatus",
     "SystemActionRegistry",
+    "RegisteredAction",
+    "COMPONENT_ACTION_SERVER",
+    "COMPONENT_METHOD",
+    "COMPONENT_SERVICE",
+    "MONITOR_METHOD",
+    "MONITOR_OWNER",
 ]
