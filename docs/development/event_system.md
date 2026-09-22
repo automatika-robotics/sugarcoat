@@ -490,10 +490,14 @@ The cursor is also published on `/routine/<name>/state` as JSON in a `std_msgs/S
 ```json
 {"name": "pick_object", "status": "running", "index": 2,
  "active_step": "grasp", "steps": ["detect", "pregrasp", "grasp", "lift"],
- "message": "", "elapsed": 4.31}
+ "step_message": "At pregrasp pose", "abort_reason": "", "elapsed": 4.31}
 ```
 
 `status` is a `RoutineStatus` (`ros_sugar.core`), a string-valued enum: `idle`, `running`, `paused`, `completed`, `failed` or `aborted` on the wire.
+
+`step_message` is what the last step to finish returned: its result, or, for a routine that `failed`, why the step it failed at did. `abort_reason` is the reason an `aborted` routine was given. Both are cleared when the routine starts; a pause changes neither.
+
+The routine object keeps what every finished step of the current run returned. `routine.latest_step_messages` gives it by step name, and `routine.step_messages()` as a list in the order the steps finished, each entry `{"step", "succeeded", "message", "fallback"}`; `step_messages(-1)` is the last one. A step recovered by its fallback appears twice in the list, and holds the fallback's message in `latest_step_messages`.
 
 The topic is **latched** (`TRANSIENT_LOCAL`, depth 1). A cursor is published when the Monitor takes the routine on, as `idle` with its steps, and after that only when the routine transitions, so without latching anything connecting mid-mission — a UI, a rosbag, `ros2 topic echo` — would see nothing until the routine next moved. Subscribe with `TRANSIENT_LOCAL` to get the current state on connect:
 

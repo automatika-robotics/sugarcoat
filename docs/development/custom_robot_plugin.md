@@ -296,6 +296,36 @@ Declare processes; do not start them. A plugin that spawned its own subprocess
 would sit outside the launch system: no respawn, no captured output, no ordered
 shutdown, and a process still holding the device if the launcher is killed.
 
+### Feeding a Driver Node the Plugin's Own Telemetry
+
+Some nodes worth starting read the plugin's telemetry rather than a sensor's: a
+`robot_localization` EKF over the robot's odometry and IMU, for instance. Most
+of that telemetry is decoded from a non-ROS transport and lives only on the
+feedback bus, where a stock ROS node cannot see it. Declare what the node reads
+with `inputs`, as `{feedback_key: topic}` with the topic the node subscribes
+on, and the launcher delivers it there:
+
+```python
+ProcessSpec(
+    package="robot_localization",
+    executable="ekf_node",
+    parameters=[self.EKF_CONFIG, {"odom0": "/odom", "imu0": "/imu/data"}],
+    inputs={"Odometry": "/odom", "Imu": "/imu/data"},
+)
+```
+
+A feedback the plugin host decodes is published by the host on that topic,
+stamped with the node clock when the decoder left the stamp empty. One already
+carried on a ROS topic is not republished; the node is remapped onto the real
+topic instead. Either way the recipe has nothing to add, and nothing is
+published unless the node is actually started.
+
+Set `publish_tf=True` on an odometry `Feedback` to have the host also broadcast
+its `header.frame_id -> child_frame_id` transform whenever it publishes that
+feedback. A localizer fusing the odometry into a map frame publishes
+`map -> odom` and expects something else to own `odom -> base`; this makes the
+plugin that owner.
+
 ## Describing the Robot
 
 A `RobotPlugin` knows the robot it drives, so it can configure the whole stack:
