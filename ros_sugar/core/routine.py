@@ -156,7 +156,10 @@ class Routine:
         self._lock = threading.RLock()
         self._status = RoutineStatus.IDLE
         self._index = 0
-        self._message = ""
+        # What the finished steps of this run returned, in the order they
+        # finished, and why the run was aborted, if it was
+        self._step_messages: List[Dict] = []
+        self._abort_reason = ""
         self._started_at: Optional[float] = None
         self._run_kwargs: Dict = {}
 
@@ -320,7 +323,10 @@ class Routine:
                 "index": self._index,
                 "active_step": step.action_name if step else None,
                 "steps": [step.action_name for step in self.steps],
-                "message": self._message,
+                "step_message": (
+                    self._step_messages[-1]["message"] if self._step_messages else ""
+                ),
+                "abort_reason": self._abort_reason,
                 "elapsed": (
                     round(time.time() - self._started_at, 3)
                     if self._started_at is not None
@@ -333,6 +339,35 @@ class Routine:
         if feedback is not None:
             cursor["step_feedback"] = feedback
         return cursor
+
+    @property
+    def latest_step_messages(self) -> Dict[str, str]:
+        """What each step that finished in this run returned, by step name.
+
+        A step its fallback stood in for holds the fallback's message, where
+        `step_messages` has both. A step that was preempted, by a pause or an
+        abort, has not finished and is not here. Cleared when the routine starts.
+
+        :rtype: Dict[str, str]
+        """
+        with self._lock:
+            return {entry["step"]: entry["message"] for entry in self._step_messages}
+
+    def step_messages(self, index: Optional[int] = None) -> Union[List[Dict], Dict]:
+        """Every step that finished in this run, in the order it finished.
+
+        Each entry is ``{"step", "succeeded", "message", "fallback"}``, where
+        ``fallback`` marks the result of the step's fallback rather than of the
+        step itself. Cleared when the routine starts.
+
+        :param index: Only this entry, counting from the end when negative
+        :raises IndexError: If there is no entry at `index`
+        :rtype: Union[List[Dict], Dict]
+        """
+        with self._lock:
+            if index is None:
+                return [dict(entry) for entry in self._step_messages]
+            return dict(self._step_messages[index])
 
     def __publish_state(self) -> None:
         """Publish the cursor, if the host provided a publisher"""
@@ -375,7 +410,8 @@ class Routine:
             self._resume_at = None
             self._pausing = False
             self._resume_pending = False
-            self._message = ""
+            self._step_messages = []
+            self._abort_reason = ""
             self._run_kwargs = kwargs
             self._started_at = time.time()
 
@@ -398,7 +434,6 @@ class Routine:
                 return False, f"Routine '{self.name}' is not running"
             step = self.steps[self._index]
             self._status = RoutineStatus.PAUSED
-            self._message = f"paused at step '{step.action_name}'"
             self._pausing = bool(self.on_pause)
             call_kwargs = self.__step_kwargs()
         # A step being recovered has its fallback in flight, not the step, and
@@ -437,7 +472,6 @@ class Routine:
             if self._status != RoutineStatus.PAUSED:
                 return False, f"Routine '{self.name}' is not paused"
             self._status = RoutineStatus.RUNNING
-            self._message = ""
             # Normally the step that was in flight. If the pause landed between
             # two steps, the one the routine had got to instead: a step that
             # already succeeded must not run a second time
@@ -461,7 +495,7 @@ class Routine:
     ) -> ActionReturnType:
         """End the routine now, preempting whatever it is running and running `on_abort`
 
-        :param reason: Recorded in the cursor and logged
+        :param reason: Recorded in the cursor as `abort_reason`, and logged
         :param run_on_abort: Dispatch the `on_abort` action. A host tearing the
             routine down passes False: an action dispatched into a node that is
             going away cannot report back, and would outlive the node it calls
@@ -656,6 +690,7 @@ class Routine:
             # whoever moved the routine on owns it now
             return
         self.__clear_in_flight(step)
+        self.__record_step_message(step, succeeded, message)
 
         if succeeded:
             logger.info(
@@ -685,6 +720,22 @@ class Routine:
             RoutineStatus.FAILED, f"step '{step.action_name}' failed: {message}"
         )
 
+    def __record_step_message(
+        self, step: Action, succeeded: bool, message: str, fallback: bool = False
+    ) -> None:
+        """Keep what a finished step returned, for the cursor and `step_messages`
+
+        :param fallback: The result is the step's fallback's, not the step's own
+        """
+        with self._lock:
+            self._step_messages.append({
+                "step": step.action_name,
+                "succeeded": succeeded,
+                # A string whatever the step returned, so the cursor stays JSON
+                "message": str(message),
+                "fallback": fallback,
+            })
+
     def __on_fallback_done(
         self, index: int, failure: str, result: ActionReturnType, outcome: ActionOutcome
     ) -> None:
@@ -696,6 +747,7 @@ class Routine:
         if stale or outcome == ActionOutcome.PREEMPTED:
             return
         self.__clear_in_flight(step.fallback)
+        self.__record_step_message(step, recovered, message, fallback=True)
         if recovered:
             logger.warning(
                 f"Routine '{self.name}' step '{step.action_name}' recovered by its "
@@ -721,7 +773,8 @@ class Routine:
             if self._status.is_terminal():
                 return
             self._status = status
-            self._message = message
+            if status == RoutineStatus.ABORTED:
+                self._abort_reason = message
             call_kwargs = self.__step_kwargs()
 
         if status == RoutineStatus.COMPLETED:
