@@ -81,7 +81,9 @@ class Routine:
         and they must end up with unique names
     :param on_complete: Action run when the last step succeeds
     :param on_abort: Action run when the routine fails or is aborted
-    :param description: Optional action description
+    :param description: What the routine is for, in plain words, for whoever
+        lists the routines available and has to choose one: an operator, or an
+        LLM planning with them
     """
 
     # Read by Action.coerce (to avoid circular imports). Also what the Launcher and
@@ -101,6 +103,11 @@ class Routine:
     ) -> None:
         if not steps:
             raise ValueError(f"Routine '{name}' has no steps")
+        if description is not None and not isinstance(description, str):
+            raise TypeError(
+                f"The description of routine '{name}' must be a string, got "
+                f"{type(description).__name__}"
+            )
 
         self.name = name
         self.description = description
@@ -166,8 +173,9 @@ class Routine:
         )
         ```
 
-        :param spec: `{name, steps, on_complete, on_abort, description}`, where
-            each step is whatever `resolve` understands
+        :param spec: `{name, steps, on_complete, on_abort, on_pause,
+            description}`, where each step is whatever `resolve` understands,
+            and `on_pause` is one of them or a list
         :param resolve: Turns one step dictionary into an Action
         :raises ValueError: If the spec names no routine or carries no steps
         :rtype: Routine
