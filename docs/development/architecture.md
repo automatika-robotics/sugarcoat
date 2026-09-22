@@ -74,7 +74,7 @@ Health status is not consumed by the Monitor. Each component evaluates its own s
 | `add_ros_node(package, executable, ...)` / `include_launch_file(package, launch_file, launch_args)` | Bring up external ROS nodes and launch files alongside the components, each in its own process |
 | `on(event, action)` | Register an event/action pair; sugar for `events_actions` |
 | `on_process_fail(max_retries)` | Respawn a multiprocess component that exits unexpectedly |
-| `enable_ui(inputs, outputs, port, serve_browser, ...)` | Start the UI node with its JSON/WebSocket API and, optionally, the browser front-end |
+| `enable_ui(inputs, outputs, port, serve_browser, routines, ...)` | Start the UI node with its JSON/WebSocket API and, optionally, the browser front-end. `routines` are shown with their progress and controls |
 | `robot`, `frames`, `robot_frame`, `world_frame` | Broadcast the robot description and frame names to every component; a robot plugin supplies defaults for `robot` and the body frame |
 | `bringup(config_file=None, introspect=False, launch_debug=False)` | Build the launch description and run it, blocking until shutdown |
 

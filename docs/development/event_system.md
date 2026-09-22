@@ -428,6 +428,8 @@ launcher.on(pick_requested, pick)
 
 A `Routine` is not an `Action` — it is the organizing primitive *containing* actions, monitored one by one — but it is registered on an event exactly the same way, so it needs no new registration surface.
 
+`description` says what the routine is for, in plain words, for whoever has to choose among the routines available — an operator, or an LLM planning with them: `Routine("pick_object", steps=[...], description="Detect the object, grasp it and lift it")`.
+
 #### Steps are monitored actions
 
 **A step is an ordinary `Action`** — there is no separate step type. `success`, `timeout`, `on_timeout`, `max_retries`, `retry_delay` and `cancel_method` are the ones you already know, deciding whether *this* step worked, with one retry budget per step spent by a reported failure or a timeout alike.
@@ -477,6 +479,7 @@ The Monitor exposes each routine by name, so control is available as ordinary sy
 | `resume_routine(name)` | Re-enter the step it stopped at |
 | `abort_routine(name, reason)` | End it now and run `on_abort` |
 | `get_routine_state(name)` | The cursor, as JSON |
+| `get_routines()` | Every registered routine, as a list of dicts: its cursor plus its `description`. `list_routines` serves the same as JSON over the runtime API |
 
 Pausing preempts the step in flight, and resuming runs that step again from the start: a step is the smallest thing a routine can be positioned at. What gets preempted is whatever the routine actually dispatched, which is the fallback rather than the step while a step is being recovered. Resuming re-enters the step either way — unless the pause landed between two steps, in which case it picks up at the next one rather than repeating the step that had already finished.
 
@@ -492,7 +495,7 @@ The cursor is also published on `/routine/<name>/state` as JSON in a `std_msgs/S
 
 `status` is a `RoutineStatus` (`ros_sugar.core`), a string-valued enum: `idle`, `running`, `paused`, `completed`, `failed` or `aborted` on the wire.
 
-The topic is **latched** (`TRANSIENT_LOCAL`, depth 1). A cursor is published only when the routine transitions, so without latching anything connecting mid-mission — a UI, a rosbag, `ros2 topic echo` — would see nothing until the routine next moved. Subscribe with `TRANSIENT_LOCAL` to get the current state on connect:
+The topic is **latched** (`TRANSIENT_LOCAL`, depth 1). A cursor is published when the Monitor takes the routine on, as `idle` with its steps, and after that only when the routine transitions, so without latching anything connecting mid-mission — a UI, a rosbag, `ros2 topic echo` — would see nothing until the routine next moved. Subscribe with `TRANSIENT_LOCAL` to get the current state on connect:
 
 ```python
 from rclpy.qos import DurabilityPolicy
@@ -505,6 +508,19 @@ node.create_subscription(
 ```
 
 A `VOLATILE` subscriber stays compatible and behaves as before: it receives transitions from the moment it connects, just not the retained sample.
+
+#### From the UI
+
+Routines given to `enable_ui` appear among the UI's Tasks, each with its steps checked off as it goes, a log of the steps it entered, and the controls its status allows: start while it is not under way, pause and abort while it runs, resume and abort while it is paused.
+
+```python
+launcher.on(pick_requested, pick)
+launcher.enable_ui(routines=[pick, patrol, "docking"])
+```
+
+A `Routine` is hosted on the Monitor even if no event triggers it, as `patrol` is here, so the UI can be the only way to start it. A name refers to a routine that reaches the Monitor another way, such as one added at runtime with `add_routine`. The UI node follows each routine's state topic and sends its controls to the Monitor's runtime API, so it reaches routines the same way whatever process it runs in.
+
+The UI's JSON API serves the same controls to scripts and other front-ends: `GET /api/routines`, `POST /api/routines/{name}/start` (and `/pause`, `/resume`, `/abort`, which takes an optional `{"reason": ...}`), and `WS /api/routines/{name}/state`, which pushes the state above on connect and on every change. A command the routine cannot take, such as pausing one that is not running, is answered `409` with the Monitor's reason.
 
 ---
 
