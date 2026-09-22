@@ -184,6 +184,13 @@ class TestActionResolution(unittest.TestCase):
         without anyone writing a client for its cancel service"""
         registry = monitor_node._action_registry
         assert "registry_counter/cancel_main_goal" in registry
+        entry = registry.get("registry_counter/cancel_main_goal")
+        # Listed in prose, and kept whole for a caller building a tool from it
+        assert entry.description == (
+            "Stop the goal this component's action server is running, "
+            "succeeding when nothing is running"
+        )
+        assert entry.schema["function"]["name"] == "cancel_main_goal"
         # A component with no goals to cancel does not offer it
         assert "driver/cancel_main_goal" not in registry
         assert "mapper/cancel_main_goal" not in registry
@@ -664,10 +671,15 @@ class TestActionRegistryFailureAndListing(unittest.TestCase):
         by_ref = {entry["ref"]: entry for entry in payload}
         assert by_ref["driver/move_to_unblock"]["kind"] == COMPONENT_METHOD
         assert by_ref["planner/lookup_transform"]["interface_type"] == "LookupTransform"
+        assert by_ref["driver/honk"]["schema"]["function"]["name"] == "honk"
 
     def test_an_entry_round_trips_through_a_dict(self):
         entry = RegisteredAction(
-            ref="driver/stop", owner="driver", name="stop", kind=COMPONENT_METHOD
+            ref="driver/stop",
+            owner="driver",
+            name="stop",
+            kind=COMPONENT_METHOD,
+            schema={"type": "function", "function": {"name": "stop"}},
         )
         restored = RegisteredAction(ref="x/y", owner="x", name="y", kind=COMPONENT_METHOD)
         restored.from_dict(entry.to_dict())
@@ -716,6 +728,15 @@ class TestActionRegistryEntryPoints(unittest.TestCase):
     def test_a_tool_schema_description_is_read_as_prose(self):
         """Handing a caller the raw JSON would make the listing unreadable"""
         assert self.registry.get("driver/honk").description == "Sound the horn"
+
+    def test_a_tool_schema_description_is_also_kept_whole(self):
+        """A caller building tool calls needs the parameters, not only the prose"""
+        schema = self.registry.get("driver/honk").schema
+        assert schema["function"]["name"] == "honk"
+        assert schema["function"]["parameters"] == {"type": "object", "properties": {}}
+        # Described in prose, by the decorator or the docstring: no schema
+        assert self.registry.get("driver/emergency_stop").schema is None
+        assert self.registry.get("driver/move_to_unblock").schema is None
 
     def test_a_server_name_is_reduced_to_something_a_reference_can_hold(self):
         for server_name, expected in [

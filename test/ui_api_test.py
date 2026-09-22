@@ -66,11 +66,12 @@ class _FakeConfig:
 class _FakeNode:
     """Minimal stand-in for a UINode for testing build_interfaces."""
 
-    def __init__(self, in_topics, out_topics, srv=None, act=None):
+    def __init__(self, in_topics, out_topics, srv=None, act=None, routines=None):
         self.in_topics = in_topics  # API outputs (robot -> client)
         self.out_topics = out_topics  # API inputs (client -> robot)
         self._srv = srv or []
         self._act = act or []
+        self._routines = routines or []
         self.config = _FakeConfig()
 
     def srv_clients_inputs_dicts(self):
@@ -78,6 +79,9 @@ class _FakeNode:
 
     def action_clients_inputs_dicts(self):
         return self._act
+
+    def routine_names(self):
+        return list(self._routines)
 
 
 def test_build_interfaces_document():
@@ -189,6 +193,12 @@ class _ApiNode:
         self.output_ready = True  # add_output_listener return value
         self.output_listeners = {}  # topic_name -> set of push listeners
         self.logged = []  # (level, message) logged through get_logger
+        self.routines = []  # routine_names result
+        self.routine_states = {}  # routine name -> get_routine_state result
+        self.routine_listeners = {}  # routine name -> set of push listeners
+        self.routine_result = (True, "done")  # control_routine return value
+        self.routine_error = None  # exception to raise from control_routine
+        self.routine_calls = []  # (name, command, reason) given to control_routine
 
     def srv_clients_inputs_dicts(self):
         from std_srvs.srv import Trigger
@@ -268,6 +278,33 @@ class _ApiNode:
     def fire_output(self, name):
         """Simulate a message arriving on an output topic (invoke push listeners)."""
         for listener in list(self.output_listeners.get(name, ())):
+            listener()
+
+    def routine_names(self):
+        return list(self.routines)
+
+    def get_routine_state(self, name):
+        return self.routine_states.get(name)
+
+    def add_routine_listener(self, name, listener):
+        if name not in self.routines:
+            return False
+        self.routine_listeners.setdefault(name, set()).add(listener)
+        return True
+
+    def remove_routine_listener(self, name, listener):
+        self.routine_listeners.get(name, set()).discard(listener)
+
+    def control_routine(self, name, command, reason=None):
+        self.routine_calls.append((name, command, reason))
+        if self.routine_error is not None:
+            raise self.routine_error
+        return self.routine_result
+
+    def set_routine_state(self, routine, state):
+        """Simulate the Monitor publishing a new state for a routine"""
+        self.routine_states[routine] = state
+        for listener in list(self.routine_listeners.get(routine, ())):
             listener()
 
     def get_logger(self):
@@ -1640,3 +1677,311 @@ def test_logging_refusals_and_key_uses_with_a_ros_logger(tmp_path):
     assert client.get("/api/interfaces").status_code == 401
     as_commander = {"Authorization": f"Bearer {command_key}"}
     assert client.get("/api/interfaces", headers=as_commander).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Routines
+# ---------------------------------------------------------------------------
+_RUNNING = {
+    "name": "patrol",
+    "status": "running",
+    "index": 1,
+    "active_step": "scan",
+    "steps": ["go_home", "scan", "back_home"],
+    "message": "",
+    "elapsed": 4.2,
+}
+
+
+def _routine_node():
+    node = _ApiNode()
+    node.routines = ["patrol", "dock"]
+    node.routine_states = {"patrol": dict(_RUNNING)}
+    return node
+
+
+def test_the_routines_are_listed_with_where_each_has_got_to():
+    listed = _make_client(_routine_node()).get("/api/routines").json()
+
+    assert listed == [
+        {"name": "patrol", "state": _RUNNING},
+        # Declared, but no state has arrived for it yet
+        {"name": "dock", "state": None},
+    ]
+
+
+def test_a_routine_is_read_by_name():
+    client = _make_client(_routine_node())
+
+    found = client.get("/api/routines/patrol").json()
+    assert found == {"name": "patrol", "state": _RUNNING}
+    missing = client.get("/api/routines/nowhere")
+    assert missing.status_code == 404
+    assert "nowhere" in missing.json()["error"]
+
+
+def test_each_routine_control_reaches_the_monitor():
+    node = _routine_node()
+    client = _make_client(node)
+    commands = ("start", "pause", "resume", "abort")
+
+    for command in commands:
+        node.routine_result = (True, f"{command} done")
+        response = client.post(f"/api/routines/patrol/{command}")
+        assert response.status_code == 200, response.json()
+        assert response.json() == {
+            "routine": "patrol",
+            command: True,
+            "message": f"{command} done",
+        }
+
+    assert node.routine_calls == [("patrol", command, None) for command in commands]
+
+
+def test_an_abort_carries_its_reason():
+    node = _routine_node()
+
+    client = _make_client(node)
+    client.post("/api/routines/patrol/abort", json={"reason": "operator stop"})
+
+    assert node.routine_calls == [("patrol", "abort", "operator stop")]
+
+
+def test_a_command_the_routine_cannot_take_is_a_conflict():
+    """Pausing a routine that is not running: the Monitor says why"""
+    node = _routine_node()
+    node.routine_result = (False, "Routine 'dock' is not running")
+
+    response = _make_client(node).post("/api/routines/dock/pause")
+
+    assert response.status_code == 409
+    assert response.json() == {"error": "Routine 'dock' is not running"}
+
+
+def test_an_unreachable_monitor_is_reported():
+    node = _routine_node()
+    node.routine_error = RuntimeError("The Monitor is not available")
+
+    response = _make_client(node).post("/api/routines/patrol/start")
+
+    assert response.status_code == 503
+    assert response.json() == {"error": "The Monitor is not available"}
+
+
+def test_an_unknown_routine_cannot_be_controlled():
+    node = _routine_node()
+
+    response = _make_client(node).post("/api/routines/nowhere/start")
+
+    assert response.status_code == 404
+    assert not node.routine_calls
+
+
+def test_a_routine_state_is_pushed_as_it_changes():
+    node = _routine_node()
+    client = _make_client(node)
+
+    with client.websocket_connect("/api/routines/patrol/state") as ws:
+        # Where it stands, as soon as the stream opens
+        assert ws.receive_json() == _RUNNING
+        ended = {**_RUNNING, "status": "completed", "index": 3}
+        node.set_routine_state("patrol", ended)
+        assert ws.receive_json()["status"] == "completed"
+        # A run that ended keeps the stream open, since the routine can start again
+        node.set_routine_state("patrol", dict(_RUNNING))
+        assert ws.receive_json()["status"] == "running"
+
+
+def test_an_unknown_routine_state_stream_is_refused():
+    from starlette.websockets import WebSocketDisconnect
+
+    client = _make_client(_routine_node())
+    with client.websocket_connect("/api/routines/nowhere/state") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+    assert (closed.value.code, closed.value.reason) == (1008, "Unknown routine")
+
+
+def test_the_interfaces_advertise_the_routines():
+    doc = _make_client(_routine_node()).get("/api/interfaces").json()
+
+    assert doc["routines"][0] == {
+        "name": "patrol",
+        "state": "GET /api/routines/patrol",
+        "stream": "WS /api/routines/patrol/state",
+        "start": "POST /api/routines/patrol/start",
+        "pause": "POST /api/routines/patrol/pause",
+        "resume": "POST /api/routines/patrol/resume",
+        "abort": "POST /api/routines/patrol/abort",
+    }
+    assert [r["name"] for r in doc["routines"]] == ["patrol", "dock"]
+
+
+def test_a_routine_is_followed_with_a_read_key_and_controlled_with_a_command_key(
+    tmp_path,
+):
+    node = _routine_node()
+    client, _, command_key, read_key = _make_secure_client(node, tmp_path)
+    as_reader = {"Authorization": f"Bearer {read_key}"}
+    as_commander = {"Authorization": f"Bearer {command_key}"}
+
+    assert client.get("/api/routines", headers=as_reader).status_code == 200
+    stream = "/api/routines/patrol/state"
+    with client.websocket_connect(stream, headers=as_reader) as ws:
+        assert ws.receive_json()["status"] == "running"
+    refused = client.post("/api/routines/patrol/start", headers=as_reader)
+    assert refused.status_code == 403
+    assert not node.routine_calls
+
+    allowed = client.post("/api/routines/patrol/start", headers=as_commander)
+    assert allowed.status_code == 200
+    assert node.routine_calls == [("patrol", "start", None)]
+
+
+def test_a_real_ui_node_follows_the_state_a_routine_publishes():
+    """The state topic is latched, so a state published before the UI node
+    subscribed arrives all the same"""
+    import time
+
+    import rclpy
+    from rclpy.qos import DurabilityPolicy
+    from std_msgs.msg import String
+
+    from ros_sugar.config import QoSConfig
+    from ros_sugar.ui_node.ui_node import UINode, UINodeConfig
+
+    if not rclpy.ok():
+        rclpy.init()
+    publisher_node = rclpy.create_node("ui_routine_state_publisher")
+    latched = QoSConfig(durability=DurabilityPolicy.TRANSIENT_LOCAL, queue_size=1)
+    publisher = publisher_node.create_publisher(
+        String, "routine/ui_followed/state", latched.to_ros()
+    )
+    state = {
+        "name": "ui_followed",
+        "status": "running",
+        "index": 0,
+        "active_step": "go",
+        "steps": ["go"],
+        "message": "",
+        "elapsed": 1.0,
+    }
+    publisher.publish(String(data=json.dumps(state)))
+
+    node = UINode(
+        component_name="ui_routine_follower",
+        config=UINodeConfig(routines=["ui_followed"]),
+    )
+    node.rclpy_init_node()
+    node.custom_on_activate()
+    heard = []
+    try:
+        assert node.add_routine_listener("ui_followed", lambda: heard.append(1))
+        assert not node.add_routine_listener("not_shown", lambda: None)
+
+        deadline = time.time() + 10.0
+        while node.get_routine_state("ui_followed") is None and time.time() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.1)
+
+        followed = node.get_routine_state("ui_followed")
+        assert followed is not None, "the latched state never arrived"
+        assert followed["active_step"] == "go"
+        assert heard, "the listener was not told"
+        # Nothing was published since, and the routine is still running
+        time.sleep(0.2)
+        assert node.get_routine_state("ui_followed")["elapsed"] > 1.0
+    finally:
+        node.destroy_node()
+        publisher_node.destroy_node()
+
+
+def test_a_real_ui_node_controls_a_routine_through_the_monitor():
+    from unittest.mock import MagicMock
+
+    import rclpy
+    from automatika_ros_sugar.srv import ExecuteMethod
+
+    from ros_sugar.ui_node.ui_node import UINode, UINodeConfig
+
+    if not rclpy.ok():
+        rclpy.init()
+    node = UINode(
+        component_name="ui_routine_controller",
+        config=UINodeConfig(routines=["ui_controlled"]),
+    )
+    node.rclpy_init_node()
+    node.custom_on_activate()
+    client = node._runtime_api_client
+    client.client.wait_for_service = MagicMock(return_value=True)
+    client.send_request = MagicMock(
+        return_value=ExecuteMethod.Response(
+            success=True, response_json="Routine 'ui_controlled' aborted"
+        )
+    )
+    try:
+        answer = node.control_routine("ui_controlled", "abort", reason="operator stop")
+        assert answer == (True, "Routine 'ui_controlled' aborted")
+        request = client.send_request.call_args.args[0]
+        assert request.name == "abort_routine"
+        assert json.loads(request.kwargs_json) == {
+            "routine_name": "ui_controlled",
+            "reason": "operator stop",
+        }
+
+        client.send_request.return_value = ExecuteMethod.Response(
+            success=False, error_msg="Routine 'ui_controlled' is not running"
+        )
+        assert node.control_routine("ui_controlled", "pause") == (
+            False,
+            "Routine 'ui_controlled' is not running",
+        )
+        assert json.loads(client.send_request.call_args.args[0].kwargs_json) == {
+            "routine_name": "ui_controlled"
+        }
+
+        with pytest.raises(ValueError, match="not shown in the UI"):
+            node.control_routine("elsewhere", "start")
+        with pytest.raises(ValueError, match="Unknown routine command"):
+            node.control_routine("ui_controlled", "explode")
+        client.client.wait_for_service.return_value = False
+        with pytest.raises(RuntimeError, match="not available"):
+            node.control_routine("ui_controlled", "start")
+    finally:
+        node.destroy_node()
+
+
+def test_enable_ui_hands_its_routines_to_the_ui_and_the_monitor():
+    from ros_sugar import Launcher
+    from ros_sugar.core import Action, BaseComponent, Routine
+    from ros_sugar.utils import ActionReturnType
+
+    class _Arm(BaseComponent):
+        def _execution_step(self):
+            pass
+
+        def home(self, **_) -> ActionReturnType:
+            return True, "home"
+
+    arm = _Arm(component_name="ui_routine_arm")
+    patrol = Routine("ui_patrol", steps=[Action(arm.home)])
+    launcher = Launcher()
+    launcher.add_pkg(components=[arm])
+
+    launcher.enable_ui(
+        routines=[patrol, "ui_mission"], serve_browser=False, secure=False
+    )
+    launcher.setup_launch_description()
+
+    assert launcher._ui_node_config.routines == ["ui_patrol", "ui_mission"]
+    # Hosted though no event triggers it. A name is left to whoever registers it
+    assert launcher.monitor_node._standalone_routines == [patrol]
+
+
+def test_enable_ui_takes_each_routine_once_as_a_routine_or_a_name():
+    from ros_sugar import Launcher
+
+    launcher = Launcher()
+    with pytest.raises(TypeError, match="Routine or the name of one"):
+        launcher.enable_ui(routines=[42], serve_browser=False)
+    with pytest.raises(ValueError, match="given to the UI twice"):
+        launcher.enable_ui(routines=["patrol", "patrol"], serve_browser=False)

@@ -109,6 +109,15 @@ cursor_probe_calls = []
 # to see its state is a retained sample
 latch_probe_calls = []
 
+# The routine handed to the Monitor with no event at all, the way the UI's are.
+# Its step reads a topic that nothing else in the recipe reads, so hosting the
+# routine is the only thing that can subscribe it
+hosted_calls = []
+HOSTED_TOPIC = "hosted_goal"
+HOSTED_GOAL = 2.5
+
+PICK_DESCRIPTION = "Detect the object, grasp it and lift it"
+
 # When the steps on either side of a recipe routine's waits ran
 dwell_marks = []
 
@@ -182,6 +191,11 @@ class ArmComponent(BaseComponent):
         """Step of the routine the latching test finishes before subscribing"""
         latch_probe_calls.append(1)
         return True, "Latch probe done"
+
+    def hosted_step(self, goal: float = -1.0, **_) -> ActionReturnType:
+        """Step of the routine no event triggers or registers"""
+        hosted_calls.append(goal)
+        return True, f"Hosted step went to {goal}"
 
     def mark_dwell(self, **_) -> ActionReturnType:
         """Records when it ran, on either side of a routine's waits"""
@@ -351,6 +365,7 @@ def generate_test_description():
 
     pick = Routine(
         "pick",
+        description=PICK_DESCRIPTION,
         steps=[
             # Nothing to say about failure beyond the default, which is to
             # abort the routine
@@ -389,6 +404,15 @@ def generate_test_description():
     # listening, so the transition it asserts on cannot have already happened
     cursor_probe = Routine("cursor_probe", steps=[Action(arm.probe_cursor)])
     latched_probe = Routine("latched_probe", steps=[Action(arm.probe_latch)])
+
+    # In no event at all: handed to the Monitor below, the way the Launcher
+    # hands it the routines shown in the UI
+    hosted_topic = Topic(name=HOSTED_TOPIC, msg_type="Float32")
+    hosted_by_name = Routine(
+        "hosted_by_name",
+        steps=[Action(arm.hosted_step, kwargs={"goal": hosted_topic.msg.data})],
+        description="Go to the goal on the hosted topic",
+    )
 
     # A recipe routine that dwells twice, so each wait needs a name of its own.
     # Started by name from the test
@@ -496,6 +520,8 @@ def generate_test_description():
     global monitor_node, arm_component
     monitor_node = launcher.monitor_node
     arm_component = arm
+    # 'manual' is also routed through an event, and must still be hosted once
+    monitor_node.host_routines([hosted_by_name, manual])
 
     launcher._description.add_action(launch_testing.actions.ReadyToTest())
     return launcher._description
@@ -785,6 +811,77 @@ class TestRoutine(unittest.TestCase):
             lambda: routine_state("manual")["status"] == "completed", cls.wait_time
         )
         assert manual_calls == [1]
+
+    def test_the_routines_are_listed_with_their_descriptions(cls):
+        """However a routine reached the Monitor: through an event, handed to
+        it alone, or added at runtime"""
+        added, message = monitor_node.add_routine(
+            Routine(
+                "described_at_runtime",
+                steps=[Action(arm_component.note_thread)],
+                description="Added while the Monitor runs",
+            )
+        )
+        assert added, message
+
+        listed = {entry["name"]: entry for entry in monitor_node.get_routines()}
+
+        assert listed["pick"]["description"] == PICK_DESCRIPTION
+        assert listed["hosted_by_name"]["description"] == (
+            "Go to the goal on the hosted topic"
+        )
+        assert listed["described_at_runtime"]["description"] == (
+            "Added while the Monitor runs"
+        )
+        # Given none
+        assert listed["manual"]["description"] is None
+        # Each entry is also the routine's state
+        assert listed["hosted_by_name"]["steps"] == ["hosted_step"]
+        assert "status" in listed["pick"]
+        # The runtime API serves the same listing
+        served, payload = monitor_node.list_routines()
+        assert served
+        assert {e["name"]: e["description"] for e in json.loads(payload)} == {
+            name: entry["description"] for name, entry in listed.items()
+        }
+
+    def test_a_routine_no_event_triggers_is_hosted_and_started_by_name(cls):
+        """'hosted_by_name' reached the Monitor through host_routines alone"""
+        assert routine_state("hosted_by_name")["status"] == "idle"
+        assert not hosted_calls
+        # Its topic holds where it stands before it ever ran, which is what lets
+        # a UI show its steps and a start button from the outset
+        received = []
+        monitor_node.create_subscription(
+            String,
+            "routine/hosted_by_name/state",
+            lambda msg: received.append(json.loads(msg.data)),
+            QoSConfig(
+                durability=DurabilityPolicy.TRANSIENT_LOCAL, queue_size=1
+            ).to_ros(),
+        )
+        assert wait_for(lambda: bool(received), 10.0), "Nothing on the idle topic"
+        assert received[0]["status"] == "idle"
+        assert received[0]["steps"] == ["hosted_step"]
+
+        publisher = monitor_node.create_publisher(Float32, HOSTED_TOPIC, 10)
+
+        def _heard() -> bool:
+            publisher.publish(Float32(data=HOSTED_GOAL))
+            return monitor_node.get_topics_snapshot().get(HOSTED_TOPIC) is not None
+
+        assert wait_for(_heard, cls.wait_time), (
+            "The Monitor is not subscribed to the topic the hosted routine reads"
+        )
+
+        started, message = monitor_node.start_routine("hosted_by_name")
+        assert started, message
+        assert wait_for(
+            lambda: routine_state("hosted_by_name")["status"] == "completed",
+            cls.wait_time,
+        ), f"cursor: {routine_state('hosted_by_name')}"
+        # The argument was read from the topic when the step was entered
+        assert hosted_calls == [HOSTED_GOAL]
 
     def test_a_running_routine_can_be_aborted_by_name(cls):
         assert wait_for(
@@ -1378,6 +1475,104 @@ class TestRoutineControl(unittest.TestCase):
         # Re-entered, so the step ran twice
         assert rec.calls == ["blocking", "blocking", "lift"]
 
+    def test_pause_runs_the_on_pause_actions_in_order(self):
+        """Preempting the step does not stop what it set moving: on_pause does"""
+        rec, released = Recorder(), ThreadingEvent()
+        routine = Routine(
+            "drive",
+            steps=[Action(rec.blocking("goto", released)), Action(rec.step("arrive"))],
+            on_pause=[Action(rec.step("stop_tracking")), Action(rec.step("stop_robot"))],
+        )
+        routine()
+        assert wait_for(lambda: "goto" in rec.calls)
+
+        routine.pause()
+        assert wait_for(lambda: "stop_robot" in rec.calls), "on_pause did not run"
+        assert rec.calls == ["goto", "stop_tracking", "stop_robot"]
+
+        released.set()
+        routine.resume()
+        assert wait_until_done(routine) == RoutineStatus.COMPLETED
+        # Run on the pause only, not again on resuming
+        assert rec.calls == ["goto", "stop_tracking", "stop_robot", "goto", "arrive"]
+
+    def test_a_failing_on_pause_action_does_not_skip_the_next(self):
+        """Stopping the robot still matters when stopping the controller failed"""
+        rec, released = Recorder(), ThreadingEvent()
+        routine = Routine(
+            "drive",
+            steps=[Action(rec.blocking("goto", released))],
+            on_pause=[
+                Action(rec.step("stop_tracking", succeeds=False)),
+                Action(rec.step("stop_robot")),
+            ],
+        )
+        routine()
+        assert wait_for(lambda: "goto" in rec.calls)
+
+        routine.pause()
+        assert wait_for(lambda: "stop_robot" in rec.calls), (
+            "a failed on_pause action kept the next one from running"
+        )
+        assert routine.state["status"] == RoutineStatus.PAUSED
+        released.set()
+        routine.abort()
+
+    def test_a_resume_waits_for_the_on_pause_actions(self):
+        """Re-entering the step while what it set moving is still being stopped
+        would have the two fight"""
+        rec, released, stopping = Recorder(), ThreadingEvent(), ThreadingEvent()
+        routine = Routine(
+            "drive",
+            steps=[Action(rec.blocking("goto", released))],
+            on_pause=[Action(rec.blocking("stop_robot", stopping))],
+        )
+        routine()
+        assert wait_for(lambda: "goto" in rec.calls)
+        routine.pause()
+        assert wait_for(lambda: "stop_robot" in rec.calls)
+
+        resumed, message = routine.resume()
+        assert resumed
+        assert "once its on_pause actions are done" in message
+        time.sleep(0.2)
+        assert rec.calls == ["goto", "stop_robot"], "the step ran again mid-pause"
+        assert routine.state["status"] == RoutineStatus.PAUSED
+
+        released.set()
+        stopping.set()
+        assert wait_until_done(routine) == RoutineStatus.COMPLETED
+        assert rec.calls == ["goto", "stop_robot", "goto"]
+
+    def test_abort_while_pausing_stops_the_on_pause_actions(self):
+        rec, released = Recorder(), ThreadingEvent()
+        stopping, cancelled = ThreadingEvent(), ThreadingEvent()
+        routine = Routine(
+            "drive",
+            steps=[Action(rec.blocking("goto", released))],
+            on_pause=[
+                Action(
+                    rec.blocking("stop_robot", stopping),
+                    cancel_method=_cancel_into(cancelled),
+                ),
+                Action(rec.step("after_stop")),
+            ],
+        )
+        routine()
+        assert wait_for(lambda: "goto" in rec.calls)
+        routine.pause()
+        assert wait_for(lambda: "stop_robot" in rec.calls)
+
+        aborted, _ = routine.abort("operator stopped it")
+
+        assert aborted
+        assert cancelled.wait(WAIT), "the on_pause action was left running"
+        released.set()
+        stopping.set()
+        time.sleep(0.2)
+        assert routine.state["status"] == RoutineStatus.ABORTED
+        assert "after_stop" not in rec.calls
+
     def test_abort_preempts_the_fallback_in_flight(self):
         """The step has already settled, so the fallback is what is running.
         Left alone it keeps driving the robot after the abort said it stopped."""
@@ -1650,6 +1845,20 @@ class TestRoutineDeclaration(unittest.TestCase):
             "wait",
         ]
 
+    def test_a_description_is_a_plain_string(self):
+        rec = Recorder()
+        described = Routine(
+            "pick", steps=[Action(rec.step("grasp"))], description="Pick it up"
+        )
+        assert described.description == "Pick it up"
+        assert Routine("pick", steps=[Action(rec.step("grasp"))]).description is None
+        with pytest.raises(TypeError, match="must be a string"):
+            Routine(
+                "pick",
+                steps=[Action(rec.step("grasp"))],
+                description={"function": {"description": "Pick it up"}},
+            )
+
     def test_a_routine_cannot_be_a_step(self):
         rec = Recorder()
         inner = Routine("inner", steps=[Action(rec.step("one"))])
@@ -1697,6 +1906,32 @@ class TestRoutineFromSpec(unittest.TestCase):
 
         assert routine.on_complete.action_name == "log_done"
         assert routine.on_abort.action_name == "arm_home"
+
+    def test_from_spec_resolves_the_on_pause_actions_one_or_several(self):
+        rec = Recorder()
+        resolve = _resolver(**{
+            "arm/grasp": rec.step("grasp"),
+            "arm/stop": rec.step("stop"),
+            "base/stop": rec.step("brake"),
+        })
+
+        one = Routine.from_spec(
+            {"name": "one", "steps": [{"ref": "arm/grasp"}], "on_pause": {"ref": "arm/stop"}},
+            resolve,
+        )
+        several = Routine.from_spec(
+            {
+                "name": "several",
+                "steps": [{"ref": "arm/grasp"}],
+                "on_pause": [{"ref": "arm/stop"}, {"ref": "base/stop"}],
+            },
+            resolve,
+        )
+
+        assert [a.action_name for a in one.on_pause] == ["arm_stop"]
+        assert [a.action_name for a in several.on_pause] == ["arm_stop", "base_stop"]
+        # Reachable like every other action, so hosts route and tear them down
+        assert all(a in several.actions() for a in several.on_pause)
 
     def test_from_spec_lets_a_step_name_override_the_ref(self):
         """Two goals to the same server would otherwise collide on the cursor."""

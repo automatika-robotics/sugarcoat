@@ -17,6 +17,12 @@ class _BrowserNode:
         self.actions = []  # action_clients_inputs_dicts result
         self.feedback = None  # get_action_feedback result
         self.feedback_listeners = {}  # action_name -> set of push listeners
+        self.routines = []  # routine_names result
+        self.routine_states = {}  # routine name -> get_routine_state result
+        self.routine_listeners = {}  # routine name -> set of push listeners
+        self.routine_result = (True, "done")  # control_routine return value
+        self.routine_error = None  # exception to raise from control_routine
+        self.routine_calls = []  # (name, command, reason) given to control_routine
 
     def srv_clients_inputs_dicts(self):
         return []
@@ -54,6 +60,33 @@ class _BrowserNode:
         """Simulate a message arriving on an output topic"""
         self.latest[name] = content
         for listener in list(self.output_listeners.get(name, ())):
+            listener()
+
+    def routine_names(self):
+        return list(self.routines)
+
+    def get_routine_state(self, name):
+        return self.routine_states.get(name)
+
+    def add_routine_listener(self, name, listener):
+        if name not in self.routines:
+            return False
+        self.routine_listeners.setdefault(name, set()).add(listener)
+        return True
+
+    def remove_routine_listener(self, name, listener):
+        self.routine_listeners.get(name, set()).discard(listener)
+
+    def control_routine(self, name, command, reason=None):
+        self.routine_calls.append((name, command, reason))
+        if self.routine_error is not None:
+            raise self.routine_error
+        return self.routine_result
+
+    def set_routine_state(self, routine, state):
+        """Simulate the Monitor publishing a new state for a routine"""
+        self.routine_states[routine] = state
+        for listener in list(self.routine_listeners.get(routine, ())):
             listener()
 
 
@@ -436,3 +469,222 @@ def test_fasthtml_and_monsterui_ask_for_the_bundled_front_end_files():
     assert urls(Theme.red.headers()) == _THEME_FILES, (
         "MonsterUI's theme loads other files than static/vendor has copies of"
     )
+
+
+# ---------------------------------------------------------------------------
+# Routines
+# ---------------------------------------------------------------------------
+def _routine_state(status, index=0, **extra):
+    return {
+        "name": "patrol",
+        "status": status,
+        "index": index,
+        "active_step": ["go_home", "scan", "back_home"][min(index, 2)],
+        "steps": ["go_home", "scan", "back_home"],
+        "message": "",
+        "elapsed": 65.0,
+        **extra,
+    }
+
+
+def _routine_card(status, **extra):
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from fasthtml.common import to_xml
+
+    from ros_sugar.ui_node.elements import RoutineTask
+
+    task = RoutineTask("patrol")
+    task.update_state(_routine_state(status, **extra))
+    return task, to_xml(task.card)
+
+
+def test_the_routines_are_among_the_tasks_with_no_action_configured(
+    tmp_path, monkeypatch
+):
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([])
+    node.routines = ["patrol"]
+    client = TestClient(build_browser_app(node))
+
+    page = client.get("/").text
+
+    assert 'id="all_actions"' in page
+    assert "patrol" in page and 'id="routine-patrol-info-btn"' in page
+    # Its live card comes over the Tasks socket, served for the routine alone
+    with client.websocket_connect("/ws_actions") as ws:
+        node.set_routine_state("patrol", _routine_state("idle"))
+        assert 'id="routine-patrol"' in ws.receive_text()
+
+
+@pytest.mark.parametrize(
+    "status, controls",
+    [
+        ("unknown", ["start"]),
+        ("idle", ["start"]),
+        ("running", ["pause", "abort"]),
+        ("paused", ["resume", "abort"]),
+        ("completed", ["start"]),
+        ("failed", ["start"]),
+        ("aborted", ["start"]),
+    ],
+)
+def test_a_routine_card_offers_the_controls_its_status_allows(status, controls):
+    import re
+
+    _, card = _routine_card(status)
+
+    assert re.findall(r'hx-post="/routine/(\w+)"', card) == controls
+    assert 'name="routine_name"' in card and 'value="patrol"' in card
+
+
+def test_a_routine_card_checks_off_its_steps():
+    _, running = _routine_card(
+        "running",
+        index=1,
+        step_feedback={
+            "target": "scan",
+            "server_status": "running",
+            "feedback_count": 3,
+        },
+    )
+    assert running.index("routine-step done") < running.index("routine-step active")
+    assert running.index("routine-step active") < running.index("routine-step pending")
+    # How the step's action is doing, on the step under way
+    assert "running, 3 feedback" in running
+    assert "1:05" in running  # the elapsed time
+
+    _, failed = _routine_card("failed", index=1, message="scan timed out")
+    assert "routine-step stopped" in failed and "routine-step active" not in failed
+    assert "Failed: scan timed out" in failed
+
+    _, done = _routine_card("completed", index=3)
+    assert done.count("routine-step done") == 3
+
+
+def test_a_routine_card_logs_each_step_and_starts_a_new_log_for_a_new_run():
+    pytest.importorskip("fasthtml")
+    from ros_sugar.ui_node.elements import RoutineTask
+
+    task = RoutineTask("patrol")
+    for state in (
+        _routine_state("running", 0),
+        _routine_state("running", 0, elapsed=66.0),  # only the time moved on
+        _routine_state("running", 1),
+        _routine_state("paused", 1),
+        _routine_state("running", 1),
+        _routine_state("completed", 3),
+    ):
+        task.update_state(state)
+    assert task._feedback == [
+        "Step 1/3: go_home",
+        "Step 2/3: scan",
+        "Paused at 'scan'",
+        "Step 2/3: scan",
+        "Completed",
+    ]
+
+    task.update_state(_routine_state("running", 0))
+    assert task._feedback == ["Step 1/3: go_home"]
+
+
+def test_a_routine_card_follows_the_routine(tmp_path, monkeypatch):
+    import threading
+
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([])
+    node.routines = ["patrol"]
+    # Where it had got to before the page opened
+    node.routine_states = {"patrol": _routine_state("running", 0)}
+    client = TestClient(build_browser_app(node))
+
+    with client.websocket_connect("/ws_actions") as ws:
+
+        def _receive_until(text):
+            """Frames up to the first holding text, or those received in 5 s"""
+            frames = []
+
+            def _read():
+                while not frames or text not in frames[-1]:
+                    frames.append(ws.receive_text())
+
+            # The test client has no receive timeout, so read from a thread
+            reader = threading.Thread(target=_read, daemon=True)
+            reader.start()
+            reader.join(timeout=5.0)
+            return frames
+
+        first = _receive_until("Step 1/3")
+        assert first and "Step 1/3: go_home" in first[-1], "no card on connecting"
+        node.set_routine_state("patrol", _routine_state("running", 2))
+        moved = _receive_until("Step 3/3")
+        assert moved and "Step 3/3: back_home" in moved[-1], "the card did not move on"
+        node.set_routine_state("patrol", _routine_state("completed", 3))
+        ended = _receive_until("Completed")
+        assert ended and 'hx-post="/routine/start"' in ended[-1]
+
+
+def test_a_routine_control_reaches_the_monitor_from_its_own_page_only(
+    tmp_path, monkeypatch
+):
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([])
+    node.routines = ["patrol"]
+    node.routine_result = (True, "Routine 'patrol' aborted")
+    # Served the way the UI node serves it: the front end mounted under the API
+    client = TestClient(build_api_app(node, build_browser_app(node)))
+    form = {"routine_name": "patrol"}
+
+    foreign = client.post(
+        "/routine/abort", data=form, headers={"Origin": "http://evil.example"}
+    )
+    assert foreign.status_code == 403
+    assert not node.routine_calls
+
+    own = client.post(
+        "/routine/abort", data=form, headers={"Origin": "http://testserver"}
+    )
+    assert own.status_code == 200
+    assert node.routine_calls == [("patrol", "abort", "aborted from the UI")]
+    assert "Routine 'patrol' aborted" in own.text  # the Monitor's answer, as a toast
+
+
+def test_a_routine_control_the_monitor_refuses_is_shown(tmp_path, monkeypatch):
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.browser import build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([])
+    node.routines = ["patrol"]
+    client = TestClient(build_browser_app(node))
+
+    node.routine_result = (False, "is not running")
+    refused = client.post("/routine/pause", data={"routine_name": "patrol"})
+    node.routine_error = RuntimeError("The Monitor is not available")
+    unreachable = client.post("/routine/start", data={"routine_name": "patrol"})
+
+    assert refused.status_code == 200 and "is not running" in refused.text
+    assert unreachable.status_code == 200
+    assert "The Monitor is not available" in unreachable.text
