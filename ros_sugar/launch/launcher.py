@@ -203,6 +203,9 @@ class Launcher:
         self._config_file: Optional[str] = config_file
         self._launch_group = []
         self._enable_ui = False
+        # Routines shown in the UI, to host on the Monitor whether or not an
+        # event triggers them
+        self._ui_routines: List[Routine] = []
         self._plugins: Dict[str, Plugin] = {}
         self._plugin_hosts: List[RobotPluginHost] = []
         self._mounts: List[Mount] = []
@@ -405,6 +408,7 @@ class Launcher:
         api_stream_default_rate: float = 10.0,
         api_max_stream_rate: float = 30.0,
         secure: bool = True,
+        routines: Optional[List[Union[Routine, str]]] = None,
     ):
         """
         Enables the user interface (UI) subsystem for recipes, initializing all UI extensions
@@ -456,6 +460,14 @@ class Launcher:
             variables, else one minted and renewed by Sugarcoat. Set ``False``
             only for development: the UI is then served over plain HTTP.
         :type secure: bool, default True
+        :param routines:
+            Routines shown in the UI's Tasks, each with its steps and progress
+            and controls to start, pause, resume and abort it. A ``Routine`` is
+            hosted on the Monitor even when no event triggers it, so a routine
+            meant to be started from the UI alone needs nothing else. A name
+            refers to a routine registered some other way, such as by an event
+            or through the runtime API.
+        :type routines: Optional[List[Union[Routine, str]]]
         """
 
         # A type without a callback in a derived package cannot be a UI output
@@ -516,6 +528,9 @@ class Launcher:
                     f"{element.__module__}.{element.__qualname__}",
                 ))
 
+        routine_names = self._ui_routine_names(routines or [])
+        self._ui_routines = [r for r in routines or [] if isinstance(r, Routine)]
+
         self._enable_ui = True
         self._ui_input_topics = inputs
         self._ui_output_topics = outputs
@@ -527,7 +542,30 @@ class Launcher:
             api_stream_default_rate=api_stream_default_rate,
             api_max_stream_rate=api_max_stream_rate,
             secure=secure,
+            routines=routine_names,
         )
+
+    @staticmethod
+    def _ui_routine_names(routines: List[Union[Routine, str]]) -> List[str]:
+        """The names of the routines given to the UI, each given once
+
+        :param routines: Routines, or names of routines
+        :raises TypeError: If an entry is neither
+        :raises ValueError: If a routine is given twice
+        :rtype: List[str]
+        """
+        names: List[str] = []
+        for routine in routines:
+            if not isinstance(routine, (Routine, str)):
+                raise TypeError(
+                    "A UI routine is a Routine or the name of one, got "
+                    f"{type(routine).__name__}"
+                )
+            name = routine.name if isinstance(routine, Routine) else routine
+            if name in names:
+                raise ValueError(f"Routine '{name}' is given to the UI twice")
+            names.append(name)
+        return names
 
     @property
     def robot(self) -> Dict[str, Any]:
@@ -1620,6 +1658,12 @@ class Launcher:
             all_components_to_activate_on_start=all_components_to_activate_on_start,
         )
         self._hand_registry_to_monitor()
+
+        # Started by name from the UI, so an event may never route them
+        for routine in self._ui_routines:
+            self.__verify_routine(routine)
+        if self._ui_routines and isinstance(self.monitor_node, Monitor):
+            self.monitor_node.host_routines(self._ui_routines)
 
         # Register a activation event
         internal_events_handler_activate = launch.actions.RegisterEventHandler(
