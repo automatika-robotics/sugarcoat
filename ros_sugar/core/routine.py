@@ -4,7 +4,7 @@ import json
 import threading
 import time
 from functools import partial
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Sequence, Union
 
 from ..config import StrEnum
 from ..io import Topic
@@ -76,11 +76,19 @@ class Routine:
     returns as soon as the first step is dispatched. The outcome arrives later,
     through `on_complete` / `on_abort` and the published cursor.
 
+    **Pausing preempts the step in flight, and `on_pause` makes that safe.**
+    Preempting a step only stops what the step itself runs, not what it set in
+    motion: `on_pause` is where a routine undoes that, such as stopping a robot
+    a navigation step had driving. Resuming re-enters the step, once the
+    `on_pause` actions are done.
+
     :param name: Routine name, used in the cursor and its topic
     :param steps: Ordered steps. Each is an `Action` or a plain callable,
         and they must end up with unique names
     :param on_complete: Action run when the last step succeeds
     :param on_abort: Action run when the routine fails or is aborted
+    :param on_pause: Action, or actions run in order, when the routine is
+        paused. One that fails is logged and the next one still runs
     :param description: What the routine is for, in plain words, for whoever
         lists the routines available and has to choose one: an operator, or an
         LLM planning with them
@@ -99,6 +107,14 @@ class Routine:
         steps: List[Union[Action, ActionServerGoal, Callable]],
         on_complete: Optional[Union[Action, ActionServerGoal, Callable]] = None,
         on_abort: Optional[Union[Action, ActionServerGoal, Callable]] = None,
+        on_pause: Optional[
+            Union[
+                Action,
+                ActionServerGoal,
+                Callable,
+                Sequence[Union[Action, ActionServerGoal, Callable]],
+            ]
+        ] = None,
         description: Optional[str] = None,
     ) -> None:
         if not steps:
@@ -126,6 +142,14 @@ class Routine:
             )
         self.on_complete = Action.coerce(on_complete, f"The on_complete of '{name}'")
         self.on_abort = Action.coerce(on_abort, f"The on_abort of '{name}'")
+        if on_pause is None:
+            on_pause = []
+        elif not isinstance(on_pause, (list, tuple)):
+            on_pause = [on_pause]
+        self.on_pause: List[Action] = [
+            Action.coerce(action, f"On_pause action {index + 1} of '{name}'")
+            for index, action in enumerate(on_pause)
+        ]
 
         # Cursor and run state. Every transition happens on a dispatch worker, a
         # timer thread or a subscription callback, so all of it is guarded
@@ -141,6 +165,11 @@ class Routine:
 
         # Where to resume, after a pause
         self._resume_at: Optional[int] = None
+
+        # The on_pause actions are running, and a resume that arrived meanwhile
+        # waits for them
+        self._pausing = False
+        self._resume_pending = False
 
         # Bumped every time what is in flight is preempted, so an action that
         # was being dispatched at that moment is stopped rather than missed
@@ -195,6 +224,10 @@ class Routine:
             except Exception as e:
                 raise ValueError(f"{what} of routine '{name}': {e}") from e
 
+        on_pause = spec.get("on_pause") or []
+        if isinstance(on_pause, dict):
+            on_pause = [on_pause]
+
         return cls(
             name=name,
             steps=[
@@ -202,6 +235,10 @@ class Routine:
             ],
             on_complete=_resolve(spec.get("on_complete"), "The on_complete"),
             on_abort=_resolve(spec.get("on_abort"), "The on_abort"),
+            on_pause=[
+                _resolve(action, f"On_pause action {index + 1}")
+                for index, action in enumerate(on_pause)
+            ],
             description=spec.get("description"),
         )
 
@@ -239,6 +276,7 @@ class Routine:
         actions = list(self.steps)
         actions.extend(step.fallback for step in self.steps if step.fallback)
         actions.extend(a for a in (self.on_complete, self.on_abort) if a)
+        actions.extend(self.on_pause)
         return actions
 
     def stop_watching(self) -> None:
@@ -335,6 +373,8 @@ class Routine:
             self._status = RoutineStatus.RUNNING
             self._index = 0
             self._resume_at = None
+            self._pausing = False
+            self._resume_pending = False
             self._message = ""
             self._run_kwargs = kwargs
             self._started_at = time.time()
@@ -347,8 +387,9 @@ class Routine:
     def pause(self, **_) -> ActionReturnType:
         """Stop at the current step without ending the routine.
 
-        The step in flight is preempted, and `resume()` runs it again from the
-        start: a step is the smallest thing a routine can be positioned at.
+        The step in flight is preempted, then the `on_pause` actions run, and
+        `resume()` runs the step again from the start: a step is the smallest
+        thing a routine can be positioned at.
 
         :rtype: ActionReturnType
         """
@@ -358,19 +399,40 @@ class Routine:
             step = self.steps[self._index]
             self._status = RoutineStatus.PAUSED
             self._message = f"paused at step '{step.action_name}'"
+            self._pausing = bool(self.on_pause)
+            call_kwargs = self.__step_kwargs()
         # A step being recovered has its fallback in flight, not the step, and
         # that is what has to stop. Resuming re-enters the step either way
         self.halt_in_flight()
         info_str = f"Routine '{self.name}' paused at step '{step.action_name}'"
         logger.info(info_str)
         self.__publish_state()
+        self.__run_on_pause(0, call_kwargs)
         return True, info_str
 
     def resume(self, **_) -> ActionReturnType:
-        """Re-enter the step the routine was paused at
+        """Re-enter the step the routine was paused at.
+
+        While the `on_pause` actions are still running the resume waits for
+        them, rather than starting the step again alongside what is undoing it
 
         :rtype: ActionReturnType
         """
+        with self._lock:
+            if self._status != RoutineStatus.PAUSED:
+                return False, f"Routine '{self.name}' is not paused"
+            if self._pausing:
+                self._resume_pending = True
+                info_str = (
+                    f"Routine '{self.name}' will resume once its on_pause "
+                    "actions are done"
+                )
+                logger.info(info_str)
+                return True, info_str
+        return self.__resume_now()
+
+    def __resume_now(self) -> ActionReturnType:
+        """Re-enter the step the routine was paused at, now"""
         with self._lock:
             if self._status != RoutineStatus.PAUSED:
                 return False, f"Routine '{self.name}' is not paused"
@@ -415,10 +477,10 @@ class Routine:
     def halt_in_flight(self) -> None:
         """Preempt whatever the routine has running right now.
 
-        That is the step, the fallback recovering it, or a terminal action:
-        every one of them is dispatched the same way and can outlive the
-        routine, so every one of them has to be stoppable. Used by `pause` and
-        `abort`, and by a host taking the routine down.
+        That is the step, the fallback recovering it, an `on_pause` action or a
+        terminal action: every one of them is dispatched the same way and can
+        outlive the routine, so every one of them has to be stoppable. Used by
+        `pause` and `abort`, and by a host taking the routine down.
         """
         with self._lock:
             action = self._in_flight
@@ -459,6 +521,53 @@ class Routine:
             preempted = generation != self._generation
         if preempted:
             action.halt()
+
+    def __run_on_pause(self, position: int, call_kwargs: Dict) -> None:
+        """Run the on_pause action at `position`, or, once they have all run,
+        carry out a resume that arrived meanwhile"""
+        with self._lock:
+            if self._status != RoutineStatus.PAUSED:
+                # Aborted meanwhile: the rest of the pause no longer applies
+                self._pausing = False
+                return
+            done = position >= len(self.on_pause)
+            if done:
+                self._pausing = False
+                resume = self._resume_pending
+                self._resume_pending = False
+            else:
+                action = self.on_pause[position]
+        if done:
+            if resume:
+                self.__resume_now()
+            return
+        self.__dispatch(
+            action,
+            partial(self.__on_pause_action_done, position, call_kwargs, action),
+            call_kwargs,
+            when_running=False,
+        )
+
+    def __on_pause_action_done(
+        self,
+        position: int,
+        call_kwargs: Dict,
+        action: Action,
+        result: ActionReturnType,
+        outcome: ActionOutcome,
+    ) -> None:
+        """Move on to the next on_pause action, whether or not this one worked"""
+        succeeded, message = result
+        self.__clear_in_flight(action)
+        if outcome == ActionOutcome.PREEMPTED:
+            # The routine was aborted: whoever did so owns it now
+            return
+        if not succeeded:
+            logger.error(
+                f"The on_pause action '{action.action_name}' of routine "
+                f"'{self.name}' failed: {message}"
+            )
+        self.__run_on_pause(position + 1, call_kwargs)
 
     def __clear_in_flight(self, action: Action) -> None:
         """Forget a settled action, unless something else is already running.
