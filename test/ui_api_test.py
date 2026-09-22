@@ -1688,7 +1688,8 @@ _RUNNING = {
     "index": 1,
     "active_step": "scan",
     "steps": ["go_home", "scan", "back_home"],
-    "message": "",
+    "step_message": "",
+    "abort_reason": "",
     "elapsed": 4.2,
 }
 
@@ -1863,7 +1864,8 @@ def test_a_real_ui_node_follows_the_state_a_routine_publishes():
         "index": 0,
         "active_step": "go",
         "steps": ["go"],
-        "message": "",
+        "step_message": "",
+        "abort_reason": "",
         "elapsed": 1.0,
     }
     publisher.publish(String(data=json.dumps(state)))

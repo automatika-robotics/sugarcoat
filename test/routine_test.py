@@ -894,7 +894,9 @@ class TestRoutine(unittest.TestCase):
 
         state = routine_state("hold")
         assert state["status"] == "aborted"
-        assert "stopped by the test" in state["message"]
+        assert state["abort_reason"] == "stopped by the test"
+        # Its only step was preempted, not finished, so it returned nothing
+        assert state["step_message"] == ""
 
         # The step is still running: its late verdict must not revive the routine
         hold_release.set()
@@ -909,7 +911,7 @@ class TestRoutine(unittest.TestCase):
         assert wait_for(
             lambda: routine_state("cancelme")["status"] == "aborted", cls.wait_time
         ), f"Routine was not aborted by the event: {routine_state('cancelme')}"
-        assert "emergency stop" in routine_state("cancelme")["message"]
+        assert routine_state("cancelme")["abort_reason"] == "emergency stop"
         cancelme_release.set()
 
     def test_the_cursor_is_delivered_as_a_message(cls):
@@ -1032,7 +1034,7 @@ class TestActionServerStep(unittest.TestCase):
         assert wait_for(
             lambda: routine_state("fails")["status"] == "failed", self.wait_time
         ), f"cursor: {routine_state('fails')}"
-        assert "aborted" in routine_state("fails")["message"]
+        assert "aborted" in routine_state("fails")["step_message"]
 
     def test_the_monitor_hands_the_step_a_client_for_the_component(self):
         """The step holds no client; it resolves one from its host at dispatch"""
@@ -1303,6 +1305,84 @@ class TestRoutineSequencing(unittest.TestCase):
         assert wait_until_done(routine) == RoutineStatus.COMPLETED
 
 
+class TestRoutineStepMessages(unittest.TestCase):
+    """What the finished steps returned, kept on the routine for a run"""
+
+    def test_the_finished_steps_messages_are_kept_in_order(self):
+        rec = Recorder()
+        routine = Routine(
+            "pick", steps=[Action(rec.step("detect")), Action(rec.step("grasp"))]
+        )
+        routine()
+        assert wait_until_done(routine) == RoutineStatus.COMPLETED
+
+        assert routine.step_messages() == [
+            {"step": "detect", "succeeded": True, "message": "detect done",
+             "fallback": False},
+            {"step": "grasp", "succeeded": True, "message": "grasp done",
+             "fallback": False},
+        ]
+        assert routine.step_messages(0)["step"] == "detect"
+        assert routine.step_messages(-1)["step"] == "grasp"
+        with pytest.raises(IndexError):
+            routine.step_messages(2)
+        assert routine.latest_step_messages == {
+            "detect": "detect done",
+            "grasp": "grasp done",
+        }
+        # The cursor carries the last one
+        assert routine.state["step_message"] == "grasp done"
+
+    def test_a_new_run_starts_with_no_messages(self):
+        rec = Recorder()
+        released = ThreadingEvent()
+        released.set()
+        routine = Routine(
+            "pick",
+            steps=[Action(rec.step("detect")), Action(rec.blocking("hold", released))],
+        )
+        routine()
+        assert wait_until_done(routine) == RoutineStatus.COMPLETED
+        assert len(routine.step_messages()) == 2
+
+        released.clear()
+        routine()
+        # Only this run's first step, the second is still holding
+        assert wait_for(lambda: routine.state["active_step"] == "hold")
+        assert [entry["step"] for entry in routine.step_messages()] == ["detect"]
+        released.set()
+        assert wait_until_done(routine) == RoutineStatus.COMPLETED
+
+    def test_a_pause_and_an_abort_leave_the_last_step_message_alone(self):
+        """Neither is a step, so neither is a step's message. An abort's reason
+        has a field of its own"""
+        rec = Recorder()
+        released = ThreadingEvent()
+        routine = Routine(
+            "pick",
+            steps=[Action(rec.step("detect")), Action(rec.blocking("hold", released))],
+        )
+        routine()
+        assert wait_for(lambda: routine.state["active_step"] == "hold")
+
+        paused, message = routine.pause()
+        assert paused, message
+        assert routine.state["step_message"] == "detect done"
+
+        aborted, message = routine.abort(reason="operator stop")
+        assert aborted, message
+        assert routine.state["step_message"] == "detect done"
+        assert routine.state["abort_reason"] == "operator stop"
+        # The preempted step never finished, so it returned nothing
+        assert list(routine.latest_step_messages) == ["detect"]
+
+        released.set()
+        routine()
+        # A new run is not an aborted one
+        assert routine.state["abort_reason"] == ""
+        assert wait_until_done(routine) == RoutineStatus.COMPLETED
+
+
 class TestRoutineFailurePolicies(unittest.TestCase):
     """What the routine does with a step that has failed for good"""
 
@@ -1322,7 +1402,11 @@ class TestRoutineFailurePolicies(unittest.TestCase):
         assert wait_until_done(routine) == RoutineStatus.FAILED
         assert wait_for(lambda: "on_abort" in rec.calls)
         assert "lift" not in rec.calls
-        assert "grasp' failed" in routine.state["message"]
+        # What the step it failed at returned: its action's verdict
+        assert routine.state["step_message"] == (
+            "Action 'grasp' failed after 1 attempt(s): grasp failed"
+        )
+        assert routine.state["abort_reason"] == ""
 
     def test_raised_exception_in_a_step_fails_the_routine(self):
         rec = Recorder()
@@ -1379,7 +1463,17 @@ class TestRoutineFailurePolicies(unittest.TestCase):
 
         assert wait_until_done(routine) == RoutineStatus.FAILED
         assert "lift" not in rec.calls
-        assert "fallback failed" in routine.state["message"]
+        # The fallback ran last, so its message is the step's latest
+        grasp_failed = "Action 'grasp' failed after 1 attempt(s): grasp failed"
+        reopen_failed = "Action 'reopen' failed after 1 attempt(s): reopen failed"
+        assert routine.state["step_message"] == reopen_failed
+        assert routine.latest_step_messages == {"grasp": reopen_failed}
+        assert routine.step_messages() == [
+            {"step": "grasp", "succeeded": False, "message": grasp_failed,
+             "fallback": False},
+            {"step": "grasp", "succeeded": False, "message": reopen_failed,
+             "fallback": True},
+        ]
 
     def test_step_retries_are_spent_before_the_policy_applies(self):
         rec = Recorder()

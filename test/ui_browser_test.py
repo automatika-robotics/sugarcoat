@@ -481,7 +481,8 @@ def _routine_state(status, index=0, **extra):
         "index": index,
         "active_step": ["go_home", "scan", "back_home"][min(index, 2)],
         "steps": ["go_home", "scan", "back_home"],
-        "message": "",
+        "step_message": "",
+        "abort_reason": "",
         "elapsed": 65.0,
         **extra,
     }
@@ -560,9 +561,14 @@ def test_a_routine_card_checks_off_its_steps():
     assert "running, 3 feedback" in running
     assert "1:05" in running  # the elapsed time
 
-    _, failed = _routine_card("failed", index=1, message="scan timed out")
+    _, failed = _routine_card("failed", index=1, step_message="scan timed out")
     assert "routine-step stopped" in failed and "routine-step active" not in failed
-    assert "Failed: scan timed out" in failed
+    # What the step it failed at returned
+    assert "Failed at 'scan': scan timed out" in failed
+
+    _, aborted = _routine_card("aborted", index=1, abort_reason="operator stop")
+    assert "routine-step stopped" in aborted
+    assert "Aborted: operator stop" in aborted
 
     _, done = _routine_card("completed", index=3)
     assert done.count("routine-step done") == 3
