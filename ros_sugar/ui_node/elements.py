@@ -345,10 +345,15 @@ class RoutineTask(Task):
             return f"Paused at '{step}'" if step else "Paused"
         if status == "completed":
             return "Completed"
-        if status in ("failed", "aborted"):
-            message = state.get("message")
-            title = status.capitalize()
-            return f"{title}: {message}" if message else title
+        if status == "failed":
+            # What the step it failed at returned
+            index = state.get("index", 0)
+            where = f" at '{steps[index]}'" if 0 <= index < len(steps) else ""
+            message = state.get("step_message")
+            return f"Failed{where}: {message}" if message else f"Failed{where}"
+        if status == "aborted":
+            reason = state.get("abort_reason")
+            return f"Aborted: {reason}" if reason else "Aborted"
         return None
 
     @property

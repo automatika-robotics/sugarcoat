@@ -224,8 +224,9 @@ class UINode(BaseComponent):
         """The routine's latest state, or ``None`` if none has arrived yet.
 
         The state is what the Monitor publishes on the routine's topic: its
-        ``status``, ``index``, ``active_step``, ``steps``, ``message`` and
-        ``elapsed``, plus ``step_feedback`` for a step that reports progress.
+        ``status``, ``index``, ``active_step``, ``steps``, ``step_message``,
+        ``abort_reason`` and ``elapsed``, plus ``step_feedback`` for a step
+        that reports progress.
         A routine publishes on transitions only, so ``elapsed`` is brought up to
         date here while it runs.
 

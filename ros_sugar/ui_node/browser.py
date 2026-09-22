@@ -91,7 +91,8 @@ class _FollowedRoutines:
             key = (
                 state.get("status"),
                 state.get("index"),
-                state.get("message"),
+                state.get("step_message"),
+                state.get("abort_reason"),
                 int(state.get("elapsed", 0)),
                 str(state.get("step_feedback")),
             )
