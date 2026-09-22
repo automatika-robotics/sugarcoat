@@ -88,6 +88,7 @@ class FHApp:
         hide_settings_panel: bool = False,
         system_info: Optional[Dict] = None,
         session_key: Optional[str] = None,
+        routines: Optional[Sequence[str]] = None,
     ):
         # --- Application Setup ---
         static_src = Path(__file__).resolve().parent / "static"
@@ -183,6 +184,11 @@ class FHApp:
                     fields=client["fields"],
                 )
 
+        # Routines, shown among the Tasks
+        self.routines_ft: Dict[str, elements.RoutineTask] = {
+            name: elements.RoutineTask(name) for name in routines or []
+        }
+
         setup_toasts(self.app)
 
         # persistent elements
@@ -190,10 +196,11 @@ class FHApp:
 
     @property
     def action_clients(self) -> Optional[FT]:
-        if not self.action_clients_ft:
+        if not self.action_clients_ft and not self.routines_ft:
             return None
         all_clients_cards = Div(id="all_actions")
-        for value in self.action_clients_ft.values():
+        tasks = list(self.action_clients_ft.values()) + list(self.routines_ft.values())
+        for value in tasks:
             all_clients_cards(
                 Card(
                     value.card_static,

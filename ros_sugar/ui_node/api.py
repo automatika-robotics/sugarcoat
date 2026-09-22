@@ -35,7 +35,7 @@ from .api_utils import (
     topic_schema,
 )
 from .security import ApiKeys
-from .ui_node import UINode
+from .ui_node import ROUTINE_COMMANDS, UINode
 from .utils import GoalInProgressError
 
 # All API routes are namespaced under this prefix
@@ -97,6 +97,19 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
         for client in ros_node.action_clients_inputs_dicts()
     ]
 
+    routines = [
+        {
+            "name": name,
+            "state": f"GET {API_BASE}/routines/{name}",
+            "stream": f"WS {API_BASE}/routines/{name}/state",
+            **{
+                command: f"POST {API_BASE}/routines/{name}/{command}"
+                for command in ROUTINE_COMMANDS
+            },
+        }
+        for name in ros_node.routine_names()
+    ]
+
     # A "world" composes an occupancy grid with the overlay/path outputs drawn
     # on it, streamed together over one socket.
     overlay_outputs = [
@@ -120,6 +133,7 @@ def build_interfaces(ros_node: UINode) -> Dict[str, Any]:
         "outputs": outputs,
         "services": services,
         "actions": actions,
+        "routines": routines,
         "worlds": worlds,
         "stream": {
             "default_rate": ros_node.config.api_stream_default_rate,
@@ -437,6 +451,96 @@ def _action_routes(ros_node: UINode) -> List:
     ]
 
 
+def _routine_routes(ros_node: UINode) -> List:
+    """Routes for starting, pausing, resuming and aborting the declared routines,
+    and for following where each has got to."""
+    names = set(ros_node.routine_names())
+
+    def unknown(name: str) -> JSONResponse:
+        return JSONResponse({"error": f"Unknown routine '{name}'"}, status_code=404)
+
+    async def list_routines(request):
+        """Every declared routine with its latest state, null until one arrives"""
+        return JSONResponse([
+            {"name": name, "state": ros_node.get_routine_state(name)}
+            for name in ros_node.routine_names()
+        ])
+
+    async def routine_state(request):
+        """A routine's latest state, null until one arrives"""
+        name = name_param(request)
+        if name not in names:
+            return unknown(name)
+        return JSONResponse({"name": name, "state": ros_node.get_routine_state(name)})
+
+    def controller(command: str):
+        async def control(request):
+            """Ask the Monitor to act on a routine; 409 when it refuses"""
+            name = name_param(request)
+            if name not in names:
+                return unknown(name)
+            body = await json_body(request)
+            if not isinstance(body, dict):
+                return JSONResponse(
+                    {"error": "Request body must be a JSON object"}, status_code=400
+                )
+            try:
+                done, message = await run_in_threadpool(
+                    ros_node.control_routine, name, command, body.get("reason")
+                )
+            except RuntimeError as e:
+                return JSONResponse({"error": str(e)}, status_code=503)
+            except Exception as e:
+                return JSONResponse(
+                    {"error": f"Failed to {command} routine '{name}': {e}"},
+                    status_code=500,
+                )
+            if not done:
+                # Refused as the routine stands, such as pausing one not running
+                return JSONResponse({"error": message}, status_code=409)
+            return JSONResponse({"routine": name, command: True, "message": message})
+
+        return control
+
+    async def stream_routine_state(websocket):
+        """Push a routine's state as JSON each time it changes.
+
+        Kept open when a run ends: a routine can be started again.
+        """
+        name = name_param(websocket)
+        if name not in names:
+            await reject_websocket(websocket, "Unknown routine")
+            return
+
+        def sample():
+            return ros_node.get_routine_state(name), False
+
+        await stream_pushed(
+            websocket,
+            lambda cb: ros_node.add_routine_listener(name, cb),
+            lambda cb: ros_node.remove_routine_listener(name, cb),
+            sample,
+        )
+
+    return [
+        Route(f"{API_BASE}/routines", list_routines, methods=["GET"]),
+        # NOTE: The command routes come before the state route, whose greedy
+        # {name:path} pattern would otherwise read ".../start" as a name
+        *[
+            Route(
+                f"{API_BASE}/routines/{{name:path}}/{command}",
+                controller(command),
+                methods=["POST"],
+            )
+            for command in ROUTINE_COMMANDS
+        ],
+        WebSocketRoute(
+            f"{API_BASE}/routines/{{name:path}}/state", stream_routine_state
+        ),
+        Route(f"{API_BASE}/routines/{{name:path}}", routine_state, methods=["GET"]),
+    ]
+
+
 def _world_routes(ros_node: UINode) -> List:
     """Route streaming the composable map scene(s): grid + overlay/path markers."""
     grid_names = {
@@ -548,6 +652,7 @@ def build_api_app(
         *_service_routes(ros_node),
         *_output_routes(ros_node),
         *_action_routes(ros_node),
+        *_routine_routes(ros_node),
         *_world_routes(ros_node),
     ]
     # Mount the browser app last so the specific /api/* routes take precedence
@@ -558,6 +663,7 @@ def build_api_app(
         f"{API_BASE}/outputs/*",
         f"{API_BASE}/world/*",
         f"{API_BASE}/actions/*/feedback",
+        f"{API_BASE}/routines/*/state",
     )
     middleware = [
         Middleware(NoFraming),

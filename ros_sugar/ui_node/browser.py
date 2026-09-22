@@ -1,7 +1,7 @@
 """FastHTML browser UI for the UI node"""
 
 import asyncio
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
 from starlette.websockets import WebSocketDisconnect
 
@@ -57,6 +57,75 @@ def _publish_from_form(ros_node, msg_type: str, form: Dict) -> None:
     })
 
 
+class _FollowedRoutines:
+    """The routine cards one Tasks connection keeps up to date"""
+
+    def __init__(
+        self,
+        ros_node,
+        cards: Dict[str, elements.RoutineTask],
+        on_update: Callable[[], None],
+    ):
+        """
+        :param ros_node: The UI node
+        :param cards: The routine cards, by routine name
+        :param on_update: Called in the ROS executor thread on each new state
+        """
+        self._ros_node = ros_node
+        self._cards = cards
+        self._on_update = on_update
+        self._seen: Dict[str, tuple] = {}
+        self._names = [
+            name
+            for name in ros_node.routine_names()
+            if ros_node.add_routine_listener(name, on_update)
+        ]
+
+    async def push(self, send) -> None:
+        """Send the card of every routine whose state moved on"""
+        for name in self._names:
+            state = self._ros_node.get_routine_state(name)
+            if state is None:
+                continue
+            # The card shows whole seconds, so a fraction is no change
+            key = (
+                state.get("status"),
+                state.get("index"),
+                state.get("message"),
+                int(state.get("elapsed", 0)),
+                str(state.get("step_feedback")),
+            )
+            if key == self._seen.get(name):
+                continue
+            self._seen[name] = key
+            self._cards[name].update_state(state)
+            await send(self._cards[name].card)
+
+    @property
+    def tick(self) -> Optional[float]:
+        """How long to wait for a new state before pushing anyway, if at all.
+
+        A routine publishes on transitions only, so while one runs its card is
+        pushed each second to move its timer on
+        """
+        if any(self._cards[name].is_running() for name in self._names):
+            return 1.0
+        return None
+
+    def close(self) -> None:
+        """Stop following the routines"""
+        for name in self._names:
+            self._ros_node.remove_routine_listener(name, self._on_update)
+
+
+async def _wait_for(event: asyncio.Event, timeout: Optional[float]) -> None:
+    """Wait for the event to be set, or for the timeout to pass"""
+    try:
+        await asyncio.wait_for(event.wait(), timeout)
+    except asyncio.TimeoutError:
+        pass
+
+
 def build_browser_app(
     ros_node,
     additional_input_elements=None,
@@ -87,6 +156,7 @@ def build_browser_app(
         hide_settings_panel=ros_node_config.hide_settings,
         system_info=system_info,
         session_key=session_key,
+        routines=ros_node.routine_names(),
     )  # inputs and outputs are reversed
     app, _ = fh.get_app()
 
@@ -277,6 +347,35 @@ def build_browser_app(
             )
         return fh.get_main_page()
 
+    @app.post("/routine/{command}")
+    async def _(command: str, request, session):
+        """Start, pause, resume or abort a routine from its card"""
+        form_data = await request.form()
+        name = dict(form_data.items()).get("routine_name", "")
+        # Kept in the routine's state, so whoever reads it later knows why
+        reason = "aborted from the UI" if command == "abort" else None
+        try:
+            # Off the event loop: it waits for the Monitor's answer
+            done, message = await asyncio.to_thread(
+                ros_node.control_routine, name, command, reason
+            )
+        except (RuntimeError, ValueError) as e:
+            fh.toasting(str(e), session, "error", duration=100000)
+            return fh.get_main_page()
+        if not done:
+            fh.toasting(message, session, "error", duration=100000)
+            return fh.get_main_page()
+        fh.toasting(message, session, "info")
+        if command == "start" and name in fh.routines_ft:
+            fh.routines_ft[name].total_calls += 1
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"{command.capitalize()} routine '{name}'",
+            data_type="String",
+            data_src="user",
+        )
+        return fh.get_main_page()
+
     # NOTE: Output topics shown in the running log: those with a log element,
     # NOT routed to a dedicated video/map widget, and not a map overlay. Types
     # with no defined element are not entertained.
@@ -337,15 +436,19 @@ def build_browser_app(
         registered = [
             n for n in names if ros_node.add_action_feedback_listener(n, _on_update)
         ]
+        routines = _FollowedRoutines(ros_node, fh.routines_ft, _on_update)
 
         last_seen: Dict[str, tuple] = {}
         logged_results: Dict[str, Any] = {}
 
         async def _feedback_loop():
             try:
+                # Where each routine has got to, without waiting for it to move
+                await routines.push(send)
                 while True:
-                    await updated.wait()
+                    await _wait_for(updated, routines.tick)
                     updated.clear()
+                    await routines.push(send)
                     for name in names:
                         fb = ros_node.get_action_feedback(name)
                         if fb is None:
@@ -401,6 +504,7 @@ def build_browser_app(
         def _teardown():
             for name in registered:
                 ros_node.remove_action_feedback_listener(name, _on_update)
+            routines.close()
 
         _conn_tasks[ws] = (asyncio.create_task(_feedback_loop()), _teardown)
 
@@ -408,7 +512,7 @@ def build_browser_app(
     # connects to WS /api/outputs/<topic>, ros_maps.js to WS /api/world/<grid>
     # and POST /api/inputs/<topic> (click-to-publish).
 
-    if ros_node.action_clients_inputs_dicts():
+    if ros_node.action_clients_inputs_dicts() or ros_node.routine_names():
 
         @app.ws(
             "/ws_actions",

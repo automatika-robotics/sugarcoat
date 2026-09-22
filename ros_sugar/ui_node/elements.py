@@ -42,9 +42,12 @@ class Task:
         self._feedback_timestamp = -1
         self._duration = None
         self._name = name
+        # Prefix of every DOM id the card uses. A subclass sets its own, so a
+        # card of another kind never takes an action's ids
+        self._dom_id = getattr(self, "_dom_id", name)
         self._type = client_type
         self._fields = fields
-        self._serving_component: Optional[str] = self.__get_server_node()
+        self._serving_component: Optional[str] = self._find_server_node()
         self.total_calls = 0
 
     def is_active(self) -> bool:
@@ -93,8 +96,8 @@ class Task:
                 Button(
                     "?",
                     cls="info-btn",
-                    id=f"{self._name}-info-btn",
-                    onclick=f"openAtButton('{self._name}-info-btn', '{self._name}-modal')",  # Method openAtButton implemented in custom.js
+                    id=f"{self._dom_id}-info-btn",
+                    onclick=f"openAtButton('{self._dom_id}-info-btn', '{self._dom_id}-modal')",  # Method openAtButton implemented in custom.js
                 ),
                 self._info,
                 cls="mb-0 gap-2",
@@ -111,40 +114,46 @@ class Task:
         client_card = DivVStacked(
             self._badge,
             cls="mt-0 gap-2",
-            id=self._name,
+            id=self._dom_id,
             ws_send=True,
         )
         inside = Grid(cls="gap-2 ml-1 mr-1 place-items-center", cols=1)
-        if self.feedback:
-            feedback_content = Div(
-                self.feedback,
-                id=f"task_{self._name}_feedback",
-                cls="m-2",
-            )
-            feedback_header = Div(
-                H6(
-                    "Feedback Log",
-                    cls="tomorrow-night-green",
-                ),
-                cls="flex flex-row justify-between items-start",
-            )
-            if self._status not in ["running", "active", "accepted", "inactive"]:
-                feedback_header(
-                    Button(
-                        cls="clear-btn",
-                        type="button",
-                        onclick=f"const feedbackDiv = document.getElementById('task_{self._name}_feedback_log'); if (feedbackDiv) feedbackDiv.remove();",
-                    )
-                )  # Clear the feedback log on click
-            feedback_card = Card(
-                feedback_content,
-                header=feedback_header,
-                cls="terminal-container feedback-container ml-2 mr-2 mt-0 overflow-y-auto max-h-[30vh] auto-scroll-bottom",
-                id=f"task_{self._name}_feedback_log",
-            )
+        feedback_card = self._feedback_card()
+        if feedback_card is not None:
             inside(feedback_card)
         inside(_in_action_client_element(self._name, self._type, self._fields))
         return client_card(inside)
+
+    def _feedback_card(self, title: str = "Feedback Log") -> Optional[FT]:
+        """The feedback log, or None while there is nothing in it
+
+        :param title: Heading of the log
+        """
+        if not self.feedback:
+            return None
+        feedback_content = Div(
+            self.feedback,
+            id=f"task_{self._dom_id}_feedback",
+            cls="m-2",
+        )
+        feedback_header = Div(
+            H6(title, cls="tomorrow-night-green"),
+            cls="flex flex-row justify-between items-start",
+        )
+        if not self.is_active() and self._status != "inactive":
+            feedback_header(
+                Button(
+                    cls="clear-btn",
+                    type="button",
+                    onclick=f"const feedbackDiv = document.getElementById('task_{self._dom_id}_feedback_log'); if (feedbackDiv) feedbackDiv.remove();",
+                )
+            )  # Clear the feedback log on click
+        return Card(
+            feedback_content,
+            header=feedback_header,
+            cls="terminal-container feedback-container ml-2 mr-2 mt-0 overflow-y-auto max-h-[30vh] auto-scroll-bottom",
+            id=f"task_{self._dom_id}_feedback_log",
+        )
 
     @property
     def feedback(self):
@@ -167,7 +176,7 @@ class Task:
         # Get the server node name
         if self._serving_component is None:
             # Try to search again
-            self._serving_component = self.__get_server_node()
+            self._serving_component = self._find_server_node()
         return (
             Dialog(
                 Card(
@@ -190,11 +199,11 @@ class Task:
                         H5("Task Info", cls="cool-subtitle-mini-blue"),
                     ),
                 ),
-                id=f"{self._name}-modal",
+                id=f"{self._dom_id}-modal",
             ),
         )
 
-    def __get_server_node(self) -> Optional[str]:
+    def _find_server_node(self) -> Optional[str]:
         """
         Executes 'ros2 action info <action_name>' and returns the active server node name if found.
         """
@@ -241,16 +250,221 @@ class Task:
                 )
             )
             if self._duration is not None:
-                minutes, seconds = divmod(int(self._duration), 60)
-                status_div(Span(f"{minutes}:{seconds}", cls="slick-timer"))
+                status_div(self._timer)
             return status_div
         return Span(
             self._status, cls=f"status-badge {self._status}", id="status-badge-div"
         )
 
+    @property
+    def _timer(self) -> FT:
+        """How long the task has been going, as minutes:seconds"""
+        minutes, seconds = divmod(int(self._duration or 0), 60)
+        return Span(f"{minutes}:{seconds:02d}", cls="slick-timer")
+
     def cleanup(self):
         self._feedback = []
         self._feedback_timestamp = -1
+
+
+# ---- ROUTINE ELEMENT ----
+class RoutineTask(Task):
+    """A routine among the Tasks: its steps and how far it has got, and controls
+    to start, pause, resume and abort it.
+
+    Follows the state the Monitor publishes for the routine instead of an
+    action server's feedback, and sends its controls to the Monitor by name.
+    """
+
+    #: The controls offered in each status. Any status not listed can start
+    _CONTROLS = {"running": ("pause", "abort"), "paused": ("resume", "abort")}
+
+    #: Statuses a run ends in
+    _ENDED = ("completed", "failed", "aborted")
+
+    def __init__(self, name: str):
+        """
+        :param name: Routine name
+        :type name: str
+        """
+        self._dom_id = f"routine-{name}"
+        self._state: Dict[str, Any] = {}
+        super().__init__(name=name, client_type="Routine", fields={})
+        # Until the first state arrives from the Monitor
+        self._status = "unknown"
+
+    def _find_server_node(self) -> Optional[str]:
+        """A routine runs on the Monitor, so there is no server to look up"""
+        return None
+
+    def is_active(self) -> bool:
+        """Whether a run is under way, paused included
+
+        :rtype: bool
+        """
+        return self._status in ("running", "paused")
+
+    def is_running(self) -> bool:
+        """Whether a run is under way and not paused
+
+        :rtype: bool
+        """
+        return self._status == "running"
+
+    def update_state(self, state: Optional[Dict]) -> None:
+        """Take a new state of the routine, as the Monitor published it
+
+        :param state: The routine's state, or None if none has arrived
+        :type state: Optional[Dict]
+        """
+        if not state:
+            return
+        previous_status = self._status
+        previous_index = self._state.get("index")
+        status = state.get("status", "unknown")
+        if status == "running" and previous_status in self._ENDED:
+            # A new run: the log of the last one is no longer about this one
+            self.cleanup()
+        self._state = state
+        changed = status != previous_status or state.get("index") != previous_index
+        self.update(
+            status=status,
+            feedback=self._describe(state) if changed else None,
+            duration=state.get("elapsed"),
+        )
+
+    @staticmethod
+    def _describe(state: Dict) -> Optional[str]:
+        """One line for the log about where the routine has got to"""
+        status = state.get("status")
+        steps = state.get("steps", [])
+        step = state.get("active_step")
+        if status == "running" and step:
+            return f"Step {state.get('index', 0) + 1}/{len(steps)}: {step}"
+        if status == "paused":
+            return f"Paused at '{step}'" if step else "Paused"
+        if status == "completed":
+            return "Completed"
+        if status in ("failed", "aborted"):
+            message = state.get("message")
+            title = status.capitalize()
+            return f"{title}: {message}" if message else title
+        return None
+
+    @property
+    def card(self) -> FT:
+        """The routine's card: status, steps, log and controls"""
+        routine_card = DivVStacked(
+            self._badge,
+            cls="mt-0 gap-2",
+            id=self._dom_id,
+            ws_send=True,
+        )
+        inside = Grid(cls="gap-2 ml-1 mr-1 place-items-center", cols=1)
+        inside(self._steps)
+        feedback_card = self._feedback_card(title="Routine Log")
+        if feedback_card is not None:
+            inside(feedback_card)
+        inside(self._controls)
+        return routine_card(inside)
+
+    @property
+    def _badge(self):
+        """Status, with a spinner while running and a timer while under way"""
+        if self._status == "running":
+            # One of Task's active statuses: spinner and timer
+            return super()._badge
+        badge = DivHStacked(
+            Span(
+                self._status, cls=f"status-badge {self._status}", id="status-badge-div"
+            )
+        )
+        if self._status == "paused" and self._duration is not None:
+            badge(self._timer)
+        return badge
+
+    @property
+    def _steps(self) -> FT:
+        """The steps as a checklist: done, the one under way, and what is left"""
+        steps = self._state.get("steps", [])
+        if not steps:
+            return P("Waiting for the routine's state", cls="routine-waiting")
+        index = self._state.get("index", 0)
+        checklist = Div(cls="routine-steps", id=f"{self._dom_id}-steps")
+        for position, step in enumerate(steps):
+            if self._status == "completed" or position < index:
+                mark, kind = "✓", "done"
+            elif position == index and self.is_active():
+                mark, kind = "●", "active"
+            elif position == index and self._status in ("failed", "aborted"):
+                mark, kind = "✕", "stopped"
+            else:
+                mark, kind = "○", "pending"
+            line = DivHStacked(
+                Span(mark, cls="routine-step-mark"),
+                Span(step),
+                cls=f"routine-step {kind} gap-2",
+            )
+            feedback = self._state.get("step_feedback")
+            if kind == "active" and feedback:
+                line(
+                    Span(
+                        f"{feedback.get('server_status', '')}, "
+                        f"{feedback.get('feedback_count', 0)} feedback",
+                        cls="routine-step-feedback",
+                    )
+                )
+            checklist(line)
+        return checklist
+
+    @property
+    def _controls(self) -> FT:
+        """The controls that apply to the routine's current status"""
+        commands = self._CONTROLS.get(self._status, ("start",))
+        buttons = DivHStacked(*[
+            Button(
+                command.capitalize(),
+                cls="primary-button",
+                hx_post=f"/routine/{command}",
+                hx_target="#main",
+                hx_on__before_request="this.disabled = true;",
+            )
+            for command in commands
+        ])
+        return Form(
+            DivCentered(buttons),
+            Input(name="routine_name", type="hidden", value=self._name),
+            cls="space-x-2 space-y-2 m-2",
+            id=f"{self._dom_id}-form",
+            onsubmit="event.preventDefault(); return false;",
+        )
+
+    @property
+    def _info(self):
+        """What the routine is made of"""
+        steps = self._state.get("steps", [])
+        return (
+            Dialog(
+                Card(
+                    Grid(
+                        P(Strong("Runs on: "), "Monitor"),
+                        P(Strong("Steps: "), ", ".join(steps) or "not known yet"),
+                        P(Strong("Started from the UI: "), self.total_calls),
+                        cols=1,
+                        cls="gap-1",
+                    ),
+                    header=DivHStacked(
+                        Button(
+                            "✕",
+                            cls="info-btn",
+                            onclick="this.closest('dialog').close()",
+                        ),
+                        H5("Routine Info", cls="cool-subtitle-mini-blue"),
+                    ),
+                ),
+                id=f"{self._dom_id}-modal",
+            ),
+        )
 
 
 # ---- UTILITY ELEMENTS ----
