@@ -2051,11 +2051,25 @@ class Monitor(Node):
         """Every action addressable by name, as JSON"""
         return True, json.dumps(self._action_registry.dictionary)
 
-    def list_routines(self, **_) -> ActionReturnType:
-        """Every registered routine and where it has got to, as JSON"""
+    def get_routines(self) -> List[Dict]:
+        """Every registered routine: what it is for, and where it has got to.
+
+        Each entry is the routine's state (its name, steps, status and so on)
+        plus its ``description``, which is None if it was given none. Plain
+        data, copied, so a caller can read it without reaching into the routines
+
+        :rtype: List[Dict]
+        """
         with self._blackboard_lock:
             routines = list(self.__routines.values())
-        return True, json.dumps([routine.state for routine in routines])
+        return [
+            {**routine.state, "description": routine.description}
+            for routine in routines
+        ]
+
+    def list_routines(self, **_) -> ActionReturnType:
+        """Every registered routine, as `get_routines` gives it, as JSON"""
+        return True, json.dumps(self.get_routines())
 
     def list_events(self, **_) -> ActionReturnType:
         """Every event registered at runtime, as JSON"""
@@ -2218,7 +2232,7 @@ class Monitor(Node):
     ) -> ActionReturnType:
         """Register a routine described as JSON.
 
-        :param routine: `{name, steps, on_complete, on_abort, description}`
+        :param routine: `{name, steps, on_complete, on_abort, on_pause, description}`
         :param replace: Replace one already registered under this name
         :rtype: ActionReturnType
         """
