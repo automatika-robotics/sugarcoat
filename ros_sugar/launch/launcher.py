@@ -78,6 +78,7 @@ from ..robot import (
     Plugin,
     PluginRole,
     PluginShmManager,
+    ProcessSpec,
     RobotPlugin,
     RobotPluginHost,
     SocketFeedbackBus,
@@ -805,14 +806,24 @@ class Launcher:
             if requested := sorted(feedbacks[plugin_id] | commands[plugin_id]):
                 logger.debug(f"Plugin '{plugin_id}' serves: {', '.join(requested)}")
 
-    def _launch_plugin_processes(self, plugin: Plugin) -> None:
+    def _launch_plugin_processes(self, plugin: Plugin) -> List[Tuple[str, str]]:
         """Add launch actions for the external drivers a plugin declares.
 
         A driver that is not installed fails bringup. The recipe asked for the
         data it serves, so running without it would lead to unhealthy behavior.
 
+        A driver's ``inputs`` are delivered on the topics it reads: a feedback
+        already on a ROS topic by remapping the driver onto it, and any other
+        by the plugin host publishing it there, which the caller arranges from
+        the returned pairs.
+
         :raises PackageNotFoundError: If a driver's package is not installed
         :raises FileNotFoundError: If a driver's package has no such executable
+        :raises ValueError: If a driver's inputs name a feedback the plugin
+            does not have
+        :return: ``(feedback_key, topic)`` pairs the plugin host must publish
+            on ROS, for the drivers that were started
+        :rtype: List[Tuple[str, str]]
         """
         from ament_index_python.packages import PackageNotFoundError
 
@@ -825,8 +836,9 @@ class Launcher:
                 f"Plugin '{plugin.id}' failed to declare its required "
                 f"processes: {e}. No driver will be started for it."
             )
-            return
+            return []
 
+        host_publishes: List[Tuple[str, str]] = []
         for spec in specs:
             try:
                 if spec.precondition is not None and not spec.precondition():
@@ -842,8 +854,12 @@ class Launcher:
                     f"'{spec.label}' failed: {e}. Not starting it."
                 )
                 continue
+            launch_kwargs = spec.launch_kwargs()
+            remappings, published = self._plugin_process_inputs(plugin, spec)
+            if remappings:
+                launch_kwargs["remappings"] = list(spec.remappings or []) + remappings
             try:
-                self.add_ros_node(**spec.launch_kwargs())
+                self.add_ros_node(**launch_kwargs)
             except (PackageNotFoundError, FileNotFoundError) as e:
                 used = ", ".join(sorted(plugin.requested_feedbacks)) or "none"
                 raise type(e)(
@@ -854,6 +870,36 @@ class Launcher:
                     "driver is not needed."
                 ) from None
             logger.info(f"Plugin '{plugin.id}': starting driver '{spec.label}'")
+            host_publishes.extend(published)
+        return host_publishes
+
+    @staticmethod
+    def _plugin_process_inputs(
+        plugin: Plugin, spec: ProcessSpec
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """How to deliver each of a driver's ``inputs`` on the topic it reads.
+
+        :raises ValueError: If an input names a feedback the plugin does not have
+        :return: Remappings to add to the driver, and ``(feedback_key, topic)``
+            pairs for the plugin host to publish
+        """
+        remappings: List[Tuple[str, str]] = []
+        published: List[Tuple[str, str]] = []
+        for key, topic in (spec.inputs or {}).items():
+            feedback = plugin.feedbacks.get(key)
+            if feedback is None:
+                raise ValueError(
+                    f"Plugin '{plugin.id}' declares that driver '{spec.label}' "
+                    f"reads its feedback '{key}', but the plugin has no such "
+                    f"feedback. Available: {sorted(plugin.feedbacks)}"
+                )
+            if feedback.is_ros_topic:
+                # Already on ROS: point the driver at the real topic
+                if feedback.transport.topic_name != topic:
+                    remappings.append((topic, feedback.transport.topic_name))
+            else:
+                published.append((key, topic))
+        return remappings, published
 
     def _distribute_plugins(self) -> None:
         """Hand every attached plugin to every component.
@@ -2240,8 +2286,10 @@ class Launcher:
         self._resolve_plugin_demand()
 
         # Launch plugin drivers in their own processes (if any). This is done before the feedback bus is started so that the bus is ready to accept connections when the drivers start.
+        # Feedback those drivers read on ROS is published by the plugin's host
+        host_publishes: Dict[str, List[Tuple[str, str]]] = {}
         for plugin in self._plugins.values():
-            self._launch_plugin_processes(plugin)
+            host_publishes[plugin.id] = self._launch_plugin_processes(plugin)
 
         # A socket feedback bus is needed when any component runs as its own
         # process; otherwise an in-process bus avoids the socket round trip.
@@ -2264,6 +2312,8 @@ class Launcher:
                 owns_bus=False,
                 shm=self._plugin_shm,
             )
+            for feedback_key, topic in host_publishes.get(plugin.id, []):
+                host.publish_on_ros(feedback_key, topic)
             host.open()
             self._plugin_hosts.append(host)
             # Register every non-ROS feedback's synthetic topic with the Monitor

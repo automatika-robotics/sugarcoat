@@ -25,24 +25,20 @@ from nav_msgs.srv import SetMap
 from ros_sugar import Launcher
 from ros_sugar.config import ComponentRunType
 from ros_sugar.core import (
-    Action,
-    BaseComponent,
-    Event,
-    Monitor,
-    Routine,
-)
-from ros_sugar.core.action import ActionServerGoal
-
-# Internal vocabulary: the one owner that is not a component
-from ros_sugar.core._action_registry import (
     COMPONENT_ACTION_SERVER,
     COMPONENT_METHOD,
     COMPONENT_SERVICE,
     MONITOR_METHOD,
     MONITOR_OWNER,
+    Action,
+    BaseComponent,
+    Event,
+    Monitor,
     RegisteredAction,
+    Routine,
     SystemActionRegistry,
 )
+from ros_sugar.core.action import ActionServerGoal
 from ros_sugar.utils import ActionReturnType, component_action, component_fallback
 
 # What the driver was asked to do, so a resolved callable can be shown to land

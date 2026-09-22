@@ -63,6 +63,13 @@ class Feedback(BaseAttrs):
     #: plugin's frame when unset; a decoder that stamps its own is never
     #: overridden.
     frame_id: str = field(default="")
+    #: Whenever the plugin host publishes this feedback on ROS (see
+    #: ``ProcessSpec.inputs``), also broadcast its pose on TF as
+    #: ``header.frame_id -> child_frame_id``. For an odometry feedback, whose
+    #: message names both frames: it makes the plugin the owner of the
+    #: ``odom -> base`` transform that a localizer such as robot_localization
+    #: expects something else to provide.
+    publish_tf: bool = field(default=False)
     #: Id of the owning plugin, stamped by ``Plugin._bind_identity`` when the
     #: plugin is attached.
     owner_id: str = field(default="", init=False, repr=False)
