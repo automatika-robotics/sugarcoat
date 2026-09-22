@@ -2266,7 +2266,19 @@ class BaseComponent(lifecycle.Node):
             with self._main_goal_lock:
                 self._main_goal_handle = None
 
-    @component_action
+    @component_action(
+        description={
+            "type": "function",
+            "function": {
+                "name": "cancel_main_goal",
+                "description": (
+                    "Stop the goal this component's action server is running, "
+                    "succeeding when nothing is running"
+                ),
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        }
+    )
     def cancel_main_goal(self, **_) -> ActionReturnType:
         """Stop the goal the main action server is running, for a caller that
         does not hold its handle.
