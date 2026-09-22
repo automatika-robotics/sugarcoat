@@ -389,6 +389,8 @@ class Monitor(Node):
         # Routines routed to the Monitor, keyed by name so the control actions
         # and the cursor query can find them
         self.__routines: Dict[str, Routine] = {}
+        # Routines no event triggers, hosted on activation. See `host_routines`
+        self._standalone_routines: List[Routine] = []
         # Their cursor publishers, so removing a routine can take its topic down
         self.__routine_publishers: Dict[str, Publisher] = {}
         # Events registered while running, keyed by the id used to remove them
@@ -1623,40 +1625,62 @@ class Monitor(Node):
         # topic is never subscribed for an action that is never triggered
         if self._monitor_events_actions:
             bind_monitored_actions(self._monitor_events_actions.values(), self)
-            self.__register_routines()
+
+    def host_routines(self, routines: List[Routine]) -> None:
+        """Host routines that no event triggers, once the Monitor is active.
+
+        For routines that are only ever started by name: from the UI, from the
+        runtime API or from another routine. A routine an event also triggers is
+        hosted once. Must be called before activation
+
+        :param routines: The routines to host
+        :type routines: List[Routine]
+        """
+        for routine in routines:
+            if routine not in self._standalone_routines:
+                self._standalone_routines.append(routine)
 
     def __register_routines(self) -> None:
-        """Take ownership of every routine routed to the Monitor.
+        """Register every routine known before activation: those routed to the
+        Monitor by an event, and those given to `host_routines`.
+
+        Runs before any event topic is subscribed, so that no event can trigger
+        a routine that is not ready to run.
+        """
+        triggered = [
+            action
+            for actions in (self._monitor_events_actions or {}).values()
+            for action in actions
+            if isinstance(action, Routine)
+        ]
+        for routine in triggered + self._standalone_routines:
+            registered = self.__routines.get(routine.name, None)
+            if registered is routine:
+                # Triggered by more than one event, also given to
+                # host_routines, or a re-activation. Registering it again would
+                # create a second publisher for the same cursor
+                continue
+            if registered is not None:
+                raise ValueError(
+                    f"Got more than one routine named '{routine.name}'. Routine "
+                    "names identify a routine in its topic and to the control "
+                    "actions, so they must be unique"
+                )
+            self.__register_routine(routine)
+
+    def __register_routine(self, routine: Routine) -> None:
+        """Make a routine ready to run, and addressable by name.
 
         A routine spans components, so no single component can host it, and the
-        Monitor is the one node that can reach all of them. Registering gives
-        the routine the node its steps watch their success conditions on, and
-        somewhere to publish its cursor.
+        Monitor is the one node that can reach all of them. Registering
+        subscribes the topics its steps read and judge success on, points each
+        of its actions at whatever really runs it, and gives it a cursor topic.
+        The control actions, the cursor query and the runtime API then all find
+        it by name.
         """
-        for actions in self._monitor_events_actions.values():
-            for action in actions:
-                if not isinstance(action, Routine):
-                    continue
-                registered = self.__routines.get(action.name, None)
-                if registered is action:
-                    # The same routine triggered by more than one event, or a
-                    # re-activation: registering it again would create a second
-                    # publisher for the same cursor
-                    continue
-                if registered is not None:
-                    raise ValueError(
-                        f"Got more than one routine named '{action.name}'. Routine "
-                        "names identify a routine in its topic and to the control "
-                        "actions, so they must be unique"
-                    )
-                self.__host_routine(action)
-
-    def __host_routine(self, routine: Routine) -> None:
-        """Give a routine the node it runs on and somewhere to report from.
-
-        Registering is what makes a routine addressable by name: the control
-        actions, the cursor query and the runtime API all find it this way.
-        """
+        with self._blackboard_lock:
+            for topic in routine.get_required_topics():
+                self.__ensure_topic_listener_locked(topic)
         publish_state = self.__routine_state_publisher(routine.name)
         self.__routines[routine.name] = routine
         routine.set_host(self)
@@ -1664,6 +1688,8 @@ class Monitor(Node):
         for action in routine.actions():
             self.__route_routine_action(action)
         routine.set_state_publisher(publish_state)
+        # Publish state once on registration to report to UI
+        publish_state(json.dumps(routine.state))
 
     def __route_routine_action(self, action: Action) -> None:
         """Point one of a routine's actions at whatever really runs it.
@@ -1934,10 +1960,6 @@ class Monitor(Node):
     def add_routine(self, routine: Routine, replace: bool = False, **_) -> ActionReturnType:
         """Take ownership of a routine that the recipe did not declare.
 
-        A routine declared in a recipe piggybacks on its trigger event for the
-        topics its steps read. One added here has no trigger, so those topics
-        are subscribed outright.
-
         :param routine: The routine to host
         :param replace: Replace one already registered under this name
         :rtype: ActionReturnType
@@ -1955,10 +1977,7 @@ class Monitor(Node):
                 return False, message
 
         try:
-            with self._blackboard_lock:
-                for topic in routine.get_required_topics():
-                    self.__ensure_topic_listener_locked(topic)
-            self.__host_routine(routine)
+            self.__register_routine(routine)
         except Exception as e:
             return False, f"Could not register routine '{routine.name}': {e}"
 
@@ -2329,6 +2348,7 @@ class Monitor(Node):
         self.__events_per_topic: Dict[str, List[Event]] = {}
         # The single subscription behind each subscribed topic, by topic name
         self.__event_listeners: Dict[str, Any] = {}
+        self.__register_routines()
         for event in self.__events:
             self.__attach_event_topics_locked(event)
 
