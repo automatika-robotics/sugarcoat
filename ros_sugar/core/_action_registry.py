@@ -57,7 +57,8 @@ def _describe(method: Optional[Callable]) -> str:
 
     ``@component_action(description=...)`` takes a dict, which the decorator
     stores as JSON. That form is written for an LLM tool schema, so the prose
-    inside it is pulled out rather than handed on as a blob.
+    inside it is pulled out rather than handed on as a blob. The schema itself
+    is kept whole by `_schema`.
     """
     if method is None:
         return ""
@@ -81,6 +82,11 @@ def _description_schema(described: Optional[str]) -> Optional[Dict]:
     except (json.JSONDecodeError, TypeError):
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _schema(method: Optional[Callable]) -> Optional[Dict]:
+    """The tool schema a method was described with, when it was given as one"""
+    return _description_schema(getattr(method, "_action_description", None))
 
 
 def _signature(method: Optional[Callable]) -> str:
@@ -112,6 +118,9 @@ class RegisteredAction(BaseAttrs):
     :param kind: Which resolution path applies, one of the module constants.
         The Monitor dispatches on this
     :param description: What it does, for a caller listing what is available
+    :param schema: The tool schema it was described with, whole, when
+        ``@component_action(description=...)`` was given a dict. None when it
+        was described in prose. For a caller that builds tool calls from it
     :param signature: Its call signature, with the bound instance dropped
     :param interface_type: Name of the action or service type, for the kinds
         that have one
@@ -126,6 +135,9 @@ class RegisteredAction(BaseAttrs):
     name: str = field()
     kind: str = field()
     description: str = field(default="")
+    # dict, not Dict: BaseAttrs.from_dict finds no type to check a bare Dict
+    # against, and refuses any value
+    schema: Optional[dict] = field(default=None)
     signature: str = field(default="(...)")
     interface_type: Optional[str] = field(default=None)
     server_name: Optional[str] = field(default=None)
@@ -328,6 +340,7 @@ class SystemActionRegistry:
                     name=name,
                     kind=MONITOR_METHOD,
                     description=_describe(method),
+                    schema=_schema(method),
                     signature=_signature(method),
                 )
             )
@@ -353,6 +366,7 @@ class SystemActionRegistry:
                     name=name,
                     kind=COMPONENT_METHOD,
                     description=_describe(method),
+                    schema=_schema(method),
                     signature=_signature(method),
                     in_process=in_process,
                 )
