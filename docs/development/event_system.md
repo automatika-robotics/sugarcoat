@@ -421,6 +421,7 @@ pick = Routine(
     ],
     on_complete=logger_component.log_pick_done,
     on_abort=safety.open_gripper_and_home,
+    on_pause=arm.stop,
 )
 
 launcher.on(pick_requested, pick)
@@ -475,13 +476,28 @@ The Monitor exposes each routine by name, so control is available as ordinary sy
 | Monitor method | Effect |
 |:---------------|:-------|
 | `start_routine(name)` | Start it, same as triggering the action |
-| `pause_routine(name)` | Preempt what is in flight and stop there |
+| `pause_routine(name)` | Preempt what is in flight, run `on_pause` and stop there |
 | `resume_routine(name)` | Re-enter the step it stopped at |
 | `abort_routine(name, reason)` | End it now and run `on_abort` |
 | `get_routine_state(name)` | The cursor, as JSON |
 | `get_routines()` | Every registered routine, as a list of dicts: its cursor plus its `description`. `list_routines` serves the same as JSON over the runtime API |
 
 Pausing preempts the step in flight, and resuming runs that step again from the start: a step is the smallest thing a routine can be positioned at. What gets preempted is whatever the routine actually dispatched, which is the fallback rather than the step while a step is being recovered. Resuming re-enters the step either way — unless the pause landed between two steps, in which case it picks up at the next one rather than repeating the step that had already finished.
+
+**`on_pause` is what makes a pause safe.** Preempting a step stops what the step itself runs, not what it set in motion: a navigation step that has already handed the robot a goal is stopped, while the robot keeps driving to it. `on_pause` is where the routine undoes that.
+
+```python
+Routine(
+    "go_to_kitchen",
+    steps=[Action(planner.go_to, kwargs={"goal": kitchen})],
+    # One action, or several run in order
+    on_pause=[Action(controller.stop_path_tracking), Action(driver.stop_robot)],
+)
+```
+
+They run after the step has been preempted, one after the other, while the routine reports `paused`. One that fails is logged and the rest still run: a pause is a safety measure, and stopping one of several things is better than stopping none. They are ordinary actions, so a step's component, its arguments and its `success` condition work the same way, and the Launcher checks them at launch like any other action of the routine.
+
+A resume that arrives while they are still running is not refused: it reports that the routine will resume once they are done, and re-enters the step then, rather than starting it alongside what is undoing it. An abort arriving meanwhile ends the routine and drops the rest of them, as it drops anything else in flight.
 
 Taking a routine down is not the same as aborting it: `remove_routine(name, force=True)` and the Monitor shutting down preempt whatever is in flight — a terminal action included — and do **not** run `on_abort`, since the routine's cursor and success watches are going away with it.
 
