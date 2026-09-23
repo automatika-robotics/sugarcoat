@@ -2,7 +2,7 @@ import importlib
 from typing import List, Dict, Any, Optional
 from functools import partial
 from ..utils import logger
-from ..io.supported_types import SupportedType, get_ros_msg_fields_dict
+from ..io.supported_types import SupportedType, get_ros_msg_fields_dict, ros_msg_to_str
 
 from .utils import parse_type
 
@@ -70,9 +70,13 @@ class Task:
 
         :param status: New status
         :type status: str
+        :param feedback: The feedback message, or a line about it. A card of
+            an action type's own reads the message, the log shows its text
         """
         if status:
             self._status = status
+        if feedback is not None and not isinstance(feedback, str):
+            feedback = ros_msg_to_str(feedback)
         if feedback:
             if timestep is not None:
                 # Apply timestep check for new feedback if timestep is sent
@@ -1184,6 +1188,11 @@ _INPUT_ELEMENTS: Dict = {
     "PoseStamped": partial(_in_pose_element, stamped=True),
 }
 
+#: The card class of an action client, by the name of its action type. A
+#: derived package registers one for an action whose card it wants to own,
+#: instead of the Task every action client gets
+_TASK_ELEMENTS: Dict[str, type] = {}
+
 _OUTPUT_ELEMENTS: Dict = {
     "String": _log_text_element,
     "Float32": _log_text_element,
@@ -1203,8 +1212,14 @@ _OUTPUT_ELEMENTS: Dict = {
 # ---- ADDITIONAL MESSAGES ELEMENTS ----
 
 
-def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
-    """Deserialize one additional element"""
+def _deserialize_additional_element(
+    k_t: str, i_t: str, supported_type_key: bool = True
+) -> Optional[Tuple]:
+    """Deserialize one additional element
+
+    :param supported_type_key: Whether the key is a message type. False for a
+        task element, whose key is the action type it is the card for
+    """
     # Get key type
     module_name_key, _, type_name = k_t.rpartition(".")
     if not module_name_key:
@@ -1218,7 +1233,7 @@ def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
     module_key = importlib.import_module(module_name_key)
     module_item = importlib.import_module(module_name_item)
     key = getattr(module_key, type_name)
-    if not issubclass(key, SupportedType):
+    if supported_type_key and not issubclass(key, SupportedType):
         logger.error(f"Could not find {type_name} name in {module_key} module")
         return
     item = getattr(module_item, func_name)
@@ -1229,10 +1244,12 @@ def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
 
 
 def add_additional_ui_elements(
-    input_elements: Optional[List[Tuple]], output_elements: Optional[List[Tuple]]
+    input_elements: Optional[List[Tuple]],
+    output_elements: Optional[List[Tuple]],
+    task_elements: Optional[List[Tuple]] = None,
 ):
     """Deserialize additional elements and add them"""
-    global _INPUT_ELEMENTS, _OUTPUT_ELEMENTS
+    global _INPUT_ELEMENTS, _OUTPUT_ELEMENTS, _TASK_ELEMENTS
 
     # Add input elements
     if input_elements:
@@ -1247,6 +1264,20 @@ def add_additional_ui_elements(
             deserialized = _deserialize_additional_element(k_t, i_t)
             if deserialized:
                 _OUTPUT_ELEMENTS[deserialized[0].__name__] = deserialized[1]
+
+    # Add task elements, keyed by the name of the action type they are for
+    if task_elements:
+        for k_t, i_t in task_elements:
+            deserialized = _deserialize_additional_element(
+                k_t, i_t, supported_type_key=False
+            )
+            if deserialized and issubclass(deserialized[1], Task):
+                _TASK_ELEMENTS[deserialized[0].__name__] = deserialized[1]
+            elif deserialized:
+                logger.error(
+                    f"The task element for '{deserialized[0].__name__}' is not a "
+                    "Task, so it cannot be a card"
+                )
 
 
 # ---- GENERIC MESSAGES ELEMENTS ----

@@ -131,6 +131,7 @@ def build_browser_app(
     ros_node,
     additional_input_elements=None,
     additional_output_elements=None,
+    additional_task_elements=None,
     system_info=None,
     session_key=None,
 ):
@@ -139,6 +140,7 @@ def build_browser_app(
     :param ros_node: The running UI node.
     :param additional_input_elements: UI input elements from derived packages.
     :param additional_output_elements: UI output elements from derived packages.
+    :param additional_task_elements: Task cards from derived packages, by action type.
     :param system_info: System metadata for the visualization page.
     :param session_key: Secret signing the session of a secure UI, sent over
         HTTPS only. None uses FastHTML's key file in the working directory.
@@ -154,6 +156,7 @@ def build_browser_app(
         action_clients_configs=ros_node.action_clients_inputs_dicts(),
         additional_input_elements=additional_input_elements,  # Additional UI input elements from derived packages
         additional_output_elements=additional_output_elements,  # Additional UI output elements from derived packages
+        additional_task_elements=additional_task_elements,  # Task cards for the action types a derived package owns
         hide_settings_panel=ros_node_config.hide_settings,
         system_info=system_info,
         session_key=session_key,
@@ -459,11 +462,9 @@ def build_browser_app(
                         key = (fb["status"], fb["timestep"], int(fb["duration_secs"]))
                         if key != last_seen.get(name):
                             last_seen[name] = key
-                            feedback = (
-                                ros_msg_to_str(fb["feedback"])
-                                if fb["feedback"]
-                                else None
-                            )
+                            # The message itself: a card of an action type's
+                            # own reads its fields, Task turns it into a line
+                            feedback = fb["feedback"]
                             fh.action_clients_ft[name].update(
                                 status=fb["status"],
                                 feedback=feedback,

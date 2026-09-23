@@ -509,12 +509,16 @@ class Launcher:
 
         self._ui_input_elements = []
         self._ui_output_elements = []
+        self._ui_task_elements = []
 
         # NOTE: UI extensions provide browser widgets. They are skipped
         # entirely in API-only mode
         extensions = UI_EXTENSIONS if serve_browser else {}
         for ext in extensions:
-            input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
+            # A package that owns no task card returns only the topic elements
+            input_elements_dict, output_elements_dict, *task_elements = UI_EXTENSIONS[
+                ext
+            ]()
             # Additional input/output elements are used for UI elements coming
             # from derived packages
             for key, element in input_elements_dict.items():
@@ -525,6 +529,12 @@ class Launcher:
             # serialize outputs
             for key, element in output_elements_dict.items():
                 self._ui_output_elements.append((
+                    f"{key.__module__}.{key.__qualname__}",
+                    f"{element.__module__}.{element.__qualname__}",
+                ))
+            # serialize the task cards, keyed by the action type they are for
+            for key, element in (task_elements[0] if task_elements else {}).items():
+                self._ui_task_elements.append((
                     f"{key.__module__}.{key.__qualname__}",
                     f"{element.__module__}.{element.__qualname__}",
                 ))
@@ -1784,6 +1794,8 @@ class Launcher:
             json.dumps(self._ui_input_elements),
             "--ui_output_elements",
             json.dumps(self._ui_output_elements),
+            "--ui_task_elements",
+            json.dumps(self._ui_task_elements),
             "--ui_service_clients",
             ui_node._client_inputs_json,
             "--system_info",

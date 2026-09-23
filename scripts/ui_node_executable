@@ -40,6 +40,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ui_input_elements", type=str)
     parser.add_argument("--ui_output_elements", type=str)
+    parser.add_argument("--ui_task_elements", type=str)
     parser.add_argument("--ui_service_clients", type=str)
     parser.add_argument("--system_info", type=str)
     args, _ = parser.parse_known_args()  # type: ignore
@@ -48,6 +49,9 @@ def main():
     )
     additional_output_elements = (
         json.loads(args.ui_output_elements) if args.ui_output_elements else None
+    )
+    additional_task_elements = (
+        json.loads(args.ui_task_elements) if args.ui_task_elements else None
     )
     if args.ui_service_clients:
         ros_node._client_inputs_json = args.ui_service_clients
@@ -93,6 +97,7 @@ def main():
             ros_node,
             additional_input_elements=additional_input_elements,
             additional_output_elements=additional_output_elements,
+            additional_task_elements=additional_task_elements,
             system_info=system_info,
             session_key=browser_session_key,
         )

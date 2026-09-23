@@ -85,6 +85,7 @@ class FHApp:
         action_clients_configs: Optional[Sequence[Dict]] = None,
         additional_input_elements: Optional[List[Tuple]] = None,
         additional_output_elements: Optional[List[Tuple]] = None,
+        additional_task_elements: Optional[List[Tuple]] = None,
         hide_settings_panel: bool = False,
         system_info: Optional[Dict] = None,
         session_key: Optional[str] = None,
@@ -142,6 +143,7 @@ class FHApp:
         elements.add_additional_ui_elements(
             input_elements=additional_input_elements,
             output_elements=additional_output_elements,
+            task_elements=additional_task_elements,
         )
 
         # Create settings UI
@@ -178,7 +180,10 @@ class FHApp:
         self.action_clients_ft: Dict[str, elements.Task] = {}
         if action_clients_configs:
             for client in action_clients_configs:
-                self.action_clients_ft[client["name"]] = elements.Task(
+                # The card of an action type a derived package owns, or the one
+                # every action client gets
+                card = elements._TASK_ELEMENTS.get(client["type"], elements.Task)
+                self.action_clients_ft[client["name"]] = card(
                     name=client["name"],
                     client_type=client["type"],
                     fields=client["fields"],
