@@ -13,7 +13,9 @@ from ._action_registry import (
     COMPONENT_SERVICE,
     MONITOR_METHOD,
     MONITOR_OWNER,
+    PLUGIN_ACTION,
     RegisteredAction,
+    RegisteredEvent,
     SystemActionRegistry,
 )
 
@@ -31,9 +33,11 @@ __all__ = [
     "RoutineStatus",
     "SystemActionRegistry",
     "RegisteredAction",
+    "RegisteredEvent",
     "COMPONENT_ACTION_SERVER",
     "COMPONENT_METHOD",
     "COMPONENT_SERVICE",
     "MONITOR_METHOD",
     "MONITOR_OWNER",
+    "PLUGIN_ACTION",
 ]

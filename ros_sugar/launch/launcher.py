@@ -1659,6 +1659,7 @@ class Launcher:
             monitor_methods=type(monitor).RUNTIME_MONITOR_ACTIONS,
             monitor_class=type(monitor),
             out_of_process=list(self._pkg_executable),
+            plugins=list(self._plugins.values()),
         )
         monitor.set_action_registry(self._action_registry)
         logger.debug(
@@ -1743,6 +1744,8 @@ class Launcher:
             monitor_methods=Monitor.RUNTIME_MONITOR_ACTIONS,
             monitor_class=Monitor,
             out_of_process=list(self._pkg_executable),
+            # Attached before setup, so what each contributes is addressable
+            plugins=list(self._plugins.values()),
         )
 
         self._init_monitor_node(

@@ -36,7 +36,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from attrs import define, field
 
 from ..config.base_attrs import BaseAttrs
-from ..utils import get_methods_with_decorator
+from ..utils import get_methods_with_decorator, logger
 
 #: A method carrying @component_action or @component_fallback, run on its
 #: component through its ExecuteMethod service
@@ -47,6 +47,8 @@ COMPONENT_ACTION_SERVER = "component_action_server"
 COMPONENT_SERVICE = "component_service"
 #: A method of the Monitor itself
 MONITOR_METHOD = "monitor_method"
+#: An action a plugin contributes, built by the plugin's own factory
+PLUGIN_ACTION = "plugin_action"
 
 #: Owner of actions belonging to the Monitor rather than to any component
 MONITOR_OWNER = "monitor"
@@ -87,6 +89,22 @@ def _description_schema(described: Optional[str]) -> Optional[Dict]:
 def _schema(method: Optional[Callable]) -> Optional[Dict]:
     """The tool schema a method was described with, when it was given as one"""
     return _description_schema(getattr(method, "_action_description", None))
+
+
+def _plugin_described(spec: Any) -> Tuple[str, Optional[Dict]]:
+    """What a plugin's factory says it does, in prose and as a tool schema.
+
+    `plugin_action(description=...)` takes either, and a factory given neither
+    still has its docstring, which the plugin's own registry already read.
+    """
+    described = getattr(spec, "tool_description", None)
+    if isinstance(described, dict):
+        function = described.get("function", described)
+        prose = str(function.get("description", "")).strip()
+        return prose or spec.description, described
+    if isinstance(described, str) and described.strip():
+        return described.strip(), None
+    return spec.description, None
 
 
 def _signature(method: Optional[Callable]) -> str:
@@ -144,6 +162,28 @@ class RegisteredAction(BaseAttrs):
     in_process: bool = field(default=True)
 
 
+@define(kw_only=True)
+class RegisteredEvent(BaseAttrs):
+    """One condition the running stack can be asked to watch for.
+
+    Contributed by a plugin, which offers it as a factory building a fresh
+    `Event`. Unlike an action it is not run: it is registered, together with
+    the actions it is to trigger.
+
+    :param ref: How a caller names it, as "owner/name"
+    :param owner: Id of the plugin that offers it
+    :param name: The short name within that owner
+    :param description: What it watches for
+    :param signature: What its factory takes, such as a threshold
+    """
+
+    ref: str = field()
+    owner: str = field()
+    name: str = field()
+    description: str = field(default="")
+    signature: str = field(default="(...)")
+
+
 class SystemActionRegistry:
     """Every action the running stack exposes, addressable by name.
 
@@ -156,6 +196,11 @@ class SystemActionRegistry:
         # on them: an entry travels to a caller as JSON, and a class does not.
         # Whoever builds a client needs the class, and is always in-process
         self._interfaces: Dict[str, Any] = {}
+        #: Conditions a plugin offers, and the factory building each one. Kept
+        #: apart from the actions: an event is registered, never run, so a
+        #: caller listing what it can ask for must not be handed one
+        self._events: Dict[str, RegisteredEvent] = {}
+        self._event_factories: Dict[str, Callable] = {}
         for action in actions or ():
             self.add(action)
 
@@ -230,6 +275,55 @@ class SystemActionRegistry:
         """
         return self._interfaces.get(self.normalize(ref), None)
 
+    def add_event_factory(self, event: RegisteredEvent, factory: Callable) -> None:
+        """Register one condition a plugin offers.
+
+        :param event: What to register
+        :param factory: Builds a fresh `Event`, given whatever its signature
+            asks for
+        :raises ValueError: If the reference is taken by a different event
+        """
+        ref = self.normalize(event.ref)
+        existing = self._events.get(ref)
+        if existing is not None and existing != event:
+            raise ValueError(f"Event reference '{ref}' is already registered")
+        self._events[ref] = event
+        self._event_factories[ref] = factory
+
+    def event_factory_for(self, ref: str) -> Optional[Callable]:
+        """The factory behind an event reference, or None if it is unknown"""
+        try:
+            return self._event_factories.get(self.normalize(ref), None)
+        except ValueError:
+            return None
+
+    def events(self, owner: Optional[str] = None) -> List[RegisteredEvent]:
+        """Every registered event, sorted by reference, optionally one owner's"""
+        return [
+            self._events[ref]
+            for ref in sorted(self._events)
+            if owner is None or self._events[ref].owner == owner
+        ]
+
+    @property
+    def events_dictionary(self) -> List[Dict]:
+        """Serialized form, for a caller asking what can be watched for"""
+        return [event.to_dict() for event in self.events()]
+
+    def get_event(self, ref: str) -> RegisteredEvent:
+        """Look one up.
+
+        :raises KeyError: If unknown, naming what is registered
+        """
+        key = self.normalize(ref)
+        found = self._events.get(key)
+        if found is not None:
+            return found
+        raise KeyError(
+            f"Unknown event '{ref}'. Known events: "
+            f"{', '.join(sorted(self._events)) or 'none'}"
+        )
+
     def get(self, ref: str) -> RegisteredAction:
         """Look one up.
 
@@ -292,6 +386,7 @@ class SystemActionRegistry:
         monitor_methods: Optional[Iterable[str]] = None,
         monitor_class: Optional[type] = None,
         out_of_process: Optional[Iterable[str]] = None,
+        plugins: Optional[Iterable] = None,
     ) -> "SystemActionRegistry":
         """Build the registry from what the Launcher knows.
 
@@ -305,6 +400,8 @@ class SystemActionRegistry:
             rather than an instance
         :param out_of_process: Node names launched as their own process, which
             is what makes an owner unreachable by holding its object
+        :param plugins: The plugins attached to the recipe, robot and sensor
+            alike. What each contributes is registered under its plugin id
         :rtype: SystemActionRegistry
         """
         registry = cls()
@@ -331,6 +428,9 @@ class SystemActionRegistry:
             registry.__add_main_server(component, owner, in_process)
             registry.__add_entry_points(component, owner, in_process)
 
+        for plugin in plugins or ():
+            registry.__add_plugin(plugin, seen_owners)
+
         for name in monitor_methods or ():
             method = getattr(monitor_class, name, None) if monitor_class else None
             registry.add(
@@ -345,6 +445,83 @@ class SystemActionRegistry:
                 )
             )
         return registry
+
+    def __add_plugin(self, plugin, component_owners: set) -> None:
+        """Register what a plugin contributes: its actions, and the conditions
+        it offers beside them.
+
+        A plugin's action is a factory rather than a method: calling one builds
+        a fresh `Action`, and its arguments are the factory's. The factory is
+        kept as the entry's interface, the way a server's type is, so whoever
+        resolves the entry needs no plugin object of its own.
+
+        :raises ValueError: If the plugin's id is a component's name too
+        """
+        owner = getattr(plugin, "id", None)
+        if not owner:
+            return
+        if owner in component_owners:
+            raise ValueError(
+                f"Plugin '{owner}' is named after a component. An action "
+                "reference could not say which of them it means"
+            )
+
+        actions = getattr(plugin, "actions", None)
+        for spec in actions.list() if actions is not None else ():
+            if not self.__nameable(owner, spec.name, "action"):
+                continue
+            description, schema = _plugin_described(spec)
+            self.add(
+                RegisteredAction(
+                    ref=f"{owner}/{spec.name}",
+                    owner=owner,
+                    name=spec.name,
+                    kind=PLUGIN_ACTION,
+                    description=description,
+                    schema=schema,
+                    signature=spec.signature,
+                    # The plugin's host, and so everything its actions reach,
+                    # lives in the process the Monitor is in
+                    in_process=True,
+                ),
+                interface=getattr(actions, spec.name),
+            )
+
+        events = getattr(plugin, "events", None)
+        for spec in events.list() if events is not None else ():
+            if not self.__nameable(owner, spec.name, "event"):
+                continue
+            self.add_event_factory(
+                RegisteredEvent(
+                    ref=f"{owner}/{spec.name}",
+                    owner=owner,
+                    name=spec.name,
+                    description=spec.description,
+                    signature=spec.signature,
+                ),
+                factory=getattr(events, spec.name),
+            )
+
+    def __nameable(self, owner: str, name: str, kind: str) -> bool:
+        """Whether a plugin's own name for something can be a reference.
+
+        A plugin names its actions and events in a plain dictionary, which
+        nothing validates, while a reference holds exactly one owner and one
+        name. One that cannot be referred to is left out rather than failing
+        the launch: it still works from the recipe, and a recipe that never
+        uses it should not be stopped by another package's naming.
+        """
+        try:
+            self.parse_ref(f"{owner}/{name}")
+        except ValueError:
+            logger.warning(
+                f"Plugin '{owner}' calls one of its {kind}s '{name}', which "
+                "cannot be part of an action reference, so it is not "
+                "addressable by name. Rename it to use it from a routine or "
+                "the runtime API"
+            )
+            return False
+        return True
 
     def __add_methods(self, component, owner: str, in_process: bool) -> None:
         """Register the component's decorated methods.

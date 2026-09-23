@@ -220,6 +220,46 @@ Notes:
   then returns a ready-to-use tool list for an orchestrating LLM, falling back
   to the factory's first docstring line where no description was given.
 
+### Addressable by name
+
+Attaching a plugin registers everything it contributes with the Monitor, under
+the plugin's id: `"lite3/stand_up"` is an action, `"lite3/low_battery"` a
+condition. A routine step, an event added at runtime and a caller of the runtime
+API can then name them, exactly as they name a component's actions. Nothing has
+to change in the recipe: `launcher.on(plugin.events.low_battery(0.15),
+plugin.actions.sit())` still holds the objects directly.
+
+```python
+# A mission written from outside the recipe, over the runtime API
+{"name": "patrol", "steps": [
+    {"ref": "lite3/stand_up", "timeout": 5.0, "max_retries": 2},
+    {"ref": "front_cam/aim", "kwargs": {"pan": 0.5}},
+]}
+```
+
+Three things follow for a plugin author:
+
+- **A factory's keyword arguments are what a step can set.** The step's
+  monitoring policy — `success`, `timeout`, `max_retries`, `cancel_method` and
+  the rest — is handed to the factory, so a factory that takes `**action_kwargs`
+  and passes them on to the `Action` it builds can be monitored, retried and
+  cancelled like any other step. One that takes none can still be run; it just
+  cannot be given a policy, and is told so by name if a step tries.
+- **Registry keys have to be referenceable.** A key with a slash or a space
+  cannot be half of a reference. Such an action stays usable from the recipe,
+  and a warning at bringup says it is not addressable.
+- **A plugin's id may not be a component's node name**, or a reference could
+  mean either of them. That fails the launch.
+
+`list_actions` over the runtime API includes a plugin's actions, with the tool
+description `plugin_action` gave them. `list_plugin_events` lists the conditions,
+which an event spec names with `{"ref": ..., "kwargs": {...}}` in place of a
+topic condition.
+
+An action runs in the process hosting the plugin, which is the launcher's, the
+same one the Monitor is in. That is what makes this possible at all: the action
+a factory builds closes over the live transport, and nothing serializes it.
+
 ### Overriding for non-default deployments
 
 If a particular deployment needs different endpoints (alternate subnet, custom

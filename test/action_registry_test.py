@@ -21,11 +21,13 @@ import launch_testing.markers
 import pytest
 from tf2_msgs.action import LookupTransform
 from nav_msgs.srv import SetMap
+from std_msgs.msg import Float32
 
 from ros_sugar import Launcher
 from ros_sugar.config import ComponentRunType
 from ros_sugar.core import (
     COMPONENT_ACTION_SERVER,
+    PLUGIN_ACTION,
     COMPONENT_METHOD,
     COMPONENT_SERVICE,
     MONITOR_METHOD,
@@ -39,6 +41,14 @@ from ros_sugar.core import (
     SystemActionRegistry,
 )
 from ros_sugar.core.action import ActionServerGoal
+from ros_sugar.io.topic import Topic
+from ros_sugar.robot import (
+    ActionRegistry,
+    EventRegistry,
+    PluginMetadata,
+    SensorPlugin,
+    plugin_action,
+)
 from ros_sugar.utils import ActionReturnType, component_action, component_fallback
 
 # What the driver was asked to do, so a resolved callable can be shown to land
@@ -119,6 +129,43 @@ class MapperComponent(BaseComponent):
         return response
 
 
+#: What the attached plugin was asked to do, so a resolved name can be shown
+#: to reach the plugin itself
+plugin_calls = []
+
+#: Above this, the attached plugin's condition holds
+LOUD = 5.0
+
+
+class _ProbePlugin(SensorPlugin):
+    """A plugin with no I/O of its own: one action and one condition.
+
+    A sensor rather than a robot, since a camera's actions are registered the
+    same way a quadruped's are.
+    """
+
+    def __init__(self):
+        self.metadata = PluginMetadata(name="probe_bot", vendor="test")
+        self.actions = ActionRegistry({"ping": self._ping})
+        self.events = EventRegistry({"loud": self._loud})
+
+    def _ping(self, **action_kwargs):
+        """Reach the plugin itself"""
+        def _run(**_):
+            plugin_calls.append("ping")
+            return True, "pinged"
+
+        return Action(method=_run, **action_kwargs)
+
+    @staticmethod
+    def _loud(threshold: float = LOUD):
+        """The level has risen above a threshold"""
+        return Event(
+            Topic(name="registry_plugin_level", msg_type="Float32").msg.data
+            > threshold
+        )
+
+
 @pytest.mark.launch_test
 @launch_testing.markers.keep_alive
 def generate_test_description():
@@ -139,6 +186,8 @@ def generate_test_description():
         components=[driver, counter, mapper],
         events_actions={Event(lambda **_: False, check_rate=1.0): [from_json]},
     )
+    # Attached like any plugin: what it contributes is registered under its id
+    launcher.add_plugin(_ProbePlugin())
     launcher.setup_launch_description()
 
     global monitor_node
@@ -843,3 +892,199 @@ class TestMonitorOverride(unittest.TestCase):
 
         assert launcher.monitor_node._action_registry is launcher.own_registry
         assert "own_registry_driver/move_to_unblock" not in launcher.own_registry
+
+
+# ==========================================================================
+# What a plugin contributes
+# ==========================================================================
+
+
+def _stand(**action_kwargs):
+    """Stand the robot up"""
+    return Action(method=lambda **_: (True, "standing"), **action_kwargs)
+
+
+@plugin_action(
+    description={
+        "type": "function",
+        "function": {
+            "name": "honk",
+            "description": "Sound the horn",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+)
+def _honk(**action_kwargs):
+    """Docstring, which the tool description must win over"""
+    return Action(method=lambda **_: (True, "honked"), **action_kwargs)
+
+
+def _low_battery(threshold: float = 0.2):
+    """The battery has fallen below a threshold"""
+    return Event(
+        Topic(name="registry_plugin_battery", msg_type="Float32").msg.data < threshold
+    )
+
+
+class _PluginWithActions:
+    """Enough of a plugin for the registry: an id, and what it contributes"""
+
+    def __init__(self, plugin_id: str = "lite3"):
+        self.id = plugin_id
+        self.actions = ActionRegistry({
+            "stand": _stand,
+            "honk": _honk,
+            # A plugin names its own entries, and nothing validates them
+            "aim/left": _stand,
+        })
+        self.events = EventRegistry({"low_battery": _low_battery})
+
+
+class TestPluginActionsThroughTheMonitor(unittest.TestCase):
+    """The Monitor running what a plugin contributes, by name"""
+
+    wait_time = 15.0
+
+    def setUp(self):
+        plugin_calls.clear()
+
+    def test_the_launcher_registers_what_the_attached_plugin_offers(self):
+        registry = monitor_node._action_registry
+        assert registry.get("probe_bot/ping").kind == PLUGIN_ACTION
+        assert [event.ref for event in registry.events()] == ["probe_bot/loud"]
+
+    def test_a_resolved_plugin_action_reaches_the_plugin(self):
+        """Resolution is only real if the call lands on the other side"""
+        succeeded, message = resolve("probe_bot/ping")()
+
+        assert succeeded, message
+        assert plugin_calls == ["ping"]
+
+    def test_a_routine_step_can_name_a_plugin_action(self):
+        added, message = monitor_node._add_routine_from_spec({
+            "name": "plugin_routine",
+            "steps": [{"ref": "probe_bot/ping", "name": "ping_the_plugin"}],
+        })
+        assert added, message
+
+        started, message = monitor_node.start_routine("plugin_routine")
+        assert started, message
+
+        assert wait_for(
+            lambda: json.loads(monitor_node.get_routine_state("plugin_routine")[1])[
+                "status"
+            ]
+            == "completed",
+            self.wait_time,
+        )
+        assert plugin_calls == ["ping"]
+        state = json.loads(monitor_node.get_routine_state("plugin_routine")[1])
+        # Named for whoever reads the cursor, not after whatever the factory
+        # called the action it built
+        assert state["steps"] == ["ping_the_plugin"]
+        assert state["step_message"] == "pinged"
+
+    def test_a_runtime_event_can_watch_for_a_plugin_condition(self):
+        """The mirror image: a plugin's condition, named in an event spec"""
+        added, message = monitor_node._add_event_from_spec(
+            event={"ref": "probe_bot/loud", "kwargs": {"threshold": 2.0}},
+            actions={"ref": "probe_bot/ping"},
+            event_id="plugin_condition",
+        )
+        assert added, message
+
+        publisher = monitor_node.create_publisher(
+            Float32, "registry_plugin_level", 10
+        )
+
+        def _heard() -> bool:
+            publisher.publish(Float32(data=3.0))
+            return bool(plugin_calls)
+
+        assert wait_for(_heard, self.wait_time), (
+            "the plugin's condition never reached the Monitor"
+        )
+        removed, message = monitor_node.remove_event("plugin_condition")
+        assert removed, message
+
+    def test_the_conditions_a_plugin_offers_are_listed_for_a_caller(self):
+        listed, payload = monitor_node.list_plugin_events()
+        assert listed
+        offered = {entry["ref"]: entry for entry in json.loads(payload)}
+        assert offered["probe_bot/loud"]["description"] == (
+            "The level has risen above a threshold"
+        )
+        assert "threshold" in offered["probe_bot/loud"]["signature"]
+
+
+class TestPluginContributions(unittest.TestCase):
+    """A plugin's actions and conditions, addressable like everything else"""
+
+    def setUp(self):
+        self.registry = SystemActionRegistry.from_components(
+            [_RegistryDriver(component_name="driver")],
+            plugins=[_PluginWithActions()],
+        )
+
+    def test_a_plugin_action_is_addressable_under_the_plugin_id(self):
+        entry = self.registry.get("lite3/stand")
+        assert entry.kind == PLUGIN_ACTION
+        assert (entry.owner, entry.name) == ("lite3", "stand")
+        assert entry.description == "Stand the robot up"
+        assert "action_kwargs" in entry.signature
+        # Its host is the process the Monitor is in, always
+        assert entry.in_process
+
+    def test_the_factory_is_kept_as_the_entry_interface(self):
+        """So whoever resolves the entry needs no plugin object of its own"""
+        assert self.registry.interface_for("lite3/stand") is _stand
+
+    def test_a_described_plugin_action_carries_its_tool_schema(self):
+        entry = self.registry.get("lite3/honk")
+        assert entry.description == "Sound the horn"
+        assert entry.schema["function"]["name"] == "honk"
+
+    def test_a_name_that_cannot_be_a_reference_is_left_out(self):
+        """It still works from the recipe; a recipe that never uses it should
+        not be stopped by another package's naming"""
+        assert [entry.name for entry in self.registry.list(owner="lite3")] == [
+            "honk",
+            "stand",
+        ]
+
+    def test_a_plugin_action_is_listed_like_any_other(self):
+        listed = {entry["ref"]: entry for entry in self.registry.dictionary}
+        assert listed["lite3/stand"]["kind"] == PLUGIN_ACTION
+        assert "driver/move_to_unblock" in listed
+
+    def test_a_plugin_named_after_a_component_is_refused(self):
+        """A reference could not say which of them it means"""
+        with pytest.raises(ValueError, match="named after a component"):
+            SystemActionRegistry.from_components(
+                [_RegistryDriver(component_name="driver")],
+                plugins=[_PluginWithActions(plugin_id="driver")],
+            )
+
+    def test_the_conditions_a_plugin_offers_are_registered_apart(self):
+        """An event is registered, never run, so a caller listing what it can
+        ask for must not be handed one"""
+        (event,) = self.registry.events()
+        assert (event.ref, event.owner, event.name) == (
+            "lite3/low_battery",
+            "lite3",
+            "low_battery",
+        )
+        assert event.description == "The battery has fallen below a threshold"
+        assert "threshold" in event.signature
+        assert self.registry.event_factory_for("lite3/low_battery") is _low_battery
+        # Not among the actions
+        assert "lite3/low_battery" not in self.registry
+
+    def test_an_unknown_event_says_what_is_known(self):
+        with pytest.raises(KeyError, match="lite3/low_battery"):
+            self.registry.get_event("lite3/flat_tyre")
+        assert self.registry.event_factory_for("lite3/flat_tyre") is None
+
+    def test_the_events_listing_is_serializable(self):
+        payload = json.loads(json.dumps(self.registry.events_dictionary))
+        assert payload[0]["ref"] == "lite3/low_battery"

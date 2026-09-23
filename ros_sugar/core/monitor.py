@@ -40,6 +40,7 @@ from ._action_registry import (
     COMPONENT_METHOD,
     COMPONENT_SERVICE,
     MONITOR_METHOD,
+    PLUGIN_ACTION,
     RegisteredAction,
     SystemActionRegistry,
 )
@@ -1056,6 +1057,8 @@ class Monitor(Node):
             return self.__resolve_monitor_method(entry)
         if entry.kind == COMPONENT_SERVICE:
             return partial(self.__call_component_service, entry)
+        if entry.kind == PLUGIN_ACTION:
+            return partial(self.__run_plugin_action, entry)
         if entry.kind == COMPONENT_ACTION_SERVER:
             # Not callable in the same sense: a goal outlives the call, so it
             # is driven by an ActionServerGoal step rather than a function
@@ -1064,6 +1067,51 @@ class Monitor(Node):
                 "server step, which is built by _action_from_spec"
             )
         raise KeyError(f"'{entry.ref}' has unknown kind '{entry.kind}'")
+
+    def __run_plugin_action(
+        self, entry: RegisteredAction, **kwargs
+    ) -> ActionReturnType:
+        """Build one of a plugin's actions and run it.
+
+        A plugin offers a factory rather than a method, so what it does is
+        decided when the action is built: the arguments are the factory's, not
+        the run's. The plugin's host is in this process, which is why the
+        Monitor can run it at all
+        """
+        action = self.__plugin_action(entry, kwargs)
+        return action()
+
+    def __plugin_action(self, entry: RegisteredAction, arguments: Dict) -> Action:
+        """One of a plugin's actions, built by the plugin's own factory.
+
+        :param arguments: Handed to the factory. Whatever the factory takes,
+            plus the monitoring policy a step declared, which a factory passes
+            on to the `Action` it builds
+        :raises KeyError: If the factory is not known to this Monitor
+        :raises TypeError: If the factory does not take what it was given
+        """
+        factory = self._action_registry.interface_for(entry.ref)
+        if factory is None:
+            raise KeyError(
+                f"Cannot run '{entry.ref}': the plugin action's factory is not "
+                "known to this Monitor. A plugin action runs in the process "
+                "hosting its plugin, which is the one the Monitor is in"
+            )
+        try:
+            action = factory(**arguments)
+        except TypeError as e:
+            raise TypeError(
+                f"Could not build the plugin action '{entry.ref}' with "
+                f"{sorted(arguments) or 'no arguments'}: {e}. Its factory takes "
+                f"{entry.signature}, and has to pass on what it is given to the "
+                "Action it builds"
+            ) from e
+        if not isinstance(action, Action):
+            raise TypeError(
+                f"The factory of '{entry.ref}' returned "
+                f"{type(action).__name__}, not an Action"
+            )
+        return action
 
     def __run_component_method(self, entry: RegisteredAction, **kwargs) -> ActionReturnType:
         """Call a component method over its own ExecuteMethod service.
@@ -1201,6 +1249,8 @@ class Monitor(Node):
         )
         if entry.kind == COMPONENT_ACTION_SERVER:
             return self.__action_server_step_from_spec(spec, entry, fallback)
+        if entry.kind == PLUGIN_ACTION:
+            return self.__plugin_step_from_spec(spec, entry, fallback)
         return self.__method_step_from_spec(spec, entry, fallback)
 
     def __method_step_from_spec(
@@ -1238,6 +1288,45 @@ class Monitor(Node):
             cancel_method=cancel_method,
             fallback=fallback,
         )
+
+    def __plugin_step_from_spec(
+        self, spec: Dict, entry: RegisteredAction, fallback: Optional[Action]
+    ) -> Action:
+        """A step that runs one of a plugin's actions.
+
+        The plugin's factory is what builds the action, so the step's policy is
+        handed to the factory rather than applied afterwards: a factory passes
+        on what it is given to the `Action` it builds, which is what lets a
+        plugin action be monitored, retried and cancelled like any other step.
+        """
+        arguments = dict(spec.get("kwargs") or {})
+
+        success = spec.get("success", None)
+        if isinstance(success, str):
+            success = json.loads(success)
+        if success:
+            arguments["success"] = Condition.from_dict(success)
+
+        cancel_ref = spec.get("cancel", None)
+        if cancel_ref:
+            # A bare name means the same plugin: stopping something usually
+            # means telling whoever is doing it to stop
+            if "/" not in str(cancel_ref).strip().lstrip("/"):
+                cancel_ref = f"{entry.owner}/{cancel_ref}"
+            arguments["cancel_method"] = self._executable_for(
+                self._action_registry.get(cancel_ref)
+            )
+
+        arguments["on_fail"] = _on_fail_policy(spec, fallback)
+        if fallback is not None:
+            arguments["fallback"] = fallback
+        arguments.update(_declared_policy(spec))
+
+        action = self.__plugin_action(entry, arguments)
+        # A factory names its action after whatever it runs, which can be a
+        # wire string. A step is named for whoever reads the cursor
+        action.action_name = spec.get("name") or entry.name
+        return action
 
     def __action_server_step_from_spec(
         self, spec: Dict, entry: RegisteredAction, fallback: Optional[Action]
@@ -2071,6 +2160,14 @@ class Monitor(Node):
         """Every registered routine, as `get_routines` gives it, as JSON"""
         return True, json.dumps(self.get_routines())
 
+    def list_plugin_events(self, **_) -> ActionReturnType:
+        """Every condition a plugin offers, as JSON.
+
+        What an event spec's 'ref' may name, as opposed to `list_events`, which
+        is what is being watched for right now
+        """
+        return True, json.dumps(self._action_registry.events_dictionary)
+
     def list_events(self, **_) -> ActionReturnType:
         """Every event registered at runtime, as JSON"""
         with self._blackboard_lock:
@@ -2097,6 +2194,7 @@ class Monitor(Node):
         self._runtime_api: Dict[str, Callable[..., ActionReturnType]] = {
             "list_actions": self.list_actions,
             "list_routines": self.list_routines,
+            "list_plugin_events": self.list_plugin_events,
             "list_events": self.list_events,
             "add_event": self._add_event_from_spec,
             "remove_event": self.remove_event,
@@ -2213,11 +2311,15 @@ class Monitor(Node):
         """
         if not isinstance(spec, dict):
             raise ValueError(f"An event spec must be a mapping, got {type(spec)}")
+        ref = spec.get("ref", None)
+        if ref:
+            return self.__event_from_factory(spec, ref)
         condition = spec.get("condition", None)
         if condition is None:
             raise ValueError(
-                "A runtime event needs a topic 'condition'. An event whose "
-                "condition is a callable cannot be described in a payload"
+                "A runtime event needs a topic 'condition', or the 'ref' of a "
+                "condition a plugin offers. An event whose condition is a "
+                "callable written in a recipe cannot be described in a payload"
             )
         return Event.from_dict({
             "name": spec.get("name", None) or str(uuid.uuid4()),
@@ -2226,6 +2328,52 @@ class Monitor(Node):
             "keep_event_delay": spec.get("keep_event_delay", 0.0),
             "on_change": spec.get("on_change", False),
         })
+
+    def __event_from_factory(self, spec: Dict, ref: str) -> Event:
+        """Build an event from a condition a plugin offers, named by reference.
+
+        The factory decides what is watched, and its arguments are the spec's
+        `kwargs`. How the event behaves is the caller's, so what the factory
+        built is re-made with what the spec asked for.
+
+        :raises KeyError: If no plugin offers that condition
+        :raises TypeError: If the factory does not take what it was given
+        """
+        entry = self._action_registry.get_event(ref)
+        factory = self._action_registry.event_factory_for(ref)
+        if factory is None:
+            raise KeyError(
+                f"Cannot watch for '{ref}': its factory is not known to this "
+                "Monitor"
+            )
+        arguments = spec.get("kwargs") or {}
+        try:
+            built = factory(**arguments)
+        except TypeError as e:
+            raise TypeError(
+                f"Could not build the event '{ref}' with "
+                f"{sorted(arguments) or 'no arguments'}: {e}. Its factory takes "
+                f"{entry.signature}"
+            ) from e
+        if not isinstance(built, Event):
+            raise TypeError(
+                f"The factory of '{ref}' returned {type(built).__name__}, "
+                "not an Event"
+            )
+
+        described = built.to_dict()
+        if described.get("condition") is None:
+            # Watched by a callable of the plugin's own, which cannot be re-made
+            return built
+        described.update({
+            "name": spec.get("name") or described["name"],
+            "handle_once": spec.get("handle_once", described["handle_once"]),
+            "keep_event_delay": spec.get(
+                "keep_event_delay", described["keep_event_delay"]
+            ),
+            "on_change": spec.get("on_change", described["on_change"]),
+        })
+        return Event.from_dict(described)
 
     def _add_routine_from_spec(
         self, routine: Dict, replace: bool = False, **_

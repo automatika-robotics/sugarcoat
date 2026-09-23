@@ -482,6 +482,8 @@ The Monitor exposes each routine by name, so control is available as ordinary sy
 | `get_routine_state(name)` | The cursor, as JSON |
 | `get_routines()` | Every registered routine, as a list of dicts: its cursor plus its `description`. `list_routines` serves the same as JSON over the runtime API |
 
+A routine step names what it runs with a reference, `"owner/name"`: a component's action, one of its servers, a Monitor method, or an action a robot or sensor plugin contributes, such as `"lite3/stand_up"`. A runtime event names a topic condition, or a condition a plugin offers, with `{"ref": "lite3/low_battery", "kwargs": {"threshold": 0.15}}`. See {doc}`custom_robot_plugin` for what a plugin has to do to be named this way.
+
 Pausing preempts the step in flight, and resuming runs that step again from the start: a step is the smallest thing a routine can be positioned at. What gets preempted is whatever the routine actually dispatched, which is the fallback rather than the step while a step is being recovered. Resuming re-enters the step either way — unless the pause landed between two steps, in which case it picks up at the next one rather than repeating the step that had already finished.
 
 **`on_pause` is what makes a pause safe.** Preempting a step stops what the step itself runs, not what it set in motion: a navigation step that has already handed the robot a goal is stopped, while the robot keeps driving to it. `on_pause` is where the routine undoes that.
