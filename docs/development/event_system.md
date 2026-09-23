@@ -538,7 +538,7 @@ launcher.on(pick_requested, pick)
 launcher.enable_ui(routines=[pick, patrol, "docking"])
 ```
 
-A `Routine` is hosted on the Monitor even if no event triggers it, as `patrol` is here, so the UI can be the only way to start it. A name refers to a routine that reaches the Monitor another way, such as one added at runtime with `add_routine`. The UI node follows each routine's state topic and sends its controls to the Monitor's runtime API, so it reaches routines the same way whatever process it runs in.
+A `Routine` is hosted on the Monitor even if no event triggers it, as `patrol` is here, so the UI can be the only way to start it. A name refers to a routine that reaches the Monitor another way, such as one added at runtime with `add_routine`; the Launcher says at bringup which names this recipe does not register, since until something does, such a card stays empty and its controls are refused. The UI node follows each routine's state topic and sends its controls to the Monitor's runtime API, so it reaches routines the same way whatever process it runs in.
 
 The UI's JSON API serves the same controls to scripts and other front-ends: `GET /api/routines`, `POST /api/routines/{name}/start` (and `/pause`, `/resume`, `/abort`, which takes an optional `{"reason": ...}`), and `WS /api/routines/{name}/state`, which pushes the state above on connect and on every change. A command the routine cannot take, such as pausing one that is not running, is answered `409` with the Monitor's reason.
 

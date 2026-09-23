@@ -1242,6 +1242,44 @@ class Launcher:
             if reason:
                 raise InvalidAction(f"In routine '{routine.name}': {reason}")
 
+    def __warn_about_unregistered_ui_routines(self) -> None:
+        """Say so when the UI is given the name of a routine nothing registers.
+
+        A name, rather than a `Routine`, is meant for one that reaches the
+        Monitor another way, such as a routine added at runtime with
+        `add_routine`, so this cannot be an error. A misspelled one, though,
+        leaves a card that never fills and controls the Monitor refuses, with
+        nothing said until somebody presses a button.
+        """
+        config = getattr(self, "_ui_node_config", None)
+        if config is None:
+            # No UI in this recipe, so no routine names to check
+            return
+        registered = {routine.name for routine in self._ui_routines}
+        registered.update(
+            action.name
+            for actions in self._monitor_events_actions.values()
+            for action in actions
+            if isinstance(action, Routine)
+        )
+        unregistered = [
+            name for name in config.routines if name not in registered
+        ]
+        if not unregistered:
+            return
+        logger.warning(
+            f"The UI is given {self.__quoted(unregistered)}, which this recipe "
+            "does not register. A routine nothing registers shows an empty card, "
+            "and its controls are refused, unless it is added at runtime with "
+            "add_routine. This recipe registers "
+            f"{self.__quoted(sorted(registered)) or 'no routines'}"
+        )
+
+    @staticmethod
+    def __quoted(names: List[str]) -> str:
+        """Names as a caller wrote them, for a message that lists them"""
+        return ", ".join(f"'{name}'" for name in names)
+
     def __rewrite_actions_for_components(
         self,
         components_list: List[BaseComponent],
@@ -1720,6 +1758,7 @@ class Launcher:
             self.__verify_routine(routine)
         if self._ui_routines and isinstance(self.monitor_node, Monitor):
             self.monitor_node.host_routines(self._ui_routines)
+        self.__warn_about_unregistered_ui_routines()
 
         # Register a activation event
         internal_events_handler_activate = launch.actions.RegisterEventHandler(
