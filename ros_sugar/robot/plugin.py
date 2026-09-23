@@ -881,7 +881,7 @@ class RobotPluginHost:
             return
         if msg is None:
             return
-        self._stamp_frame(feedback, msg)
+        self._stamp_header(feedback, msg)
         if self.bus.carries_objects:
             # In-process bus: hand over the live object, no serialization.
             self.bus.publish(feedback.channel, msg)
@@ -918,25 +918,48 @@ class RobotPluginHost:
         # else: return serialized feedback
         return _FB_KIND_CDR + serialize_message(msg)
 
-    def _stamp_frame(self, feedback: Feedback, msg: Any) -> None:
-        """Stamp a decoded message with the frame its data is in.
+    def _stamp_header(self, feedback: Feedback, msg: Any) -> None:
+        """Fill in the frame a decoded message is in, and when it arrived.
 
         Components look up ``header.frame_id -> robot base`` to place incoming
         data, so an unstamped message is silently never transformed. Rather
         than making every plugin author hard-code frame names in their
         decoders, the frame is taken from the feedback (or the plugin) and
-        applied here.
+        applied here. Decoders commonly leave the time empty too, and a
+        consumer such as an EKF orders its measurements by it.
 
         An author who stamps the message themselves is never overridden: a
         robot's odometry is in the localization frame, not in a frame attached
         to the robot's body, and only the decoder knows that.
+
+        Done before the message is handed anywhere, so the bus, the Monitor and
+        the ROS topics all carry the same stamp, and the in-process bus - which
+        hands over the very object - cannot have it change under a consumer.
         """
         header = getattr(msg, "header", None)
-        if header is None or getattr(header, "frame_id", None):
+        if header is None:
             return
-        frame_id = feedback.frame_id or getattr(self.plugin, "frame_id", "")
-        if frame_id:
-            header.frame_id = frame_id
+        if not getattr(header, "frame_id", None):
+            frame_id = feedback.frame_id or getattr(self.plugin, "frame_id", "")
+            if frame_id:
+                header.frame_id = frame_id
+        if header.stamp.sec == 0 and header.stamp.nanosec == 0:
+            now = self._now()
+            if now is not None:
+                header.stamp = now
+
+    def _now(self) -> Any:
+        """The host node's time, or None when it has no node to read it from.
+
+        The node's clock rather than the wall clock, so a message is stamped in
+        the same time base as everything else in the recipe, `use_sim_time`
+        included.
+        """
+        try:
+            return self.node.get_clock().now().to_msg()
+        except AttributeError:
+            # A standalone or test host has no node, and ROS time with it
+            return None
 
     def _forward_command(self, command: RobotCommand, payload: bytes) -> None:
         """Host-side handler for ``route_via_host`` commands."""

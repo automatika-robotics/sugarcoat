@@ -95,11 +95,7 @@ class FeedbackRosOutputs:
         if entry is None or not self._ensure_open():
             return
         _, topics = entry
-        header = getattr(msg, "header", None)
-        if header is not None and header.stamp.sec == 0 and header.stamp.nanosec == 0:
-            # Decoders commonly leave the stamp empty, and a ROS consumer such
-            # as an EKF orders its measurements by it
-            header.stamp = self._node.get_clock().now().to_msg()
+        # The host has already stamped the message, before handing it to anyone
         for topic in topics:
             try:
                 self._publishers[(feedback.key, topic)].publish(msg)
