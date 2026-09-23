@@ -1979,6 +1979,85 @@ def test_enable_ui_hands_its_routines_to_the_ui_and_the_monitor():
     assert launcher.monitor_node._standalone_routines == [patrol]
 
 
+def test_enable_ui_warns_about_a_routine_name_nothing_registers(caplog, monkeypatch):
+    """A name is meant for a routine added at runtime, so it cannot be an error.
+    A misspelled one would otherwise leave a card that never fills and controls
+    the Monitor refuses, with nothing said until somebody presses a button"""
+    import logging
+
+    from ros_sugar import Launcher
+    from ros_sugar.core import Action, BaseComponent, Event, Routine
+    from ros_sugar.io.topic import Topic
+    from ros_sugar.launch import logger as launch_logger
+    from ros_sugar.utils import ActionReturnType
+
+    class _Arm(BaseComponent):
+        def _execution_step(self):
+            pass
+
+        def home(self, **_) -> ActionReturnType:
+            return True, "home"
+
+    arm = _Arm(component_name="ui_warned_arm")
+    held_by_the_recipe = Routine("ui_warned_patrol", steps=[Action(arm.home)])
+    routed_by_an_event = Routine("ui_warned_docking", steps=[Action(arm.home)])
+    trigger = Topic(name="ui_warned_trigger", msg_type="Bool")
+    launcher = Launcher()
+    launcher.add_pkg(
+        components=[arm],
+        events_actions={Event(trigger.msg.data.is_true()): [routed_by_an_event]},
+    )
+    launcher.enable_ui(
+        routines=[held_by_the_recipe, "ui_warned_docking", "ui_wraned_typo"],
+        serve_browser=False,
+        secure=False,
+    )
+
+    # The launch logger does not propagate to the root logger caplog listens on
+    monkeypatch.setattr(launch_logger, "propagate", True)
+    with caplog.at_level(logging.WARNING, logger=launch_logger.name):
+        launcher.setup_launch_description()
+
+    complained, _, listed = caplog.text.partition("This recipe registers")
+    assert "'ui_wraned_typo'" in complained
+    assert "add_routine" in complained, "it does not say how the name could still work"
+    # The two the recipe does register are not complained about, only listed
+    assert "ui_warned_patrol" not in complained
+    assert "ui_warned_docking" not in complained
+    assert "ui_warned_patrol" in listed and "ui_warned_docking" in listed
+
+
+def test_enable_ui_says_nothing_when_every_routine_is_registered(caplog, monkeypatch):
+    import logging
+
+    from ros_sugar import Launcher
+    from ros_sugar.core import Action, BaseComponent, Routine
+    from ros_sugar.launch import logger as launch_logger
+    from ros_sugar.utils import ActionReturnType
+
+    class _Arm(BaseComponent):
+        def _execution_step(self):
+            pass
+
+        def home(self, **_) -> ActionReturnType:
+            return True, "home"
+
+    arm = _Arm(component_name="ui_quiet_arm")
+    launcher = Launcher()
+    launcher.add_pkg(components=[arm])
+    launcher.enable_ui(
+        routines=[Routine("ui_quiet_patrol", steps=[Action(arm.home)])],
+        serve_browser=False,
+        secure=False,
+    )
+
+    monkeypatch.setattr(launch_logger, "propagate", True)
+    with caplog.at_level(logging.WARNING, logger=launch_logger.name):
+        launcher.setup_launch_description()
+
+    assert "does not register" not in caplog.text
+
+
 def test_enable_ui_takes_each_routine_once_as_a_routine_or_a_name():
     from ros_sugar import Launcher
 
