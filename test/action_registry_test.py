@@ -1043,6 +1043,24 @@ class TestPluginContributions(unittest.TestCase):
         entry = self.registry.get("lite3/honk")
         assert entry.description == "Sound the horn"
         assert entry.schema["function"]["name"] == "honk"
+        assert entry.schema["function"]["parameters"] == {
+            "type": "object",
+            "properties": {},
+        }
+
+    def test_a_plugin_action_described_in_prose_still_carries_a_schema(self):
+        """However a plugin described it - a string, a function block, or
+        nothing but a docstring - its own registry makes a whole schema of it,
+        so a caller building tool calls needs no special case for a plugin"""
+        entry = self.registry.get("lite3/stand")
+        assert entry.schema == {
+            "type": "function",
+            "function": {
+                "name": "stand",
+                "description": "Stand the robot up",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        }
 
     def test_a_name_that_cannot_be_a_reference_is_left_out(self):
         """It still works from the recipe; a recipe that never uses it should

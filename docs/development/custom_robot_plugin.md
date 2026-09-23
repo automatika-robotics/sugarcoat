@@ -251,10 +251,12 @@ Three things follow for a plugin author:
 - **A plugin's id may not be a component's node name**, or a reference could
   mean either of them. That fails the launch.
 
-`list_actions` over the runtime API includes a plugin's actions, with the tool
-description `plugin_action` gave them. `list_plugin_events` lists the conditions,
-which an event spec names with `{"ref": ..., "kwargs": {...}}` in place of a
-topic condition.
+`list_actions` over the runtime API includes a plugin's actions, each with a
+whole tool schema: however the factory was described — a string, a `function`
+block, or nothing but a docstring — the plugin's own registry makes one of it,
+so a caller building tool calls treats a plugin action like a component's.
+`list_plugin_events` lists the conditions, which an event spec names with
+`{"ref": ..., "kwargs": {...}}` in place of a topic condition.
 
 An action runs in the process hosting the plugin, which is the launcher's, the
 same one the Monitor is in. That is what makes this possible at all: the action

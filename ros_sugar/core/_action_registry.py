@@ -91,20 +91,43 @@ def _schema(method: Optional[Callable]) -> Optional[Dict]:
     return _description_schema(getattr(method, "_action_description", None))
 
 
-def _plugin_described(spec: Any) -> Tuple[str, Optional[Dict]]:
-    """What a plugin's factory says it does, in prose and as a tool schema.
+#: What a plugin's registry says for a factory it was told nothing about
+_UNDESCRIBED = "<no description>"
 
-    `plugin_action(description=...)` takes either, and a factory given neither
-    still has its docstring, which the plugin's own registry already read.
+
+def _plugin_prose(spec: Any, schema: Optional[Dict]) -> str:
+    """What a plugin's factory says it does, in prose.
+
+    Read out of the schema, which is where the plugin's own registry puts a
+    description however it was given: as a string, inside a function block, or
+    taken from the factory's docstring.
     """
-    described = getattr(spec, "tool_description", None)
-    if isinstance(described, dict):
-        function = described.get("function", described)
-        prose = str(function.get("description", "")).strip()
-        return prose or spec.description, described
-    if isinstance(described, str) and described.strip():
-        return described.strip(), None
-    return spec.description, None
+    function = (schema or {}).get("function", {})
+    prose = str(function.get("description", "")).strip()
+    if prose and prose != _UNDESCRIBED:
+        return prose
+    return spec.description
+
+
+def _plugin_schemas(actions: Any) -> Dict[str, Dict]:
+    """The tool schema of each of a plugin's actions, by action name.
+
+    Taken from the plugin's own registry rather than from the raw description
+    a factory carries: that description is a string as often as a dict, and the
+    registry is what turns either into a whole schema. Every plugin action then
+    carries one of the same shape as a component method's, so a caller building
+    tool calls needs no special case for a plugin.
+    """
+    describe = getattr(actions, "tool_descriptions", None)
+    if not callable(describe):
+        return {}
+    # No namespace: the name in the schema is the action's, as it is for a
+    # component method, and a caller that namespaces its tools rewrites it
+    return {
+        schema["function"]["name"]: schema
+        for schema in describe()
+        if isinstance(schema, dict) and isinstance(schema.get("function"), dict)
+    }
 
 
 def _signature(method: Optional[Callable]) -> str:
@@ -136,9 +159,11 @@ class RegisteredAction(BaseAttrs):
     :param kind: Which resolution path applies, one of the module constants.
         The Monitor dispatches on this
     :param description: What it does, for a caller listing what is available
-    :param schema: The tool schema it was described with, whole, when
-        ``@component_action(description=...)`` was given a dict. None when it
-        was described in prose. For a caller that builds tool calls from it
+    :param schema: Its tool schema, whole, for a caller that builds tool calls
+        from it. A component method has one when
+        ``@component_action(description=...)`` was given a dict, and none when
+        it was described in prose; a plugin's action always has one, since the
+        plugin's own registry makes a whole schema of however it was described
     :param signature: Its call signature, with the bound instance dropped
     :param interface_type: Name of the action or service type, for the kinds
         that have one
@@ -467,17 +492,18 @@ class SystemActionRegistry:
             )
 
         actions = getattr(plugin, "actions", None)
+        schemas = _plugin_schemas(actions)
         for spec in actions.list() if actions is not None else ():
             if not self.__nameable(owner, spec.name, "action"):
                 continue
-            description, schema = _plugin_described(spec)
+            schema = schemas.get(spec.name)
             self.add(
                 RegisteredAction(
                     ref=f"{owner}/{spec.name}",
                     owner=owner,
                     name=spec.name,
                     kind=PLUGIN_ACTION,
-                    description=description,
+                    description=_plugin_prose(spec, schema),
                     schema=schema,
                     signature=spec.signature,
                     # The plugin's host, and so everything its actions reach,
