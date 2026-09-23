@@ -2252,11 +2252,11 @@ def test_a_decoder_that_stamps_its_own_frame_is_never_overridden(rclpy_context):
 
     msg = Imu()
     msg.header.frame_id = "author_stamped"
-    host._stamp_frame(feedback, msg)
+    host._stamp_header(feedback, msg)
     assert msg.header.frame_id == "author_stamped"
 
     fresh = Imu()
-    host._stamp_frame(feedback, fresh)
+    host._stamp_header(feedback, fresh)
     assert fresh.header.frame_id == "declared_frame", "per-feedback frame wins"
 
 
