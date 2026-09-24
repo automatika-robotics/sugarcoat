@@ -931,6 +931,10 @@ class BaseComponent(lifecycle.Node):
         # Stop TF lookups too: destroy_all_timers only owns the execution timer
         self._pause_tf_listeners()
 
+        # Removing _exec_started to allow a clean reactivation of the component at runtime
+        if hasattr(self, "_exec_started"):
+            del self._exec_started
+
     def configure(self, config_file: Optional[str] = None):
         """
         Configure component from configuration file
@@ -2921,7 +2925,7 @@ class BaseComponent(lifecycle.Node):
         # Execute main loop
         self._execution_step()
 
-        # Execute once
+        # Execute once per activation (the flag is cleared on deactivation)
         if not hasattr(self, "_exec_started"):
             self._execute_once()
             if hasattr(self, "_extra_execute_once"):
