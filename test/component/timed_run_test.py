@@ -11,6 +11,9 @@ from ros_sugar import Launcher
 # Threading Events
 execution_once_py_event = Event()
 
+# The component under test, kept so a test can restart it
+component_under_test = None
+
 
 class ChildComponent(BaseComponent):
     """Child component to test component action"""
@@ -54,7 +57,9 @@ class ChildComponent(BaseComponent):
 @launch_testing.markers.keep_alive
 def generate_test_description():
     # Component publishing to the event topic
+    global component_under_test
     component = ChildComponent(component_name="timed_test_component")
+    component_under_test = component
 
     component.loop_rate = 10.0  # Hz
     component.run_type = "Timed"
@@ -83,3 +88,19 @@ class TestActions(unittest.TestCase):
         assert execution_once_py_event.wait(
             cls.wait_time
         ), "Timed component did not run correctly"
+
+    def test_execute_once_runs_again_after_a_restart(cls):
+        """A deactivation tears down what `_execute_once` set up, and
+        `init_variables` resets the state it left behind, so the setup has to
+        run again on the next activation"""
+        global execution_once_py_event
+        assert execution_once_py_event.wait(cls.wait_time), (
+            "Timed component did not run correctly"
+        )
+
+        execution_once_py_event.clear()
+        component_under_test.restart()
+
+        assert execution_once_py_event.wait(cls.wait_time), (
+            "_execute_once did not run again after the component was restarted"
+        )
