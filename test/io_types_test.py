@@ -515,14 +515,40 @@ def test_scan_transform_rotation_reorders_scan():
 
 
 def test_scan_transform_translation():
-    # rays at angles [0, pi/2] with ranges [2, 3], sensor translated by x=1:
-    # radius' = sqrt(r^2 + 1 - 2 r cos(angle))
+    # rays at angles [0, pi/2] with ranges [2, 3] from a sensor 1 m ahead of
+    # the robot's centre: the beams hit (2, 0) and (0, 3) in the sensor's
+    # frame, which are (3, 0) and (1, 3) in the robot's
     scan = _make_scan([2.0, 3.0], angle_increment=np.pi / 2)
     output = _scan_callback(scan, transformation=_make_transform(x=1.0)).get_output()
-    np.testing.assert_allclose(output.ranges, [1.0, np.sqrt(10.0)], rtol=1e-6)
+    np.testing.assert_allclose(output.ranges, [3.0, np.sqrt(10.0)], rtol=1e-6)
+    np.testing.assert_allclose(output.angles, [0.0, np.arctan2(3.0, 1.0)], atol=1e-6)
     # observed limits replace the device limits after a transform
-    assert output.range_min == pytest.approx(1.0)
+    assert output.range_min == pytest.approx(3.0)
     assert output.range_max == pytest.approx(np.sqrt(10.0))
+
+
+def test_scan_transform_adds_the_mount_offset_to_the_beam():
+    """What a sensor mounted ahead of the centre sees is further from the
+    robot than from the sensor, not nearer: the transform is R * p + t, and
+    reading it as the distance between the beam and the mount gave p - t"""
+    scan = _make_scan([1.0], angle_increment=np.pi / 2)
+    output = _scan_callback(scan, transformation=_make_transform(x=0.5)).get_output()
+    np.testing.assert_allclose(output.ranges, [1.5], rtol=1e-6)
+
+
+def test_scan_transform_tells_a_left_mount_from_a_right_one():
+    """The beam of a sensor mounted to the left passes to the left of the
+    robot's centre, and to the right when the sensor is on the right. Reading
+    the mount angle with arccos placed both of them on the same side"""
+    scan = _make_scan([1.0], angle_increment=np.pi / 2)
+    bearing = np.arctan2(0.5, 1.0)
+
+    left = _scan_callback(scan, transformation=_make_transform(y=0.5)).get_output()
+    right = _scan_callback(scan, transformation=_make_transform(y=-0.5)).get_output()
+
+    np.testing.assert_allclose(left.angles, [bearing], atol=1e-6)
+    np.testing.assert_allclose(right.angles, [2 * np.pi - bearing], atol=1e-6)
+    np.testing.assert_allclose(left.ranges, right.ranges, rtol=1e-6)
 
 
 def test_scan_transform_via_get_output_kwarg():
