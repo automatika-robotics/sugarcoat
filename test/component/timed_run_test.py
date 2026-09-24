@@ -99,8 +99,14 @@ class TestActions(unittest.TestCase):
         )
 
         execution_once_py_event.clear()
-        component_under_test.restart()
+        try:
+            component_under_test.restart()
 
-        assert execution_once_py_event.wait(cls.wait_time), (
-            "_execute_once did not run again after the component was restarted"
-        )
+            assert execution_once_py_event.wait(cls.wait_time), (
+                "_execute_once did not run again after the component was restarted"
+            )
+        finally:
+            # The other test waits on the same event for the first run, which
+            # this one consumed. Put it back, so a failure here is reported
+            # once instead of taking that test down with it
+            execution_once_py_event.set()

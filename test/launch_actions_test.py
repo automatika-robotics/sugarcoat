@@ -24,6 +24,7 @@ from launch import LaunchContext
 import ros_sugar
 from ros_sugar.core.component import BaseComponent
 from ros_sugar.launch.launch_actions import ComponentLaunchAction
+from ros_sugar.utils import InvalidHandle
 
 
 @pytest.fixture
@@ -65,6 +66,37 @@ def test_spin_loop_stops_when_launch_requests_shutdown(running_action):
     # The regular handler still runs afterwards and must not trip over the
     # thread having exited on its own
     action.shutdown()
+
+
+def test_spin_loop_survives_a_destroyed_entity(running_action):
+    """A component that deactivates, restarts or reconfigures destroys the
+    timers and subscriptions its executor is waiting on. Some rclpy versions
+    raise from the wait set instead of dropping them, and the thread must not
+    die with it: the node would stay up with nothing spinning it, so nothing
+    it creates afterwards would ever run."""
+    action, _ = running_action
+    executor = action._ComponentLaunchAction__ros_executor
+    spin_once = executor.spin_once
+    calls = []
+
+    def raise_once(timeout_sec=None):
+        calls.append(timeout_sec)
+        if len(calls) == 1:
+            raise InvalidHandle(
+                "cannot use Destroyable because destruction was requested"
+            )
+        return spin_once(timeout_sec=timeout_sec)
+
+    executor.spin_once = raise_once
+
+    deadline = time.time() + 5.0
+    while len(calls) < 3 and time.time() < deadline:
+        time.sleep(0.05)
+
+    assert _spin_thread(action).is_alive(), (
+        "the executor thread died on a destroyed entity"
+    )
+    assert len(calls) >= 3, "the loop stopped spinning after the exception"
 
 
 def test_spin_loop_keeps_running_until_asked(running_action):

@@ -1087,7 +1087,10 @@ class BaseComponent(lifecycle.Node):
         """
         if hasattr(self, "_execution_timer"):
             self.get_logger().info("DESTROYING MAIN TIMER")
+            # Cancelled before it is destroyed
+            self._execution_timer.cancel()
             self.destroy_timer(self._execution_timer)
+            del self._execution_timer
 
     def destroy_all_subscribers(self):
         """

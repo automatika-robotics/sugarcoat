@@ -11,6 +11,15 @@ from rclpy.utilities import ok as rclpy_is_ok
 from rclpy.lifecycle import Node as LifecycleNode
 from launch import LaunchContext
 from launch.actions import OpaqueFunction
+
+# NOTE: InvalidHandle is raised when an entity is used after it was destroyed, which is what a
+# component that deactivates or restarts does to the timers and subscriptions
+# its executor is waiting on. Imported here once, as rclpy moved it between
+# distributions
+try:  # iron and later
+    from rclpy.exceptions import InvalidHandle
+except ImportError:  # humble
+    from rclpy.handle import InvalidHandle
 import os
 import logging
 

@@ -15,6 +15,7 @@ from rclpy.logging import set_logger_level
 from . import logger
 from ..core.event import InternalEvent
 from ..core.monitor import Monitor
+from ..utils import InvalidHandle
 from ..core.component import BaseComponent
 
 
@@ -185,9 +186,19 @@ class ComponentLaunchAction(NodeLaunchAction):
             while self.__is_running and not self.__context.is_shutdown:
                 # TODO: switch this to `spin()` when it considers
                 #   asynchronously added subscriptions.
-                self.__ros_executor.spin_once(
-                    timeout_sec=self.__ros_node.config.executor_spin_timeout
-                )
+                try:
+                    self.__ros_executor.spin_once(
+                        timeout_sec=self.__ros_node.config.executor_spin_timeout
+                    )
+                except InvalidHandle:
+                    # NOTE: A component that deactivates, restarts or reconfigures
+                    # destroys the timers and subscriptions its executor is
+                    # waiting on. Some rclpy versions raise from the wait set
+                    # instead of dropping the entity, and letting that out of
+                    # this loop ends the thread: the node stays up with
+                    # nothing spinning it, so nothing it creates later runs.
+                    # The next spin builds the wait set without what is gone
+                    continue
         except KeyboardInterrupt:
             pass
         finally:
