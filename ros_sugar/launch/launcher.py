@@ -28,6 +28,7 @@ import msgpack
 import msgpack_numpy as m_pack
 import launch
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 from launch import LaunchDescription, LaunchIntrospector, LaunchService
 from launch.action import Action as ROSLaunchAction
 from launch.actions import (
@@ -191,9 +192,9 @@ class Launcher:
             serializable spec. Defaults to None.
         :type robot_plugin: Optional[RobotPlugin], optional
         """
-        # Make sure RCLPY in initialized
+        # Make sure RCLPY is initialized. launch owns the process's signals
         if not rclpy.ok():
-            rclpy.init()
+            rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
 
         # Setup launch description
         self._description = LaunchDescription()

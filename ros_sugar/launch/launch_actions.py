@@ -4,6 +4,7 @@ from typing import List, Optional, Union
 
 import launch
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 from launch import event_handlers
 from launch.action import Action as ROSAction
 from launch_ros.actions import Node as NodeLaunchAction
@@ -142,7 +143,8 @@ class ComponentLaunchAction(NodeLaunchAction):
 
         # Get rclpy context and init the monitor
         self.__ros_context = Context()
-        rclpy.init(context=self.__ros_context)
+        # launch owns the process's signals
+        rclpy.init(context=self.__ros_context, signal_handler_options=SignalHandlerOptions.NO)
         set_logger_level(self.__node_name, self.__log_level)
 
         self.__ros_node.rclpy_init_node(context=self.__ros_context)
