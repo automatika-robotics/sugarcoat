@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Manage the security of recipe UIs: their API keys and TLS certificate.
+
+Acts on the state directory the UIs use, ~/.local/share/sugarcoat/ui unless
+SUGARCOAT_UI_DATA_DIR is set. Run it as the user running the recipes.
+"""
+
+import argparse
+import datetime
+import sys
+
+from ros_sugar.ui_node.security import (
+    SCOPES,
+    ApiKeyError,
+    ApiKeys,
+    CertificateError,
+    resolve_certificate,
+    state_dir,
+)
+
+
+def _date(value: str) -> datetime.date:
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a date (YYYY-MM-DD)") from e
+
+
+def _create(keys: ApiKeys, args) -> None:
+    scopes = [s.strip() for s in args.scopes.split(",") if s.strip()]
+    stored, key = keys.create(args.name, scopes, args.expires)
+    expiry = f"until {stored.expires_at}" if stored.expires_at else "without expiry"
+    print(
+        f"Created API key {stored.id} for '{stored.name}' "
+        f"({', '.join(stored.scopes)}), valid {expiry}:\n\n"
+        f"    {key}\n\n"
+        "It is shown only this once. Give it to its holder through a secure channel.\n"
+        "Running recipe UIs accept it without a restart."
+    )
+
+
+def _list(keys: ApiKeys) -> None:
+    stored = keys.all()
+    if not stored:
+        print(f"There are no API keys in {keys.path.parent}")
+        return
+    rows = [("ID", "NAME", "SCOPES", "CREATED", "EXPIRES")] + [
+        (
+            k.id,
+            k.name,
+            ",".join(k.scopes),
+            str(k.created_at),
+            (str(k.expires_at) if k.expires_at else "never")
+            + (" (expired)" if k.expired() else ""),
+        )
+        for k in stored
+    ]
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
+    for row in rows:
+        print("  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip())
+
+
+def _revoke(keys: ApiKeys, args) -> None:
+    revoked = keys.revoke(args.id)
+    print(
+        f"Revoked API key {revoked.id} for '{revoked.name}'. "
+        "Running recipe UIs refuse it from now on."
+    )
+
+
+def _fingerprint() -> None:
+    certificate = resolve_certificate()
+    print(
+        f"Certificate: {certificate.certificate} ({certificate.source})\n"
+        f"Fingerprint (SHA-256): {certificate.fingerprint}\n"
+        f"Expires: {certificate.expires:%Y-%m-%d}"
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="ui_security", description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    keys_parser = commands.add_parser(
+        "keys", help="Manage the API keys of third parties"
+    )
+    actions = keys_parser.add_subparsers(dest="action", required=True)
+    create = actions.add_parser("create", help="Create a key and print it once")
+    create.add_argument("--name", required=True, help="Who the key is for")
+    create.add_argument(
+        "--scopes",
+        default="read",
+        help=f"Comma separated, from: {', '.join(SCOPES)} (default: read)",
+    )
+    create.add_argument(
+        "--expires", type=_date, help="Last day the key is valid (YYYY-MM-DD)"
+    )
+    actions.add_parser("list", help="List the keys")
+    revoke = actions.add_parser("revoke", help="Revoke a key")
+    revoke.add_argument("id", help="The key's id, as listed")
+
+    commands.add_parser(
+        "fingerprint",
+        help="Print the TLS certificate's fingerprint, minting the certificate if none exists",
+    )
+
+    args = parser.parse_args()
+    try:
+        if args.command == "fingerprint":
+            _fingerprint()
+            return
+        keys = ApiKeys(state_dir())
+        if args.action == "create":
+            _create(keys, args)
+        elif args.action == "list":
+            _list(keys)
+        else:
+            _revoke(keys, args)
+    except (ApiKeyError, CertificateError, OSError) as e:
+        sys.exit(f"ui_security: {e}")
+
+
+if __name__ == "__main__":
+    main()

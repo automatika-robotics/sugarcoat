@@ -2,7 +2,7 @@ import importlib
 from typing import List, Dict, Any, Optional
 from functools import partial
 from ..utils import logger
-from ..io.supported_types import SupportedType, get_ros_msg_fields_dict
+from ..io.supported_types import SupportedType, get_ros_msg_fields_dict, ros_msg_to_str
 
 from .utils import parse_type
 
@@ -42,9 +42,12 @@ class Task:
         self._feedback_timestamp = -1
         self._duration = None
         self._name = name
+        # Prefix of every DOM id the card uses. A subclass sets its own, so a
+        # card of another kind never takes an action's ids
+        self._dom_id = getattr(self, "_dom_id", name)
         self._type = client_type
         self._fields = fields
-        self._serving_component: Optional[str] = self.__get_server_node()
+        self._serving_component: Optional[str] = self._find_server_node()
         self.total_calls = 0
 
     def is_active(self) -> bool:
@@ -67,9 +70,13 @@ class Task:
 
         :param status: New status
         :type status: str
+        :param feedback: The feedback message, or a line about it. A card of
+            an action type's own reads the message, the log shows its text
         """
         if status:
             self._status = status
+        if feedback is not None and not isinstance(feedback, str):
+            feedback = ros_msg_to_str(feedback)
         if feedback:
             if timestep is not None:
                 # Apply timestep check for new feedback if timestep is sent
@@ -93,8 +100,8 @@ class Task:
                 Button(
                     "?",
                     cls="info-btn",
-                    id=f"{self._name}-info-btn",
-                    onclick=f"openAtButton('{self._name}-info-btn', '{self._name}-modal')",  # Method openAtButton implemented in custom.js
+                    id=f"{self._dom_id}-info-btn",
+                    onclick=f"openAtButton('{self._dom_id}-info-btn', '{self._dom_id}-modal')",  # Method openAtButton implemented in custom.js
                 ),
                 self._info,
                 cls="mb-0 gap-2",
@@ -111,40 +118,46 @@ class Task:
         client_card = DivVStacked(
             self._badge,
             cls="mt-0 gap-2",
-            id=self._name,
+            id=self._dom_id,
             ws_send=True,
         )
         inside = Grid(cls="gap-2 ml-1 mr-1 place-items-center", cols=1)
-        if self.feedback:
-            feedback_content = Div(
-                self.feedback,
-                id=f"task_{self._name}_feedback",
-                cls="m-2",
-            )
-            feedback_header = Div(
-                H6(
-                    "Feedback Log",
-                    cls="tomorrow-night-green",
-                ),
-                cls="flex flex-row justify-between items-start",
-            )
-            if self._status not in ["running", "active", "accepted", "inactive"]:
-                feedback_header(
-                    Button(
-                        cls="clear-btn",
-                        type="button",
-                        onclick=f"const feedbackDiv = document.getElementById('task_{self._name}_feedback_log'); if (feedbackDiv) feedbackDiv.remove();",
-                    )
-                )  # Clear the feedback log on click
-            feedback_card = Card(
-                feedback_content,
-                header=feedback_header,
-                cls="terminal-container feedback-container ml-2 mr-2 mt-0 overflow-y-auto max-h-[30vh] auto-scroll-bottom",
-                id=f"task_{self._name}_feedback_log",
-            )
+        feedback_card = self._feedback_card()
+        if feedback_card is not None:
             inside(feedback_card)
         inside(_in_action_client_element(self._name, self._type, self._fields))
         return client_card(inside)
+
+    def _feedback_card(self, title: str = "Feedback Log") -> Optional[FT]:
+        """The feedback log, or None while there is nothing in it
+
+        :param title: Heading of the log
+        """
+        if not self.feedback:
+            return None
+        feedback_content = Div(
+            self.feedback,
+            id=f"task_{self._dom_id}_feedback",
+            cls="m-2",
+        )
+        feedback_header = Div(
+            H6(title, cls="tomorrow-night-green"),
+            cls="flex flex-row justify-between items-start",
+        )
+        if not self.is_active() and self._status != "inactive":
+            feedback_header(
+                Button(
+                    cls="clear-btn",
+                    type="button",
+                    onclick=f"const feedbackDiv = document.getElementById('task_{self._dom_id}_feedback_log'); if (feedbackDiv) feedbackDiv.remove();",
+                )
+            )  # Clear the feedback log on click
+        return Card(
+            feedback_content,
+            header=feedback_header,
+            cls="terminal-container feedback-container ml-2 mr-2 mt-0 overflow-y-auto max-h-[30vh] auto-scroll-bottom",
+            id=f"task_{self._dom_id}_feedback_log",
+        )
 
     @property
     def feedback(self):
@@ -167,7 +180,7 @@ class Task:
         # Get the server node name
         if self._serving_component is None:
             # Try to search again
-            self._serving_component = self.__get_server_node()
+            self._serving_component = self._find_server_node()
         return (
             Dialog(
                 Card(
@@ -190,11 +203,11 @@ class Task:
                         H5("Task Info", cls="cool-subtitle-mini-blue"),
                     ),
                 ),
-                id=f"{self._name}-modal",
+                id=f"{self._dom_id}-modal",
             ),
         )
 
-    def __get_server_node(self) -> Optional[str]:
+    def _find_server_node(self) -> Optional[str]:
         """
         Executes 'ros2 action info <action_name>' and returns the active server node name if found.
         """
@@ -241,16 +254,226 @@ class Task:
                 )
             )
             if self._duration is not None:
-                minutes, seconds = divmod(self._duration, 60)
-                status_div(Span(f"{minutes}:{seconds}", cls="slick-timer"))
+                status_div(self._timer)
             return status_div
         return Span(
             self._status, cls=f"status-badge {self._status}", id="status-badge-div"
         )
 
+    @property
+    def _timer(self) -> FT:
+        """How long the task has been going, as minutes:seconds"""
+        minutes, seconds = divmod(int(self._duration or 0), 60)
+        return Span(f"{minutes}:{seconds:02d}", cls="slick-timer")
+
     def cleanup(self):
         self._feedback = []
         self._feedback_timestamp = -1
+
+
+# ---- ROUTINE ELEMENT ----
+class RoutineTask(Task):
+    """A routine among the Tasks: its steps and how far it has got, and controls
+    to start, pause, resume and abort it.
+
+    Follows the state the Monitor publishes for the routine instead of an
+    action server's feedback, and sends its controls to the Monitor by name.
+    """
+
+    #: The controls offered in each status. Any status not listed can start
+    _CONTROLS = {"running": ("pause", "abort"), "paused": ("resume", "abort")}
+
+    #: Statuses a run ends in
+    _ENDED = ("completed", "failed", "aborted")
+
+    def __init__(self, name: str):
+        """
+        :param name: Routine name
+        :type name: str
+        """
+        self._dom_id = f"routine-{name}"
+        self._state: Dict[str, Any] = {}
+        super().__init__(name=name, client_type="Routine", fields={})
+        # Until the first state arrives from the Monitor
+        self._status = "unknown"
+
+    def _find_server_node(self) -> Optional[str]:
+        """A routine runs on the Monitor, so there is no server to look up"""
+        return None
+
+    def is_active(self) -> bool:
+        """Whether a run is under way, paused included
+
+        :rtype: bool
+        """
+        return self._status in ("running", "paused")
+
+    def is_running(self) -> bool:
+        """Whether a run is under way and not paused
+
+        :rtype: bool
+        """
+        return self._status == "running"
+
+    def update_state(self, state: Optional[Dict]) -> None:
+        """Take a new state of the routine, as the Monitor published it
+
+        :param state: The routine's state, or None if none has arrived
+        :type state: Optional[Dict]
+        """
+        if not state:
+            return
+        previous_status = self._status
+        previous_index = self._state.get("index")
+        status = state.get("status", "unknown")
+        if status == "running" and previous_status in self._ENDED:
+            # A new run: the log of the last one is no longer about this one
+            self.cleanup()
+        self._state = state
+        changed = status != previous_status or state.get("index") != previous_index
+        self.update(
+            status=status,
+            feedback=self._describe(state) if changed else None,
+            duration=state.get("elapsed"),
+        )
+
+    @staticmethod
+    def _describe(state: Dict) -> Optional[str]:
+        """One line for the log about where the routine has got to"""
+        status = state.get("status")
+        steps = state.get("steps", [])
+        step = state.get("active_step")
+        if status == "running" and step:
+            return f"Step {state.get('index', 0) + 1}/{len(steps)}: {step}"
+        if status == "paused":
+            return f"Paused at '{step}'" if step else "Paused"
+        if status == "completed":
+            return "Completed"
+        if status == "failed":
+            # What the step it failed at returned
+            index = state.get("index", 0)
+            where = f" at '{steps[index]}'" if 0 <= index < len(steps) else ""
+            message = state.get("step_message")
+            return f"Failed{where}: {message}" if message else f"Failed{where}"
+        if status == "aborted":
+            reason = state.get("abort_reason")
+            return f"Aborted: {reason}" if reason else "Aborted"
+        return None
+
+    @property
+    def card(self) -> FT:
+        """The routine's card: status, steps, log and controls"""
+        routine_card = DivVStacked(
+            self._badge,
+            cls="mt-0 gap-2",
+            id=self._dom_id,
+            ws_send=True,
+        )
+        inside = Grid(cls="gap-2 ml-1 mr-1 place-items-center", cols=1)
+        inside(self._steps)
+        feedback_card = self._feedback_card(title="Routine Log")
+        if feedback_card is not None:
+            inside(feedback_card)
+        inside(self._controls)
+        return routine_card(inside)
+
+    @property
+    def _badge(self):
+        """Status, with a spinner while running and a timer while under way"""
+        if self._status == "running":
+            # One of Task's active statuses: spinner and timer
+            return super()._badge
+        badge = DivHStacked(
+            Span(
+                self._status, cls=f"status-badge {self._status}", id="status-badge-div"
+            )
+        )
+        if self._status == "paused" and self._duration is not None:
+            badge(self._timer)
+        return badge
+
+    @property
+    def _steps(self) -> FT:
+        """The steps as a checklist: done, the one under way, and what is left"""
+        steps = self._state.get("steps", [])
+        if not steps:
+            return P("Waiting for the routine's state", cls="routine-waiting")
+        index = self._state.get("index", 0)
+        checklist = Div(cls="routine-steps", id=f"{self._dom_id}-steps")
+        for position, step in enumerate(steps):
+            if self._status == "completed" or position < index:
+                mark, kind = "✓", "done"
+            elif position == index and self.is_active():
+                mark, kind = "●", "active"
+            elif position == index and self._status in ("failed", "aborted"):
+                mark, kind = "✕", "stopped"
+            else:
+                mark, kind = "○", "pending"
+            line = DivHStacked(
+                Span(mark, cls="routine-step-mark"),
+                Span(step),
+                cls=f"routine-step {kind} gap-2",
+            )
+            feedback = self._state.get("step_feedback")
+            if kind == "active" and feedback:
+                line(
+                    Span(
+                        f"{feedback.get('server_status', '')}, "
+                        f"{feedback.get('feedback_count', 0)} feedback",
+                        cls="routine-step-feedback",
+                    )
+                )
+            checklist(line)
+        return checklist
+
+    @property
+    def _controls(self) -> FT:
+        """The controls that apply to the routine's current status"""
+        commands = self._CONTROLS.get(self._status, ("start",))
+        buttons = DivHStacked(*[
+            Button(
+                command.capitalize(),
+                cls="primary-button",
+                hx_post=f"/routine/{command}",
+                hx_target="#main",
+                hx_on__before_request="this.disabled = true;",
+            )
+            for command in commands
+        ])
+        return Form(
+            DivCentered(buttons),
+            Input(name="routine_name", type="hidden", value=self._name),
+            cls="space-x-2 space-y-2 m-2",
+            id=f"{self._dom_id}-form",
+            onsubmit="event.preventDefault(); return false;",
+        )
+
+    @property
+    def _info(self):
+        """What the routine is made of"""
+        steps = self._state.get("steps", [])
+        return (
+            Dialog(
+                Card(
+                    Grid(
+                        P(Strong("Runs on: "), "Monitor"),
+                        P(Strong("Steps: "), ", ".join(steps) or "not known yet"),
+                        P(Strong("Started from the UI: "), self.total_calls),
+                        cols=1,
+                        cls="gap-1",
+                    ),
+                    header=DivHStacked(
+                        Button(
+                            "✕",
+                            cls="info-btn",
+                            onclick="this.closest('dialog').close()",
+                        ),
+                        H5("Routine Info", cls="cool-subtitle-mini-blue"),
+                    ),
+                ),
+                id=f"{self._dom_id}-modal",
+            ),
+        )
 
 
 # ---- UTILITY ELEMENTS ----
@@ -965,6 +1188,11 @@ _INPUT_ELEMENTS: Dict = {
     "PoseStamped": partial(_in_pose_element, stamped=True),
 }
 
+#: The card class of an action client, by the name of its action type. A
+#: derived package registers one for an action whose card it wants to own,
+#: instead of the Task every action client gets
+_TASK_ELEMENTS: Dict[str, type] = {}
+
 _OUTPUT_ELEMENTS: Dict = {
     "String": _log_text_element,
     "Float32": _log_text_element,
@@ -984,8 +1212,14 @@ _OUTPUT_ELEMENTS: Dict = {
 # ---- ADDITIONAL MESSAGES ELEMENTS ----
 
 
-def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
-    """Deserialize one additional element"""
+def _deserialize_additional_element(
+    k_t: str, i_t: str, supported_type_key: bool = True
+) -> Optional[Tuple]:
+    """Deserialize one additional element
+
+    :param supported_type_key: Whether the key is a message type. False for a
+        task element, whose key is the action type it is the card for
+    """
     # Get key type
     module_name_key, _, type_name = k_t.rpartition(".")
     if not module_name_key:
@@ -999,7 +1233,7 @@ def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
     module_key = importlib.import_module(module_name_key)
     module_item = importlib.import_module(module_name_item)
     key = getattr(module_key, type_name)
-    if not issubclass(key, SupportedType):
+    if supported_type_key and not issubclass(key, SupportedType):
         logger.error(f"Could not find {type_name} name in {module_key} module")
         return
     item = getattr(module_item, func_name)
@@ -1010,10 +1244,12 @@ def _deserialize_additional_element(k_t: str, i_t: str) -> Optional[Tuple]:
 
 
 def add_additional_ui_elements(
-    input_elements: Optional[List[Tuple]], output_elements: Optional[List[Tuple]]
+    input_elements: Optional[List[Tuple]],
+    output_elements: Optional[List[Tuple]],
+    task_elements: Optional[List[Tuple]] = None,
 ):
     """Deserialize additional elements and add them"""
-    global _INPUT_ELEMENTS, _OUTPUT_ELEMENTS
+    global _INPUT_ELEMENTS, _OUTPUT_ELEMENTS, _TASK_ELEMENTS
 
     # Add input elements
     if input_elements:
@@ -1028,6 +1264,20 @@ def add_additional_ui_elements(
             deserialized = _deserialize_additional_element(k_t, i_t)
             if deserialized:
                 _OUTPUT_ELEMENTS[deserialized[0].__name__] = deserialized[1]
+
+    # Add task elements, keyed by the name of the action type they are for
+    if task_elements:
+        for k_t, i_t in task_elements:
+            deserialized = _deserialize_additional_element(
+                k_t, i_t, supported_type_key=False
+            )
+            if deserialized and issubclass(deserialized[1], Task):
+                _TASK_ELEMENTS[deserialized[0].__name__] = deserialized[1]
+            elif deserialized:
+                logger.error(
+                    f"The task element for '{deserialized[0].__name__}' is not a "
+                    "Task, so it cannot be a card"
+                )
 
 
 # ---- GENERIC MESSAGES ELEMENTS ----
@@ -1068,9 +1318,10 @@ def _generic_message_form(msg_fields: Dict[str, Dict[str, Dict]]) -> FT:
         ]:
             field_input_type = "number"
             default_value = "0"
-        elif field_type == "bool":
+        elif field_type == "boolean":
+            # Sent only when checked, and read as true. Unchecked, defaults false
             field_input_type = "checkbox"
-            default_value = "0"
+            default_value = "true"
         else:
             field_input_type = "text"
             default_value = ""

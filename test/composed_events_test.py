@@ -11,6 +11,7 @@ from ros_sugar.io import Topic
 from ros_sugar.core import BaseComponent, Event
 from ros_sugar import Launcher
 from ros_sugar.actions import Action, LogInfo
+from ros_sugar.utils import ActionReturnType
 
 # Threading Events
 on_any_and_on_equal_py_event = threadingEvent()
@@ -47,8 +48,8 @@ class ChildComponent(BaseComponent):
             else:
                 self._data = np.array([1.0, 2.0, 3.0, 4.0])
         # Publish data
-        if self.publishers_dict.get("float_array"):
-            self.publishers_dict["float_array"].publish(self._data)
+        if self.publishers_dict.get("composed_float_array"):
+            self.publishers_dict["composed_float_array"].publish(self._data)
         if self.publishers_dict.get("bool_topic"):
             self.publishers_dict["bool_topic"].publish(True)
 
@@ -62,14 +63,14 @@ def generate_test_description():
     """
 
     # health status topic
-    status_topic = Topic(name="publisher_component/status", msg_type="ComponentStatus")
+    status_topic = Topic(name="composed_publisher/status", msg_type="ComponentStatus")
 
     # float array topic
-    float_array_topic = Topic(name="float_array", msg_type="Float64MultiArray")
+    float_array_topic = Topic(name="composed_float_array", msg_type="Float64MultiArray")
     bool_topic = Topic(name="bool_topic", msg_type="Bool")
 
     publisher_component = ChildComponent(
-        component_name="publisher_component",
+        component_name="composed_publisher",
         outputs=[float_array_topic, bool_topic],
         change_data=True,
     )
@@ -88,8 +89,9 @@ def generate_test_description():
 
     event_on_not_false = Event(~bool_topic.msg.data.is_false())
 
-    def trigger_event(on_event: Event, **_):
+    def trigger_event(on_event: Event, **_) -> ActionReturnType:
         on_event.set()
+        return True, "Event trigger recorded"
 
     launcher = Launcher()
 

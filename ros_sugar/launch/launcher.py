@@ -28,6 +28,7 @@ import msgpack
 import msgpack_numpy as m_pack
 import launch
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 from launch import LaunchDescription, LaunchIntrospector, LaunchService
 from launch.action import Action as ROSLaunchAction
 from launch.actions import (
@@ -61,9 +62,11 @@ from ..core.action import LogInfo
 from ..actions import publish_message
 from ..config.base_config import ComponentRunType
 from ..core.action import Action
+from ..core.routine import Routine
 from ..core.component import BaseComponent
-from ..core.monitor import Monitor
+from ..core.monitor import Monitor, unroutable_arguments
 from ..core.event import OnInternalEvent, Event
+from ..core._action_registry import SystemActionRegistry
 from .launch_actions import ComponentLaunchAction
 from ..base_clients import ServiceClientConfig, ActionClientConfig
 from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesType
@@ -76,6 +79,7 @@ from ..robot import (
     Plugin,
     PluginRole,
     PluginShmManager,
+    ProcessSpec,
     RobotPlugin,
     RobotPluginHost,
     SocketFeedbackBus,
@@ -188,9 +192,9 @@ class Launcher:
             serializable spec. Defaults to None.
         :type robot_plugin: Optional[RobotPlugin], optional
         """
-        # Make sure RCLPY in initialized
+        # Make sure RCLPY is initialized. launch owns the process's signals
         if not rclpy.ok():
-            rclpy.init()
+            rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
 
         # Setup launch description
         self._description = LaunchDescription()
@@ -201,6 +205,9 @@ class Launcher:
         self._config_file: Optional[str] = config_file
         self._launch_group = []
         self._enable_ui = False
+        # Routines shown in the UI, to host on the Monitor whether or not an
+        # event triggers them
+        self._ui_routines: List[Routine] = []
         self._plugins: Dict[str, Plugin] = {}
         self._plugin_hosts: List[RobotPluginHost] = []
         self._mounts: List[Mount] = []
@@ -241,6 +248,8 @@ class Launcher:
 
         # Events/Actions dictionaries
         self._internal_events: Optional[List[Event]] = None
+        # Built in _setup_monitor_node, read by _init_monitor_node
+        self._action_registry: Optional[SystemActionRegistry] = None
         self._internal_event_names: Optional[List[str]] = None
         self._ros_events_actions: Dict[str, List[ROSLaunchAction]] = {}
         # Dictionaries {serialized_event: actions}
@@ -264,7 +273,12 @@ class Launcher:
         events_actions: Optional[
             Mapping[
                 Event,
-                Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
+                Union[
+                    Action,
+                    ROSLaunchAction,
+                    Routine,
+                    List[Union[Action, ROSLaunchAction, Routine]],
+                ],
             ]
         ] = None,
         multiprocessing: bool = False,
@@ -357,7 +371,12 @@ class Launcher:
     def on(
         self,
         event: Event,
-        action: Union[Action, ROSLaunchAction, List[Union[Action, ROSLaunchAction]]],
+        action: Union[
+            Action,
+            ROSLaunchAction,
+            Routine,
+            List[Union[Action, ROSLaunchAction, Routine]],
+        ],
     ) -> None:
         """Register an event/action mapping on the launcher.
 
@@ -386,12 +405,12 @@ class Launcher:
         ] = None,
         outputs: Optional[List[Topic]] = None,
         port: int = 5001,
-        ssl_keyfile_path: str = "key.pem",
-        ssl_certificate_path: str = "cert.pem",
         hide_settings_panel: bool = False,
         serve_browser: bool = True,
         api_stream_default_rate: float = 10.0,
         api_max_stream_rate: float = 30.0,
+        secure: bool = True,
+        routines: Optional[List[Union[Routine, str]]] = None,
     ):
         """
         Enables the user interface (UI) subsystem for recipes, initializing all UI extensions
@@ -417,15 +436,6 @@ class Launcher:
             Defaults to ``5001``.
         :type port: int
 
-        :param ssl_keyfile_path:
-            Path to the private key file used for SSL/TLS encryption. Defaults to ``"key.pem"``.
-        :type ssl_keyfile_path: str
-
-        :param ssl_certificate_path:
-            Path to the SSL/TLS certificate file used to authenticate the UI server.
-            Defaults to ``"cert.pem"``.
-        :type ssl_certificate_path: str
-
         :param hide_settings_panel:
             Disable the components settings panel in the UI.
         :type hide_settings_panel: bool, default False
@@ -445,7 +455,31 @@ class Launcher:
         :param api_max_stream_rate:
             Hard upper bound (Hz) for a client-requested API stream rate.
         :type api_max_stream_rate: float, default 30.0
+
+        :param secure:
+            Serve over HTTPS. The certificate is the one named by the
+            ``SUGARCOAT_UI_TLS_CERT`` and ``SUGARCOAT_UI_TLS_KEY`` environment
+            variables, else one minted and renewed by Sugarcoat. Set ``False``
+            only for development: the UI is then served over plain HTTP.
+        :type secure: bool, default True
+        :param routines:
+            Routines shown in the UI's Tasks, each with its steps and progress
+            and controls to start, pause, resume and abort it. A ``Routine`` is
+            hosted on the Monitor even when no event triggers it, so a routine
+            meant to be started from the UI alone needs nothing else. A name
+            refers to a routine registered some other way, such as by an event
+            or through the runtime API.
+        :type routines: Optional[List[Union[Routine, str]]]
         """
+
+        # A type without a callback in a derived package cannot be a UI output
+        for topic in outputs or []:
+            if topic.msg_type.callback is None:
+                raise TypeError(
+                    f"UI output '{topic.name}' has type "
+                    f"'{topic.msg_type.__name__}', which has no callback, so it "
+                    "cannot be shown in the UI"
+                )
 
         # Fail fast if dependencies of the requested UI mode are missing
         from importlib.util import find_spec
@@ -476,12 +510,16 @@ class Launcher:
 
         self._ui_input_elements = []
         self._ui_output_elements = []
+        self._ui_task_elements = []
 
         # NOTE: UI extensions provide browser widgets. They are skipped
         # entirely in API-only mode
         extensions = UI_EXTENSIONS if serve_browser else {}
         for ext in extensions:
-            input_elements_dict, output_elements_dict = UI_EXTENSIONS[ext]()
+            # A package that owns no task card returns only the topic elements
+            input_elements_dict, output_elements_dict, *task_elements = UI_EXTENSIONS[
+                ext
+            ]()
             # Additional input/output elements are used for UI elements coming
             # from derived packages
             for key, element in input_elements_dict.items():
@@ -495,6 +533,15 @@ class Launcher:
                     f"{key.__module__}.{key.__qualname__}",
                     f"{element.__module__}.{element.__qualname__}",
                 ))
+            # serialize the task cards, keyed by the action type they are for
+            for key, element in (task_elements[0] if task_elements else {}).items():
+                self._ui_task_elements.append((
+                    f"{key.__module__}.{key.__qualname__}",
+                    f"{element.__module__}.{element.__qualname__}",
+                ))
+
+        routine_names = self._ui_routine_names(routines or [])
+        self._ui_routines = [r for r in routines or [] if isinstance(r, Routine)]
 
         self._enable_ui = True
         self._ui_input_topics = inputs
@@ -502,13 +549,35 @@ class Launcher:
 
         self._ui_node_config: UINodeConfig = UINodeConfig(
             port=port,
-            ssl_keyfile=ssl_keyfile_path,
-            ssl_certificate=ssl_certificate_path,
             hide_settings=hide_settings_panel,
             serve_browser=serve_browser,
             api_stream_default_rate=api_stream_default_rate,
             api_max_stream_rate=api_max_stream_rate,
+            secure=secure,
+            routines=routine_names,
         )
+
+    @staticmethod
+    def _ui_routine_names(routines: List[Union[Routine, str]]) -> List[str]:
+        """The names of the routines given to the UI, each given once
+
+        :param routines: Routines, or names of routines
+        :raises TypeError: If an entry is neither
+        :raises ValueError: If a routine is given twice
+        :rtype: List[str]
+        """
+        names: List[str] = []
+        for routine in routines:
+            if not isinstance(routine, (Routine, str)):
+                raise TypeError(
+                    "A UI routine is a Routine or the name of one, got "
+                    f"{type(routine).__name__}"
+                )
+            name = routine.name if isinstance(routine, Routine) else routine
+            if name in names:
+                raise ValueError(f"Routine '{name}' is given to the UI twice")
+            names.append(name)
+        return names
 
     @property
     def robot(self) -> Dict[str, Any]:
@@ -619,15 +688,26 @@ class Launcher:
             self._mounts.append(sensor_mount)
 
     def _publish_mounts(self) -> None:
-        """Hand every declared mount to the Monitor as a static transform to be published to /tf_static."""
-        if not self._mounts:
+        """Hand every declared mount to the Monitor as a static transform to be
+        published to /tf_static."""
+        mounts = list(self._mounts)
+        robot = self._robot_plugin
+        if robot is not None and robot.base_frame and robot.base_height is not None:
+            mounts.append(
+                Mount(
+                    parent=robot.footprint_frame,
+                    child=robot.base_frame,
+                    xyz=(0.0, 0.0, robot.base_height),
+                )
+            )
+        if not mounts:
             return
         from geometry_msgs.msg import TransformStamped
 
         from ..robot.mount import quaternion_from_euler
 
         transforms = []
-        for mount in self._mounts:
+        for mount in mounts:
             transform = TransformStamped()
             transform.header.frame_id = mount.parent_frame
             transform.child_frame_id = mount.child_frame
@@ -737,14 +817,24 @@ class Launcher:
             if requested := sorted(feedbacks[plugin_id] | commands[plugin_id]):
                 logger.debug(f"Plugin '{plugin_id}' serves: {', '.join(requested)}")
 
-    def _launch_plugin_processes(self, plugin: Plugin) -> None:
+    def _launch_plugin_processes(self, plugin: Plugin) -> List[Tuple[str, str]]:
         """Add launch actions for the external drivers a plugin declares.
 
         A driver that is not installed fails bringup. The recipe asked for the
         data it serves, so running without it would lead to unhealthy behavior.
 
+        A driver's ``inputs`` are delivered on the topics it reads: a feedback
+        already on a ROS topic by remapping the driver onto it, and any other
+        by the plugin host publishing it there, which the caller arranges from
+        the returned pairs.
+
         :raises PackageNotFoundError: If a driver's package is not installed
         :raises FileNotFoundError: If a driver's package has no such executable
+        :raises ValueError: If a driver's inputs name a feedback the plugin
+            does not have
+        :return: ``(feedback_key, topic)`` pairs the plugin host must publish
+            on ROS, for the drivers that were started
+        :rtype: List[Tuple[str, str]]
         """
         from ament_index_python.packages import PackageNotFoundError
 
@@ -757,8 +847,9 @@ class Launcher:
                 f"Plugin '{plugin.id}' failed to declare its required "
                 f"processes: {e}. No driver will be started for it."
             )
-            return
+            return []
 
+        host_publishes: List[Tuple[str, str]] = []
         for spec in specs:
             try:
                 if spec.precondition is not None and not spec.precondition():
@@ -774,8 +865,12 @@ class Launcher:
                     f"'{spec.label}' failed: {e}. Not starting it."
                 )
                 continue
+            launch_kwargs = spec.launch_kwargs()
+            remappings, published = self._plugin_process_inputs(plugin, spec)
+            if remappings:
+                launch_kwargs["remappings"] = list(spec.remappings or []) + remappings
             try:
-                self.add_ros_node(**spec.launch_kwargs())
+                self.add_ros_node(**launch_kwargs)
             except (PackageNotFoundError, FileNotFoundError) as e:
                 used = ", ".join(sorted(plugin.requested_feedbacks)) or "none"
                 raise type(e)(
@@ -786,6 +881,36 @@ class Launcher:
                     "driver is not needed."
                 ) from None
             logger.info(f"Plugin '{plugin.id}': starting driver '{spec.label}'")
+            host_publishes.extend(published)
+        return host_publishes
+
+    @staticmethod
+    def _plugin_process_inputs(
+        plugin: Plugin, spec: ProcessSpec
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """How to deliver each of a driver's ``inputs`` on the topic it reads.
+
+        :raises ValueError: If an input names a feedback the plugin does not have
+        :return: Remappings to add to the driver, and ``(feedback_key, topic)``
+            pairs for the plugin host to publish
+        """
+        remappings: List[Tuple[str, str]] = []
+        published: List[Tuple[str, str]] = []
+        for key, topic in (spec.inputs or {}).items():
+            feedback = plugin.feedbacks.get(key)
+            if feedback is None:
+                raise ValueError(
+                    f"Plugin '{plugin.id}' declares that driver '{spec.label}' "
+                    f"reads its feedback '{key}', but the plugin has no such "
+                    f"feedback. Available: {sorted(plugin.feedbacks)}"
+                )
+            if feedback.is_ros_topic:
+                # Already on ROS: point the driver at the real topic
+                if feedback.transport.topic_name != topic:
+                    remappings.append((topic, feedback.transport.topic_name))
+            else:
+                published.append((key, topic))
+        return remappings, published
 
     def _distribute_plugins(self) -> None:
         """Hand every attached plugin to every component.
@@ -1049,11 +1174,112 @@ class Launcher:
         :param action: Action
         :type action: Action
         """
+        if isinstance(action, Routine):
+            # A routine is driven by callbacks on the node that hosts it, and
+            # the launch system has no node to host it on
+            raise InvalidAction(
+                f"Routine '{action.name}' cannot be executed by the launch "
+                "system. Routines are hosted by the Monitor, so a routine cannot be "
+                "attached to a lifecycle transition or any other launch entity."
+            )
+        if isinstance(action, Action) and action.is_monitored:
+            # Anything still routed here is run by the launch system as a launch
+            # entity rather than as a callable, so there is nowhere to put a
+            # watch and retry loop. Recipe methods are diverted to the Monitor
+            # before reaching this point; lifecycle transitions cannot be
+            raise InvalidAction(
+                f"Action '{action.action_name}' cannot be monitored. It is "
+                "executed by the launch system as a launch entity, so its outcome "
+                "cannot be watched. Monitor a component, system-level or recipe "
+                "action instead."
+            )
         self.__update_dict_list(self._ros_events_actions, event.id, action)
         if not self._internal_events:
             self._internal_events = [event]
         elif event not in self._internal_events:
             self._internal_events.append(event)
+
+    def __verify_routine(self, routine: Routine) -> None:
+        """Check that everything a routine runs is reachable from the Monitor.
+
+        :param routine: The routine being routed
+        :type routine: Routine
+        :raises InvalidAction: If an action targets an unknown component, or
+            carries an argument that cannot be sent to it, or another routine
+            already uses the name
+        """
+        # Names identify a routine in its cursor topic and to the control
+        # actions, so two routines cannot share one. The same routine object
+        # registered on several events is fine and is registered once
+        for actions in self._monitor_events_actions.values():
+            for registered in actions:
+                if (
+                    isinstance(registered, Routine)
+                    and registered.name == routine.name
+                    and registered is not routine
+                ):
+                    raise InvalidAction(
+                        f"Got two different routines named '{routine.name}'. Routine "
+                        "names identify a routine in its cursor topic and to the "
+                        "control actions, so they must be unique"
+                    )
+        known_components = [component.node_name for component in self._components]
+        # Every action the routine can run, not only its steps: a fallback or a
+        # terminal action reaching a component the Monitor cannot call fails the
+        # same way, at the worst possible moment
+        for action in routine.actions():
+            owner = action.parent_component
+            if not owner:
+                continue
+            if owner not in known_components:
+                raise InvalidAction(
+                    f"Action '{action.action_name}' of routine '{routine.name}' targets "
+                    f"component '{owner}', which is unknown or not added to the Launcher"
+                )
+            # The Monitor dispatches the action over its component's own
+            # service, which is what makes the process the component runs in
+            # irrelevant, and what makes the arguments have to survive JSON
+            reason = unroutable_arguments(action)
+            if reason:
+                raise InvalidAction(f"In routine '{routine.name}': {reason}")
+
+    def __warn_about_unregistered_ui_routines(self) -> None:
+        """Say so when the UI is given the name of a routine nothing registers.
+
+        A name, rather than a `Routine`, is meant for one that reaches the
+        Monitor another way, such as a routine added at runtime with
+        `add_routine`, so this cannot be an error. A misspelled one, though,
+        leaves a card that never fills and controls the Monitor refuses, with
+        nothing said until somebody presses a button.
+        """
+        config = getattr(self, "_ui_node_config", None)
+        if config is None:
+            # No UI in this recipe, so no routine names to check
+            return
+        registered = {routine.name for routine in self._ui_routines}
+        registered.update(
+            action.name
+            for actions in self._monitor_events_actions.values()
+            for action in actions
+            if isinstance(action, Routine)
+        )
+        unregistered = [
+            name for name in config.routines if name not in registered
+        ]
+        if not unregistered:
+            return
+        logger.warning(
+            f"The UI is given {self.__quoted(unregistered)}, which this recipe "
+            "does not register. A routine nothing registers shows an empty card, "
+            "and its controls are refused, unless it is added at runtime with "
+            "add_routine. This recipe registers "
+            f"{self.__quoted(sorted(registered)) or 'no routines'}"
+        )
+
+    @staticmethod
+    def __quoted(names: List[str]) -> str:
+        """Names as a caller wrote them, for a message that lists them"""
+        return ", ".join(f"'{name}'" for name in names)
 
     def __rewrite_actions_for_components(
         self,
@@ -1077,8 +1303,10 @@ class Launcher:
         for event, action_set in events_actions_dict.items():
             bridge_events_per_target: Dict[str, Event] = {}
             for action in action_set:
-                # Verify that the action inputs are available from the event topic(s)
-                if isinstance(action, Action):
+                # Verify that the action inputs are available from the event
+                # topic(s). A routine reports the topics of all of its steps,
+                # so the Monitor subscribes to everything the steps will read
+                if isinstance(action, (Action, Routine)):
                     event.verify_required_action_topics(action)
                 # Callable-based events have their own routing logic
                 if event._is_action_based:
@@ -1107,6 +1335,18 @@ class Launcher:
                         )
                 elif isinstance(action, Action) and action._is_monitor_action:
                     # Action to execute through the monitor
+                    self.__update_dict_list(self._monitor_events_actions, event, action)
+                elif isinstance(action, Action) and action.is_monitored:
+                    # A monitored recipe method would otherwise run in the launch
+                    # context, where its return value is discarded and a blocking
+                    # watch would stall the launch loop. The Monitor runs it on its
+                    # own thread instead, which is what the launch context does
+                    # anyway (the LaunchContext handed to an OpaqueFunction is unused)
+                    self.__update_dict_list(self._monitor_events_actions, event, action)
+                elif isinstance(action, Routine):
+                    # A routine spans components, so no component can host it.
+                    # The Monitor is the one node that can reach all of them
+                    self.__verify_routine(action)
                     self.__update_dict_list(self._monitor_events_actions, event, action)
                 elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                     # If it is a valid ROS launch action -> nothing is required
@@ -1152,6 +1392,16 @@ class Launcher:
             )
             if isinstance(action, Action) and action._is_monitor_action:
                 # Action to execute through the monitor
+                self.__update_dict_list(self._monitor_events_actions, event, action)
+            elif isinstance(action, Action) and action.is_monitored:
+                # Runs in the Monitor rather than the launch context, so its
+                # return value stays visible and a blocking watch cannot stall
+                # the launch loop
+                self.__update_dict_list(self._monitor_events_actions, event, action)
+            elif isinstance(action, Routine):
+                # Hosted by the Monitor, which is the only node that can reach
+                # every component a routine's steps target
+                self.__verify_routine(action)
                 self.__update_dict_list(self._monitor_events_actions, event, action)
             elif isinstance(action, Action) or isinstance(action, ROSLaunchAction):
                 # If it is a valid ROS launch action -> nothing is required
@@ -1389,6 +1639,35 @@ class Launcher:
             )
             self._description.add_action(internal_events_handler)
 
+    def _hand_registry_to_monitor(self) -> None:
+        """Give the Monitor the stack's action registry if it was built without one.
+
+        An override of `_init_monitor_node` that builds its own monitor and
+        does not pass the registry on left that monitor knowing only its own
+        methods: every component action was unknown to the runtime API, and
+        nothing said so. A registry the override passed on purpose is kept.
+        """
+        monitor = self.monitor_node
+        if not isinstance(monitor, Monitor) or getattr(
+            monitor, "_registry_given", True
+        ):
+            return
+        # Built again for the monitor actually installed, so the actions of a
+        # subclass are addressable too, and from the components as the override
+        # left them: it may have taken one out to be the monitor itself
+        self._action_registry = SystemActionRegistry.from_components(
+            self._components,
+            monitor_methods=type(monitor).RUNTIME_MONITOR_ACTIONS,
+            monitor_class=type(monitor),
+            out_of_process=list(self._pkg_executable),
+            plugins=list(self._plugins.values()),
+        )
+        monitor.set_action_registry(self._action_registry)
+        logger.debug(
+            f"Monitor '{monitor.node_name}' was built without the action registry, "
+            "handed it the stack's"
+        )
+
     def _init_monitor_node(
         self,
         components_names: List[str],
@@ -1398,6 +1677,7 @@ class Launcher:
     ) -> None:
         self.monitor_node = Monitor(
             components_names=components_names,
+            action_registry=self._action_registry,
             events_actions=self._monitor_events_actions,
             events_to_emit=self._internal_events,
             services_components=services_components,
@@ -1453,12 +1733,36 @@ class Launcher:
             ]
         )
 
+        # What the stack can be asked to do by name. Built here because this is
+        # the only place holding every component object together with how each
+        # of them is launched.
+        # NOTE: handed over as an attribute rather than an argument, because
+        # downstream packages override _init_monitor_node to install their own
+        # monitor and a new parameter would break them. An override that does
+        # not pass it on is handed it afterwards, by _hand_registry_to_monitor
+        self._action_registry = SystemActionRegistry.from_components(
+            self._components,
+            monitor_methods=Monitor.RUNTIME_MONITOR_ACTIONS,
+            monitor_class=Monitor,
+            out_of_process=list(self._pkg_executable),
+            # Attached before setup, so what each contributes is addressable
+            plugins=list(self._plugins.values()),
+        )
+
         self._init_monitor_node(
             components_names=components_names,
             services_components=services_components,
             action_components=action_components,
             all_components_to_activate_on_start=all_components_to_activate_on_start,
         )
+        self._hand_registry_to_monitor()
+
+        # Started by name from the UI, so an event may never route them
+        for routine in self._ui_routines:
+            self.__verify_routine(routine)
+        if self._ui_routines and isinstance(self.monitor_node, Monitor):
+            self.monitor_node.host_routines(self._ui_routines)
+        self.__warn_about_unregistered_ui_routines()
 
         # Register a activation event
         internal_events_handler_activate = launch.actions.RegisterEventHandler(
@@ -1533,6 +1837,8 @@ class Launcher:
             json.dumps(self._ui_input_elements),
             "--ui_output_elements",
             json.dumps(self._ui_output_elements),
+            "--ui_task_elements",
+            json.dumps(self._ui_task_elements),
             "--ui_service_clients",
             ui_node._client_inputs_json,
             "--system_info",
@@ -1783,7 +2089,7 @@ class Launcher:
         )
         self._launch_group.append(component_action)
 
-    def _start_ros_launch(self, introspect: bool = True, debug: bool = False):
+    def _start_ros_launch(self, introspect: bool = True, debug: bool = False) -> int:
         """
         Launch all ros nodes
 
@@ -1791,6 +2097,8 @@ class Launcher:
         :type introspect: bool, optional
         :param debug: LaunchService debugger, defaults to True
         :type debug: bool, optional
+        :return: The launch's return code, non-zero if it failed
+        :rtype: int
         """
         if introspect:
             logger.info("-----------------------------------------------")
@@ -1807,7 +2115,7 @@ class Launcher:
         self.ls = LaunchService(debug=debug)
         self.ls.include_launch_description(self._description)
 
-        self.ls.run(shutdown_when_idle=False)
+        return self.ls.run(shutdown_when_idle=False)
 
     def configure(
         self,
@@ -2033,8 +2341,10 @@ class Launcher:
         self._resolve_plugin_demand()
 
         # Launch plugin drivers in their own processes (if any). This is done before the feedback bus is started so that the bus is ready to accept connections when the drivers start.
+        # Feedback those drivers read on ROS is published by the plugin's host
+        host_publishes: Dict[str, List[Tuple[str, str]]] = {}
         for plugin in self._plugins.values():
-            self._launch_plugin_processes(plugin)
+            host_publishes[plugin.id] = self._launch_plugin_processes(plugin)
 
         # A socket feedback bus is needed when any component runs as its own
         # process; otherwise an in-process bus avoids the socket round trip.
@@ -2057,6 +2367,8 @@ class Launcher:
                 owns_bus=False,
                 shm=self._plugin_shm,
             )
+            for feedback_key, topic in host_publishes.get(plugin.id, []):
+                host.publish_on_ros(feedback_key, topic)
             host.open()
             self._plugin_hosts.append(host)
             # Register every non-ROS feedback's synthetic topic with the Monitor
@@ -2150,24 +2462,31 @@ class Launcher:
         if config_file:
             self.configure(config_file)
 
-        self.setup_launch_description()
+        try:
+            self.setup_launch_description()
 
-        self._start_ros_launch(introspect, launch_debug)
+            return_code = self._start_ros_launch(introspect, launch_debug)
+        finally:
+            # Release plugin hosts, bus and shared mem however the launch ends
+            # Tear down every plugin HOST, then the bus they shared
+            for host in self._plugin_hosts:
+                host.close()
+            self._plugin_hosts.clear()
+            if self._plugin_bus is not None:
+                self._plugin_bus.close()
+                self._plugin_bus = None
+            # Unlink the shared-memory segments once the writers (hosts) are down.
+            if self._plugin_shm is not None:
+                self._plugin_shm.close()
+                self._plugin_shm = None
 
-        # Tear down every plugin HOST, then the bus they shared
-        for host in self._plugin_hosts:
-            host.close()
-        self._plugin_hosts.clear()
-        if self._plugin_bus is not None:
-            self._plugin_bus.close()
-            self._plugin_bus = None
-        # Unlink the shared-memory segments once the writers (hosts) are down.
-        if self._plugin_shm is not None:
-            self._plugin_shm.close()
-            self._plugin_shm = None
+            if self._thread_pool:
+                self._thread_pool.shutdown()
 
-        if self._thread_pool:
-            self._thread_pool.shutdown()
+        # Exit with the non-zero code from launch
+        if return_code:
+            logger.error(f"Launch failed with return code {return_code}")
+            sys.exit(return_code)
 
         logger.info("------------------------------------")
         logger.info("ALL COMPONENTS EXITED SUCCESSFULLY")

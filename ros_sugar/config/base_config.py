@@ -48,8 +48,8 @@ class QoSConfig(BaseAttrs):
       - Level of reliability in delivering samples
 
     * - **durability**
-      - `int`, `qos.DurabilityPolicy.VOLATILE`
-      - Determines if the publisher will be persisting samples for “late-joining” subscriptions (Transit Local) or not (Volatile)
+      - `int`, `qos.DurabilityPolicy.SYSTEM_DEFAULT`
+      - Determines if the publisher will be persisting samples for “late-joining” subscriptions (Transit Local) or not (Volatile). The default leaves it to the middleware, which is volatile
     ```
     """
 
@@ -76,9 +76,10 @@ class QoSConfig(BaseAttrs):
 
     # Transient local: the publisher becomes responsible for persisting samples for “late-joining” subscriptions
     # Volatile: no attempt is made to persist samples
+    # System default: whatever the middleware does, which is volatile.
     durability: int = field(
         converter=_get_enum_value,
-        default=qos.DurabilityPolicy.VOLATILE,
+        default=qos.DurabilityPolicy.SYSTEM_DEFAULT,
         validator=base_validators.in_(list(qos.DurabilityPolicy)),
     )
 

@@ -37,7 +37,7 @@ def _make_component(name: str) -> BaseComponent:
     config.frames = RobotFrames(robot_base="base_link", world="map")
     comp = BaseComponent(
         component_name=name,
-        inputs=[Topic(name="/scan", msg_type="LaserScan")],
+        inputs=[Topic(name="/lifecycle_scan", msg_type="LaserScan")],
         config=config,
     )
     comp.rclpy_init_node()

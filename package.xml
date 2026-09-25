@@ -13,8 +13,11 @@
 
   <depend>rclpy</depend>
   <depend>rclcpp</depend>
+  <depend>rosidl_runtime_py</depend>
   <depend>tf2_ros</depend>
   <depend>lifecycle_msgs</depend>
+  <depend>action_msgs</depend>
+  <depend>std_srvs</depend>
   <depend>std_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
@@ -28,6 +31,7 @@
   <depend>python3-msgpack</depend>
   <depend>python3-msgpack-numpy</depend>
   <depend>python3-setproctitle</depend>
+  <depend>python3-cryptography</depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>ament_index_python</test_depend>

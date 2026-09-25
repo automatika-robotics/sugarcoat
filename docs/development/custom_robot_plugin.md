@@ -220,6 +220,48 @@ Notes:
   then returns a ready-to-use tool list for an orchestrating LLM, falling back
   to the factory's first docstring line where no description was given.
 
+### Addressable by name
+
+Attaching a plugin registers everything it contributes with the Monitor, under
+the plugin's id: `"lite3/stand_up"` is an action, `"lite3/low_battery"` a
+condition. A routine step, an event added at runtime and a caller of the runtime
+API can then name them, exactly as they name a component's actions. Nothing has
+to change in the recipe: `launcher.on(plugin.events.low_battery(0.15),
+plugin.actions.sit())` still holds the objects directly.
+
+```python
+# A mission written from outside the recipe, over the runtime API
+{"name": "patrol", "steps": [
+    {"ref": "lite3/stand_up", "timeout": 5.0, "max_retries": 2},
+    {"ref": "front_cam/aim", "kwargs": {"pan": 0.5}},
+]}
+```
+
+Three things follow for a plugin author:
+
+- **A factory's keyword arguments are what a step can set.** The step's
+  monitoring policy — `success`, `timeout`, `max_retries`, `cancel_method` and
+  the rest — is handed to the factory, so a factory that takes `**action_kwargs`
+  and passes them on to the `Action` it builds can be monitored, retried and
+  cancelled like any other step. One that takes none can still be run; it just
+  cannot be given a policy, and is told so by name if a step tries.
+- **Registry keys have to be referenceable.** A key with a slash or a space
+  cannot be half of a reference. Such an action stays usable from the recipe,
+  and a warning at bringup says it is not addressable.
+- **A plugin's id may not be a component's node name**, or a reference could
+  mean either of them. That fails the launch.
+
+`list_actions` over the runtime API includes a plugin's actions, each with a
+whole tool schema: however the factory was described — a string, a `function`
+block, or nothing but a docstring — the plugin's own registry makes one of it,
+so a caller building tool calls treats a plugin action like a component's.
+`list_plugin_events` lists the conditions, which an event spec names with
+`{"ref": ..., "kwargs": {...}}` in place of a topic condition.
+
+An action runs in the process hosting the plugin, which is the launcher's, the
+same one the Monitor is in. That is what makes this possible at all: the action
+a factory builds closes over the live transport, and nothing serializes it.
+
 ### Overriding for non-default deployments
 
 If a particular deployment needs different endpoints (alternate subnet, custom
@@ -295,6 +337,36 @@ existing instance is detected.
 Declare processes; do not start them. A plugin that spawned its own subprocess
 would sit outside the launch system: no respawn, no captured output, no ordered
 shutdown, and a process still holding the device if the launcher is killed.
+
+### Feeding a Driver Node the Plugin's Own Telemetry
+
+Some nodes worth starting read the plugin's telemetry rather than a sensor's: a
+`robot_localization` EKF over the robot's odometry and IMU, for instance. Most
+of that telemetry is decoded from a non-ROS transport and lives only on the
+feedback bus, where a stock ROS node cannot see it. Declare what the node reads
+with `inputs`, as `{feedback_key: topic}` with the topic the node subscribes
+on, and the launcher delivers it there:
+
+```python
+ProcessSpec(
+    package="robot_localization",
+    executable="ekf_node",
+    parameters=[self.EKF_CONFIG, {"odom0": "/odom", "imu0": "/imu/data"}],
+    inputs={"Odometry": "/odom", "Imu": "/imu/data"},
+)
+```
+
+A feedback the plugin host decodes is published by the host on that topic,
+stamped with the node clock when the decoder left the stamp empty. One already
+carried on a ROS topic is not republished; the node is remapped onto the real
+topic instead. Either way the recipe has nothing to add, and nothing is
+published unless the node is actually started.
+
+Set `publish_tf=True` on an odometry `Feedback` to have the host also broadcast
+its `header.frame_id -> child_frame_id` transform whenever it publishes that
+feedback. A localizer fusing the odometry into a map frame publishes
+`map -> odom` and expects something else to own `odom -> base`; this makes the
+plugin that owner.
 
 ## Describing the Robot
 

@@ -23,7 +23,8 @@ The `ros_sugar.core` package exposes the primary building blocks:
 | `BaseComponent` | `rclpy.lifecycle.Node` | Managed lifecycle execution unit |
 | `Monitor` | `rclpy.node.Node` | Event evaluation and component supervision |
 | `Event` | _(standalone)_ | Condition-based trigger on topic data |
-| `Action` | _(standalone)_ | Callable dispatched when an event fires |
+| `Action` | `BaseAction` _(internal)_ | Callable dispatched when an event fires; declaring a success condition, timeout or retry budget makes it verify its own outcome |
+| `Routine` | _(standalone)_ | Organizing primitive containing a sequence of `Action`s, monitored one by one, with a published progress cursor; hosted by the `Monitor` |
 | `Status` | _(standalone)_ | Health status wrapper around `ComponentStatus` msg |
 | `Fallback` / `ComponentFallbacks` | _(attrs / standalone)_ | Failure recovery actions |
 
@@ -73,7 +74,7 @@ Health status is not consumed by the Monitor. Each component evaluates its own s
 | `add_ros_node(package, executable, ...)` / `include_launch_file(package, launch_file, launch_args)` | Bring up external ROS nodes and launch files alongside the components, each in its own process |
 | `on(event, action)` | Register an event/action pair; sugar for `events_actions` |
 | `on_process_fail(max_retries)` | Respawn a multiprocess component that exits unexpectedly |
-| `enable_ui(inputs, outputs, port, serve_browser, ...)` | Start the UI node with its JSON/WebSocket API and, optionally, the browser front-end |
+| `enable_ui(inputs, outputs, port, serve_browser, routines, ...)` | Start the UI node with its JSON/WebSocket API and, optionally, the browser front-end. `routines` are shown with their progress and controls |
 | `robot`, `frames`, `robot_frame`, `world_frame` | Broadcast the robot description and frame names to every component; a robot plugin supplies defaults for `robot` and the body frame |
 | `bringup(config_file=None, introspect=False, launch_debug=False)` | Build the launch description and run it, blocking until shutdown |
 
@@ -153,19 +154,23 @@ The callback group can be specified at construction via the `callback_group` par
 Defined in `ros_sugar.utils.component_action`. Marks a method as an action that can be dispatched by the event system. The decorator enforces:
 
 1. The method belongs to a `LifecycleNode` instance.
-2. The return type annotation is `bool` or `None`.
+2. The method is annotated to return `Tuple[bool, str]` (aliased as `ActionReturnType`).
 3. If `active=True`, the component must be in the **Active** lifecycle state.
+
+Every action returns `(success, message)`: the bool reports success or failure, the string carries a
+result on success or an error on failure. The annotation is checked at decoration time, so a
+component that does not follow the contract fails at import.
 
 Can be used bare (`@component_action`) or with parameters (`@component_action(description={...}, active=True)`). The optional `description` parameter accepts an OpenAI-compatible tool/function description dict, used when actions are exposed as tools to an orchestrating LLM.
 
 ```python
-from ros_sugar.utils import component_action
+from ros_sugar.utils import ActionReturnType, component_action
 
 class MyComponent(BaseComponent):
     @component_action
-    def stop_motors(self) -> bool:
+    def stop_motors(self) -> ActionReturnType:
         # ... stop logic ...
-        return True
+        return True, "motors stopped"
 
     @component_action(description={
         "type": "function",
@@ -174,7 +179,7 @@ class MyComponent(BaseComponent):
             "description": "Immediately stop all motors.",
         },
     })
-    def stop_motors_with_desc(self) -> bool:
+    def stop_motors_with_desc(self) -> ActionReturnType:
         ...
 ```
 
@@ -185,13 +190,14 @@ Defined in `ros_sugar.utils.component_fallback`. Marks a method as a fallback ha
 Like `@component_action`, it can be used bare or with a `description` parameter for LLM tool descriptions.
 
 ```python
-from ros_sugar.utils import component_fallback
+from ros_sugar.utils import ActionReturnType, component_fallback
 
 class MyComponent(BaseComponent):
     @component_fallback
-    def restart(self) -> None:
+    def restart(self) -> ActionReturnType:
         self.trigger_deactivate()
         self.trigger_activate()
+        return True, "component restarted"
 ```
 
 ### @action_handler

@@ -205,6 +205,27 @@ class Condition:
             }
 
     @classmethod
+    def on_any(cls, topic) -> "Condition":
+        """The condition "anything on this topic", built from the topic itself.
+
+        The one place a Topic becomes a Condition: an event declared on a topic,
+        an action's success given as a topic and an action server step's are the
+        same thing said three ways, and used to be built three times.
+
+        :param topic: The topic to watch
+        :rtype: Condition
+        """
+        return cls(
+            topic_name=topic.name,
+            topic_msg_type=topic.msg_type.__name__,
+            topic_qos_config=topic.qos_profile.to_dict(),
+            topic_use_plugin=topic.use_plugin,
+            attribute_path=[],
+            operator_func=None,
+            ref_value=None,
+        )
+
+    @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Condition":
         """Reconstruct the condition tree from a dictionary."""
         node_type = data.get(

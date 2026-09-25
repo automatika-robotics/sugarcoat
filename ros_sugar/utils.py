@@ -2,12 +2,24 @@ import inspect
 from enum import IntEnum as BaseIntEnum
 from functools import wraps
 import json
-from typing import Callable, List, Union, TypeVar, Optional, Dict
+from typing import Any, Callable, List, Union, TypeVar, Optional, Dict, Tuple
+from typing import get_args, get_origin
 
+from rclpy.action import ActionClient, ActionServer
+from rclpy.node import Node
 from rclpy.utilities import ok as rclpy_is_ok
 from rclpy.lifecycle import Node as LifecycleNode
 from launch import LaunchContext
 from launch.actions import OpaqueFunction
+
+# NOTE: InvalidHandle is raised when an entity is used after it was destroyed, which is what a
+# component that deactivates or restarts does to the timers and subscriptions
+# its executor is waiting on. Imported here once, as rclpy moved it between
+# distributions
+try:  # iron and later
+    from rclpy.exceptions import InvalidHandle
+except ImportError:  # humble
+    from rclpy.handle import InvalidHandle
 import os
 import logging
 
@@ -35,6 +47,91 @@ logger = logging.getLogger("Sugarcoat")
 MsgT = TypeVar("MsgT")
 
 
+# The return contract for every action: (success, message). The message carries a
+# result when the action succeeded and an error when it failed, and may hold JSON
+# if the action needs to return something structured.
+ActionReturnType = Tuple[bool, str]
+
+# Deprecated spelling of `ActionReturnType`. Kept so existing recipes keep
+# importing and annotating
+ActionResult = ActionReturnType
+
+# Spellings of the contract that reach this as text
+_ACTION_RETURN_TEXT = frozenset({
+    "ActionReturnType",
+    "ActionResult",
+    "Tuple[bool,str]",
+    "tuple[bool,str]",
+    "typing.Tuple[bool,str]",
+})
+
+
+def _promises_action_return(annotation: Any) -> bool:
+    """Whether a return annotation promises the (bool, str) contract.
+
+    Read by shape rather than by spelling: `Tuple[bool, str]`, the builtin
+    `tuple[bool, str]` and the `ActionReturnType` alias are three ways of
+    writing one type, and they are not equal to each other. Comparing against a
+    list of spellings rejected the builtin form, which is the one a modern
+    codebase writes.
+
+    :param annotation: The return annotation, as a type or as text
+    :rtype: bool
+    """
+    if isinstance(annotation, str):
+        return "".join(annotation.split()) in _ACTION_RETURN_TEXT
+    return get_origin(annotation) is tuple and get_args(annotation) == (bool, str)
+
+
+def _validate_action_return(func: Callable, decorator_name: str) -> None:
+    """Reject an action whose signature does not promise the (bool, str) contract.
+
+    Checked once, at decoration time, so a component that does not follow the
+    contract fails at import rather than halfway through a mission.
+
+    :param func: The decorated method
+    :param decorator_name: Decorator name, for the error message
+    :raises TypeError: If the return annotation is missing or not Tuple[bool, str]
+    """
+    return_type = inspect.signature(func).return_annotation
+    if _promises_action_return(return_type):
+        return
+    raise TypeError(
+        f"Method '{func.__name__}' cannot have '@{decorator_name}'. Actions must be "
+        f"annotated to return 'Tuple[bool, str]', where the bool reports success or "
+        f"failure and the string carries a result or an error message. Got "
+        f"'{return_type}'."
+    )
+
+
+def parse_action_result(value: Any, action_name: str) -> ActionReturnType:
+    """Coerce an action's return value into the (success, message) contract.
+
+    The single runtime enforcement point, so a return that does not follow the
+    contract is reported once and treated as a **failure**. Failing closed
+    matters here: every consumer used to test truthiness, and a malformed value
+    is truthy, so the alternative is silently reporting success.
+
+    :param value: Whatever the action returned
+    :param action_name: Action name, for the error message
+    :return: The validated (success, message) pair
+    :rtype: ActionReturnType
+    """
+    if (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], bool)
+        and isinstance(value[1], str)
+    ):
+        return value
+    error = (
+        f"Action '{action_name}' returned {value!r}, which does not follow the "
+        "(bool, str) action contract. Treating it as a failure."
+    )
+    logger.error(error)
+    return False, error
+
+
 class IncompatibleSetup(Exception):
     """Exception raised when a component is configured with incompatible parameter values"""
 
@@ -43,6 +140,16 @@ class IncompatibleSetup(Exception):
 
 class InvalidAction(Exception):
     """Exception raised when an Action is invalid or configured with incompatible values"""
+
+    pass
+
+
+class MissingActionArgument(Exception):
+    """Raised when an argument read from a topic has no value at dispatch time
+
+    Unlike InvalidAction this is not a recipe error: the action is well formed,
+    the data it needs has simply not arrived yet.
+    """
 
     pass
 
@@ -109,7 +216,11 @@ def component_action(
     """
     Decorator for components actions
     Verifies that the function is a valid Component method and that the Component is active.
-    Actions may return any JSON-serializable value, or None.
+
+    Actions must be annotated to return `Tuple[bool, str]`: the bool reports
+    success or failure, the string carries a result on success or an error
+    message on failure. The string may hold JSON if the action needs to return
+    something structured.
 
     Can be used as:
         @component_action
@@ -124,6 +235,8 @@ def component_action(
     """
 
     def _decorator(func: Callable):
+        _validate_action_return(func, "component_action")
+
         @wraps(func)
         def _wrapper(*args, **kwargs):
             if not args:
@@ -138,15 +251,20 @@ def component_action(
                 # check for active flag and if the flag is True, check lifecycle_state is 3 i.e. active
                 if not active or self._state_machine.current_state[1] == "active":
                     return func(*args, **kwargs)
-                else:
-                    logger.error(
-                        f"Cannot use component action method '{func.__name__}' without activating the Component"
-                    )
-                    return None
-            else:
-                logger.error(
-                    f"Cannot use component action method '{func.__name__}' without initializing rclpy and the Component"
+                # NOTE: these guard paths report a failure rather than returning
+                # None, so a caller cannot mistake 'the action never ran' for
+                # 'the action ran and did nothing'
+                error = (
+                    f"Cannot use component action method '{func.__name__}' without "
+                    "activating the Component"
                 )
+            else:
+                error = (
+                    f"Cannot use component action method '{func.__name__}' without "
+                    "initializing rclpy and the Component"
+                )
+            logger.error(error)
+            return False, error
 
         _wrapper.__name__ = func.__name__
         # Use the provided description or the function's docstring as the action description
@@ -180,6 +298,8 @@ def component_fallback(
     """
 
     def _decorator(func: Callable):
+        _validate_action_return(func, "component_fallback")
+
         @wraps(func)
         def _wrapper(*args, **kwargs):
             """_wrapper.
@@ -201,15 +321,21 @@ def component_fallback(
                     "activating",
                 ]:
                     return func(*args, **kwargs)
-                else:
-                    logger.error(
-                        f"{self._state_machine.current_state[1]} Cannot use component fallback method '{func.__name__}' without activating or configuring the Component"
-                    )
-                    return None
-            else:
-                logger.error(
-                    f"Cannot use component fallback method '{func.__name__}' without initializing rclpy and the Component"
+                # NOTE: these guard paths report a failure rather than returning
+                # None, so the fallback ladder cannot mistake 'never ran' for
+                # 'ran and recovered'
+                error = (
+                    f"{self._state_machine.current_state[1]} Cannot use component "
+                    f"fallback method '{func.__name__}' without activating or "
+                    "configuring the Component"
                 )
+            else:
+                error = (
+                    f"Cannot use component fallback method '{func.__name__}' without "
+                    "initializing rclpy and the Component"
+                )
+            logger.error(error)
+            return False, error
 
         _wrapper.__name__ = func.__name__
         # Use the provided description or the function's docstring as the action description
@@ -343,3 +469,31 @@ def camel_to_snake_case(text: str) -> str:
         else:
             result += char
     return result.lstrip("_")
+
+
+def destroy_action_entities(node: Node) -> None:
+    """Destroy the action servers and action clients still on a node.
+
+    rclpy's `destroy_node` destroys a node's publishers, subscriptions,
+    services, clients and timers, but not its waitables, which is what action
+    servers and clients are. One left alive keeps serving its action by name
+    for as long as the process lives, and keeps the node's handle in use, so a
+    client looking for that action can send its goal there, where nothing
+    answers any more.
+
+    Called by a node about to be destroyed. Only what is still registered on
+    the node is destroyed, since destroying an action server or client a second
+    time raises: a component deactivated earlier has already destroyed its own.
+
+    :param node: The node about to be destroyed
+    :type node: Node
+    """
+    for waitable in list(node.waitables):
+        if not isinstance(waitable, (ActionServer, ActionClient)):
+            continue
+        try:
+            waitable.destroy()
+        except Exception as e:
+            logger.error(
+                f"Failed to destroy an action entity of node '{node.get_name()}': {e}"
+            )

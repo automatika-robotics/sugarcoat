@@ -59,6 +59,12 @@ scripts/ui_node_executable
 DESTINATION lib/${PROJECT_NAME}
 )
 
+# UI security management
+install(PROGRAMS
+scripts/ui_security
+DESTINATION lib/${PROJECT_NAME}
+)
+
 #NOTE: Remove testing for ROS build farm until required package names are merged in rosdistro
 # if(BUILD_TESTING)
 #   find_package(ament_lint_auto REQUIRED)
