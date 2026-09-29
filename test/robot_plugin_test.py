@@ -2305,6 +2305,55 @@ def test_euler_to_quaternion_matches_known_rotations():
     assert abs(w - 0.7071067811865476) < 1e-9
 
 
+def test_a_pose_in_another_mounts_frame():
+    """Sensors are mounted on the body, but what reads one of them often wants
+    another in its own frame -- a LiDAR-inertial mapper wants the IMU in the
+    LiDAR's."""
+    import math
+
+    from ros_sugar.robot.mount import pose_relative_to
+
+    origin = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+    # In its own frame, a pose is the origin
+    xyz, rpy = pose_relative_to(origin, origin)
+    assert xyz == pytest.approx((0.0, 0.0, 0.0))
+    assert rpy == pytest.approx((0.0, 0.0, 0.0))
+
+    # From a frame a metre ahead, the parent's origin is a metre behind
+    xyz, rpy = pose_relative_to(origin, ((1.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+    assert xyz == pytest.approx((-1.0, 0.0, 0.0))
+    assert rpy == pytest.approx((0.0, 0.0, 0.0))
+
+    # A frame turned a quarter turn about Z: what lies ahead of the parent is
+    # off to that frame's right, and its own heading is turned back
+    xyz, rpy = pose_relative_to(
+        ((1.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ((0.0, 0.0, 0.0), (0.0, 0.0, math.pi / 2)),
+    )
+    assert xyz == pytest.approx((0.0, -1.0, 0.0))
+    assert rpy == pytest.approx((0.0, 0.0, -math.pi / 2))
+
+
+def test_a_relative_pose_is_the_transform_composed():
+    """Placing the result back through the frame lands where the pose was, for
+    a translation and a rotation neither of which is an easy case."""
+    import numpy as np
+
+    from ros_sugar.robot.mount import _rotation_from_euler, pose_relative_to
+
+    pose = ((0.31, -0.12, 0.08), (0.2, -0.4, 1.1))
+    frame = ((0.12, 0.03, 0.22), (-0.1, 0.5, -0.7))
+
+    xyz, rpy = pose_relative_to(pose, frame)
+
+    rotation = _rotation_from_euler(*frame[1])
+    assert rotation @ np.array(xyz) + np.array(frame[0]) == pytest.approx(pose[0])
+    assert rotation @ _rotation_from_euler(*rpy) == pytest.approx(
+        _rotation_from_euler(*pose[1])
+    )
+
+
 def test_launcher_collects_mounts_from_add_plugin(rclpy_context):
     from ros_sugar.robot import Mount
 
