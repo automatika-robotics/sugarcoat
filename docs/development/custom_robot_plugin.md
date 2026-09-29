@@ -368,6 +368,27 @@ feedback. A localizer fusing the odometry into a map frame publishes
 `map -> odom` and expects something else to own `odom -> base`; this makes the
 plugin that owner.
 
+### Publishing Plugin Telemetry for Nodes in the Recipe
+
+A node the recipe starts itself, with `Launcher.add_ros_node`, is not a driver
+the plugin declares, so it gets no `inputs`. Have the launcher publish the
+feedback it needs instead:
+
+```python
+launcher.add_plugin(robot)
+launcher.publish_plugin_feedback(robot.feedbacks["Odometry"], "/odom")
+launcher.add_ros_node("robot_localization", "ekf_node", parameters=[...])
+```
+
+The plugin host publishes it with the feedback's own message type, so nothing is
+remapped and a subscriber cannot end up on a topic of another type. The topic
+defaults to `<plugin id>/<feedback key>`. A feedback already carried on a ROS
+topic is not published again; the launcher warns and names that topic. The
+feedback counts as used by the recipe, so a plugin providing only what is asked
+for still provides it, and `publish_tf` applies as above. Bringup fails if the
+feedback belongs to no attached plugin, or if its topic is already taken by
+another feedback or by a component output.
+
 ## Describing the Robot
 
 A `RobotPlugin` knows the robot it drives, so it can configure the whole stack:

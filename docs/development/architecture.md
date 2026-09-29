@@ -71,6 +71,7 @@ Health status is not consumed by the Monitor. Each component evaluates its own s
 |:------------------|:--------|
 | `add_pkg(components, package_name, executable_entry_point, events_actions, multiprocessing, ...)` | Add components from one package; `multiprocessing=True` runs each in its own process (requires the package name and entry point) |
 | `add_plugin(plugin, mount=None)` | Attach a robot or sensor plugin; a `Mount` places a sensor plugin in TF |
+| `publish_plugin_feedback(feedback, topic_name=None)` | Publish a plugin feedback on ROS for nodes outside the recipe; one already on a ROS topic is left as is, with a warning |
 | `add_ros_node(package, executable, ...)` / `include_launch_file(package, launch_file, launch_args)` | Bring up external ROS nodes and launch files alongside the components, each in its own process |
 | `on(event, action)` | Register an event/action pair; sugar for `events_actions` |
 | `on_process_fail(max_retries)` | Respawn a multiprocess component that exits unexpectedly |

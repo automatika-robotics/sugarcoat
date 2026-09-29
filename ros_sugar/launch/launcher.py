@@ -29,6 +29,7 @@ import msgpack_numpy as m_pack
 import launch
 import rclpy
 from rclpy.signals import SignalHandlerOptions
+from rclpy.validate_topic_name import validate_topic_name
 from launch import LaunchDescription, LaunchIntrospector, LaunchService
 from launch.action import Action as ROSLaunchAction
 from launch.actions import (
@@ -73,6 +74,7 @@ from ..utils import InvalidAction, action_handler, has_decorator, SomeEntitiesTy
 from ..ui_node import UINode, UINodeConfig
 from ..robot import (
     AmbiguousPluginEntryError,
+    Feedback,
     FeedbackBus,
     Mount,
     InProcessFeedbackBus,
@@ -210,6 +212,8 @@ class Launcher:
         self._ui_routines: List[Routine] = []
         self._plugins: Dict[str, Plugin] = {}
         self._plugin_hosts: List[RobotPluginHost] = []
+        # Plugin feedback the recipe asked to have on ROS, as (feedback, topic)
+        self._feedbacks_on_ros: List[Tuple[Feedback, Optional[str]]] = []
         self._mounts: List[Mount] = []
         if robot_plugin is not None:
             self.add_plugin(robot_plugin)
@@ -687,6 +691,120 @@ class Launcher:
                 )
             self._mounts.append(sensor_mount)
 
+    def publish_plugin_feedback(
+        self, feedback: Feedback, topic_name: Optional[str] = None
+    ) -> None:
+        """Publish a plugin feedback on the ROS network, for ROS nodes outside
+        the recipe (e.g. one added with `add_ros_node`) to subscribe to.
+
+        The plugin host publishes it from the launcher process with the
+        feedback's own message type, so a subscriber cannot end up on a topic of
+        a different type. A feedback already carried on a ROS topic is on ROS
+        already: it is not published again, and a warning names its topic.
+
+        The feedback counts as used by the recipe, so a plugin that only
+        provides what is asked for (see `Plugin.requested_feedbacks`) provides
+        it. A feedback declaring ``publish_tf`` also has its transform
+        broadcast once it is published.
+
+        Can be called before or after the plugin is attached::
+
+            launcher.add_plugin(robot)
+            launcher.publish_plugin_feedback(robot.feedbacks["Odometry"], "/odom")
+
+        :param feedback: The feedback, taken from ``plugin.feedbacks`` of a
+            plugin attached to this recipe.
+        :type feedback: Feedback
+        :param topic_name: ROS topic to publish it on. Relative names are resolved
+            in the Launcher namespace. Defaults to ``<plugin id>/<feedback key>``.
+        :type topic_name: Optional[str]
+        :raises TypeError: If ``feedback`` is not a `Feedback`
+        :raises InvalidTopicNameException: If ``topic_name`` is not a valid ROS topic name
+        """
+        if not isinstance(feedback, Feedback):
+            raise TypeError(
+                "publish_plugin_feedback expects a plugin Feedback, taken from "
+                f"'plugin.feedbacks', got {type(feedback).__name__}"
+            )
+        if topic_name is not None:
+            validate_topic_name(topic_name)
+        self._feedbacks_on_ros.append((feedback, topic_name))
+
+    def _plugin_owning(self, feedback: Feedback) -> Optional[Plugin]:
+        """The attached plugin ``feedback`` belongs to, or ``None``."""
+        plugin = self._plugins.get(feedback.owner_id)
+        if plugin is None or plugin.feedbacks.get(feedback.key) is not feedback:
+            return None
+        return plugin
+
+    def _resolve_feedbacks_on_ros(self) -> Dict[str, List[Tuple[str, str]]]:
+        """Resolve `publish_plugin_feedback` requests against the attached plugins.
+
+        :raises ValueError: If a feedback belongs to no attached plugin
+        :return: ``(feedback_key, topic)`` pairs each plugin host must publish
+            on ROS, by plugin id
+        """
+        host_publishes: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
+        for feedback, topic in self._feedbacks_on_ros:
+            plugin = self._plugin_owning(feedback)
+            if plugin is None:
+                raise ValueError(
+                    f"Cannot publish feedback '{feedback.key}' on ROS: it does "
+                    "not belong to a plugin attached to this recipe. Pass a "
+                    "feedback from 'plugin.feedbacks' of an attached plugin. "
+                    f"Attached plugins: {', '.join(self._plugins) or 'none'}."
+                )
+            if feedback.is_ros_topic:
+                ros_topic = feedback.transport.topic_name
+                logger.warning(
+                    f"Feedback '{feedback.key}' of plugin '{plugin.id}' is already "
+                    f"published on ROS topic '{ros_topic}'; not publishing it again"
+                    + (f" on '{topic}'." if topic and topic != ros_topic else ".")
+                )
+                continue
+            topic = topic or f"{plugin.id}/{feedback.key}"
+            validate_topic_name(topic)
+            host_publishes[plugin.id].append((feedback.key, topic))
+        return host_publishes
+
+    def _check_feedback_topic_clashes(
+        self, host_publishes: Dict[str, List[Tuple[str, str]]]
+    ) -> None:
+        """Refuse two streams on one ROS topic, which subscribers would receive
+        interleaved, or mistyped.
+
+        :raises ValueError: If two different feedbacks, or a feedback and a
+            component output, would be published on the same topic
+        """
+        # Compared fully resolved: a relative name lands in the Launcher namespace
+        def resolved(topic: str) -> str:
+            if topic.startswith("/"):
+                return topic
+            return "/" + "/".join(filter(None, (self._namespace.strip("/"), topic)))
+
+        owners: Dict[str, Tuple[str, str]] = {}
+        for plugin_id, pairs in host_publishes.items():
+            for key, topic in pairs:
+                owner = owners.setdefault(resolved(topic), (plugin_id, key))
+                if owner != (plugin_id, key):
+                    raise ValueError(
+                        f"Feedback '{key}' of plugin '{plugin_id}' and feedback "
+                        f"'{owner[1]}' of plugin '{owner[0]}' are both to be "
+                        f"published on ROS topic '{topic}'. Give each its own topic."
+                    )
+        for component in self._components:
+            for out_topic in getattr(component, "out_topics", None) or []:
+                name = resolved(out_topic.name)
+                if out_topic.use_plugin or name not in owners:
+                    continue
+                plugin_id, key = owners[name]
+                raise ValueError(
+                    f"Feedback '{key}' of plugin '{plugin_id}' is to be published "
+                    f"on ROS topic '{name}', which component "
+                    f"'{component.node_name}' already publishes on. Give the "
+                    "feedback its own topic."
+                )
+
     def _publish_mounts(self) -> None:
         """Hand every declared mount to the Monitor as a static transform to be
         published to /tf_static."""
@@ -779,6 +897,14 @@ class Launcher:
             return self._robot_plugin
         return self._plugins.get(topic.use_plugin)
 
+    def _feedback_keys_on_ros(self) -> Dict[str, Set[str]]:
+        """Keys of the feedback `publish_plugin_feedback` asked for, by plugin id."""
+        keys: Dict[str, Set[str]] = {pid: set() for pid in self._plugins}
+        for feedback, _ in self._feedbacks_on_ros:
+            if plugin := self._plugin_owning(feedback):
+                keys[plugin.id].add(feedback.key)
+        return keys
+
     def _resolve_plugin_demand(self) -> None:
         """Tell each plugin which of its entries the recipe actually uses. Knowing what was asked for lets a plugin provide exactly that; see `Plugin.required_processes`.
 
@@ -787,7 +913,8 @@ class Launcher:
         """
         if not self._plugins:
             return
-        feedbacks: Dict[str, Set[str]] = {pid: set() for pid in self._plugins}
+        # Feedback the recipe publishes on ROS is used too, by whatever reads it
+        feedbacks = self._feedback_keys_on_ros()
         commands: Dict[str, Set[str]] = {pid: set() for pid in self._plugins}
 
         for component in self._components:
@@ -2337,14 +2464,17 @@ class Launcher:
 
         if self._plugin_hosts:
             return
+        # Feedback the recipe asked to have on ROS, resolved first so that a
+        # wrong reference fails before any driver is added
+        host_publishes = self._resolve_feedbacks_on_ros()
         # Record what the recipe asked each plugin for before anything opens
         self._resolve_plugin_demand()
 
         # Launch plugin drivers in their own processes (if any). This is done before the feedback bus is started so that the bus is ready to accept connections when the drivers start.
         # Feedback those drivers read on ROS is published by the plugin's host
-        host_publishes: Dict[str, List[Tuple[str, str]]] = {}
         for plugin in self._plugins.values():
-            host_publishes[plugin.id] = self._launch_plugin_processes(plugin)
+            host_publishes[plugin.id].extend(self._launch_plugin_processes(plugin))
+        self._check_feedback_topic_clashes(host_publishes)
 
         # A socket feedback bus is needed when any component runs as its own
         # process; otherwise an in-process bus avoids the socket round trip.
