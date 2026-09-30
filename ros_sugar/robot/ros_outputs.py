@@ -23,8 +23,13 @@ from rclpy.logging import get_logger
 from .bus import LOGGER_NAME
 from .feedback import Feedback
 
-#: Publisher queue depth. Publishers are always RELIABLE, which matches
-#: reliable and best-effort subscribers alike.
+
+try:  # iron and later
+    from rclpy.exceptions import InvalidHandle
+except ImportError:  # humble
+    from rclpy.handle import InvalidHandle
+
+#: Publisher queue depth.
 QOS_DEPTH = 10
 
 #: Seconds to wait for the host's node before saying the outputs are stuck.
@@ -97,15 +102,22 @@ class FeedbackRosOutputs:
         _, topics = entry
         # The host has already stamped the message, before handing it to anyone
         for topic in topics:
+            # `close` may run on another thread while this one publishes, and
+            # empty the publishers under it
+            publisher = self._publishers.get((feedback.key, topic))
+            if publisher is None or self._given_up:
+                return
             try:
-                self._publishers[(feedback.key, topic)].publish(msg)
+                publisher.publish(msg)
             except Exception as e:
                 self._failed(
                     (feedback.key, topic),
                     f"Publishing feedback '{feedback.key}' on '{topic}' failed: {e}",
+                    e,
                 )
-        if feedback.publish_tf and self._tf_broadcaster is not None:
-            self._broadcast_tf(feedback, msg)
+        tf_broadcaster = self._tf_broadcaster
+        if feedback.publish_tf and tf_broadcaster is not None and not self._given_up:
+            self._broadcast_tf(feedback, msg, tf_broadcaster)
 
     def close(self) -> None:
         """Release the publishers. Nothing is published afterwards."""
@@ -177,7 +189,7 @@ class FeedbackRosOutputs:
 
             self._tf_broadcaster = TransformBroadcaster(self._node)
 
-    def _broadcast_tf(self, feedback: Feedback, msg: Any) -> None:
+    def _broadcast_tf(self, feedback: Feedback, msg: Any, broadcaster: Any) -> None:
         """Broadcast ``header.frame_id -> child_frame_id`` from the message's pose."""
         pose = getattr(getattr(msg, "pose", None), "pose", None)
         parent = getattr(getattr(msg, "header", None), "frame_id", "")
@@ -201,12 +213,13 @@ class FeedbackRosOutputs:
         transform.transform.translation.z = pose.position.z
         transform.transform.rotation = pose.orientation
         try:
-            self._tf_broadcaster.sendTransform(transform)
+            broadcaster.sendTransform(transform)
         except Exception as e:
             self._failed(
                 (feedback.key, "tf"),
                 f"Broadcasting '{parent}' -> '{child}' for feedback "
                 f"'{feedback.key}' failed: {e}",
+                e,
             )
 
     def _warn_if_stuck(self) -> None:
@@ -222,10 +235,17 @@ class FeedbackRosOutputs:
                 f"{NODE_WAIT_WARN_S:.0f}s so far. Has the launcher been brought up?"
             )
 
-    def _failed(self, what: Tuple[str, str], message: str) -> None:
-        """A publish failed. On teardown, when ROS shut down while the robot is
-        still streaming, stop quietly: that is not a fault worth reporting."""
-        if _node_is_shut_down(self._node):
+    def _failed(
+        self, what: Tuple[str, str], message: str, error: Exception
+    ) -> None:
+        """A publish failed. On teardown, while the robot is still streaming,
+        stop quietly: that is not a fault worth reporting.
+
+        Teardown is either ROS shut down, or the publisher destroyed under us.
+        The Monitor destroys its node, and every publisher on it, before it
+        shuts its context down, and before the launcher closes the host.
+        """
+        if isinstance(error, InvalidHandle) or _node_is_shut_down(self._node):
             self._given_up = True
             self._opened = False
             return
