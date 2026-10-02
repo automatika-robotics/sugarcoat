@@ -211,10 +211,13 @@ class ExternalProcessorType(Enum):
     External processor type:
     - MSG_PRE_PROCESSOR: Executes before publishing a ros msg
     - MSG_POST_PROCESSOR: Executes after receiving a ros msg in a callback
+    - FUNCTION: A function called by the component with keyword arguments,
+      not attached to a topic (e.g. a custom data processing function)
     """
 
     MSG_PRE_PROCESSOR = "MsgPreProcessor"
     MSG_POST_PROCESSOR = "MsgPostProcessor"
+    FUNCTION = "Function"
 
     @classmethod
     def values(cls):

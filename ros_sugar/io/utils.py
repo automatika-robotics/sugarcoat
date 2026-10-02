@@ -18,6 +18,8 @@ from nav_msgs.msg import Odometry
 import msgpack
 import msgpack_numpy as m_pack
 
+from ..config.base_config import ExternalProcessorType
+
 # patch msgpack for numpy arrays
 m_pack.patch()
 
@@ -718,7 +720,11 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
 
 
 def run_external_processor(
-    logger_name: str, topic_name: str, processor: Union[Callable, socket], output
+    logger_name: str,
+    topic_name: str,
+    processor: Union[Callable, socket],
+    output,
+    processor_type: ExternalProcessorType = ExternalProcessorType.MSG_POST_PROCESSOR,
 ) -> Any:
     """
     Execute external processing using a callable or a Unix socket.
@@ -738,8 +744,14 @@ def run_external_processor(
                       If it's a Unix socket, data will be sent and received over this socket.
     :type processor: Union[Callable, socket]
 
-    :param output: Variable length argument list to be passed to the external processor.
+    :param output: The output to be processed. For processors of type FUNCTION, a dictionary
+                   of the keyword arguments to call the processor with.
     :type output: Any
+
+    :param processor_type: Type of the processor, which sets how it is called. Message processors are
+                           called with the output (processor(output=output)) and processors of type
+                           FUNCTION with the keyword arguments in output (processor(**output)).
+    :type processor_type: ExternalProcessorType
 
     :return: The result of the external processing. This can vary depending on the type of processor used.
              For a callable, it's whatever the function returns.
@@ -749,12 +761,16 @@ def run_external_processor(
     :raises Exception: If an error occurs during the execution of the external processor or communication over the socket,
                        an exception is logged with an appropriate error message.
     """
+    kwargs = (
+        output
+        if processor_type == ExternalProcessorType.FUNCTION
+        else {"output": output}
+    )
     if isinstance(processor, Callable):
-        return processor(output=output)
+        return processor(**kwargs)
 
     try:
-        out_dict = {"output": output}
-        payload = msgpack.packb(out_dict)
+        payload = msgpack.packb(kwargs)
         if payload:
             processor.sendall(payload)
         else:
