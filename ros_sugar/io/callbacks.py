@@ -4,7 +4,6 @@ import os
 import array
 from abc import abstractmethod
 from typing import Any, Callable, Optional, Union, Dict, List
-from socket import socket
 import base64
 
 import cv2
@@ -19,6 +18,7 @@ from rclpy.subscription import Subscription
 from tf2_ros import TransformStamped
 
 from . import utils
+from .ipc import ExternalProcessorClient
 from .datatypes import (
     CameraIntrinsics,
     LaserScanData,
@@ -67,7 +67,9 @@ class GenericCallback:
         self._extra_callback: Optional[Callable] = None
         self._get_processed: bool = True  # utilized only if extra callback is set
         self._subscriber: Optional[Subscription] = None
-        self._post_processors: Optional[List[Union[Callable, socket]]] = None
+        self._post_processors: Optional[
+            List[Union[Callable, ExternalProcessorClient]]
+        ] = None
 
     @property
     def frame_id(self) -> Optional[str]:
@@ -98,7 +100,8 @@ class GenericCallback:
         self._transformation = transform
 
     def set_transform_provider(
-        self, provider: Optional[Callable[["GenericCallback"], Optional[TransformStamped]]]
+        self,
+        provider: Optional[Callable[["GenericCallback"], Optional[TransformStamped]]],
     ) -> None:
         """Attach a resolver called on every message to refresh `transformation`.
 
@@ -165,11 +168,13 @@ class GenericCallback:
                 # Get output would have to be called by the calling method
                 self._extra_callback(msg=msg, topic=self.input_topic)
 
-    def add_post_processors(self, processors: List[Union[Callable, socket]]):
+    def add_post_processors(
+        self, processors: List[Union[Callable, ExternalProcessorClient]]
+    ):
         """Add a post processor for callback message
 
-        :param method: Post processor methods or sockets
-        :type method: List[Union[Callable, socket]]
+        :param method: Post processor methods or clients calling them in the launcher process
+        :type method: List[Union[Callable, ExternalProcessorClient]]
         """
         self._post_processors = processors
 
@@ -539,7 +544,10 @@ class OdomCallback(GenericCallback):
         :rtype:     Any
         """
         output = self.get_output()
-        return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
+        return {
+            "frame_id": self.frame_id,
+            "data": output.tolist() if output is not None else None,
+        }
 
     def _process(self, msg: Odometry) -> np.ndarray:
         """Takes Odometry ROS object and converts it to a numpy array with [x, y, z, heading, speed]
@@ -593,7 +601,7 @@ class PointCallback(GenericCallback):
     def __init__(
         self,
         input_topic,
-        node_name: str = '',
+        node_name: str = "",
     ) -> None:
         super().__init__(input_topic, node_name)
 
@@ -758,7 +766,7 @@ class PointStampedCallback(GenericCallback):
     def __init__(
         self,
         input_topic,
-        node_name: str = '',
+        node_name: str = "",
     ) -> None:
         super().__init__(input_topic, node_name)
 
@@ -782,7 +790,10 @@ class PointStampedCallback(GenericCallback):
         :rtype:     Any
         """
         output = self.get_output()
-        return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
+        return {
+            "frame_id": self.frame_id,
+            "data": output.tolist() if output is not None else None,
+        }
 
 
 class PoseCallback(GenericCallback):
@@ -793,7 +804,7 @@ class PoseCallback(GenericCallback):
     def __init__(
         self,
         input_topic,
-        node_name: str = '',
+        node_name: str = "",
     ) -> None:
         super().__init__(input_topic, node_name)
 
@@ -878,7 +889,7 @@ class PoseStampedCallback(PoseCallback):
     def __init__(
         self,
         input_topic,
-        node_name: str = '',
+        node_name: str = "",
     ) -> None:
         super().__init__(input_topic, node_name)
 
@@ -908,7 +919,10 @@ class PoseStampedCallback(PoseCallback):
         :rtype:     Any
         """
         output = self.get_output()
-        return {"frame_id": self.frame_id, "data": output.tolist() if output is not None else None}
+        return {
+            "frame_id": self.frame_id,
+            "data": output.tolist() if output is not None else None,
+        }
 
 
 class PoseArrayCallback(GenericCallback):
@@ -935,17 +949,15 @@ class PoseArrayCallback(GenericCallback):
         if not self.msg:
             return None
 
-        return np.array(
+        return np.array([
             [
-                [
-                    pose.position.x,
-                    pose.position.y,
-                    pose.position.z,
-                    2 * np.arctan2(pose.orientation.z, pose.orientation.w),
-                ]
-                for pose in self.msg.poses
+                pose.position.x,
+                pose.position.y,
+                pose.position.z,
+                2 * np.arctan2(pose.orientation.z, pose.orientation.w),
             ]
-        )
+            for pose in self.msg.poses
+        ])
 
     def _get_ui_content(self, **_) -> Dict:
         """
@@ -1018,16 +1030,14 @@ class PathCallback(GenericCallback):
         quat = transform.transform.rotation
         rotation = [quat.x, quat.y, quat.z, quat.w]
 
-        positions = (
-            np.array(
-                [
-                    [pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]
-                    for pose in msg.poses
-                ],
-                dtype=np.float32,
-            ).reshape(-1, 3)
-            @ _rotation_matrix_from_quaternion(rotation).T
-            + np.array([trans.x, trans.y, trans.z], dtype=np.float32)
+        positions = np.array(
+            [
+                [pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]
+                for pose in msg.poses
+            ],
+            dtype=np.float32,
+        ).reshape(-1, 3) @ _rotation_matrix_from_quaternion(rotation).T + np.array(
+            [trans.x, trans.y, trans.z], dtype=np.float32
         )
 
         transformed = Path()
@@ -1106,7 +1116,7 @@ class OccupancyGridCallback(GenericCallback):
     def __init__(
         self,
         input_topic,
-        node_name: str = '',
+        node_name: str = "",
         to_numpy: bool = True,
         twoD_to_threeD_conversion_height: float = 0.01,
         transformation: Optional[TransformStamped] = None,
@@ -1472,8 +1482,7 @@ class PointCloudCallback(GenericCallback):
             width=self.msg.width,
             is_bigendian=self.msg.is_bigendian,
             frame_id=self.msg.header.frame_id,
-            timestamp=self.msg.header.stamp.sec
-            + self.msg.header.stamp.nanosec * 1e-9,
+            timestamp=self.msg.header.stamp.sec + self.msg.header.stamp.nanosec * 1e-9,
         )
 
         for msg_field in self.msg.fields:
