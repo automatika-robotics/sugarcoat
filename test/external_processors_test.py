@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 
 from ros_sugar import Launcher
-from ros_sugar.config.base_config import ExternalProcessorType
+from ros_sugar.config import ExternalProcessorType
 from ros_sugar.core.component import BaseComponent
 from ros_sugar.io.ipc import ExternalProcessorClient, ExternalProcessorError
 from ros_sugar.io.utils import run_external_processor

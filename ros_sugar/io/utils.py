@@ -17,7 +17,7 @@ from nav_msgs.msg import Odometry
 import msgpack
 import msgpack_numpy as m_pack
 
-from ..config.base_config import ExternalProcessorType
+from ..config import ExternalProcessorType
 from .ipc import ExternalProcessorClient, ExternalProcessorError
 
 # patch msgpack for numpy arrays
