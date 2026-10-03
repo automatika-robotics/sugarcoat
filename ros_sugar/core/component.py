@@ -1184,6 +1184,7 @@ class BaseComponent(lifecycle.Node):
         afterwards would crash the process instead of raising
         """
         destroy_action_entities(self)
+        self._destroy_external_processors()
         super().destroy_node()
 
     def config_from_file(self, config_file: str):

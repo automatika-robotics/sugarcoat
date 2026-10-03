@@ -14,7 +14,8 @@ import rclpy
 from rclpy.action import ActionClient, ActionServer
 from tf2_msgs.action import LookupTransform
 
-from ros_sugar.config import ComponentRunType
+from ros_sugar import Launcher
+from ros_sugar.config import ComponentRunType, ExternalProcessorType
 from ros_sugar.core.component import BaseComponent
 from ros_sugar.utils import destroy_action_entities
 
@@ -101,6 +102,34 @@ def test_a_component_deactivated_before_it_is_destroyed(context, observer):
     component.destroy_node()
 
     assert not serves(observer, send_goal)
+
+
+def add(a, b):
+    return a + b
+
+
+def test_a_destroyed_component_closes_its_external_processor_connections(context):
+    """In its own process, a component calls its external processors over
+    connections to the launcher. Destroying it closes them, so the launcher stops
+    serving it"""
+    component = CountingComponent(component_name="teardown_processors")
+    component._external_processors = {"add": ([add], ExternalProcessorType.FUNCTION)}
+    launcher = Launcher()
+    launcher._setup_external_processors(component)
+    component._external_processors_json = component._external_processors_json
+    (client,), _ = component._external_processors["add"]
+    assert client.call({"a": 1, "b": 2}) == 3
+    server = launcher._processor_server
+    component.rclpy_init_node(context=context)
+
+    try:
+        component.destroy_node()
+
+        assert eventually(lambda: not server._conns), (
+            "the launcher still serves the destroyed component"
+        )
+    finally:
+        server.close()
 
 
 def test_action_servers_and_clients_are_destroyed_once(context):
