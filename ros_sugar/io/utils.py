@@ -8,7 +8,6 @@ import array
 
 import numpy as np
 import cv2
-from socket import socket
 
 from rclpy.logging import get_logger
 from rosidl_runtime_py.convert import message_to_ordereddict
@@ -19,6 +18,7 @@ import msgpack
 import msgpack_numpy as m_pack
 
 from ..config.base_config import ExternalProcessorType
+from .ipc import ExternalProcessorClient, ExternalProcessorError
 
 # patch msgpack for numpy arrays
 m_pack.patch()
@@ -722,16 +722,13 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
 def run_external_processor(
     logger_name: str,
     topic_name: str,
-    processor: Union[Callable, socket],
+    processor: Union[Callable, ExternalProcessorClient],
     output,
     processor_type: ExternalProcessorType = ExternalProcessorType.MSG_POST_PROCESSOR,
+    timeout: Optional[float] = None,
 ) -> Any:
     """
-    Execute external processing using a callable or a Unix socket.
-
-    This utility function is designed to handle two scenarios:
-    1. When the processor is a callable (e.g., a function), it invokes the callable with the provided `*output` arguments.
-    2. When the processor is a Unix socket, it sends the `*output` data packed in msgpack format to the connected process and waits for a response.
+    Execute an external processor, which is either a callable or a client calling it in the launcher process.
 
     :param logger_name: The name of the logger to use for logging messages.
     :type logger_name: str
@@ -739,10 +736,9 @@ def run_external_processor(
     :param topic_name: A descriptive name for the processing topic, used in log messages.
     :type topic_name: str
 
-    :param processor: The external processor, which can be either a callable or a Unix socket.
-                      If it's a callable, it will be directly invoked with `*output`.
-                      If it's a Unix socket, data will be sent and received over this socket.
-    :type processor: Union[Callable, socket]
+    :param processor: The external processor. A callable is called directly. A client calls the processor
+                      in the launcher process (multiprocess launch).
+    :type processor: Union[Callable, ExternalProcessorClient]
 
     :param output: The output to be processed. For processors of type FUNCTION, a dictionary
                    of the keyword arguments to call the processor with.
@@ -753,13 +749,15 @@ def run_external_processor(
                            FUNCTION with the keyword arguments in output (processor(**output)).
     :type processor_type: ExternalProcessorType
 
-    :return: The result of the external processing. This can vary depending on the type of processor used.
-             For a callable, it's whatever the function returns.
-             For a Unix socket, it's the unpacked response received from the connected process.
+    :param timeout: Time (s) to wait for a processor in the launcher process to reply. Defaults to
+                    the component's external_processor_timeout.
+    :type timeout: Optional[float]
+
+    :return: The result of the external processing. For message processors in the launcher process,
+             None if the call fails.
     :rtype: Any
 
-    :raises Exception: If an error occurs during the execution of the external processor or communication over the socket,
-                       an exception is logged with an appropriate error message.
+    :raises ExternalProcessorError: If a processor of type FUNCTION in the launcher process fails.
     """
     kwargs = (
         output
@@ -770,17 +768,10 @@ def run_external_processor(
         return processor(**kwargs)
 
     try:
-        payload = msgpack.packb(kwargs)
-        if payload:
-            processor.sendall(payload)
-        else:
-            get_logger(logger_name).error(
-                f"Could not pack arguments for external processor in external function provided for {topic_name}"
-            )
-        result_b = processor.recv(1024)
-        result = msgpack.unpackb(result_b)
-        return result
-    except Exception as e:
+        return processor.call(kwargs, timeout=timeout)
+    except ExternalProcessorError as e:
+        if processor_type == ExternalProcessorType.FUNCTION:
+            raise
         get_logger(logger_name).error(
             f"Error in external processor for {topic_name}: {e}"
         )

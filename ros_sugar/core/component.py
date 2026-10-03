@@ -2,8 +2,6 @@
 
 import importlib
 import json
-import os
-import socket
 import threading
 import time
 from contextlib import contextmanager
@@ -52,6 +50,7 @@ from .action import Action
 from .event import Event, EventBlackboardEntry
 from .action import bind_monitored_actions
 from ..io.callbacks import GenericCallback
+from ..io.ipc import ExternalProcessorClient, processor_id
 from ..config.base_attrs import explicit_fields
 from ..config.base_config import (
     BaseAttrs,
@@ -174,8 +173,11 @@ class BaseComponent(lifecycle.Node):
         self.action_type = main_action_type
         self.service_type = main_srv_type
         self._external_processors: Dict[
-            str, Tuple[List[Union[Callable, socket.socket]], ExternalProcessorType]
+            str,
+            Tuple[List[Union[Callable, ExternalProcessorClient]], ExternalProcessorType],
         ] = {}
+        # Socket of the launcher's external processor server, set by the launcher
+        self._external_processors_endpoint: Optional[str] = None
 
         self.__events: Optional[List[Event]] = None
         self.__actions: Optional[List[List[Action]]] = None
@@ -2123,58 +2125,55 @@ class BaseComponent(lifecycle.Node):
 
     @property
     def _external_processors_json(self) -> Union[str, bytes]:
-        """Getter of serialized external processors
+        """Getter of serialized external processors, with the socket of the
+        launcher's external processor server that serves them
 
         :return: Serialized external processors definition
         :rtype: Union[str, bytes]
         """
         return json.dumps({
-            topic_name: ([p.__name__ for p in processors], str(processor_type))  # type: ignore
-            for topic_name, (
-                processors,
-                processor_type,
-            ) in self._external_processors.items()
+            "endpoint": self._external_processors_endpoint,
+            "processors": {
+                key: ([p.__name__ for p in processors], str(processor_type))  # type: ignore
+                for key, (
+                    processors,
+                    processor_type,
+                ) in self._external_processors.items()
+            },
         })
 
     @_external_processors_json.setter
     def _external_processors_json(self, processors_serialized: Union[str, bytes]):
-        """Setter of external processors from JSON serialized processors
+        """Setter of external processors from JSON serialized processors. Each
+        processor is replaced by a client calling it in the launcher process
 
         :param processors_serialized: Serialized Processors Dict
         :type processors_serialized: Union[str, bytes]
         """
-        loaded_processors = json.loads(processors_serialized)
+        loaded = json.loads(processors_serialized)
+        endpoint = loaded["endpoint"]
 
-        # reconstruct the dictionary, validating the processor type string
         self._external_processors = {}
 
-        for key, processor_data in loaded_processors.items():
-            # get processor data and type
-            func_names = processor_data[0]
-            proc_type_str = processor_data[1]
-
-            # Validate string back to Enum-compatible string
-            valid_proc_type = ExternalProcessorType(proc_type_str)
-
-            # Initialize the list with function names
-            self._external_processors[key] = (func_names, valid_proc_type)
-
-            # Create sockets out of function names and connect them
-            current_processors_list = self._external_processors[key][0]
-
-            for idx, func_name in enumerate(current_processors_list):
-                sock_file = f"/tmp/{self.node_name}_{key}_{func_name}.socket"
-                if not os.path.exists(sock_file):
+        for key, (func_names, proc_type_str) in loaded["processors"].items():
+            clients = []
+            for idx in range(len(func_names)):
+                client = ExternalProcessorClient(
+                    endpoint,
+                    processor_id(self.node_name, key, idx),
+                    timeout=self.config.external_processor_timeout,
+                )
+                try:
+                    client.connect()
+                except OSError as e:
                     raise RuntimeError(
-                        f"File {sock_file} doesn't exists. The external processors have not been setup properly. Exiting .. "
-                    )
-
-                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                sock.settimeout(1)  # timeout set to 1s
-                sock.connect(sock_file)
-                # The processessing functions are a list which is the first element of the tuple
-                # stored in _external_processors dict
-                processor_data[0][idx] = sock
+                        f"Could not connect to the external processors at {endpoint}. The external processors have not been setup properly. Exiting .. "
+                    ) from e
+                clients.append(client)
+            self._external_processors[key] = (
+                clients,
+                ExternalProcessorType(proc_type_str),
+            )
 
     @property
     def _algorithms_json(self) -> Union[str, bytes, bytearray]:
@@ -2906,7 +2905,7 @@ class BaseComponent(lifecycle.Node):
         if len(self._external_processors):
             for processors, _ in self._external_processors.values():
                 for processor in processors:
-                    if isinstance(processor, socket.socket):
+                    if isinstance(processor, ExternalProcessorClient):
                         processor.close()
 
     # MAIN

@@ -310,6 +310,10 @@ class BaseComponentConfig(BaseConfig):
 
     :param frames: Robot coordinate frames incoming data is transformed into.
     :type frames: RobotFrames
+
+    :param external_processor_timeout: Time (in seconds) to wait for an external processor to reply,
+        when it runs in the launcher process (multiprocess launch).
+    :type external_processor_timeout: float
     """
 
     _use_without_launcher: bool = field(default=False, init=False)
@@ -328,6 +332,10 @@ class BaseComponentConfig(BaseConfig):
 
     rclpy_log_level: str = field(
         default='warn', converter=_convert_logging_severity_to_str
+    )
+
+    external_processor_timeout: float = field(
+        default=1.0, validator=base_validators.in_range(min_value=1e-3, max_value=1e9)
     )
 
     _run_type: ComponentRunType = field(

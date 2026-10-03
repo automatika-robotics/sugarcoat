@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import inspect
 import sys
-import socket
 import json
 from typing import (
     Awaitable,
@@ -20,12 +19,9 @@ from typing import (
     Mapping,
     cast,
 )
-from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from shutil import which
 
-import msgpack
-import msgpack_numpy as m_pack
 import launch
 import rclpy
 from rclpy.signals import SignalHandlerOptions
@@ -58,6 +54,7 @@ from .system_info import (
     serialize_fallbacks,
 )
 from ..io import Topic
+from ..io.ipc import ExternalProcessorServer, processor_id
 from ..io.supported_types import _additional_types
 from ..core.action import LogInfo
 from ..actions import publish_message
@@ -95,9 +92,6 @@ if __installed_distro in ["humble", "galactic", "foxy"]:
     from ._lifecycle_transition import LifecycleTransition
 else:
     from launch_ros.actions import LifecycleTransition
-
-# patch msgpack for numpy arrays
-m_pack.patch()
 
 
 # Return codes that indicate the process was terminated by a signal rather
@@ -261,8 +255,8 @@ class Launcher:
         self._components_events_actions: Dict[str, List[Action]] = {}
         self.__events_names: List[str] = []
 
-        # Thread pool for external processors
-        self._thread_pool: Union[ThreadPoolExecutor, None] = None
+        # Server of the external processors of components in their own process
+        self._processor_server: Optional[ExternalProcessorServer] = None
 
         # Process-level crash recovery state
         self._process_fail_max_retries: Optional[int] = None
@@ -1987,50 +1981,21 @@ class Launcher:
 
         self._launch_group.append(ui_node)
 
-    def __listen_for_external_processing(self, sock: socket.socket, func: Callable):
-        # Block to accept connections
-        conn, _ = sock.accept()
-        logger.info(f"EXTERNAL PROCESSOR CONNECTED ON {conn}")
-        while True:
-            # TODO: Make the buffer size a parameter
-            # Block to receive data
-
-            try:
-                data = conn.recv(1024)
-                if not data:
-                    continue
-                # TODO: Retrieve errors
-                data = msgpack.unpackb(data)
-                result = func(**data)
-                logger.debug(f"Got result from external processor: {result}")
-                result = msgpack.packb(result)
-                conn.sendall(result)
-            except Exception as e:
-                logger.error(f"Error while running external processor: {e}")
-
     def _setup_external_processors(self, component: BaseComponent) -> None:
+        """Serve the component's external processors to its own process"""
         if not component._external_processors:
             return
 
-        if not self._thread_pool:
-            self._thread_pool = ThreadPoolExecutor()
+        if not self._processor_server:
+            self._processor_server = ExternalProcessorServer()
+            self._processor_server.start()
 
-        for key, processor_data in component._external_processors.items():
-            for processor in processor_data[0]:
-                sock_file = (
-                    f"/tmp/{component.node_name}_{key}_{processor.__name__}.socket"  # type: ignore
+        for key, (processors, _) in component._external_processors.items():
+            for idx, processor in enumerate(processors):
+                self._processor_server.register(
+                    processor_id(component.node_name, key, idx), processor
                 )
-                if os.path.exists(sock_file):
-                    os.remove(sock_file)
-
-                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                s.bind(sock_file)
-                s.listen(0)
-                self._thread_pool.submit(
-                    self.__listen_for_external_processing,
-                    s,
-                    processor,  # type: ignore
-                )
+        component._external_processors_endpoint = self._processor_server.endpoint
 
     def _build_component_launch_action(
         self,
@@ -2180,8 +2145,8 @@ class Launcher:
         :param ros_log_level: Log level for ROS2
         :type ros_log_level: str, default to "info"
         """
-        component._update_cmd_args_list()
         self._setup_external_processors(component)
+        component._update_cmd_args_list()
         new_node = self._build_component_launch_action(
             component, pkg_name, executable_name
         )
@@ -2609,9 +2574,10 @@ class Launcher:
             if self._plugin_shm is not None:
                 self._plugin_shm.close()
                 self._plugin_shm = None
-
-            if self._thread_pool:
-                self._thread_pool.shutdown()
+            # Close external processor server if one was created
+            if self._processor_server:
+                self._processor_server.close()
+                self._processor_server = None
 
         # Exit with the non-zero code from launch
         if return_code:

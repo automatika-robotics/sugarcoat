@@ -11,12 +11,13 @@ The bus is symmetric. Either side may ``publish`` or ``subscribe``.
 
 import os
 import socket
-import struct
 import threading
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 
 from rclpy.logging import get_logger
+
+from ..io.ipc import TIMEOUT, encode_frame, read_frame
 
 # Frame ops
 _OP_SUB = 1
@@ -131,63 +132,6 @@ class InProcessFeedbackBus(FeedbackBus):
             self._subs.clear()
 
 
-# Sentinel returned by _read_frame when the socket is merely idle (a recv
-# timeout with no bytes buffered) - distinct from None, which means EOF/error.
-_TIMEOUT = object()
-
-
-def _recv_exact(sock: socket.socket, n: int, allow_idle_timeout: bool = False):
-    """Read exactly ``n`` bytes from ``sock``.
-
-    Returns the bytes on success, ``None`` on EOF/error. When
-    ``allow_idle_timeout`` is set and a recv times out before any bytes have
-    been buffered, returns `_TIMEOUT` so the caller can keep waiting
-    rather than treat the idle socket as closed. A mid-frame timeout always
-    keeps waiting.
-    """
-    buf = bytearray()
-    while len(buf) < n:
-        try:
-            chunk = sock.recv(n - len(buf))
-        except socket.timeout:
-            if allow_idle_timeout and not buf:
-                return _TIMEOUT
-            continue
-        except OSError:
-            return None
-        if not chunk:
-            return None
-        buf.extend(chunk)
-    return bytes(buf)
-
-
-def _encode_frame(op: int, channel: str, data: bytes) -> bytes:
-    ch = channel.encode("utf-8")
-    return struct.pack("!BH", op, len(ch)) + ch + struct.pack("!I", len(data)) + data
-
-
-def _read_frame(sock: socket.socket):
-    """Read one framed message. Returns ``(op, channel, data)``, ``None`` on
-    EOF/error, or `_TIMEOUT` when the socket is idle."""
-    header = _recv_exact(sock, 3, allow_idle_timeout=True)
-    if header is _TIMEOUT:
-        return _TIMEOUT
-    if header is None:
-        return None
-    op, ch_len = struct.unpack("!BH", header)
-    ch = _recv_exact(sock, ch_len)
-    if ch is None:
-        return None
-    data_len_raw = _recv_exact(sock, 4)
-    if data_len_raw is None:
-        return None
-    (data_len,) = struct.unpack("!I", data_len_raw)
-    data = _recv_exact(sock, data_len) if data_len else b""
-    if data is None:
-        return None
-    return op, ch.decode("utf-8"), data
-
-
 class SocketFeedbackBus(FeedbackBus):
     """Local abstract-namespace ``AF_UNIX`` fan-out - used for multiprocess launch.
 
@@ -257,8 +201,8 @@ class SocketFeedbackBus(FeedbackBus):
 
     def _server_conn_loop(self, conn: socket.socket) -> None:
         while not self._stop.is_set():
-            frame = _read_frame(conn)
-            if frame is _TIMEOUT:
+            frame = read_frame(conn)
+            if frame is TIMEOUT:
                 continue
             if frame is None:
                 break
@@ -300,7 +244,7 @@ class SocketFeedbackBus(FeedbackBus):
                 get_logger(LOGGER_NAME).error(
                     f"Feedback handler for '{channel}' raised: {e}"
                 )
-        frame = _encode_frame(_OP_PUB, channel, data)
+        frame = encode_frame(_OP_PUB, channel, data)
         for conn, send_lock in targets:
             try:
                 with send_lock:
@@ -325,8 +269,8 @@ class SocketFeedbackBus(FeedbackBus):
 
     def _client_recv_loop(self) -> None:
         while not self._stop.is_set():
-            frame = _read_frame(self._client_sock)
-            if frame is _TIMEOUT:
+            frame = read_frame(self._client_sock)
+            if frame is TIMEOUT:
                 continue
             if frame is None:
                 break
@@ -352,7 +296,7 @@ class SocketFeedbackBus(FeedbackBus):
                 raise RuntimeError("SocketFeedbackBus not connected")
             try:
                 with self._client_send_lock:
-                    self._client_sock.sendall(_encode_frame(_OP_PUB, channel, data))
+                    self._client_sock.sendall(encode_frame(_OP_PUB, channel, data))
             except OSError as e:
                 get_logger(LOGGER_NAME).error(f"Feedback bus publish failed: {e}")
 
@@ -363,7 +307,7 @@ class SocketFeedbackBus(FeedbackBus):
         if not self._is_server and self._client_sock is not None:
             try:
                 with self._client_send_lock:
-                    self._client_sock.sendall(_encode_frame(_OP_SUB, channel, b""))
+                    self._client_sock.sendall(encode_frame(_OP_SUB, channel, b""))
             except OSError as e:
                 get_logger(LOGGER_NAME).error(f"Feedback bus subscribe failed: {e}")
 
