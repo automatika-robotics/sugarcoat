@@ -49,6 +49,15 @@ class ProcessSpec(BaseAttrs):
         gives a node that comes up cleanly and then never publishes, which
         reads as a crash and sends people looking in the wrong place. Detect
         the running instance here and return ``False``.
+    :param inputs: Plugin feedbacks this node subscribes to, as
+        ``{feedback_key: topic}`` where the topic is the name the node itself
+        subscribes on. The launcher delivers each one there: a feedback decoded
+        from a non-ROS transport is published on that topic by the plugin host,
+        and one already carried on a ROS topic is remapped onto it.
+
+        This is what lets a plugin start a stock ROS node over its own
+        telemetry -- a ``robot_localization`` EKF over the robot's odometry --
+        without the recipe having to put that telemetry on ROS first.
     """
 
     package: str = field()
@@ -61,6 +70,7 @@ class ProcessSpec(BaseAttrs):
     respawn: bool = field(default=True)
     respawn_delay: float = field(default=2.0)
     precondition: Optional[Callable[[], bool]] = field(default=None)
+    inputs: Optional[Dict[str, str]] = field(default=None)
 
     @property
     def label(self) -> str:
@@ -70,8 +80,8 @@ class ProcessSpec(BaseAttrs):
     def launch_kwargs(self) -> Dict[str, Any]:
         """This spec as keyword arguments for `Launcher.add_ros_node`.
 
-        ``precondition`` is deliberately absent: it is the launcher's business,
-        not the launch system's.
+        ``precondition`` and ``inputs`` are deliberately absent: they are the
+        launcher's business, not the launch system's.
         """
         return {
             "package": self.package,

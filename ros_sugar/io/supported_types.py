@@ -48,6 +48,7 @@ from std_msgs.msg import (
 
 from . import callbacks
 from .datatypes import CameraIntrinsics
+from .utils import BYTES_KEY, ROS_MSG_KEY, get_ros_msg_class
 from .utils import _convert_ros_scalar, _split_ros_field_type
 from .utils import bytes_to_array, image_encoding, numpy_to_multiarray, stamp_header
 
@@ -208,6 +209,54 @@ def ros_msg_to_str(msg_object: Any) -> str:
     return lines
 
 
+def validate_msg_fields(
+    msg_class: type, data_dict: Dict[str, Any], where: str = "the message"
+) -> None:
+    """Check that every key in a dict names a real field of a ROS message.
+
+    :param msg_class: The ROS message class the dict is meant to fill
+    :param data_dict: The values, nested the same way the message is
+    :param where: What to call the message in the error, for a caller who
+        cannot see which nested field is being checked
+    :raises ValueError: Naming the offending key, where it is (e.g. 'goals[1]'),
+        and the fields that do exist
+    """
+    _validate_fields(msg_class, data_dict, where, path="")
+
+
+def _validate_fields(
+    msg_class: type, data_dict: Dict[str, Any], where: str, path: str
+) -> None:
+    """validate_msg_fields, for the message at `path` inside the checked one"""
+    fields = msg_class.get_fields_and_field_types()
+    for field_name, field_value in data_dict.items():
+        if field_name not in fields:
+            owner = f"'{path}'" if path else where
+            raise ValueError(
+                f"{owner} has no field '{field_name}'. It has: "
+                f"{', '.join(sorted(fields))}"
+            )
+        base_type, _ = _split_ros_field_type(fields[field_name])
+        if "/" not in base_type or not isinstance(field_value, (dict, list)):
+            continue
+        module_str_name, msg_str_name = base_type.split("/")
+        try:
+            nested_class = getattr(
+                importlib.import_module(f"{module_str_name}.msg"), msg_str_name
+            )
+        except (ImportError, AttributeError):
+            # Not resolvable here; set_ros_msg_from_dict will report it
+            continue
+        field_path = f"{path}.{field_name}" if path else field_name
+        if isinstance(field_value, dict):
+            _validate_fields(nested_class, field_value, where, field_path)
+            continue
+        # A list of messages. Each item is checked
+        for index, item in enumerate(field_value):
+            if isinstance(item, dict):
+                _validate_fields(nested_class, item, where, f"{field_path}[{index}]")
+
+
 def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
     """
     Creates a ROS message object from a dictionary structure.
@@ -217,8 +266,11 @@ def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
     :raises ValueError: If a value cannot be converted to its declared field type.
     :return: An instance of msg_class populated with data
     """
-    # Instantiate the message
-    msg = msg_class()
+    # Ask setters to check each field's type and range
+    try:
+        msg = msg_class(check_fields=True)
+    except AssertionError:
+        msg = msg_class()  # for Humble which doesnt have the argument and always checks
 
     # Get the type definitions
     msg_fields_types = msg_class.get_fields_and_field_types()
@@ -283,6 +335,33 @@ def set_ros_msg_from_dict(msg_class: type, data_dict: Dict[str, Any]) -> Any:
             ) from e
 
     return msg
+
+
+def from_jsonable(value: Any) -> Any:
+    """Rebuild what `utils.to_jsonable` was given.
+
+    Lives here rather than beside its other half because rebuilding a message is
+    `set_ros_msg_from_dict`; the encoding side needs nothing from this module.
+
+    Anything without one of the markers is returned as it arrived, so a plain
+    JSON payload, which is what most callers send, passes through untouched.
+
+    :param value: A decoded JSON value
+    :raises ValueError: If a marked message names a type that cannot be found,
+        or carries fields that do not fit it
+    :rtype: Any
+    """
+    if isinstance(value, dict):
+        if ROS_MSG_KEY in value:
+            return set_ros_msg_from_dict(
+                get_ros_msg_class(value[ROS_MSG_KEY]), value.get("fields") or {}
+            )
+        if BYTES_KEY in value:
+            return base64.b64decode(value[BYTES_KEY])
+        return {key: from_jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [from_jsonable(item) for item in value]
+    return value
 
 
 # SUPPORTED TYPES
@@ -604,7 +683,8 @@ class Audio(SupportedType):
             output = base64.b64decode(output)
 
         msg = ByteMultiArray()
-        msg.data = [bytes([b]) for b in output]
+        # One bytes object per byte, as byte[] needs
+        msg.data = memoryview(output).cast("c").tolist()
         return msg
 
 

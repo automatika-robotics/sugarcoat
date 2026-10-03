@@ -1,6 +1,10 @@
 import re
 
 
+class GoalInProgressError(RuntimeError):
+    """A goal was sent while the action's previous goal is still running"""
+
+
 def parse_type(type_str):
     """Helper function to parse the type string."""
     if "Optional" in type_str:

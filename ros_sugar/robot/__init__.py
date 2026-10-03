@@ -13,7 +13,7 @@ from .shm import PluginShmManager
 from .command import CommandSpec, RobotCommand
 from .feedback import Feedback, FeedbackSpec
 from .mapping import NativeMapping, VendorMapping
-from .mount import Mount
+from .mount import Mount, pose_relative_to
 from .process import ProcessSpec
 from .plugin import (
     AmbiguousPluginEntryError,
@@ -41,6 +41,7 @@ from .types import create_supported_type
 __all__ = [
     # plugin
     "Mount",
+    "pose_relative_to",
     "Plugin",
     "PluginRole",
     "RobotPlugin",

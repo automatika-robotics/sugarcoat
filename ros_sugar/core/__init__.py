@@ -5,7 +5,19 @@ from .component import BaseComponent
 from .status import Status
 from .monitor import Monitor
 from .event import Event
-from .action import Action
+from .action import Action, ActionOutcome, ActionServerGoal
+from .routine import Routine, RoutineStatus
+from ._action_registry import (
+    COMPONENT_ACTION_SERVER,
+    COMPONENT_METHOD,
+    COMPONENT_SERVICE,
+    MONITOR_METHOD,
+    MONITOR_OWNER,
+    PLUGIN_ACTION,
+    RegisteredAction,
+    RegisteredEvent,
+    SystemActionRegistry,
+)
 
 __all__ = [
     "BaseComponent",
@@ -15,4 +27,17 @@ __all__ = [
     "Monitor",
     "Event",
     "Action",
+    "ActionOutcome",
+    "ActionServerGoal",
+    "Routine",
+    "RoutineStatus",
+    "SystemActionRegistry",
+    "RegisteredAction",
+    "RegisteredEvent",
+    "COMPONENT_ACTION_SERVER",
+    "COMPONENT_METHOD",
+    "COMPONENT_SERVICE",
+    "MONITOR_METHOD",
+    "MONITOR_OWNER",
+    "PLUGIN_ACTION",
 ]

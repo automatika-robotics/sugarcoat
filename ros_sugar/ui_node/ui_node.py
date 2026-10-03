@@ -1,32 +1,40 @@
-from typing import Dict, Optional, Sequence, Any, Callable, Union, Tuple, List
-import os
-from attr import define, field, Factory
-import json
 import importlib
+import json
+import os
+import time
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-from ..config.base_attrs import BaseAttrs
-from ..config.base_validators import in_range
-from ..core.component import BaseComponent, BaseComponentConfig
+from attr import Factory, define, field
+from automatika_ros_sugar.srv import ChangeParameters, ExecuteMethod
+from rclpy.logging import get_logger
+from rclpy.qos import DurabilityPolicy
+from std_msgs.msg import String
+
 from .. import base_clients
-from ..io.topic import Topic
 from ..base_clients import (
-    ServiceClientHandler,
+    ActionClientConfig,
     ActionClientHandler,
     ServiceClientConfig,
-    ActionClientConfig,
+    ServiceClientHandler,
 )
+from ..config.base_attrs import BaseAttrs
+from ..config.base_validators import in_range
+from ..config.base_config import QoSConfig
+from ..core.component import BaseComponent, BaseComponentConfig
+from ..core.monitor import Monitor
 from ..io import supported_types
-from automatika_ros_sugar.srv import ChangeParameters
+from ..io.topic import Topic
+from .utils import GoalInProgressError
 
-from rclpy.logging import get_logger
+#: What the UI can ask of a routine, each a Monitor method '<command>_routine'
+ROUTINE_COMMANDS = ("start", "pause", "resume", "abort")
 
 
 @define
 class UINodeConfig(BaseComponentConfig):
     components: Dict[str, Dict] = field(default=Factory(dict))
     port: int = field(default=5001)
-    ssl_keyfile: str = field(default="key.pem")
-    ssl_certificate: str = field(default="cert.pem")
+    secure: bool = field(default=True)  # HTTPS with a certificate
     hide_settings: bool = field(default=False)
     # Serve the browser front-end alongside the API
     serve_browser: bool = field(default=True)
@@ -39,6 +47,8 @@ class UINodeConfig(BaseComponentConfig):
     api_max_stream_rate: float = field(
         default=30.0, validator=in_range(min_value=1e-3, max_value=1e3)
     )
+    # Names of the routines shown in the UI, followed on their state topics
+    routines: List[str] = field(default=Factory(list))
 
 
 class UINode(BaseComponent):
@@ -100,6 +110,12 @@ class UINode(BaseComponent):
         # fired on each received message (used to push updates to clients).
         self._output_listeners: Dict[str, set] = {}
 
+        # Routines: the latest state of each, when it arrived, and who to tell
+        self._routine_states: Dict[str, Tuple[Dict, float]] = {}
+        self._routine_listeners: Dict[str, set] = {}
+        self._routine_subscriptions: List[Any] = []
+        self._runtime_api_client: Optional[ServiceClientHandler] = None
+
         self.config: UINodeConfig
 
     def srv_clients_inputs_dicts(self) -> List[Dict]:
@@ -117,6 +133,7 @@ class UINode(BaseComponent):
                 "name": client_config.name,
                 "type": client_config.srv_type.__name__,
                 "fields": request_fields,
+                "request_class": client_config.srv_type.Request,
             }
             clients_configs_dicts.append(config_dict)
         return clients_configs_dicts
@@ -136,6 +153,7 @@ class UINode(BaseComponent):
                 "name": client_config.name,
                 "type": client_config.action_type.__name__,
                 "fields": request_fields,
+                "goal_class": client_config.action_type.Goal,
             }
             clients_configs_dicts.append(config_dict)
         return clients_configs_dicts
@@ -167,7 +185,8 @@ class UINode(BaseComponent):
         """Return the latest UI elements for an action client, or ``None``.
 
         The returned dict has ``status``, ``feedback`` (a raw ROS message or
-        ``None``), ``timestep``, ``feedback_timeout`` and ``duration_secs``
+        ``None``), ``timestep``, ``feedback_timeout``, ``duration_secs`` and
+        ``result`` (the raw ROS result message, ``None`` until the goal ends)
         """
         client = self._ros_action_clients.get(action_name)
         if client is None:
@@ -194,6 +213,139 @@ class UINode(BaseComponent):
         client = self._ros_action_clients.get(action_name)
         if client is not None:
             client.remove_feedback_listener(listener)
+
+    # ---- Routines -----------------------------------------------------------
+
+    def routine_names(self) -> List[str]:
+        """Names of the routines shown in the UI, in the order given"""
+        return list(self.config.routines)
+
+    def get_routine_state(self, routine_name: str) -> Optional[Dict]:
+        """The routine's latest state, or ``None`` if none has arrived yet.
+
+        The state is what the Monitor publishes on the routine's topic: its
+        ``status``, ``index``, ``active_step``, ``steps``, ``step_message``,
+        ``abort_reason`` and ``elapsed``, plus ``step_feedback`` for a step
+        that reports progress.
+        A routine publishes on transitions only, so ``elapsed`` is brought up to
+        date here while it runs.
+
+        :param routine_name: Name of a routine shown in the UI
+        :rtype: Optional[Dict]
+        """
+        latest = self._routine_states.get(routine_name)
+        if latest is None:
+            return None
+        state, received = latest
+        state = dict(state)
+        if state.get("status") == "running":
+            state["elapsed"] = round(
+                state.get("elapsed", 0.0) + time.monotonic() - received, 3
+            )
+        return state
+
+    def add_routine_listener(
+        self, routine_name: str, listener: Callable[[], None]
+    ) -> bool:
+        """Register a zero-arg ``listener`` fired on each new state of a routine.
+
+        :return: ``False`` if the routine is not shown in the UI
+        """
+        if routine_name not in self.config.routines:
+            return False
+        self._routine_listeners.setdefault(routine_name, set()).add(listener)
+        return True
+
+    def remove_routine_listener(
+        self, routine_name: str, listener: Callable[[], None]
+    ) -> None:
+        """Remove a previously registered routine listener."""
+        self._routine_listeners.get(routine_name, set()).discard(listener)
+
+    def control_routine(
+        self, routine_name: str, command: str, reason: Optional[str] = None
+    ) -> Tuple[bool, str]:
+        """Start, pause, resume or abort a routine, through the Monitor.
+
+        :param routine_name: Name of a routine shown in the UI
+        :param command: One of ``ROUTINE_COMMANDS``
+        :param reason: Why, for an abort. Recorded in the routine's state
+        :raises ValueError: If the routine is not shown in the UI, or the
+            command is not one of ``ROUTINE_COMMANDS``
+        :raises RuntimeError: If the Monitor cannot be reached
+        :return: ``(done, message)``, where the message explains a refusal,
+            such as pausing a routine that is not running
+        """
+        if routine_name not in self.config.routines:
+            raise ValueError(f"Routine '{routine_name}' is not shown in the UI")
+        if command not in ROUTINE_COMMANDS:
+            raise ValueError(
+                f"Unknown routine command '{command}'. Use one of "
+                f"{', '.join(ROUTINE_COMMANDS)}"
+            )
+        client = self._runtime_api_client
+        if client is None:
+            raise RuntimeError("The routine controls are not ready")
+        if not client.client.wait_for_service(timeout_sec=1.0):
+            raise RuntimeError("The Monitor is not available")
+        kwargs: Dict[str, Any] = {"routine_name": routine_name}
+        if command == "abort" and reason:
+            kwargs["reason"] = reason
+        request = ExecuteMethod.Request()
+        request.name = f"{command}_routine"
+        request.kwargs_json = json.dumps(kwargs)
+        response = client.send_request(request)
+        if response is None:
+            raise RuntimeError("The Monitor did not answer")
+        if response.success:
+            return True, response.response_json
+        return False, response.error_msg
+
+    def _on_routine_state(self, routine_name: str, msg: String) -> None:
+        """Keep a routine's newest state and tell whoever is following it"""
+        try:
+            state = json.loads(msg.data)
+        except json.JSONDecodeError:
+            get_logger(self.node_name).error(
+                f"Unreadable state for routine '{routine_name}': {msg.data}"
+            )
+            return
+        self._routine_states[routine_name] = (state, time.monotonic())
+        for listener in list(self._routine_listeners.get(routine_name, ())):
+            try:
+                listener()
+            except Exception:
+                pass
+
+    def _follow_routines(self) -> None:
+        """Subscribe to each routine's state and reach the Monitor to control it"""
+        if not self.config.routines:
+            return
+        self._runtime_api_client = base_clients.ServiceClientHandler(
+            client_node=self,
+            srv_type=ExecuteMethod,
+            srv_name=Monitor.RUNTIME_API_SERVICE,
+        )
+        # Latched on the Monitor's side, so the current state arrives on
+        # subscribing, not at the routine's next transition
+        qos = QoSConfig(durability=DurabilityPolicy.TRANSIENT_LOCAL, queue_size=1)
+        for name in self.config.routines:
+            self._routine_subscriptions.append(
+                self.create_subscription(
+                    String,
+                    f"routine/{name}/state",
+                    lambda msg, name=name: self._on_routine_state(name, msg),
+                    qos.to_ros(),
+                )
+            )
+
+    def _stop_following_routines(self) -> None:
+        for subscription in self._routine_subscriptions:
+            self.destroy_subscription(subscription)
+        self._routine_subscriptions.clear()
+        if self._runtime_api_client is not None:
+            self.destroy_client(self._runtime_api_client.client)
+            self._runtime_api_client = None
 
     def _notify_output_listeners(self, topic_name: str) -> None:
         """Fan out a new message on ``topic_name`` to its registered listeners."""
@@ -355,6 +507,8 @@ class UINode(BaseComponent):
                 client_node=self, config=inp
             )
 
+        self._follow_routines()
+
         return super().custom_on_activate()
 
     def custom_on_deactivate(self):
@@ -363,15 +517,15 @@ class UINode(BaseComponent):
             if inp.client is not None:
                 self.destroy_client(inp.client)
 
-        for inp in self._ros_service_clients.items():
-            if inp.client is not None:
-                self.destroy_client(inp.client)
-                inp.client = None
-
-        for inp in self._ros_action_clients:
-            if inp.client is not None:
-                self.destroy_client(inp.client)
-                inp.client = None
+        for handler in self._ros_service_clients.values():
+            self.destroy_client(handler.client)
+        # Action clients are waitables, which destroy_client ignores
+        for handler in self._ros_action_clients.values():
+            handler.client.destroy()
+        # Recreated on activation. Until then the API reports them as not ready
+        self._ros_service_clients.clear()
+        self._ros_action_clients.clear()
+        self._stop_following_routines()
 
         return super().custom_on_deactivate()
 
@@ -396,13 +550,19 @@ class UINode(BaseComponent):
         request fields. The raw ROS response object or None is returned.
 
         :param srv_call_data: ``{"srv_name": <name>, **request_fields}``.
-        :raises RuntimeError: If the service client is not ready.
+        :raises RuntimeError: If the service client is not ready, or no server
+            for the service is available.
+        :raises ValueError: If a request field cannot be set from its value.
         :return: The raw ROS response message, or ``None``.
         """
         srv_name = srv_call_data.pop("srv_name")
         client = self._ros_service_clients.get(srv_name)
         if client is None:
             raise RuntimeError(f"Service client '{srv_name}' is not ready")
+        # short timeout to make sure that clients exist if requested
+        # close to init
+        if not client.client.wait_for_service(timeout_sec=1.0):
+            raise RuntimeError(f"Service '{srv_name}' is not available")
         return client.send_request_from_dict(request_fields=srv_call_data)
 
     def send_action_goal(self, action_goal_data: Dict) -> Optional[bool]:
@@ -412,13 +572,27 @@ class UINode(BaseComponent):
         are the goal fields.
 
         :param action_goal_data: ``{"action_name": <name>, **goal_fields}``.
-        :raises RuntimeError: If the action client is not ready.
+        :raises RuntimeError: If the action client is not ready, or no server
+            for the action is available.
+        :raises GoalInProgressError: If the previous goal is still running.
+        :raises ValueError: If a goal field cannot be set from its value.
         :return: True if the goal was accepted by the action server.
         """
         action_name = action_goal_data.pop("action_name")
         client = self._ros_action_clients.get(action_name)
         if client is None:
             raise RuntimeError(f"Action client '{action_name}' is not ready")
+        if not client.client.wait_for_server(timeout_sec=1.0):
+            raise RuntimeError(f"Action server '{action_name}' is not available")
+        # Check if an action is running
+        if (
+            client.goal_accepted
+            and not client.action_returned
+            and not client._feedback_timeout
+        ):
+            raise GoalInProgressError(
+                f"Action '{action_name}' is still running a goal. Cancel it first"
+            )
         return client.send_request_from_dict(
             request_fields=action_goal_data, wait_until_first_feedback=False
         )

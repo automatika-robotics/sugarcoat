@@ -515,14 +515,40 @@ def test_scan_transform_rotation_reorders_scan():
 
 
 def test_scan_transform_translation():
-    # rays at angles [0, pi/2] with ranges [2, 3], sensor translated by x=1:
-    # radius' = sqrt(r^2 + 1 - 2 r cos(angle))
+    # rays at angles [0, pi/2] with ranges [2, 3] from a sensor 1 m ahead of
+    # the robot's centre: the beams hit (2, 0) and (0, 3) in the sensor's
+    # frame, which are (3, 0) and (1, 3) in the robot's
     scan = _make_scan([2.0, 3.0], angle_increment=np.pi / 2)
     output = _scan_callback(scan, transformation=_make_transform(x=1.0)).get_output()
-    np.testing.assert_allclose(output.ranges, [1.0, np.sqrt(10.0)], rtol=1e-6)
+    np.testing.assert_allclose(output.ranges, [3.0, np.sqrt(10.0)], rtol=1e-6)
+    np.testing.assert_allclose(output.angles, [0.0, np.arctan2(3.0, 1.0)], atol=1e-6)
     # observed limits replace the device limits after a transform
-    assert output.range_min == pytest.approx(1.0)
+    assert output.range_min == pytest.approx(3.0)
     assert output.range_max == pytest.approx(np.sqrt(10.0))
+
+
+def test_scan_transform_adds_the_mount_offset_to_the_beam():
+    """What a sensor mounted ahead of the centre sees is further from the
+    robot than from the sensor, not nearer: the transform is R * p + t, and
+    reading it as the distance between the beam and the mount gave p - t"""
+    scan = _make_scan([1.0], angle_increment=np.pi / 2)
+    output = _scan_callback(scan, transformation=_make_transform(x=0.5)).get_output()
+    np.testing.assert_allclose(output.ranges, [1.5], rtol=1e-6)
+
+
+def test_scan_transform_tells_a_left_mount_from_a_right_one():
+    """The beam of a sensor mounted to the left passes to the left of the
+    robot's centre, and to the right when the sensor is on the right. Reading
+    the mount angle with arccos placed both of them on the same side"""
+    scan = _make_scan([1.0], angle_increment=np.pi / 2)
+    bearing = np.arctan2(0.5, 1.0)
+
+    left = _scan_callback(scan, transformation=_make_transform(y=0.5)).get_output()
+    right = _scan_callback(scan, transformation=_make_transform(y=-0.5)).get_output()
+
+    np.testing.assert_allclose(left.angles, [bearing], atol=1e-6)
+    np.testing.assert_allclose(right.angles, [2 * np.pi - bearing], atol=1e-6)
+    np.testing.assert_allclose(left.ranges, right.ranges, rtol=1e-6)
 
 
 def test_scan_transform_via_get_output_kwarg():
@@ -1656,3 +1682,109 @@ def test_camera_info_message_passes_through():
 
     info = _camera_info()
     assert CameraInfo.convert(info) is info
+
+
+# ---------------------------------------------------------------------------
+# JointState
+# ---------------------------------------------------------------------------
+
+
+def test_joint_state_ui_content_names_the_joints():
+    """A client can tell which value belongs to which joint"""
+    from sensor_msgs.msg import JointState as ROSJointState
+
+    from ros_sugar.io.callbacks import JointStateCallback
+
+    callback = JointStateCallback(Topic(name="joints", msg_type="JointState"))
+    callback.msg = ROSJointState(
+        name=["shoulder", "elbow"], position=[0.1, 0.2], velocity=[0.5, 0.0]
+    )
+
+    assert callback._get_ui_content() == {
+        "data": [0.1, 0.2],
+        "names": ["shoulder", "elbow"],
+        "velocities": [0.5, 0.0],
+        "efforts": [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Audio
+# ---------------------------------------------------------------------------
+
+
+def test_audio_convert_gives_one_bytes_object_per_byte():
+    """The message holds the clip byte by byte, from raw bytes or base64"""
+    from ros_sugar.io.supported_types import Audio
+
+    clip = bytes(range(256)) * 4
+    expected = [bytes([b]) for b in clip]
+
+    assert Audio.convert(clip).data == expected
+    assert Audio.convert(base64.b64encode(clip).decode()).data == expected
+
+
+# ---------------------------------------------------------------------------
+# Sending a value to another node as JSON
+#
+# A component method is called over a service, so its arguments are written as
+# JSON and read back there. What is not JSON by itself - a message, an array,
+# raw bytes - travels as JSON and is rebuilt, rather than being refused.
+# ---------------------------------------------------------------------------
+
+
+def _through_the_wire(value):
+    """Exactly what a service request carries, and what the far side reads"""
+    import json
+
+    from ros_sugar.io.supported_types import from_jsonable
+    from ros_sugar.io.utils import to_jsonable
+
+    return from_jsonable(json.loads(json.dumps(to_jsonable(value))))
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        LaserScan(angle_min=-1.5, range_max=12.0, ranges=[0.5, 1.5, 2.5]),
+        Image(height=2, width=2, encoding="mono8", step=2, data=bytes([1, 2, 3, 250])),
+        OccupancyGrid(data=[0, -1, 100]),
+        PoseStamped(),
+    ],
+    ids=["sequence field", "byte field", "signed field", "nested"],
+)
+def test_a_ros_message_survives_being_sent_as_json(message):
+    assert _through_the_wire(message) == message
+
+
+def test_a_nested_message_keeps_its_values():
+    """The fields that a type name alone would not restore"""
+    odom = Odometry()
+    odom.header.frame_id = "odom"
+    odom.pose.pose.position.x = 3.0
+    odom.pose.covariance[0] = 0.7
+
+    arrived = _through_the_wire(odom)
+
+    assert arrived.header.frame_id == "odom"
+    assert arrived.pose.pose.position.x == 3.0
+    assert arrived.pose.covariance[0] == 0.7
+
+
+def test_plain_values_pass_through_untouched():
+    """Most callers send JSON already, and it must arrive as it was sent"""
+    for value in [2.5, "text", True, None, [1, 2], {"a": {"b": 1}}]:
+        assert _through_the_wire(value) == value
+
+
+def test_bytes_and_arrays_arrive_usable():
+    assert _through_the_wire(b"\x01\x02") == b"\x01\x02"
+    # An array has no type of its own to restore, and arrives as a list
+    assert _through_the_wire(np.array([1.5, 2.5])) == [1.5, 2.5]
+
+
+def test_an_unknown_message_type_is_reported():
+    from ros_sugar.io.supported_types import from_jsonable
+
+    with pytest.raises(ValueError, match="Unknown ROS message type"):
+        from_jsonable({"__ros_msg__": "no_such_pkg/msg/Nope", "fields": {}})

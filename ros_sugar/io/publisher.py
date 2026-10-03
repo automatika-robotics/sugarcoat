@@ -2,7 +2,6 @@
 
 from rclpy.clock import Clock, ClockType
 from typing import Any, Callable, Optional, Union, List
-from socket import socket
 
 from rclpy.logging import get_logger
 from rclpy.publisher import Publisher as ROSPublisher
@@ -10,6 +9,7 @@ from rclpy.publisher import Publisher as ROSPublisher
 from std_msgs.msg import Header
 
 from . import utils
+from .ipc import ExternalProcessorClient
 
 
 class Publisher:
@@ -30,7 +30,9 @@ class Publisher:
         self.node_name: str = node_name
 
         self._publisher: Optional[ROSPublisher] = None
-        self._pre_processors: Optional[List[Union[Callable, socket]]] = None
+        self._pre_processors: Optional[
+            List[Union[Callable, ExternalProcessorClient]]
+        ] = None
 
     def set_node_name(self, node_name: str) -> None:
         """Set node name.
@@ -49,11 +51,13 @@ class Publisher:
         """
         self._publisher = publisher
 
-    def add_pre_processors(self, processors: List[Union[Callable, socket]]):
+    def add_pre_processors(
+        self, processors: List[Union[Callable, ExternalProcessorClient]]
+    ):
         """Add a pre processor for publisher message
 
-        :param method: Pre processor methods or sockets
-        :type method: Callable
+        :param method: Pre processor methods or clients calling them in the launcher process
+        :type method: List[Union[Callable, ExternalProcessorClient]]
         """
         self._pre_processors = processors
 

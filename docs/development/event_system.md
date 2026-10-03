@@ -169,18 +169,55 @@ launcher.on(robot.events.fall_detected(), [LogInfo(msg="fall"), robot.actions.st
 Marks a component method as callable from the event system. It enforces:
 
 - The method must be a bound method on a `LifecycleNode` subclass.
-- The return type must be `bool` or `None`.
+- The method must be annotated to return `Tuple[bool, str]` — see [The action contract](#the-action-contract) below. This is checked at decoration time, so a component that does not follow it fails at import.
 - If `active=True` is passed, the method only executes when the component is in the `ACTIVE` lifecycle state.
 
+### The action contract
+
+**Every action returns `(success, message)`.** The bool reports success or failure; the string
+carries a result when the action succeeded and an error message when it failed.
+
 ```python
-from ros_sugar.utils import component_action
+from ros_sugar.utils import ActionReturnType, component_action
+
+class Gripper(BaseComponent):
+    @component_action
+    def close(self) -> ActionReturnType:
+        if self._blocked:
+            return False, "gripper is obstructed"
+        return True, "gripper closed"
+```
+
+`ActionReturnType` is a plain alias for `Tuple[bool, str]` — actions return an ordinary tuple, nothing
+more. The annotation is read by shape, so `tuple[bool, str]`, `Tuple[bool, str]` and the alias are all
+accepted, quoted or not. An action that needs to return something structured serializes it into the string:
+
+```python
+    @component_action
+    def inspect(self) -> ActionReturnType:
+        return True, json.dumps({"grasped": True, "width": 0.04})
+```
+
+Over the `ExecuteMethod` service the two halves map onto the response directly: `success` carries the
+bool, and the string lands in `response_json` on success or `error_msg` on failure. A raised
+exception is reported as a failure carrying its message, so a caller never has to tell "it raised"
+apart from "it returned nothing".
+
+:::{note}
+Two things that look like actions are deliberately **exempt**, because they already have
+incompatible contracts: an [event condition](#callable) is a predicate and returns `bool`, and a
+Launcher `@action_handler` returns ROS launch entities.
+:::
+
+```python
+from ros_sugar.utils import ActionReturnType, component_action
 
 class Navigator(BaseComponent):
     # Basic usage
     @component_action
-    def stop(self) -> bool:
+    def stop(self) -> ActionReturnType:
         self.cmd_vel_publisher.publish(Twist())
-        return True
+        return True, "Stopped"
 
     # With an OpenAI-compatible tool description (for LLM orchestration)
     @component_action(description={
@@ -197,7 +234,7 @@ class Navigator(BaseComponent):
             },
         },
     })
-    def navigate_to(self, *, x: float, y: float) -> bool:
+    def navigate_to(self, *, x: float, y: float) -> ActionReturnType:
         ...
 ```
 
@@ -212,6 +249,7 @@ Provided by the `ros_sugar.actions` module and executed by the Monitor node:
 | `publish_message(topic, msg, ...)` | Publishes a message on a topic (optionally at a rate for a duration) |
 | `send_srv_request(srv_name, srv_type, srv_request_msg)` | Sends a ROS2 service request |
 | `send_action_goal(server_name, server_type, request_msg)` | Sends a ROS2 action goal |
+| `wait(duration, name=None)` | Dwells for `duration` seconds, as a step of a routine |
 
 #### Dynamic Arguments from Topics
 
@@ -265,6 +303,249 @@ These expressions (`topic.msg.data`, `odom.msg.pose.pose.position.x`, etc.) are 
 
 ---
 
+### Monitored Actions
+
+An `Action` is fire-and-forget by default: it dispatches a method and nothing afterwards can tell whether the method actually worked. Passing any of the monitoring parameters — `success`, `timeout`, `max_retries`, `retry_delay` or `cancel_method` — **activates monitoring**: the action dispatches, waits for a verdict, then re-dispatches while the verdict is negative and the retry budget allows. There is no separate class; a monitored action is an `Action` that was told what success means.
+
+```python
+from ros_sugar.core import Action
+
+grasp = Action(
+    gripper.close,
+    success=gripper_state.msg.closed.is_true(),
+    timeout=3.0,
+    on_timeout="retry",
+    max_retries=3,
+)
+
+launcher.on(grasp_requested, grasp)
+```
+
+A monitored action is registered and serialized exactly like a plain one, and the monitoring runs wherever the action runs:
+
+| Action type | Monitored by | Notes |
+|:------------|:-------------|:------|
+| Component action | The component node | Success condition and retry policy travel with the action into the component process |
+| System-level action (`publish_message`, …) | The Monitor | Resolved to the real Monitor method by name, then monitored |
+| Inline recipe method | The Monitor | See below |
+| ROS launch action | — | Not applicable: monitoring wraps a callable, a launch action has none |
+
+An inline recipe method is normally owned by the Launcher and executed in the launch context. A *monitored* recipe action is routed to the **Monitor** instead, because the launch context discards an action's return value and a blocking watch there would stall the launch event loop. Nothing is lost by this: the `LaunchContext` passed to an `OpaqueFunction` is never forwarded to the method anyway.
+
+The upshot is that `success`, `timeout` and `max_retries` behave identically whichever kind of action you monitor.
+
+#### Deciding the verdict
+
+| `success` | Verdict comes from | Meaning |
+|:----------|:-------------------|:--------|
+| A `Condition` | Live topic data | World state is authoritative. If the condition becomes true the action succeeded, **even if the method reported otherwise** |
+| Omitted | The method's return value | The `success` half of the action's `(bool, str)` result. A raised exception is a failure carrying its message |
+
+A return that does not follow the contract — `None` included — is logged and treated as a **failure**. Failing closed is deliberate: every consumer of an action reads its outcome, and a malformed value is truthy, so the alternative is silently reporting a success that never happened.
+
+#### Retry policy
+
+| Parameter | Effect |
+|:----------|:-------|
+| `timeout` | Seconds to wait for the verdict on each attempt |
+| `on_timeout` | What a timeout means: `"fail"`, `"succeed"` or `"retry"` (default) |
+| `max_retries` | Number of *re*-dispatches, so total attempts are `max_retries + 1` |
+| `retry_delay` | Seconds to wait between attempts |
+
+There is a single retry budget. `on_timeout` only classifies what a timeout *means*; a method that reports failure consumes the same budget as one that times out. `on_timeout="fail"` and `"succeed"` are terminal and never consume a retry.
+
+`on_fail` and `fallback` are also accepted here, but they are read only when the action is a step of a [Routine](#routines) — an action running on its own has no sequence around it to abort or skip.
+
+:::{note}
+Setting a `success` condition without a `timeout` lets the action wait forever if the condition is never met. A warning is logged at construction; set a timeout.
+:::
+
+#### How success is detected
+
+The success condition is monitored as an ordinary `Event`, evaluated **on message arrival** rather than polled. Two things follow from that:
+
+- A condition that holds for only a single message cannot be missed.
+- A condition that holds while no attempt is in flight is ignored, and a verdict arriving from an attempt that has already been decided is discarded. So a success can only ever be credited to data that arrived *after* the action was dispatched — without this, `Action(arm.move_to_pregrasp, success=at_pregrasp.is_true())` would report instant success whenever the arm already happened to be there.
+
+Monitoring starts on the **first dispatch**, not at activation, so a host never subscribes to the success topic of an action that is never triggered. The subscription is then kept until the node is deactivated rather than being torn down after each attempt.
+
+#### Two ways to run one
+
+Calling a monitored action blocks the calling thread until the outcome is decided (an unmonitored one simply runs inline, exactly as a method call). `start(on_done)` runs the same watch and retry logic without blocking anything and reports the outcome to a callback instead. Both go through one implementation — the blocking form is a thin adapter over the callback form — so the semantics above are identical either way. `Routine` uses `start()`, which is what lets it sequence a long procedure without parking a worker thread on it.
+
+#### Preemption
+
+`halt()` stops the watch and retry loop of a run in flight. If the action was given a `cancel_method`, it is invoked so the action can also be told to stop acting:
+
+```python
+move = Action(
+    arm.move_to_pregrasp,
+    success=arm_state.msg.at_pregrasp.is_true(),
+    timeout=10.0,
+    cancel_method=arm.stop,
+)
+```
+
+:::{warning}
+A dispatched call that is already executing cannot be interrupted — Python offers no way to do it. `halt()` stops the *waiting and retrying*; `cancel_method` is the only thing that can affect the call itself, which is why any action used in a preemptible context should provide one.
+
+Dispatches also run on a pool of 10 workers shared by all monitored actions, so a long-running action holds one of those workers for its whole lifetime.
+:::
+
+A step that sends a goal to an action server (`ActionServerGoal`) can be stopped for real: `halt()` cancels the goal on the server. Every step driving one server shares its client, which tracks one goal at a time, so a goal sent while the one before is still stopping — after a pause, a retry or an abort, since a server notices a cancel only when it next checks — waits for that goal to end. A step halted during that wait sends nothing, and the step that does send is followed to its own goal's end, not the end of the one it waited for.
+
+An executable of your own that waits before starting something can ask the same question with `self._attempt_is_live()`, or, when it does not hold its action, with `current_attempt_is_live()` from `ros_sugar.core.action`. Either turns false once the attempt the executable was dispatched for has been halted, has timed out, or has been replaced by a new run — resuming a paused routine starts the same action again while the halted attempt's worker may still be waiting. `Monitor.wait`, the dwell step, checks it between its 0.2 s slices, so an abort or a pause gives its worker back at once instead of when the wait would have ended.
+
+---
+
+### Routines
+
+A `Routine` is an ordered sequence of steps: the object that *is* a procedure. Where a chain of events leaves "detect, then pre-grasp, then close, then lift" implicit in the wiring, a routine names it, gives each step its own success test and retry policy, and publishes where it has got to.
+
+```python
+from ros_sugar.core import Action, Routine
+
+pick = Routine(
+    "pick_object",
+    steps=[
+        Action(perception.detect_object,
+                        success=perception_out.msg.object_found.is_true(),
+                        timeout=5.0),
+        Action(arm.move_to_pregrasp,
+                        success=arm_state.msg.at_pregrasp.is_true(),
+                        timeout=10.0, cancel_method=arm.stop),
+        Action(gripper.close, name="grasp",
+                        success=gripper_state.msg.closed.is_true(), timeout=3.0,
+                        max_retries=2, on_fail="fallback", fallback=gripper.reopen),
+        Action(arm.lift, success=arm_state.msg.at_lift.is_true()),
+    ],
+    on_complete=logger_component.log_pick_done,
+    on_abort=safety.open_gripper_and_home,
+    on_pause=arm.stop,
+)
+
+launcher.on(pick_requested, pick)
+```
+
+A `Routine` is not an `Action` — it is the organizing primitive *containing* actions, monitored one by one — but it is registered on an event exactly the same way, so it needs no new registration surface.
+
+`description` says what the routine is for, in plain words, for whoever has to choose among the routines available — an operator, or an LLM planning with them: `Routine("pick_object", steps=[...], description="Detect the object, grasp it and lift it")`.
+
+#### Steps are monitored actions
+
+**A step is an ordinary `Action`** — there is no separate step type. `success`, `timeout`, `on_timeout`, `max_retries`, `retry_delay` and `cancel_method` are the ones you already know, deciding whether *this* step worked, with one retry budget per step spent by a reported failure or a timeout alike.
+
+Once that budget is gone, `on_fail` decides what the **sequence around the step** does:
+
+| `on_fail` | Effect |
+|:----------|:-------|
+| `"abort"` (default) | The routine ends as `failed` and `on_abort` runs |
+| `"skip"` | The failure is logged and the routine carries on to the next step |
+| `"fallback"` | The action's `fallback` runs; the routine carries on if it succeeds and aborts if it does not |
+
+`name` renames the action for the cursor, where the method name is not what you want it to say. Step names must be unique within a routine.
+
+A routine dwells with `actions.wait(duration=30.0)`, the one step that runs for as long as it was asked to rather than settling when called. A routine that waits more than once names each wait, `actions.wait(duration=5.0, name="settle")`, since they would otherwise all be called `wait`. Aborting or pausing the routine ends a wait at once; resuming starts it over.
+
+A step may also be given as a bare callable, which is wrapped in an unmonitored `Action` — a fire-and-dispatch step whose return value is its verdict.
+
+#### A routine reports that it started, not that it succeeded
+
+Steps are driven by callbacks rather than by a parked thread, so triggering a routine returns as soon as the first step is dispatched:
+
+```python
+success, message = pick()   # (True, "Routine 'pick_object' started")
+```
+
+The outcome arrives later, through `on_complete` / `on_abort` and the published cursor. **A recipe that has to react to a routine finishing must key on those, not on the result of the action that started it.** Triggering a routine that is already running is a no-op, so a repeating event cannot restart one mid-procedure.
+
+#### Where it runs
+
+A routine spans components, so no single component can host it. The Launcher routes every routine to the **Monitor**, which is the one node that can reach all of them, and which subscribes to the topics every step needs — including step success topics, and the topics a step reads its arguments from. Each step re-reads those topic values when it is *entered*, not when the routine was triggered, so a step acts on what is true when it runs.
+
+:::{note}
+A step written as a component's bound method — `Action(arm.move)` — is not called on the object the recipe holds. The Monitor sends it to the component over that component's own `execute_method` service, so the step runs on the component's executor whatever process the component is in, and `multiprocessing=True` components can be driven by a routine like any other.
+
+Arguments are sent along with the call and rebuilt on the other side, so a step can be handed a whole ROS message, a field of one, an array or raw bytes. What cannot be sent is a value that has no representation to send — an open socket, a file handle, an object of a class only the recipe's process knows — and that is rejected at launch with an `InvalidAction`, as is an action targeting a component the Launcher does not know.
+:::
+
+#### Control and progress
+
+The Monitor exposes each routine by name, so control is available as ordinary system-level actions — an emergency-stop event can abort a routine:
+
+| Monitor method | Effect |
+|:---------------|:-------|
+| `start_routine(name)` | Start it, same as triggering the action |
+| `pause_routine(name)` | Preempt what is in flight, run `on_pause` and stop there |
+| `resume_routine(name)` | Re-enter the step it stopped at |
+| `abort_routine(name, reason)` | End it now and run `on_abort` |
+| `get_routine_state(name)` | The cursor, as JSON |
+| `get_routines()` | Every registered routine, as a list of dicts: its cursor plus its `description`. `list_routines` serves the same as JSON over the runtime API |
+
+A routine step names what it runs with a reference, `"owner/name"`: a component's action, one of its servers, a Monitor method, or an action a robot or sensor plugin contributes, such as `"lite3/stand_up"`. A runtime event names a topic condition, or a condition a plugin offers, with `{"ref": "lite3/low_battery", "kwargs": {"threshold": 0.15}}`. See {doc}`custom_robot_plugin` for what a plugin has to do to be named this way.
+
+Pausing preempts the step in flight, and resuming runs that step again from the start: a step is the smallest thing a routine can be positioned at. What gets preempted is whatever the routine actually dispatched, which is the fallback rather than the step while a step is being recovered. Resuming re-enters the step either way — unless the pause landed between two steps, in which case it picks up at the next one rather than repeating the step that had already finished.
+
+**`on_pause` is what makes a pause safe.** Preempting a step stops what the step itself runs, not what it set in motion: a navigation step that has already handed the robot a goal is stopped, while the robot keeps driving to it. `on_pause` is where the routine undoes that.
+
+```python
+Routine(
+    "go_to_kitchen",
+    steps=[Action(planner.go_to, kwargs={"goal": kitchen})],
+    # One action, or several run in order
+    on_pause=[Action(controller.stop_path_tracking), Action(driver.stop_robot)],
+)
+```
+
+They run after the step has been preempted, one after the other, while the routine reports `paused`. One that fails is logged and the rest still run: a pause is a safety measure, and stopping one of several things is better than stopping none. They are ordinary actions, so a step's component, its arguments and its `success` condition work the same way, and the Launcher checks them at launch like any other action of the routine.
+
+A resume that arrives while they are still running is not refused: it reports that the routine will resume once they are done, and re-enters the step then, rather than starting it alongside what is undoing it. An abort arriving meanwhile ends the routine and drops the rest of them, as it drops anything else in flight.
+
+Taking a routine down is not the same as aborting it: `remove_routine(name, force=True)` and the Monitor shutting down preempt whatever is in flight — a terminal action included — and do **not** run `on_abort`, since the routine's cursor and success watches are going away with it.
+
+The cursor is also published on `/routine/<name>/state` as JSON in a `std_msgs/String` — a new message type would have to be regenerated by every downstream package, and the cursor is an introspection channel:
+
+```json
+{"name": "pick_object", "status": "running", "index": 2,
+ "active_step": "grasp", "steps": ["detect", "pregrasp", "grasp", "lift"],
+ "step_message": "At pregrasp pose", "abort_reason": "", "elapsed": 4.31}
+```
+
+`status` is a `RoutineStatus` (`ros_sugar.core`), a string-valued enum: `idle`, `running`, `paused`, `completed`, `failed` or `aborted` on the wire.
+
+`step_message` is what the last step to finish returned: its result, or, for a routine that `failed`, why the step it failed at did. `abort_reason` is the reason an `aborted` routine was given. Both are cleared when the routine starts; a pause changes neither.
+
+The routine object keeps what every finished step of the current run returned. `routine.latest_step_messages` gives it by step name, and `routine.step_messages()` as a list in the order the steps finished, each entry `{"step", "succeeded", "message", "fallback"}`; `step_messages(-1)` is the last one. A step recovered by its fallback appears twice in the list, and holds the fallback's message in `latest_step_messages`.
+
+The topic is **latched** (`TRANSIENT_LOCAL`, depth 1). A cursor is published when the Monitor takes the routine on, as `idle` with its steps, and after that only when the routine transitions, so without latching anything connecting mid-mission — a UI, a rosbag, `ros2 topic echo` — would see nothing until the routine next moved. Subscribe with `TRANSIENT_LOCAL` to get the current state on connect:
+
+```python
+from rclpy.qos import DurabilityPolicy
+from ros_sugar.config import QoSConfig
+
+node.create_subscription(
+    String, "/routine/pick_object/state", on_state,
+    QoSConfig(durability=DurabilityPolicy.TRANSIENT_LOCAL, queue_size=1).to_ros(),
+)
+```
+
+A `VOLATILE` subscriber stays compatible and behaves as before: it receives transitions from the moment it connects, just not the retained sample.
+
+#### From the UI
+
+Routines given to `enable_ui` appear among the UI's Tasks, each with its steps checked off as it goes, a log of the steps it entered, and the controls its status allows: start while it is not under way, pause and abort while it runs, resume and abort while it is paused.
+
+```python
+launcher.on(pick_requested, pick)
+launcher.enable_ui(routines=[pick, patrol, "docking"])
+```
+
+A `Routine` is hosted on the Monitor even if no event triggers it, as `patrol` is here, so the UI can be the only way to start it. A name refers to a routine that reaches the Monitor another way, such as one added at runtime with `add_routine`; the Launcher says at bringup which names this recipe does not register, since until something does, such a card stays empty and its controls are refused. The UI node follows each routine's state topic and sends its controls to the Monitor's runtime API, so it reaches routines the same way whatever process it runs in.
+
+The UI's JSON API serves the same controls to scripts and other front-ends: `GET /api/routines`, `POST /api/routines/{name}/start` (and `/pause`, `/resume`, `/abort`, which takes an optional `{"reason": ...}`), and `WS /api/routines/{name}/state`, which pushes the state above on connect and on every change. A command the routine cannot take, such as pausing one that is not running, is answered `409` with the Monitor's reason.
+
+---
+
 ### Fallback System
 
 The fallback system provides automatic failure recovery. It is managed by `ComponentFallbacks` (defined in `ros_sugar.core.fallbacks`).
@@ -310,7 +591,7 @@ When a failure is detected, `ComponentFallbacks` follows this resolution order:
 4. If `max_retries` is exhausted and the fallback has a list of actions, move to the next action in the list.
 5. If all actions in the list are exhausted, set the `giveup` flag and execute `on_giveup` if defined.
 
-A successful fallback execution (action returns `True`) resets the health status to `STATUS_HEALTHY`.
+A successful fallback execution (the action's result reports `success=True`) resets the health status to `STATUS_HEALTHY`. A fallback that reports failure leaves the status untouched, so the ladder moves on to the next retry or action.
 
 Fallbacks run inside the component, not in the Monitor: a timer at
 `config.fallback_rate` checks the component's own `health_status` and walks

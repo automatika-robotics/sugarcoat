@@ -49,8 +49,8 @@ class _DriverPlugin(RobotPlugin):
             ),
         }
         self.commands = {
-            "cmd_vel": RobotCommand(
-                key="cmd_vel", msg_type=Twist, transport=transport,
+            "processes_cmd_vel": RobotCommand(
+                key="processes_cmd_vel", msg_type=Twist, transport=transport,
                 encoder=lambda out: b"",
             )
         }
@@ -129,11 +129,14 @@ def test_demand_resolves_by_unique_type_fallback():
 def test_demand_resolves_commands_from_out_topics():
     plugin = _DriverPlugin()
     comp = _FakeComponent(
-        "a", out_topics=[Topic(name="cmd_vel", msg_type="Twist", use_plugin=True)]
+        "a",
+        out_topics=[
+            Topic(name="processes_cmd_vel", msg_type="Twist", use_plugin=True)
+        ],
     )
     _launcher_with(plugin, [comp])._resolve_plugin_demand()
 
-    assert plugin.requested_commands == frozenset({"cmd_vel"})
+    assert plugin.requested_commands == frozenset({"processes_cmd_vel"})
     assert plugin.requested_feedbacks == frozenset()
 
 
@@ -221,7 +224,10 @@ def test_declared_driver_becomes_a_launch_action(driver_installed):
 def test_no_driver_when_no_component_wants_the_feedback():
     plugin = _DriverPlugin()
     comp = _FakeComponent(
-        "a", out_topics=[Topic(name="cmd_vel", msg_type="Twist", use_plugin=True)]
+        "a",
+        out_topics=[
+            Topic(name="processes_cmd_vel", msg_type="Twist", use_plugin=True)
+        ],
     )
     launcher = _launcher_with(plugin, [comp])
     launcher._resolve_plugin_demand()
@@ -477,3 +483,300 @@ def test_setup_plugins_is_idempotent(wired_launcher):
 
     assert len(_node_actions(launcher)) == 1
     assert len(launcher._plugin_hosts) == 1
+
+
+# --- inputs: feedback a driver reads on ROS ------------------------------
+
+
+def _capture_ros_nodes(launcher, monkeypatch):
+    """Record what the launcher hands ``add_ros_node``, without launching."""
+    added = []
+    monkeypatch.setattr(launcher, "add_ros_node", lambda **kwargs: added.append(kwargs))
+    return added
+
+
+def test_launch_kwargs_omits_inputs():
+    """``inputs`` is delivered by the launcher, not passed to launch_ros."""
+    spec = ProcessSpec(package="p", executable="e", inputs={"odom": "/odom"})
+
+    assert "inputs" not in spec.launch_kwargs()
+
+
+def test_inputs_decoded_by_the_host_are_published_by_it(monkeypatch):
+    """A feedback that only lives on the bus is handed to the host to publish,
+    and the driver is left subscribing on its own topic name."""
+    plugin = _DriverPlugin()  # 'odom' arrives over UDP
+    plugin.required_processes = lambda: [
+        ProcessSpec(package="ekf_pkg", executable="ekf", inputs={"odom": "/odom"})
+    ]
+    launcher = _launcher_with(plugin, [])
+    added = _capture_ros_nodes(launcher, monkeypatch)
+
+    published = launcher._launch_plugin_processes(plugin)
+
+    assert published == [("odom", "/odom")]
+    assert len(added) == 1
+    assert added[0]["remappings"] is None
+
+
+def test_inputs_already_on_ros_are_remapped_not_published(monkeypatch):
+    """A feedback on a ROS topic is on ROS already: republishing it would
+    duplicate the stream, so the driver is pointed at the real topic."""
+    plugin = _RosDriverPlugin()  # 'scan_front' is the ROS topic /scan
+    plugin.required_processes = lambda: [
+        ProcessSpec(
+            package="p",
+            executable="e",
+            remappings=[("/in", "/out")],
+            inputs={"scan_front": "/points"},
+        )
+    ]
+    launcher = _launcher_with(plugin, [])
+    added = _capture_ros_nodes(launcher, monkeypatch)
+
+    published = launcher._launch_plugin_processes(plugin)
+
+    assert published == []
+    assert added[0]["remappings"] == [("/in", "/out"), ("/points", "/scan")]
+
+
+def test_an_input_on_its_own_topic_needs_no_remapping(monkeypatch):
+    plugin = _RosDriverPlugin()
+    plugin.required_processes = lambda: [
+        ProcessSpec(package="p", executable="e", inputs={"scan_front": "/scan"})
+    ]
+    launcher = _launcher_with(plugin, [])
+    added = _capture_ros_nodes(launcher, monkeypatch)
+
+    launcher._launch_plugin_processes(plugin)
+
+    assert added[0]["remappings"] is None
+
+
+def test_an_input_naming_no_feedback_fails_bringup(monkeypatch):
+    """The driver would start and never receive anything -- a silent failure
+    that reads as the driver being broken."""
+    plugin = _DriverPlugin()
+    plugin.required_processes = lambda: [
+        ProcessSpec(package="p", executable="e", name="ekf", inputs={"nope": "/x"})
+    ]
+    launcher = _launcher_with(plugin, [])
+    added = _capture_ros_nodes(launcher, monkeypatch)
+
+    with pytest.raises(ValueError) as raised:
+        launcher._launch_plugin_processes(plugin)
+
+    message = raised.value.args[0]
+    assert "'ekf'" in message and "'nope'" in message and "odom" in message
+    assert added == [], "no driver started"
+
+
+def test_inputs_of_a_skipped_driver_are_not_published(monkeypatch):
+    """A driver whose precondition fails is not running, so nothing reads the
+    topic and the host has no reason to publish it."""
+    plugin = _DriverPlugin()
+    plugin.required_processes = lambda: [
+        ProcessSpec(
+            package="p", executable="e",
+            inputs={"odom": "/odom"}, precondition=lambda: False,
+        )
+    ]
+    launcher = _launcher_with(plugin, [])
+    _capture_ros_nodes(launcher, monkeypatch)
+
+    assert launcher._launch_plugin_processes(plugin) == []
+
+
+def test_setup_plugins_has_the_host_publish_the_inputs(driver_installed):
+    plugin = _DriverPlugin()
+    plugin.required_processes = lambda: [
+        ProcessSpec(package="ekf_pkg", executable="ekf", inputs={"odom": "/odom"})
+    ]
+    launcher = Launcher(robot_plugin=plugin)
+    launcher._components = []
+    launcher.monitor_node = _FakeMonitorNode()
+    try:
+        launcher._setup_plugins()
+
+        (host,) = launcher._plugin_hosts
+        assert host._ros_outputs.topics == {"odom": ["/odom"]}
+    finally:
+        for host in launcher._plugin_hosts:
+            host.close()
+
+
+# --- publish_plugin_feedback: feedback the recipe puts on ROS ------------
+
+
+@pytest.fixture
+def host_of():
+    """Run `_setup_plugins` on a launcher and hand back its only host."""
+    launchers = []
+
+    def _setup(launcher):
+        launchers.append(launcher)
+        launcher.monitor_node = _FakeMonitorNode()
+        launcher._setup_plugins()
+        (host,) = launcher._plugin_hosts
+        return host
+
+    yield _setup
+    for launcher in launchers:
+        for host in launcher._plugin_hosts:
+            host.close()
+
+
+def test_a_feedback_decoded_by_the_host_is_published_on_ros(host_of):
+    plugin = _DriverPlugin()  # 'odom' arrives over UDP
+    launcher = _launcher_with(plugin, [])
+
+    launcher.publish_plugin_feedback(plugin.feedbacks["odom"], "/odom")
+
+    assert host_of(launcher)._ros_outputs.topics == {"odom": ["/odom"]}
+
+
+def test_the_topic_defaults_to_the_plugin_id_and_feedback_key(host_of):
+    plugin = _DriverPlugin()
+    launcher = _launcher_with(plugin, [])
+
+    launcher.publish_plugin_feedback(plugin.feedbacks["odom"])
+
+    assert host_of(launcher)._ros_outputs.topics == {"odom": [f"{plugin.id}/odom"]}
+
+
+def test_it_can_be_asked_for_before_the_plugin_is_attached(host_of):
+    plugin = _DriverPlugin()
+    launcher = Launcher()
+    launcher._components = []
+
+    launcher.publish_plugin_feedback(plugin.feedbacks["odom"], "/odom")
+    launcher.add_plugin(plugin)
+
+    assert host_of(launcher)._ros_outputs.topics == {"odom": ["/odom"]}
+
+
+def test_a_published_feedback_counts_as_demand(host_of):
+    """Nothing in the recipe reads the scan, but a ROS node does: a plugin
+    providing only what is asked for must still start the lidar driver."""
+    plugin = _DriverPlugin()
+    launcher = _launcher_with(plugin, [])
+    added = []
+    launcher.add_ros_node = lambda **kwargs: added.append(kwargs)
+
+    launcher.publish_plugin_feedback(plugin.feedbacks["scan_front"], "/scan")
+    host_of(launcher)
+
+    assert plugin.requested_feedbacks == frozenset({"scan_front"})
+    assert [kwargs["name"] for kwargs in added] == ["lidar_driver"]
+
+
+def test_a_feedback_already_on_ros_is_only_warned_about(host_of, monkeypatch):
+    plugin = _RosDriverPlugin()  # 'scan_front' is the ROS topic /scan
+    plugin.required_processes = lambda: []
+    launcher = _launcher_with(plugin, [])
+    warnings = []
+    monkeypatch.setattr(
+        "ros_sugar.launch.launcher.logger.warning", warnings.append
+    )
+
+    launcher.publish_plugin_feedback(plugin.feedbacks["scan_front"], "/points")
+
+    assert host_of(launcher)._ros_outputs.topics == {}
+    (warning,) = warnings
+    assert "'/scan'" in warning and "'/points'" in warning
+
+
+def test_a_feedback_of_a_plugin_not_attached_fails_bringup():
+    attached, other = _DriverPlugin(), _DriverPlugin()
+    launcher = _launcher_with(attached, [])
+    launcher.monitor_node = _FakeMonitorNode()
+
+    launcher.publish_plugin_feedback(other.feedbacks["odom"], "/odom")
+
+    with pytest.raises(ValueError, match="'odom'.*not belong"):
+        launcher._setup_plugins()
+    assert launcher._plugin_hosts == []
+
+
+def test_only_a_feedback_is_accepted():
+    launcher = Launcher()
+
+    with pytest.raises(TypeError):
+        launcher.publish_plugin_feedback("odom", "/odom")
+
+
+def test_an_invalid_topic_name_is_refused_at_once():
+    from rclpy.exceptions import InvalidTopicNameException
+
+    plugin = _DriverPlugin()
+    launcher = _launcher_with(plugin, [])
+
+    with pytest.raises(InvalidTopicNameException):
+        launcher.publish_plugin_feedback(plugin.feedbacks["odom"], "/odom-raw")
+
+
+def test_the_same_feedback_twice_on_one_topic_is_published_once(host_of):
+    plugin = _DriverPlugin()
+    launcher = _launcher_with(plugin, [])
+
+    launcher.publish_plugin_feedback(plugin.feedbacks["odom"], "/odom")
+    launcher.publish_plugin_feedback(plugin.feedbacks["odom"], "/odom")
+
+    assert host_of(launcher)._ros_outputs.topics == {"odom": ["/odom"]}
+
+
+def test_two_feedbacks_on_one_topic_fail_bringup():
+    plugin = _DriverPlugin()
+    launcher = _launcher_with(plugin, [])
+    launcher.monitor_node = _FakeMonitorNode()
+    launcher.add_ros_node = lambda **kwargs: None
+
+    launcher.publish_plugin_feedback(plugin.feedbacks["scan_front"], "/scan")
+    launcher.publish_plugin_feedback(plugin.feedbacks["scan_back"], "/scan")
+
+    with pytest.raises(ValueError, match="'/scan'"):
+        launcher._setup_plugins()
+    assert launcher._plugin_hosts == []
+
+
+def test_a_feedback_on_a_driver_input_of_another_feedback_fails_bringup():
+    plugin = _DriverPlugin()
+    plugin.required_processes = lambda: [
+        ProcessSpec(package="p", executable="e", inputs={"odom": "/odom"})
+    ]
+    launcher = _launcher_with(plugin, [])
+    launcher.monitor_node = _FakeMonitorNode()
+    launcher.add_ros_node = lambda **kwargs: None
+
+    launcher.publish_plugin_feedback(plugin.feedbacks["scan_front"], "/odom")
+
+    with pytest.raises(ValueError, match="'/odom'"):
+        launcher._setup_plugins()
+
+
+def test_a_feedback_on_a_component_output_fails_bringup():
+    plugin = _DriverPlugin()
+    launcher = _launcher_with(
+        plugin,
+        [_FakeComponent("planner", out_topics=[Topic(name="/feedback_odom", msg_type="Odometry")])],
+    )
+    launcher.monitor_node = _FakeMonitorNode()
+
+    launcher.publish_plugin_feedback(plugin.feedbacks["odom"], "/feedback_odom")
+
+    with pytest.raises(ValueError, match="'planner'"):
+        launcher._setup_plugins()
+
+
+def test_topic_clashes_are_found_in_the_launcher_namespace():
+    """A relative name lands in the namespace, an absolute one does not."""
+    plugin = _DriverPlugin()
+    launcher = Launcher(namespace="robot")
+    launcher.add_plugin(plugin)
+    launcher._components = [
+        _FakeComponent("planner", out_topics=[Topic(name="feedback_odom", msg_type="Odometry")])
+    ]
+
+    launcher._check_feedback_topic_clashes({plugin.id: [("odom", "/feedback_odom")]})
+    with pytest.raises(ValueError, match="'/robot/feedback_odom'"):
+        launcher._check_feedback_topic_clashes({plugin.id: [("odom", "feedback_odom")]})

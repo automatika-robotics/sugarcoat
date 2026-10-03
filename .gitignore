@@ -103,6 +103,9 @@ ENV/
 log/
 install/
 
+# FastHTML session signing key, written to the working directory when the UI runs
+.sesskey
+
 # custom
 shared/
 logdir/

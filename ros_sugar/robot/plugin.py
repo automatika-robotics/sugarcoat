@@ -33,6 +33,7 @@ from .mapping import NativeMapping, VendorMapping
 from .mount import Mount
 from .process import ProcessSpec
 from .registries import ActionRegistry, ActionSpec, EventRegistry, EventSpec
+from .ros_outputs import FeedbackRosOutputs
 from .shm import PluginShmManager, ShmDescriptor, ShmReaderCache
 from .transports import Transport
 from .transports.ros import RosServiceTransport, RosTopicTransport
@@ -652,6 +653,17 @@ class RobotPlugin(Plugin):
         # publishes them as static transforms, so consumers can resolve where
         # a built-in sensor sits without a URDF.
         self.mounts: List[Mount] = []
+        # Frame on the ground under the base frame. The launcher publishes it
+        # `base_height` below the base frame.
+        self.footprint_frame: str = "base_footprint"
+
+    @property
+    def base_height(self) -> Optional[float]:
+        """Height of the base frame above the ground. Half the robot's height,
+        since the geometry is centred on the base frame. None without a geometry."""
+        if self.robot_config is None:
+            return None
+        return self.robot_config.height / 2
 
 
 class SensorPlugin(Plugin):
@@ -742,6 +754,33 @@ class RobotPluginHost:
         self._keep_alive_stop: Optional[threading.Event] = None
         self._feedback_handles: List[BusHandle] = []
         self._transport_handles: List[Any] = []
+        # Feedback also published on ROS, for ROS nodes that read it there
+        self._ros_outputs = FeedbackRosOutputs(node)
+
+    def publish_on_ros(self, feedback_key: str, topic: str) -> None:
+        """Also publish a feedback on a ROS topic, for a ROS node that reads it
+        there. The launcher sets this up from `ProcessSpec.inputs`.
+
+        Only for feedback the host decodes itself: one carried on a ROS topic
+        already is on ROS, and a node reads it by remapping instead.
+
+        :param feedback_key: Key on ``plugin.feedbacks``.
+        :param topic: ROS topic to publish it on.
+        :raises KeyError: If the plugin has no such feedback.
+        :raises ValueError: If the feedback is carried on a ROS transport.
+        """
+        feedback = self.plugin.feedbacks.get(feedback_key)
+        if feedback is None:
+            raise KeyError(
+                f"Plugin '{self.plugin.id}' has no feedback '{feedback_key}'. "
+                f"Available: {sorted(self.plugin.feedbacks)}"
+            )
+        if _is_ros_transport(feedback.transport):
+            raise ValueError(
+                f"Feedback '{feedback_key}' of plugin '{self.plugin.id}' is carried "
+                "on a ROS transport already; remap the node onto its topic instead."
+            )
+        self._ros_outputs.add(feedback, topic)
 
     def open(self) -> None:
         """Bring the plugin up host-side.
@@ -807,6 +846,9 @@ class RobotPluginHost:
         for handle in self._transport_handles:
             handle.unsubscribe()
         self._transport_handles.clear()
+        # After the decoders are unhooked, so nothing publishes on a released
+        # publisher
+        self._ros_outputs.close()
         for handle in self._feedback_handles:
             handle.unsubscribe()
         self._feedback_handles.clear()
@@ -839,7 +881,7 @@ class RobotPluginHost:
             return
         if msg is None:
             return
-        self._stamp_frame(feedback, msg)
+        self._stamp_header(feedback, msg)
         if self.bus.carries_objects:
             # In-process bus: hand over the live object, no serialization.
             self.bus.publish(feedback.channel, msg)
@@ -847,6 +889,7 @@ class RobotPluginHost:
             self.bus.publish(feedback.channel, self._encode_feedback(feedback, msg))
         if self.monitor_feed is not None:
             self.monitor_feed(feedback.channel, msg)
+        self._ros_outputs.publish(feedback, msg)
 
     def _encode_feedback(self, feedback: Feedback, msg: Any) -> bytes:
         """Encode a feedback for the socket bus, tagged with its payload kind.
@@ -875,25 +918,48 @@ class RobotPluginHost:
         # else: return serialized feedback
         return _FB_KIND_CDR + serialize_message(msg)
 
-    def _stamp_frame(self, feedback: Feedback, msg: Any) -> None:
-        """Stamp a decoded message with the frame its data is in.
+    def _stamp_header(self, feedback: Feedback, msg: Any) -> None:
+        """Fill in the frame a decoded message is in, and when it arrived.
 
         Components look up ``header.frame_id -> robot base`` to place incoming
         data, so an unstamped message is silently never transformed. Rather
         than making every plugin author hard-code frame names in their
         decoders, the frame is taken from the feedback (or the plugin) and
-        applied here.
+        applied here. Decoders commonly leave the time empty too, and a
+        consumer such as an EKF orders its measurements by it.
 
         An author who stamps the message themselves is never overridden: a
         robot's odometry is in the localization frame, not in a frame attached
         to the robot's body, and only the decoder knows that.
+
+        Done before the message is handed anywhere, so the bus, the Monitor and
+        the ROS topics all carry the same stamp, and the in-process bus - which
+        hands over the very object - cannot have it change under a consumer.
         """
         header = getattr(msg, "header", None)
-        if header is None or getattr(header, "frame_id", None):
+        if header is None:
             return
-        frame_id = feedback.frame_id or getattr(self.plugin, "frame_id", "")
-        if frame_id:
-            header.frame_id = frame_id
+        if not getattr(header, "frame_id", None):
+            frame_id = feedback.frame_id or getattr(self.plugin, "frame_id", "")
+            if frame_id:
+                header.frame_id = frame_id
+        if header.stamp.sec == 0 and header.stamp.nanosec == 0:
+            now = self._now()
+            if now is not None:
+                header.stamp = now
+
+    def _now(self) -> Any:
+        """The host node's time, or None when it has no node to read it from.
+
+        The node's clock rather than the wall clock, so a message is stamped in
+        the same time base as everything else in the recipe, `use_sim_time`
+        included.
+        """
+        try:
+            return self.node.get_clock().now().to_msg()
+        except AttributeError:
+            # A standalone or test host has no node, and ROS time with it
+            return None
 
     def _forward_command(self, command: RobotCommand, payload: bytes) -> None:
         """Host-side handler for ``route_via_host`` commands."""

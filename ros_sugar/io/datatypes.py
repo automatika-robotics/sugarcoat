@@ -293,64 +293,6 @@ def _convert_to_0_2pi(value: Union[float, np.ndarray]) -> Union[float, np.ndarra
     return value + 2 * math.pi if value < 0 else value
 
 
-def _get_polar_transformation_vector(
-    translation_x: float, translation_y: float
-) -> List[float]:
-    """
-    Get a transformation vector in polar coordinates
-
-    :param translation_x: Translation on x-axis
-    :type translation_x: float
-    :param translation_y: Translation on y-axis
-    :type translation_y: float
-
-    :return: Polar transformation [radius, angle]
-    :rtype: list
-    """
-    # NOTE: numpy treats its own scalars as strong types, so a np.float64 here
-    # would promote the float32 ranges it is combined with to float64 and cost
-    # the zero-copy path downstream. A Python float is weak and leaves the array
-    # dtype alone.
-    r_tr = float(np.sqrt(translation_x**2 + translation_y**2))
-    if r_tr > 0:
-        ang_tr = float(np.arccos(translation_x / r_tr))
-        return [r_tr, ang_tr]
-    return [0.0, 0.0]
-
-
-def _get_transform_polar_coordinates(
-    radius: np.ndarray,
-    angle: np.ndarray,
-    transf_vec: List[float],
-    rotation_angle: float,
-) -> tuple:
-    """
-    Apply a polar transformation to the given polar coordinates
-
-    :param radius: Given radius values in polar coordinates
-    :type radius: np.ndarray
-    :param angle: Given angle values in polar coordinates
-    :type angle: np.ndarray
-    :param transf_vec: Transformation vector in polar coordinates [radius_trans, angle_trans]
-    :type transf_vec: list
-
-    :return: Transformed (radius, angle) values
-    :rtype: tuple
-    """
-    radius_transformed_sq = (
-        radius**2
-        + transf_vec[0] ** 2
-        - 2 * radius * transf_vec[0] * np.cos(angle - transf_vec[1])
-    )
-    radius_new = np.sqrt(radius_transformed_sq)
-
-    angle_new = _convert_to_0_2pi(
-        _convert_to_0_2pi(angle) + _convert_to_0_2pi(rotation_angle)
-    )
-
-    return (radius_new, angle_new)
-
-
 @define
 class LaserScanData(BaseAttrs):
     """
@@ -538,14 +480,22 @@ def _get_laserscan_transformed_polar_coordinates(
         laser_scan_ranges != np.inf, np.minimum(laser_scan_ranges, r_max), r_max
     )
 
-    trans_vec = _get_polar_transformation_vector(
-        translation_x=translation[0], translation_y=translation[1]
-    )
     rotation_angle = 2 * math.atan2(rotation[2], rotation[3])
 
-    ranges_transformed, angles_transformed = _get_transform_polar_coordinates(
-        radius=ranges, angle=angles, transf_vec=trans_vec, rotation_angle=rotation_angle
-    )
+    # Every beam is a point in the sensor's frame: turn it by the mount
+    # rotation and move it by the mount translation (R * p + t), then read it
+    # back as a range and a bearing. In cartesian coordinates, because a
+    # translation changes each beam's bearing by a different amount and its
+    # polar form needs the sign of both of its components
+    # NOTE: the translation is cast to a Python float, which numpy treats as a
+    # weak type: a np.float64 here would promote the float32 ranges and cost
+    # the zero-copy path downstream
+    headings = angles + rotation_angle
+    points_x = ranges * np.cos(headings) + float(translation[0])
+    points_y = ranges * np.sin(headings) + float(translation[1])
+
+    ranges_transformed = np.hypot(points_x, points_y)
+    angles_transformed = _convert_to_0_2pi(np.arctan2(points_y, points_x))
 
     # Sort values to be compatible with laserscan format
     sorted_indices = np.argsort(angles_transformed)

@@ -1,4 +1,6 @@
 from typing import List, Optional, Tuple, Dict, Callable, Union, Any
+import importlib
+import numbers
 import re
 import sys
 import base64
@@ -6,14 +8,17 @@ import array
 
 import numpy as np
 import cv2
-from socket import socket
 
 from rclpy.logging import get_logger
+from rosidl_runtime_py.convert import message_to_ordereddict
 import std_msgs.msg as std_msg
 from nav_msgs.msg import Odometry
 
 import msgpack
 import msgpack_numpy as m_pack
+
+from ..config import ExternalProcessorType
+from .ipc import ExternalProcessorClient, ExternalProcessorError
 
 # patch msgpack for numpy arrays
 m_pack.patch()
@@ -581,6 +586,90 @@ def stamp_header(header, stamp: Optional[float], frame_id: str) -> None:
         header.stamp.nanosec = int((stamp - seconds) * 1e9)
 
 
+#: Marks a serialized ROS message, and a binary value, so the value a caller
+#: was handed can be given back. See `to_jsonable` and
+#: `supported_types.from_jsonable`
+ROS_MSG_KEY = "__ros_msg__"
+BYTES_KEY = "__bytes_b64__"
+
+
+def ros_msg_type_name(msg_class: type) -> str:
+    """Name a ROS message type the way a reference to it is written
+
+    :param msg_class: A ROS message class
+    :return: Its 'package/msg/Type' name
+    :rtype: str
+    """
+    return f"{msg_class.__module__.split('.')[0]}/msg/{msg_class.__name__}"
+
+
+def get_ros_msg_class(type_name: str) -> type:
+    """The ROS message class a 'package/msg/Type' name refers to
+
+    :param type_name: 'package/msg/Type', or 'package/Type'
+    :raises ValueError: If no such message type can be imported
+    :rtype: type
+    """
+    parts = [part for part in str(type_name).split("/") if part]
+    if len(parts) not in (2, 3):
+        raise ValueError(f"'{type_name}' is not a 'package/msg/Type' message name")
+    try:
+        return getattr(importlib.import_module(f"{parts[0]}.msg"), parts[-1])
+    except (ImportError, AttributeError) as e:
+        raise ValueError(f"Unknown ROS message type '{type_name}': {e}") from e
+
+
+def _fields_to_jsonable(value: Any) -> Any:
+    """Coerce a message's fields into the shapes a message is rebuilt from.
+
+    A sequence field arrives as `array.array`, `bytes` or a numpy array and has
+    to become a list: `set_ros_msg_from_dict` sets a sequence from a list, and
+    rejects bytes outright. This is where this differs from the UI's
+    `msg_to_jsonable`, which base64s bytes for a browser that only displays them.
+    """
+    if isinstance(value, (bytes, bytearray)):
+        return list(value)
+    if isinstance(value, (np.ndarray, array.array)):
+        return value.tolist()
+    if isinstance(value, dict):
+        return {key: _fields_to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_fields_to_jsonable(item) for item in value]
+    return value
+
+
+def to_jsonable(value: Any) -> Any:
+    """A value in a form that survives being sent as JSON and read back.
+
+    A ROS message, a numpy array and raw bytes are not JSON, but all of them can
+    travel as JSON: a message as its fields plus the name of its type, bytes as
+    base64, an array as a list. `supported_types.from_jsonable` rebuilds them on
+    arrival.
+
+    The type name is the part that cannot be worked out later. Everywhere else a
+    dict becomes a message - a service request, an action goal - the type comes
+    from the interface being used; an argument of a method has no declared type,
+    so it carries its own.
+
+    :param value: Anything a method may be called with
+    :rtype: Any
+    """
+    if hasattr(value, "get_fields_and_field_types"):
+        return {
+            ROS_MSG_KEY: ros_msg_type_name(type(value)),
+            "fields": _fields_to_jsonable(message_to_ordereddict(value)),
+        }
+    if isinstance(value, (bytes, bytearray)):
+        return {BYTES_KEY: base64.b64encode(bytes(value)).decode("ascii")}
+    if isinstance(value, (np.ndarray, array.array)):
+        return value.tolist()
+    if isinstance(value, dict):
+        return {key: to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_jsonable(item) for item in value]
+    return value
+
+
 def bytes_to_array(buffer: Any, typecode: str = "B") -> array.array:
     """A message sequence field built on the generated setter's fast path.
 
@@ -631,14 +720,15 @@ def numpy_to_multiarray(arr: np.ndarray, ros_msg_cls: type, labels=None):
 
 
 def run_external_processor(
-    logger_name: str, topic_name: str, processor: Union[Callable, socket], output
+    logger_name: str,
+    topic_name: str,
+    processor: Union[Callable, ExternalProcessorClient],
+    output,
+    processor_type: ExternalProcessorType = ExternalProcessorType.MSG_POST_PROCESSOR,
+    timeout: Optional[float] = None,
 ) -> Any:
     """
-    Execute external processing using a callable or a Unix socket.
-
-    This utility function is designed to handle two scenarios:
-    1. When the processor is a callable (e.g., a function), it invokes the callable with the provided `*output` arguments.
-    2. When the processor is a Unix socket, it sends the `*output` data packed in msgpack format to the connected process and waits for a response.
+    Execute an external processor, which is either a callable or a client calling it in the launcher process.
 
     :param logger_name: The name of the logger to use for logging messages.
     :type logger_name: str
@@ -646,38 +736,42 @@ def run_external_processor(
     :param topic_name: A descriptive name for the processing topic, used in log messages.
     :type topic_name: str
 
-    :param processor: The external processor, which can be either a callable or a Unix socket.
-                      If it's a callable, it will be directly invoked with `*output`.
-                      If it's a Unix socket, data will be sent and received over this socket.
-    :type processor: Union[Callable, socket]
+    :param processor: The external processor. A callable is called directly. A client calls the processor
+                      in the launcher process (multiprocess launch).
+    :type processor: Union[Callable, ExternalProcessorClient]
 
-    :param output: Variable length argument list to be passed to the external processor.
+    :param output: The output to be processed. For processors of type FUNCTION, a dictionary
+                   of the keyword arguments to call the processor with.
     :type output: Any
 
-    :return: The result of the external processing. This can vary depending on the type of processor used.
-             For a callable, it's whatever the function returns.
-             For a Unix socket, it's the unpacked response received from the connected process.
+    :param processor_type: Type of the processor, which sets how it is called. Message processors are
+                           called with the output (processor(output=output)) and processors of type
+                           FUNCTION with the keyword arguments in output (processor(**output)).
+    :type processor_type: ExternalProcessorType
+
+    :param timeout: Time (s) to wait for a processor in the launcher process to reply. Defaults to
+                    the component's external_processor_timeout.
+    :type timeout: Optional[float]
+
+    :return: The result of the external processing. For message processors in the launcher process,
+             None if the call fails.
     :rtype: Any
 
-    :raises Exception: If an error occurs during the execution of the external processor or communication over the socket,
-                       an exception is logged with an appropriate error message.
+    :raises ExternalProcessorError: If a processor of type FUNCTION in the launcher process fails.
     """
+    kwargs = (
+        output
+        if processor_type == ExternalProcessorType.FUNCTION
+        else {"output": output}
+    )
     if isinstance(processor, Callable):
-        return processor(output=output)
+        return processor(**kwargs)
 
     try:
-        out_dict = {"output": output}
-        payload = msgpack.packb(out_dict)
-        if payload:
-            processor.sendall(payload)
-        else:
-            get_logger(logger_name).error(
-                f"Could not pack arguments for external processor in external function provided for {topic_name}"
-            )
-        result_b = processor.recv(1024)
-        result = msgpack.unpackb(result_b)
-        return result
-    except Exception as e:
+        return processor.call(kwargs, timeout=timeout)
+    except ExternalProcessorError as e:
+        if processor_type == ExternalProcessorType.FUNCTION:
+            raise
         get_logger(logger_name).error(
             f"Error in external processor for {topic_name}: {e}"
         )
@@ -685,7 +779,7 @@ def run_external_processor(
 
 # NOTE: Scalar ROS field type names mapped when building messages from
 # JSON-shaped dicts. Conversion goes by the DECLARED field type (not the default
-# value's Python type).
+# value's Python type)
 _ROS_INT_TYPES = frozenset({
     "int8",
     "uint8",
@@ -714,19 +808,51 @@ def _split_ros_field_type(ros_type: str) -> Tuple[str, bool]:
     return ros_type, False
 
 
+def _convert_ros_int(value: Any) -> int:
+    """A whole number for a ROS integer field. Text holding a number is accepted,
+       since form fields arrive as text.
+    """
+    number = value
+    if isinstance(value, str):
+        try:
+            number = int(value.strip())
+        except ValueError:
+            try:
+                number = float(value.strip())
+            except ValueError:
+                raise ValueError(f"expected a whole number, got {value!r}") from None
+    if (
+        isinstance(number, (bool, np.bool_))
+        or not isinstance(number, numbers.Real)
+        or (not isinstance(number, numbers.Integral) and not float(number).is_integer())
+    ):
+        raise ValueError(f"expected a whole number, got {value!r}")
+    return int(number)
+
+
 def _convert_ros_scalar(base_type: str, value: Any) -> Any:
     """Convert a JSON value to the Python value of a scalar ROS field type."""
     if base_type in _ROS_INT_TYPES:
-        return int(value)
+        return _convert_ros_int(value)
     if base_type in _ROS_FLOAT_TYPES:
+        # refuse any bools being passed as floats
+        if isinstance(value, (bool, np.bool_)):
+            raise ValueError(f"expected a number, got {value!r}")
         return float(value)
     if base_type == "boolean":
-        return bool(value)
+        # Only unambiguous values. Text accepted
+        if isinstance(value, (bool, np.bool_)):
+            return bool(value)
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+            return value.strip().lower() == "true"
+        raise ValueError(f"expected true or false, got {value!r}")
     if base_type == "octet":
         # rclpy represents octet as a length-1 bytes object
         if isinstance(value, (bytes, bytearray)) and len(value) == 1:
             return bytes(value)
-        return bytes([int(value)])
+        return bytes([_convert_ros_int(value)])
     if base_type.startswith(("string", "wstring")):
         return str(value)
     raise ValueError(f"unsupported ROS field type '{base_type}'")

@@ -538,6 +538,14 @@ def test_native_mapping_reaches_describe():
     assert mapping["resolution"] == 0.05
 
 
+def test_native_mapping_declares_where_the_imu_sits_in_the_lidar():
+    decl = NativeMapping(cloud="lidar", imu="lidar_imu", imu_xyz=(0.011, 0.023, -0.044))
+    spec = decl.spec()
+    assert list(spec["imu_xyz"]) == [0.011, 0.023, -0.044]
+    assert list(spec["imu_rpy"]) == [0.0, 0.0, 0.0]
+    assert NativeMapping(cloud="lidar").spec()["imu_xyz"] is None
+
+
 def test_mapping_spec_is_json_serializable():
     """``describe`` crosses into the CLI as JSON, so the mapping block must
     survive the trip with nothing exotic in it."""
@@ -1217,7 +1225,7 @@ def _event_component(plugin, topic, name):
     component._robot_plugin = plugin
     component._use_robot_plugin()
     component._add_event_action_pair(
-        Event(topic.msg.data > 10), Action(method=lambda: None)
+        Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
     )
     return component
 
@@ -1301,7 +1309,7 @@ def test_event_on_a_sensor_topic_binds_to_that_sensor(rclpy_context):
     try:
         component._use_robot_plugin()
         component._add_event_action_pair(
-            Event(topic.msg.data > 10), Action(method=lambda: None)
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
         )
         component._turn_on_events_management()
 
@@ -1358,7 +1366,7 @@ def test_event_on_a_sensor_topic_binds_with_no_robot_plugin(rclpy_context):
         assert component._robot_plugin is None, "no robot plugin in this recipe"
         component._use_robot_plugin()
         component._add_event_action_pair(
-            Event(topic.msg.data > 10), Action(method=lambda: None)
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
         )
         component._turn_on_events_management()
 
@@ -2112,6 +2120,33 @@ def test_use_plugin_true_without_a_robot_plugin_is_caught_at_bringup(rclpy_conte
         component.destroy_node()
 
 
+def test_plugin_resources_are_released_when_setup_fails(monkeypatch):
+    """Setup opens the plugin hosts, bus and shared memory, so a failure after
+    that must still close them (issue #66)"""
+    from unittest.mock import MagicMock
+
+    from ros_sugar.core.component import BaseComponent
+
+    launcher = _launcher_with([BaseComponent(component_name="setup_fails_component")])
+    host, bus, shm = MagicMock(), MagicMock(), MagicMock()
+
+    def _failing_setup():
+        launcher._plugin_hosts.append(host)
+        launcher._plugin_bus, launcher._plugin_shm = bus, shm
+        raise RuntimeError("setup failed after opening the plugins")
+
+    monkeypatch.setattr(launcher, "setup_launch_description", _failing_setup)
+
+    with pytest.raises(RuntimeError, match="setup failed"):
+        launcher.bringup()
+
+    host.close.assert_called_once()
+    bus.close.assert_called_once()
+    shm.close.assert_called_once()
+    assert not launcher._plugin_hosts
+    assert launcher._plugin_bus is None and launcher._plugin_shm is None
+
+
 # ---------------------------------------------------------------------------
 # sensor frames and mounts
 # ---------------------------------------------------------------------------
@@ -2217,11 +2252,11 @@ def test_a_decoder_that_stamps_its_own_frame_is_never_overridden(rclpy_context):
 
     msg = Imu()
     msg.header.frame_id = "author_stamped"
-    host._stamp_frame(feedback, msg)
+    host._stamp_header(feedback, msg)
     assert msg.header.frame_id == "author_stamped"
 
     fresh = Imu()
-    host._stamp_frame(feedback, fresh)
+    host._stamp_header(feedback, fresh)
     assert fresh.header.frame_id == "declared_frame", "per-feedback frame wins"
 
 
@@ -2270,6 +2305,55 @@ def test_euler_to_quaternion_matches_known_rotations():
     assert abs(w - 0.7071067811865476) < 1e-9
 
 
+def test_a_pose_in_another_mounts_frame():
+    """Sensors are mounted on the body, but what reads one of them often wants
+    another in its own frame -- a LiDAR-inertial mapper wants the IMU in the
+    LiDAR's."""
+    import math
+
+    from ros_sugar.robot.mount import pose_relative_to
+
+    origin = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+    # In its own frame, a pose is the origin
+    xyz, rpy = pose_relative_to(origin, origin)
+    assert xyz == pytest.approx((0.0, 0.0, 0.0))
+    assert rpy == pytest.approx((0.0, 0.0, 0.0))
+
+    # From a frame a metre ahead, the parent's origin is a metre behind
+    xyz, rpy = pose_relative_to(origin, ((1.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+    assert xyz == pytest.approx((-1.0, 0.0, 0.0))
+    assert rpy == pytest.approx((0.0, 0.0, 0.0))
+
+    # A frame turned a quarter turn about Z: what lies ahead of the parent is
+    # off to that frame's right, and its own heading is turned back
+    xyz, rpy = pose_relative_to(
+        ((1.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ((0.0, 0.0, 0.0), (0.0, 0.0, math.pi / 2)),
+    )
+    assert xyz == pytest.approx((0.0, -1.0, 0.0))
+    assert rpy == pytest.approx((0.0, 0.0, -math.pi / 2))
+
+
+def test_a_relative_pose_is_the_transform_composed():
+    """Placing the result back through the frame lands where the pose was, for
+    a translation and a rotation neither of which is an easy case."""
+    import numpy as np
+
+    from ros_sugar.robot.mount import _rotation_from_euler, pose_relative_to
+
+    pose = ((0.31, -0.12, 0.08), (0.2, -0.4, 1.1))
+    frame = ((0.12, 0.03, 0.22), (-0.1, 0.5, -0.7))
+
+    xyz, rpy = pose_relative_to(pose, frame)
+
+    rotation = _rotation_from_euler(*frame[1])
+    assert rotation @ np.array(xyz) + np.array(frame[0]) == pytest.approx(pose[0])
+    assert rotation @ _rotation_from_euler(*rpy) == pytest.approx(
+        _rotation_from_euler(*pose[1])
+    )
+
+
 def test_launcher_collects_mounts_from_add_plugin(rclpy_context):
     from ros_sugar.robot import Mount
 
@@ -2286,6 +2370,58 @@ def test_launcher_collects_mounts_from_add_plugin(rclpy_context):
     assert mount.parent_frame == "base_link"
     # the child is filled in from the plugin, so a recipe never repeats it
     assert mount.child_frame == "front_cam_frame"
+
+
+class _StaticTransforms:
+    """Receives what the launcher publishes to /tf_static."""
+
+    def __init__(self):
+        self.transforms = []
+
+    def set_static_transforms(self, transforms):
+        self.transforms = transforms
+
+
+def test_the_launcher_places_the_base_frame_on_its_footprint(rclpy_context):
+    """The geometry is centred on the base frame, so the footprint is half the
+    robot's height below it: what Kompass's collision checking assumes, made
+    visible on TF for everything else."""
+    import numpy as np
+
+    from ros_sugar.config import RobotConfig, RobotGeometryType, RobotType
+    from ros_sugar.config.robot import AngularCtrlLimits, LinearCtrlLimits
+
+    robot = MockPlugin(state_port=_free_port(), cmd_port=_free_port(), id="lite3")
+    robot.base_frame = "body"
+    robot.robot_config = RobotConfig(
+        model_type=RobotType.DIFFERENTIAL_DRIVE,
+        geometry_type=RobotGeometryType.BOX,
+        geometry_params=np.array([0.61, 0.37, 0.4]),
+        ctrl_vx_limits=LinearCtrlLimits(max_vel=1.0, max_acc=2.5, max_decel=7.5),
+        ctrl_omega_limits=AngularCtrlLimits(max_omega=1.5, max_acc=2.5, max_decel=4.0, max_ang=1.57),
+    )
+    assert robot.base_height == 0.2
+
+    launcher = _launcher_with([])
+    launcher.add_plugin(robot)
+    launcher.monitor_node = _StaticTransforms()
+    launcher._publish_mounts()
+
+    (footprint,) = launcher.monitor_node.transforms
+    assert (footprint.header.frame_id, footprint.child_frame_id) == ("base_footprint", "body")
+    assert footprint.transform.translation.z == 0.2
+    assert footprint.transform.rotation.w == 1.0
+
+
+def test_a_robot_without_a_geometry_gets_no_footprint(rclpy_context):
+    robot = MockPlugin(state_port=_free_port(), cmd_port=_free_port(), id="lite3")
+    robot.base_frame = "body"
+    assert robot.base_height is None
+    launcher = _launcher_with([])
+    launcher.add_plugin(robot)
+    launcher.monitor_node = _StaticTransforms()
+    launcher._publish_mounts()
+    assert launcher.monitor_node.transforms == []
 
 
 def test_a_sensor_needs_no_mount_when_tf_already_has_its_frame(rclpy_context):

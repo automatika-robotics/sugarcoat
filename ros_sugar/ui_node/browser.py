@@ -1,7 +1,7 @@
 """FastHTML browser UI for the UI node"""
 
 import asyncio
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
 from starlette.websockets import WebSocketDisconnect
 
@@ -57,18 +57,93 @@ def _publish_from_form(ros_node, msg_type: str, form: Dict) -> None:
     })
 
 
+class _FollowedRoutines:
+    """The routine cards one Tasks connection keeps up to date"""
+
+    def __init__(
+        self,
+        ros_node,
+        cards: Dict[str, elements.RoutineTask],
+        on_update: Callable[[], None],
+    ):
+        """
+        :param ros_node: The UI node
+        :param cards: The routine cards, by routine name
+        :param on_update: Called in the ROS executor thread on each new state
+        """
+        self._ros_node = ros_node
+        self._cards = cards
+        self._on_update = on_update
+        self._seen: Dict[str, tuple] = {}
+        self._names = [
+            name
+            for name in ros_node.routine_names()
+            if ros_node.add_routine_listener(name, on_update)
+        ]
+
+    async def push(self, send) -> None:
+        """Send the card of every routine whose state moved on"""
+        for name in self._names:
+            state = self._ros_node.get_routine_state(name)
+            if state is None:
+                continue
+            # The card shows whole seconds, so a fraction is no change
+            key = (
+                state.get("status"),
+                state.get("index"),
+                state.get("step_message"),
+                state.get("abort_reason"),
+                int(state.get("elapsed", 0)),
+                str(state.get("step_feedback")),
+            )
+            if key == self._seen.get(name):
+                continue
+            self._seen[name] = key
+            self._cards[name].update_state(state)
+            await send(self._cards[name].card)
+
+    @property
+    def tick(self) -> Optional[float]:
+        """How long to wait for a new state before pushing anyway, if at all.
+
+        A routine publishes on transitions only, so while one runs its card is
+        pushed each second to move its timer on
+        """
+        if any(self._cards[name].is_running() for name in self._names):
+            return 1.0
+        return None
+
+    def close(self) -> None:
+        """Stop following the routines"""
+        for name in self._names:
+            self._ros_node.remove_routine_listener(name, self._on_update)
+
+
+async def _wait_for(event: asyncio.Event, timeout: Optional[float]) -> None:
+    """Wait for the event to be set, or for the timeout to pass"""
+    try:
+        await asyncio.wait_for(event.wait(), timeout)
+    except asyncio.TimeoutError:
+        pass
+
+
 def build_browser_app(
     ros_node,
     additional_input_elements=None,
     additional_output_elements=None,
+    additional_task_elements=None,
     system_info=None,
+    session_key=None,
 ):
     """Build the FastHTML browser app for the UI node.
 
     :param ros_node: The running UI node.
     :param additional_input_elements: UI input elements from derived packages.
     :param additional_output_elements: UI output elements from derived packages.
+    :param additional_task_elements: Task cards from derived packages, by action type.
     :param system_info: System metadata for the visualization page.
+    :param session_key: Secret signing the session of a secure UI, sent over
+        HTTPS only. None uses FastHTML's key file in the working directory.
     :return: The FastHTML application (a Starlette app) to mount under ``/``.
     """
     ros_node_config = ros_node.config
@@ -81,8 +156,11 @@ def build_browser_app(
         action_clients_configs=ros_node.action_clients_inputs_dicts(),
         additional_input_elements=additional_input_elements,  # Additional UI input elements from derived packages
         additional_output_elements=additional_output_elements,  # Additional UI output elements from derived packages
+        additional_task_elements=additional_task_elements,  # Task cards for the action types a derived package owns
         hide_settings_panel=ros_node_config.hide_settings,
         system_info=system_info,
+        session_key=session_key,
+        routines=ros_node.routine_names(),
     )  # inputs and outputs are reversed
     app, _ = fh.get_app()
 
@@ -138,6 +216,16 @@ def build_browser_app(
         # update UI
         form_data = await request.form()
         result = ros_node.update_configs(dict(form_data.items()))
+        if result is None:
+            # The component never answered: no server, or it took too long.
+            # Reading `success` off that is how this page used to fall over
+            fh.toasting(
+                "No answer from the component, so nothing was changed",
+                session,
+                "error",
+                duration=100000,
+            )
+            return fh.get_main_page()
         success = all(result.success)
         if not success:
             item_names = list(form_data.keys())
@@ -166,7 +254,7 @@ def build_browser_app(
         )
         try:
             response = ros_node.send_srv_call(data_dict)
-        except RuntimeError as e:
+        except (RuntimeError, ValueError) as e:
             fh.toasting(str(e), session, "error", duration=100000)
             return fh.get_main_page()
         if response is None:
@@ -212,7 +300,7 @@ def build_browser_app(
             return fh.get_main_page()
         try:
             accepted = ros_node.send_action_goal(data_dict)
-        except RuntimeError as e:
+        except (RuntimeError, ValueError) as e:
             fh.toasting(str(e), session, "error", duration=100000)
             return fh.get_main_page()
         if not accepted:
@@ -263,8 +351,38 @@ def build_browser_app(
             )
         return fh.get_main_page()
 
-    # NOTE: Output topics shown in the running log: everything NOT routed to a
-    # dedicated video/map widget, and not a map overlay.
+    @app.post("/routine/{command}")
+    async def _(command: str, request, session):
+        """Start, pause, resume or abort a routine from its card"""
+        form_data = await request.form()
+        name = dict(form_data.items()).get("routine_name", "")
+        # Kept in the routine's state, so whoever reads it later knows why
+        reason = "aborted from the UI" if command == "abort" else None
+        try:
+            # Off the event loop: it waits for the Monitor's answer
+            done, message = await asyncio.to_thread(
+                ros_node.control_routine, name, command, reason
+            )
+        except (RuntimeError, ValueError) as e:
+            fh.toasting(str(e), session, "error", duration=100000)
+            return fh.get_main_page()
+        if not done:
+            fh.toasting(message, session, "error", duration=100000)
+            return fh.get_main_page()
+        fh.toasting(message, session, "info")
+        if command == "start" and name in fh.routines_ft:
+            fh.routines_ft[name].total_calls += 1
+        elements.update_logging_card(
+            fh.outputs_log,
+            f"{command.capitalize()} routine '{name}'",
+            data_type="String",
+            data_src="user",
+        )
+        return fh.get_main_page()
+
+    # NOTE: Output topics shown in the running log: those with a log element,
+    # NOT routed to a dedicated video/map widget, and not a map overlay. Types
+    # with no defined element are not entertained.
     _widget_output_names = (
         {name for name, _ in fh.get_all_stream_outputs()}
         | {name for name, _ in fh.get_all_map_outputs()}
@@ -274,6 +392,7 @@ def build_browser_app(
         (o.name, o.msg_type.__name__)
         for o in (ros_node.in_topics or [])
         if o.name not in _widget_output_names
+        and o.msg_type.__name__ in elements._OUTPUT_ELEMENTS
     ]
     log_topic_names = {name for name, _ in log_topics}
     # Topics that are ALSO declared as UI inputs carry user content their
@@ -321,51 +440,73 @@ def build_browser_app(
         registered = [
             n for n in names if ros_node.add_action_feedback_listener(n, _on_update)
         ]
+        routines = _FollowedRoutines(ros_node, fh.routines_ft, _on_update)
 
         last_seen: Dict[str, tuple] = {}
+        logged_results: Dict[str, Any] = {}
 
         async def _feedback_loop():
             try:
+                # Where each routine has got to, without waiting for it to move
+                await routines.push(send)
                 while True:
-                    await updated.wait()
+                    await _wait_for(updated, routines.tick)
                     updated.clear()
+                    await routines.push(send)
                     for name in names:
                         fb = ros_node.get_action_feedback(name)
                         if fb is None:
                             continue
-                        key = (fb["status"], fb["timestep"], fb["duration_secs"])
-                        if key == last_seen.get(name):
-                            continue
-                        last_seen[name] = key
-                        feedback = (
-                            ros_msg_to_str(fb["feedback"]) if fb["feedback"] else None
-                        )
-                        fh.action_clients_ft[name].update(
-                            status=fb["status"],
-                            feedback=feedback,
-                            duration=fb["duration_secs"],
-                            timestep=fb["timestep"],
-                        )
-                        await send(fh.action_clients_ft[name].card)
+                        ended = fb["status"] in ("aborted", "completed", "canceled")
+                        # The card shows whole seconds, so a fraction is no change
+                        key = (fb["status"], fb["timestep"], int(fb["duration_secs"]))
+                        if key != last_seen.get(name):
+                            last_seen[name] = key
+                            # The message itself: a card of an action type's
+                            # own reads its fields, Task turns it into a line
+                            feedback = fb["feedback"]
+                            fh.action_clients_ft[name].update(
+                                status=fb["status"],
+                                feedback=feedback,
+                                duration=fb["duration_secs"],
+                                timestep=fb["timestep"],
+                            )
+                            await send(fh.action_clients_ft[name].card)
 
-                        if fb["status"] in ("aborted", "completed", "canceled"):
-                            # display action aborted as an error on the main logging card
-                            if fb["status"] == "aborted":
-                                await log_data(
-                                    send,
-                                    f"Task '{name}' aborted: {feedback}"
-                                    if feedback
-                                    else f"Task '{name}' aborted",
-                                    data_type="String",
-                                    data_src="error",
-                                )
-                            fh.action_clients_ft[name].cleanup()
+                            if ended:
+                                # display action aborted as an error on the main logging card
+                                if fb["status"] == "aborted":
+                                    await log_data(
+                                        send,
+                                        f"Task '{name}' aborted: {feedback}"
+                                        if feedback
+                                        else f"Task '{name}' aborted",
+                                        data_type="String",
+                                        data_src="error",
+                                    )
+                                fh.action_clients_ft[name].cleanup()
+                        # The result can arrive after the ended status, so it is
+                        # checked on every wake and logged once per goal
+                        result = fb["result"]
+                        if (
+                            ended
+                            and result is not None
+                            and result is not logged_results.get(name)
+                        ):
+                            logged_results[name] = result
+                            await log_data(
+                                send,
+                                f"Task '{name}' result: {ros_msg_to_str(result)}",
+                                data_type="String",
+                                data_src="robot",
+                            )
             except (WebSocketDisconnect, RuntimeError):
                 pass
 
         def _teardown():
             for name in registered:
                 ros_node.remove_action_feedback_listener(name, _on_update)
+            routines.close()
 
         _conn_tasks[ws] = (asyncio.create_task(_feedback_loop()), _teardown)
 
@@ -373,7 +514,7 @@ def build_browser_app(
     # connects to WS /api/outputs/<topic>, ros_maps.js to WS /api/world/<grid>
     # and POST /api/inputs/<topic> (click-to-publish).
 
-    if ros_node.action_clients_inputs_dicts():
+    if ros_node.action_clients_inputs_dicts() or ros_node.routine_names():
 
         @app.ws(
             "/ws_actions",
@@ -409,7 +550,13 @@ def build_browser_app(
                     updated.clear()
                     for name, type_name in log_topics:
                         content = ros_node.get_latest_output(name)
-                        if not content or content is last_seen.get(name):
+                        # no data yet, or an empty text. false and 0 are
+                        # values and are logged
+                        if (
+                            content is None
+                            or (isinstance(content, str) and not content)
+                            or content is last_seen.get(name)
+                        ):
                             continue
                         last_seen[name] = content
                         # Topics also declared as UI inputs carry user content
