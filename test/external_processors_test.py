@@ -12,6 +12,7 @@ tests need no rclpy context.
 """
 
 import os
+import socket
 import threading
 import time
 
@@ -21,7 +22,12 @@ import pytest
 from ros_sugar import Launcher
 from ros_sugar.config import ExternalProcessorType
 from ros_sugar.core.component import BaseComponent
-from ros_sugar.io.ipc import ExternalProcessorClient, ExternalProcessorError
+from ros_sugar.io.ipc import (
+    ExternalProcessorClient,
+    ExternalProcessorError,
+    ExternalProcessorServer,
+    abstract_addr,
+)
 from ros_sugar.io.utils import run_external_processor
 
 FUNCTION = ExternalProcessorType.FUNCTION
@@ -254,11 +260,46 @@ def test_concurrent_calls_get_their_own_replies(launcher):
     assert results == {i: i for i in range(8)}
 
 
-def test_closing_the_server_removes_its_socket(launcher):
+def test_the_socket_leaves_nothing_behind(launcher):
+    """The socket is an abstract one: nothing on disk while the server runs,
+    and the name is gone the moment it closes, however it closes"""
     in_own_process(launcher, make_component("processors_close", add=([add], FUNCTION)))
     endpoint = launcher._processor_server.endpoint
-    assert os.path.exists(endpoint)
+    assert not endpoint.startswith("/")
+    assert not [p for p in os.listdir("/tmp") if p.startswith("sugarcoat_processors")]
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.connect(abstract_addr(endpoint))
+    probe.close()
 
     launcher._processor_server.close()
 
-    assert not os.path.exists(os.path.dirname(endpoint))
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    with pytest.raises(OSError):
+        probe.connect(abstract_addr(endpoint))
+    probe.close()
+
+
+def test_the_socket_name_does_not_come_from_the_pid():
+    """A container on the host's network shares the abstract namespace but not
+    the pids, so two launchers with the same pid must not collide"""
+    names = set()
+    for _ in range(20):
+        server = ExternalProcessorServer()
+        server.start()
+        names.add(server.endpoint)
+        server.close()
+    assert len(names) == 20
+    assert all(str(os.getpid()) not in name for name in names)
+
+
+def test_a_connection_from_another_user_is_refused(launcher, monkeypatch):
+    component = in_own_process(
+        launcher, make_component("processors_peer", add=([add], FUNCTION))
+    )
+    client = client_of(component, "add")
+    assert client.call({"a": 1, "b": 2}) == 3
+
+    monkeypatch.setattr("ros_sugar.io.ipc.os.getuid", lambda: os.getuid() + 1)
+    client.close()
+    with pytest.raises(ExternalProcessorError):
+        client.call({"a": 1, "b": 2})

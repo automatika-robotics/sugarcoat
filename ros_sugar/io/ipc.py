@@ -5,13 +5,15 @@ processors, and the server/client pair that lets a component in its own process
 call external processors living in the launcher process (multiprocess launch).
 
 A frame is ``op (u8) | channel length (u16) | channel | data length (u32) | data``.
+
+The sockets live in Linux's abstract namespace. Server checks the peer's user on every
+connection to ensure correct permission.
 """
 
 import os
-import shutil
+import secrets
 import socket
 import struct
-import tempfile
 import threading
 from typing import Any, Callable, Dict, List, Optional
 
@@ -21,6 +23,38 @@ from rclpy.logging import get_logger
 
 # patch msgpack for numpy arrays
 m_pack.patch()
+
+LOGGER_NAME = "external_processors"
+
+
+def abstract_addr(name: str) -> str:
+    """Linux abstract-namespace AF_UNIX address for ``name``.
+
+    A leading NUL byte puts the socket in the abstract namespace: it has no
+    filesystem entry and is reclaimed automatically when the socket closes
+    """
+    return "\0" + name
+
+
+def accept_from_own_user(server_sock: socket.socket) -> Optional[socket.socket]:
+    """Accept a connection when it comes from this user, else close it and
+    return ``None``"""
+    conn, _ = server_sock.accept()
+    try:
+        creds = conn.getsockopt(
+            socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
+        )
+        _pid, uid, _gid = struct.unpack("3i", creds)
+    except OSError:
+        uid = None
+    if uid != os.getuid():
+        get_logger(LOGGER_NAME).warning(
+            f"Refused a connection from user {uid} on {server_sock.getsockname()!r}"
+        )
+        conn.close()
+        return None
+    return conn
+
 
 # Sentinel returned by read_frame when the socket is merely idle (a recv
 # timeout with no bytes buffered) - distinct from None, which means EOF/error.
@@ -84,8 +118,6 @@ _OP_CALL = 1
 _OP_OK = 2
 _OP_ERR = 3
 
-LOGGER_NAME = "external_processors"
-
 
 class ExternalProcessorError(Exception):
     """Calling an external processor in the launcher process failed"""
@@ -99,15 +131,14 @@ def processor_id(node_name: str, key: str, index: int) -> str:
 class ExternalProcessorServer:
     """Serves external processors to components running in their own process.
 
-    Started in the launcher process. It listens on a socket in a private
-    directory and serves each connection in its own thread, so a component
-    process that is respawned connects again and is served.
+    Started in the launcher process. It listens on an abstract socket and
+    serves each connection in its own thread, so a component process that is
+    respawned connects again and is served.
     """
 
     def __init__(self) -> None:
         self._processors: Dict[str, Callable] = {}
         self._lock = threading.Lock()
-        self._dir: Optional[str] = None
         self._endpoint: Optional[str] = None
         self._server_sock: Optional[socket.socket] = None
         self._conns: List[socket.socket] = []
@@ -115,7 +146,7 @@ class ExternalProcessorServer:
 
     @property
     def endpoint(self) -> Optional[str]:
-        """Path of the socket components connect to"""
+        """Name of the socket components connect to"""
         return self._endpoint
 
     def register(self, proc_id: str, func: Callable) -> None:
@@ -125,11 +156,9 @@ class ExternalProcessorServer:
 
     def start(self) -> None:
         """Bind the socket and start accepting connections"""
-        # Private to the user (0700) and unique to this launch
-        self._dir = tempfile.mkdtemp(prefix="sugarcoat_processors_")
-        self._endpoint = os.path.join(self._dir, "processors.socket")
+        self._endpoint = f"sugarcoat_processors_{secrets.token_hex(8)}"  # add a random token (not using PIDs on purpose)
         self._server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._server_sock.bind(self._endpoint)
+        self._server_sock.bind(abstract_addr(self._endpoint))
         self._server_sock.listen(16)
         self._server_sock.settimeout(0.5)
         self._stop.clear()
@@ -140,11 +169,13 @@ class ExternalProcessorServer:
     def _accept_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                conn, _ = self._server_sock.accept()
+                conn = accept_from_own_user(self._server_sock)
             except socket.timeout:
                 continue
             except OSError:
                 break
+            if conn is None:
+                continue
             conn.settimeout(0.5)
             with self._lock:
                 self._conns.append(conn)
@@ -190,7 +221,7 @@ class ExternalProcessorServer:
             return encode_frame(_OP_ERR, proc_id, str(e).encode("utf-8"))
 
     def close(self) -> None:
-        """Stop serving and remove the socket"""
+        """Stop serving and close the socket"""
         self._stop.set()
         socks = [self._server_sock] if self._server_sock else []
         with self._lock:
@@ -202,9 +233,6 @@ class ExternalProcessorServer:
             except OSError:
                 pass
         self._server_sock = None
-        if self._dir:
-            shutil.rmtree(self._dir, ignore_errors=True)
-            self._dir = None
 
 
 class ExternalProcessorClient:
@@ -226,7 +254,7 @@ class ExternalProcessorClient:
         """Connect to the server"""
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
-            sock.connect(self.endpoint)
+            sock.connect(abstract_addr(self.endpoint))
         except OSError:
             sock.close()
             raise

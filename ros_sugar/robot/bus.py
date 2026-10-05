@@ -9,7 +9,7 @@ The bus carries **bytes only**; callers serialize ROS messages with
 The bus is symmetric. Either side may ``publish`` or ``subscribe``.
 """
 
-import os
+import secrets
 import socket
 import threading
 from abc import ABC, abstractmethod
@@ -17,22 +17,19 @@ from typing import Any, Callable, Dict, List, Optional
 
 from rclpy.logging import get_logger
 
-from ..io.ipc import TIMEOUT, encode_frame, read_frame
+from ..io.ipc import (
+    TIMEOUT,
+    abstract_addr,
+    accept_from_own_user,
+    encode_frame,
+    read_frame,
+)
 
 # Frame ops
 _OP_SUB = 1
 _OP_PUB = 2
 
 LOGGER_NAME = "robot_plugin"
-
-
-def _abstract_addr(name: str) -> str:
-    """Linux abstract-namespace AF_UNIX address for ``name``.
-
-    A leading NUL byte puts the socket in the abstract namespace: it has no
-    filesystem entry and is reclaimed automatically when the socket closes
-    """
-    return "\0" + name
 
 
 class BusHandle:
@@ -167,10 +164,9 @@ class SocketFeedbackBus(FeedbackBus):
     # HOST side
     def start(self) -> None:  # noqa: D102
         self._is_server = True
-        # Abstract-namespace name unique per pid and per instance
-        self._endpoint = f"sugarcoat_fb_{os.getpid()}_{id(self)}"
+        self._endpoint = f"sugarcoat_fb_{secrets.token_hex(8)}"  # a random token (not using PID on purpose)
         self._server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._server_sock.bind(_abstract_addr(self._endpoint))
+        self._server_sock.bind(abstract_addr(self._endpoint))
         self._server_sock.listen(16)
         self._server_sock.settimeout(0.5)
         self._stop.clear()
@@ -183,11 +179,13 @@ class SocketFeedbackBus(FeedbackBus):
     def _accept_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                conn, _ = self._server_sock.accept()
+                conn = accept_from_own_user(self._server_sock)
             except socket.timeout:
                 continue
             except OSError:
                 break
+            if conn is None:
+                continue
             conn.settimeout(0.5)
             with self._lock:
                 self._conns.append(conn)
@@ -258,7 +256,7 @@ class SocketFeedbackBus(FeedbackBus):
             raise RuntimeError("SocketFeedbackBus.connect() needs an endpoint")
         self._is_server = False
         self._client_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._client_sock.connect(_abstract_addr(self._endpoint))
+        self._client_sock.connect(abstract_addr(self._endpoint))
         self._client_sock.settimeout(0.5)
         self._stop.clear()
         t = threading.Thread(
