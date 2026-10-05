@@ -48,6 +48,7 @@ from rclpy import logging
 from rclpy.lifecycle.managed_entity import ManagedEntity
 
 from . import logger
+from .signals import sigterm_shuts_down
 from .system_info import (
     serialize_component,
     serialize_event,
@@ -2207,7 +2208,8 @@ class Launcher:
         self.ls = LaunchService(debug=debug)
         self.ls.include_launch_description(self._description)
 
-        return self.ls.run(shutdown_when_idle=False)
+        with sigterm_shuts_down(self.ls):
+            return self.ls.run(shutdown_when_idle=False)
 
     def configure(
         self,
