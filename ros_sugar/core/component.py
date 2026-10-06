@@ -2468,12 +2468,11 @@ class BaseComponent(lifecycle.Node):
         """
         try:
             # Reconfigure and restart the node
-            reconfigured = self.reconfigure(request.path_to_file)
-            if reconfigured:
-                response.success = True
-            else:
-                response.success = False
-                response.error_msg = "Failed to Restart the node"
+            response.success, message = self.reconfigure(
+                request.path_to_file, keep_alive=request.keep_alive
+            )
+            if not response.success:
+                response.error_msg = message
         except Exception as e:
             response.success = False
             response.error_msg = f"{e}"
