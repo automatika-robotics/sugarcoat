@@ -2496,7 +2496,18 @@ class BaseComponent(lifecycle.Node):
 
         param_type = self.config.get_attribute_type(param_name)
         try:
-            parsed_param = param_type(param_str_value) if param_type else None
+            if param_type is bool:
+                # NOTE: Handle bool separately, as bool(str) only asks whether the string is non-empty, so
+                # "false" would come out True.
+                word = param_str_value.strip().lower()
+                if word in ("true", "1", "yes", "on"):
+                    parsed_param = True
+                elif word in ("false", "0", "no", "off"):
+                    parsed_param = False
+                else:
+                    raise ValueError(f"'{param_str_value}' is not a boolean")
+            else:
+                parsed_param = param_type(param_str_value) if param_type else None
             self.config.update_value(param_name, parsed_param)
             self.get_logger().debug(
                 f"Updates {self.node_name} config param {param_name} to : {parsed_param}"
