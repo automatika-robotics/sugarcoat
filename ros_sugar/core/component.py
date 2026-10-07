@@ -3157,7 +3157,7 @@ class BaseComponent(lifecycle.Node):
 
         reactivate = initial_state >= LifecycleStateMsg.PRIMARY_STATE_ACTIVE
 
-        if initial_state == LifecycleStateMsg.PRIMARY_STATE_UNCONFIGURED:
+        if initial_state == LifecycleStateMsg.PRIMARY_STATE_INACTIVE:
             # Already configured -> cleanup first
             self.trigger_cleanup()
 
