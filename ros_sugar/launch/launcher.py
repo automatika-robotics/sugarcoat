@@ -219,6 +219,9 @@ class Launcher:
         # Tracks whether the recipe explicitly set robot config. If not config
         # is pulled from a plugin. In case both present, recipe wins.
         self._robot_explicitly_set: bool = False
+        # The config the recipe set, applied again at bringup so components
+        # added after it was set get it too
+        self._explicit_robot_config: Any = None
         self._frames_explicitly_set: bool = False
 
         # Components list and package/executable
@@ -601,6 +604,7 @@ class Launcher:
         :type config: RobotConfig
         """
         self._robot_explicitly_set = True
+        self._explicit_robot_config = robot_config
         self._broadcast_robot_config(robot_config)
 
     def _broadcast_robot_config(self, robot_config) -> None:
@@ -1047,9 +1051,12 @@ class Launcher:
 
     def _apply_plugin_robot_config(self) -> None:
         """Pull ``robot_config`` from the attached plugin and broadcast it to
-        every component, unless the recipe already set one explicitly
+        every component, unless the recipe already set one explicitly. A config
+        the recipe set is broadcast again instead, to reach the components
+        added after it was set
         """
         if self._robot_explicitly_set:
+            self._broadcast_robot_config(self._explicit_robot_config)
             return
         if self._robot_plugin is None:
             return
