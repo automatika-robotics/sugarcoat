@@ -2687,7 +2687,7 @@ class BaseComponent(lifecycle.Node):
             topic_name[1:] if topic_name.startswith("/") else topic_name
         )
 
-        if topic_name not in self.callbacks.keys():
+        if normalized_topic_name not in self.callbacks.keys():
             error_msg = f"Topic {topic_name} is not found in Component inputs"
             return error_msg
 
@@ -2757,7 +2757,7 @@ class BaseComponent(lifecycle.Node):
             topic_name[1:] if topic_name.startswith("/") else topic_name
         )
 
-        if topic_name not in self.publishers_dict.keys():
+        if normalized_topic_name not in self.publishers_dict.keys():
             error_msg = f"Topic {topic_name} is not found in Component outputs"
             return error_msg
 
@@ -2835,11 +2835,14 @@ class BaseComponent(lifecycle.Node):
                 response.error_msg = error_msg
 
         elif request.direction == ReplaceTopic.Request.OUTPUT_TOPIC:
-            self._replace_output_topic(
+            error_msg = self._replace_output_topic(
                 request.old_name, request.new_name, request.new_msg_type
             )
-            response.success = False
-            response.error_msg = "Not implemented"
+            if not error_msg:
+                response.success = True
+            else:
+                response.success = False
+                response.error_msg = error_msg
         else:
             response.success = False
             response.error_msg = f"Got invalid direction value '{request.direction}'. Direction can only be in [{ReplaceTopic.Request.INPUT_TOPIC} -> input, or {ReplaceTopic.Request.OUTPUT_TOPIC} -> output]"
