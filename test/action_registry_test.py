@@ -718,6 +718,31 @@ class TestActionRegistryFailureAndListing(unittest.TestCase):
         assert by_ref["planner/lookup_transform"]["interface_type"] == "LookupTransform"
         assert by_ref["driver/honk"]["schema"]["function"]["name"] == "honk"
 
+    def test_a_removed_action_is_unknown_and_its_name_is_free_again(self):
+        """What the registry drops stops resolving, and a new entry can take
+        the reference, which `add` would otherwise refuse as a replacement"""
+        removed = self.registry.remove("driver/honk")
+        assert removed.ref == "driver/honk"
+        assert "driver/honk" not in self.registry
+        assert self.registry.interface_for("driver/honk") is None
+        with pytest.raises(KeyError, match="driver/honk"):
+            self.registry.get("driver/honk")
+
+        replacement = RegisteredAction(
+            ref="driver/honk",
+            owner="driver",
+            name="honk",
+            kind=COMPONENT_METHOD,
+            description="Honk twice",
+        )
+        self.registry.add(replacement)
+        assert self.registry.get("driver/honk") is replacement
+
+    def test_removing_an_unknown_action_says_so(self):
+        with pytest.raises(KeyError, match="driver/reverse"):
+            self.registry.remove("driver/reverse")
+        assert "driver/honk" in self.registry
+
     def test_an_entry_round_trips_through_a_dict(self):
         entry = RegisteredAction(
             ref="driver/stop",
@@ -1034,6 +1059,20 @@ class TestPluginContributions(unittest.TestCase):
         assert "action_kwargs" in entry.signature
         # Its host is the process the Monitor is in, always
         assert entry.in_process
+
+    def test_a_removed_condition_is_unknown_and_its_name_is_free_again(self):
+        ref = self.registry.events()[0].ref
+        factory = self.registry.event_factory_for(ref)
+        removed = self.registry.remove_event(ref)
+        assert removed.ref == ref
+        assert self.registry.event_factory_for(ref) is None
+        with pytest.raises(KeyError, match=ref):
+            self.registry.get_event(ref)
+        with pytest.raises(KeyError):
+            self.registry.remove_event(ref)
+
+        self.registry.add_event_factory(removed, factory)
+        assert self.registry.event_factory_for(ref) is factory
 
     def test_the_factory_is_kept_as_the_entry_interface(self):
         """So whoever resolves the entry needs no plugin object of its own"""

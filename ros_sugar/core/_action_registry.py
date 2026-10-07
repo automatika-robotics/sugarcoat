@@ -349,6 +349,18 @@ class SystemActionRegistry:
             f"{', '.join(sorted(self._events)) or 'none'}"
         )
 
+    def remove_event(self, ref: str) -> RegisteredEvent:
+        """Drop one condition and its factory.
+
+        :return: The entry that was removed
+        :raises KeyError: If unknown, as `get_event` does
+        """
+        removed = self.get_event(ref)
+        key = self.normalize(ref)
+        del self._events[key]
+        del self._event_factories[key]
+        return removed
+
     def get(self, ref: str) -> RegisteredAction:
         """Look one up.
 
@@ -368,6 +380,21 @@ class SystemActionRegistry:
         raise KeyError(
             f"Unknown action '{ref}'. Known owners: {', '.join(self.owners()) or 'none'}"
         )
+
+    def remove(self, ref: str) -> RegisteredAction:
+        """Drop one action, and the live class or factory kept beside it.
+
+        Something built from the entry before, such as an event's action, keeps
+        what it was built with; only new lookups stop finding it.
+
+        :return: The entry that was removed
+        :raises KeyError: If unknown, as `get` does
+        """
+        removed = self.get(ref)
+        key = self.normalize(ref)
+        del self._by_ref[key]
+        self._interfaces.pop(key, None)
+        return removed
 
     def __contains__(self, ref: str) -> bool:
         try:
