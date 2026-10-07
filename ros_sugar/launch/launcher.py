@@ -2010,16 +2010,12 @@ class Launcher:
         """
         name = component.node_name
         rclpy_log_level = self._rclpy_log_level.get(component.node_name)
+        arguments = component.launch_cmd_args + [
+            "--additional_types",
+            json.dumps(list(_additional_types.keys())),
+        ]
         if rclpy_log_level:
-            arguments = component.launch_cmd_args + [
-                "--additional_types",
-                json.dumps(list(_additional_types.keys())),
-                "--ros-args",
-                "--log-level",
-                rclpy_log_level,
-            ]
-        else:
-            arguments = component.launch_cmd_args
+            arguments += ["--ros-args", "--log-level", rclpy_log_level]
         if issubclass(component.__class__, ManagedEntity):
             return LifecycleNodeLaunchAction(
                 package=pkg_name,
