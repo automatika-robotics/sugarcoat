@@ -991,7 +991,9 @@ class BaseComponent(lifecycle.Node):
             if isinstance(publisher, Publisher):
                 publisher.set_node_name(self.node_name)
                 # Set ROS publisher for each output publisher
-                publisher.set_publisher(self._add_ros_publisher(publisher))
+                publisher.set_publisher(
+                    self._add_ros_publisher(publisher), clock=self.get_clock()
+                )
 
     def create_all_timers(self):
         """
@@ -2779,7 +2781,9 @@ class BaseComponent(lifecycle.Node):
             self.destroy_publisher(publisher._publisher)
 
             self.get_logger().info(f"Creating publisher for new topic '{new_name}'")
-            publisher.set_publisher(self._add_ros_publisher(publisher))
+            publisher.set_publisher(
+                self._add_ros_publisher(publisher), clock=self.get_clock()
+            )
 
         # Update publishers_dict
         self.publishers_dict.pop(normalized_topic_name)
