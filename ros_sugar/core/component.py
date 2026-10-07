@@ -1,6 +1,7 @@
 """Base Component"""
 
 import importlib
+import inspect
 import json
 import threading
 import time
@@ -155,6 +156,8 @@ class BaseComponent(lifecycle.Node):
 
         self.__fallbacks = fallbacks or ComponentFallbacks()
         self.__fallbacks_giveup: bool = False
+        # Names the ExecuteMethod service may call, found on first use
+        self.__remote_methods: Optional[Set[str]] = None
         self.__fallbacks_listeners: List[Subscription] = []
         # Blackboard to store latest messages for all topics required for all fallbacks
         # {'topic_1_name': RosMsg, 'topic_2_name': ROSMsg, ... }
@@ -2849,6 +2852,36 @@ class BaseComponent(lifecycle.Node):
 
         return response
 
+    def _is_remotely_callable(self, name: str) -> bool:
+        """Whether the ExecuteMethod service may call a method by this name.
+
+        Anything decorated with @component_action or @component_fallback is,
+        and so is a public method defined by a component class deriving from
+        BaseComponent: a recipe can bind those in an Action, and the Monitor
+        calls them over this service. BaseComponent's own undecorated methods
+        and rclpy's are not, nor is any private name, so the service cannot
+        destroy the node or reach the component's internals.
+        """
+        if name.startswith("_"):
+            return False
+        if self.__remote_methods is None:
+            self.__remote_methods = set(
+                get_methods_with_decorator(self, decorator_name="component_action")
+            ) | set(
+                get_methods_with_decorator(self, decorator_name="component_fallback")
+            )
+        if name in self.__remote_methods:
+            return True
+        for cls in type(self).__mro__:
+            if name in vars(cls):
+                # The class that defines the name decides
+                return (
+                    inspect.isfunction(vars(cls)[name])
+                    and issubclass(cls, BaseComponent)
+                    and cls is not BaseComponent
+                )
+        return False
+
     @log_srv
     def _execute_method_srv_callback(
         self, request: ExecuteMethod.Request, response: ExecuteMethod.Response
@@ -2856,6 +2889,14 @@ class BaseComponent(lifecycle.Node):
         if not hasattr(self, request.name):
             response.success = False
             response.error_msg = f"Component {self.node_name} does not have a method with requested name '{request.name}'"
+            return response
+        if not self._is_remotely_callable(request.name):
+            response.success = False
+            response.error_msg = (
+                f"Method '{request.name}' of component {self.node_name} cannot be "
+                "called over the service. Only component actions, fallbacks and "
+                "public methods of the component's own class are"
+            )
             return response
         kwargs = {}
         if request.kwargs_json:
