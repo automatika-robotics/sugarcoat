@@ -3637,6 +3637,11 @@ class BaseComponent(lifecycle.Node):
             # Create external processors
             self._attach_external_processors()
 
+            # Every activation starts with the full fallback budget, so a
+            # component that gave up can recover after a restart
+            self.__fallbacks.reset()
+            self.__fallbacks_giveup = False
+
             # Create failure check timer
             self.__fallbacks_check_timer = self.create_timer(
                 timer_period_sec=1 / self.config.fallback_rate,
