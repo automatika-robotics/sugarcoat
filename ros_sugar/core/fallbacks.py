@@ -226,30 +226,37 @@ class ComponentFallbacks:
             key: value.msg for key, value in topics_board.items()
         }
 
+    @property
+    def _all_fallbacks(self) -> List[Fallback]:
+        """Every fallback that is defined, give-up included"""
+        return [
+            fallback
+            for fallback in (
+                self.on_component_fail,
+                self.on_algorithm_fail,
+                self.on_system_fail,
+                self.on_giveup,
+                self.on_any_fail,
+            )
+            if fallback
+        ]
+
     def reset(self) -> None:
-        """Reset all fallback execution tracking indices to 0 and the retries tracking indices to 0"""
+        """Reset all fallback execution tracking indices and retries to 0, and
+        clear the give-up flag, so every fallback has its full budget again"""
         self.reset_execution_indices()
         self.reset_retries()
+        self.__giveup = False
 
     def reset_execution_indices(self) -> None:
         """Reset all fallback execution tracking indices to 0"""
-        # Indices to keep track of the executed fallback
-
-        if self.on_component_fail:
-            self.on_component_fail.reset_current_idx()
-        if self.on_algorithm_fail:
-            self.on_algorithm_fail.reset_current_idx()
-        if self.on_system_fail:
-            self.on_system_fail.reset_current_idx()
+        for fallback in self._all_fallbacks:
+            fallback.reset_current_idx()
 
     def reset_retries(self):
         """Reset all fallback retries tracking indices to 0"""
-        if self.on_component_fail:
-            self.on_component_fail.reset_retries()
-        if self.on_algorithm_fail:
-            self.on_algorithm_fail.reset_retries()
-        if self.on_system_fail:
-            self.on_system_fail.reset_retries()
+        for fallback in self._all_fallbacks:
+            fallback.reset_retries()
 
     def _execute_fallback(self, fallback: Fallback) -> None:
         """
