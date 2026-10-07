@@ -727,14 +727,14 @@ class BaseAction:
 
         # Wrap the function to add LaunchContext attribute to it required by ROS Launch
         @wraps(self.executable)
-        def new_function(_: LaunchContext, *args, **kwargs):
+        def new_function(_: LaunchContext, *_args, **kwargs):
             """
             Create new_function - Add context + No return from original function
 
             :param context: ROS Launch Context
             :type context: LaunchContext
             """
-            self(*args, **kwargs)
+            self(**kwargs)
 
         # HACK: Update function signature - as ROS Launch uses inspect to check signature
         new_parameters = list(function_parameters.values())
