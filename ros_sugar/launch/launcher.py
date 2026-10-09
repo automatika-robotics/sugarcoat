@@ -202,6 +202,8 @@ class Launcher:
         self._config_file: Optional[str] = config_file
         self._launch_group = []
         self._enable_ui = False
+        # The UI node, created at setup when the UI is enabled
+        self._ui_node: Optional[UINode] = None
         # Routines shown in the UI, to host on the Monitor whether or not an
         # event triggers them
         self._ui_routines: List[Routine] = []
@@ -1941,10 +1943,11 @@ class Launcher:
         return json.dumps(system_info)
 
     def _setup_ui_node(self) -> None:
-        """Adds a node to communicate between launched components and web client
+        """Creates the node that communicates between the launched components
+        and the web client, and registers it for activation at start.
 
-        :param nodes_in_processes: If nodes are being launched in separate processes, defaults to True
-        :type nodes_in_processes: bool, optional
+        Its launch action is added later by `_add_ui_node_launch_action`, once
+        the plugins are up
         """
         logger.info("UI enabled. Setting up the UI node...")
 
@@ -1957,8 +1960,27 @@ class Launcher:
             outputs=self._ui_output_topics,
             component_configs=component_configs,
         )
-        ui_node._update_cmd_args_list()
+        # A UI topic served by a plugin is bound to it when the UI node
+        # activates, the way a component's is, so it needs the plugins too
+        ui_topics = [
+            topic
+            for topic in list(self._ui_input_topics or []) + list(self._ui_output_topics or [])
+            if isinstance(topic, Topic)
+        ]
+        if any(topic.use_plugin for topic in ui_topics):
+            for plugin in self._plugins.values():
+                ui_node.add_plugin(plugin)
         self.__component_names_to_activate_on_start_mp.append(ui_node.node_name)
+        self._ui_node = ui_node
+
+    def _add_ui_node_launch_action(self) -> None:
+        """Adds the UI node's process to the launch group.
+
+        Runs after `_setup_plugins`, so the plugin specs handed to the UI node
+        point at an already-started feedback bus, as they do for components
+        """
+        ui_node = self._ui_node
+        ui_node._update_cmd_args_list()
         arguments = ui_node.launch_cmd_args + [
             "--additional_types",
             json.dumps(list(_additional_types.keys())),
@@ -2503,7 +2525,8 @@ class Launcher:
         for component in self._components:
             self._setup_component_events_handlers(component)
 
-        # Create UI node if enabled
+        # Create UI node if enabled. Its process is added once the plugins
+        # are up, below
         if self._enable_ui:
             self._setup_ui_node()
 
@@ -2513,6 +2536,9 @@ class Launcher:
         # Bring up the robot plugin HOST after the Monitor exists and before the
         # component group is built
         self._setup_plugins()
+
+        if self._enable_ui:
+            self._add_ui_node_launch_action()
 
         self._publish_mounts()
 
