@@ -12,6 +12,21 @@ from .frontend import FHApp
 from ..supported_types import ros_msg_to_str
 
 
+#: Default pose uncertainty for PoseWithCovariance and PoseWithCovarianceStamped
+_POSE_ESTIMATE_COVARIANCE = [0.0] * 36
+_POSE_ESTIMATE_COVARIANCE[0] = 0.25
+_POSE_ESTIMATE_COVARIANCE[7] = 0.25
+_POSE_ESTIMATE_COVARIANCE[35] = 0.06853891945200942
+
+_POSE_TYPES = ("Pose", "PoseStamped", "PoseWithCovariance", "PoseWithCovarianceStamped")
+
+
+def _stamped(fields: Dict, form: Dict) -> Dict:
+    """``fields`` with the header the form's frame_id gives them. The stamp is
+    left to the UI node, which stamps headers when it publishes"""
+    return {"header": {"frame_id": form.get("frame_id") or ""}, **fields}
+
+
 def _nest_form_fields(form: Dict) -> Dict:
     """Rebuild a submitted form into a nested field dict.
 
@@ -49,8 +64,8 @@ def _form_to_schema(msg_type: str, form: Dict) -> Dict:
             "y": float(form.get("y") or 0.0),
             "z": float(form.get("z") or 0.0),
         }
-        return point if msg_type == "Point" else {"point": point}
-    if msg_type in ("Pose", "PoseStamped"):
+        return point if msg_type == "Point" else _stamped({"point": point}, form)
+    if msg_type in _POSE_TYPES:
         pose = {
             "position": {
                 "x": float(form.get("x") or 0.0),
@@ -64,7 +79,17 @@ def _form_to_schema(msg_type: str, form: Dict) -> Dict:
                 "z": float(form.get("ori_z") or 0.0),
             },
         }
-        return pose if msg_type == "Pose" else {"pose": pose}
+        if msg_type == "Pose":
+            return pose
+        if msg_type == "PoseStamped":
+            return _stamped({"pose": pose}, form)
+        with_covariance = {
+            "pose": pose,
+            "covariance": list(_POSE_ESTIMATE_COVARIANCE),
+        }
+        if msg_type == "PoseWithCovariance":
+            return with_covariance
+        return _stamped({"pose": with_covariance}, form)
     # String and any message without a widget of its own, whose generic form
     # names each input by its path in the message
     fields = {
@@ -627,7 +652,7 @@ def build_browser_app(
                     data_src="user",
                 )
             _publish_from_form(ros_node, data_type, data)
-        elif data_type in ["Pose", "PoseStamped"]:
+        elif data_type in _POSE_TYPES:
             # display in log for coordinates data types
             if not echoed:
                 await log_data(

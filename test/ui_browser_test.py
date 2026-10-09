@@ -752,3 +752,70 @@ def test_a_generic_form_reaches_the_ui_node_as_the_nested_message(tmp_path, monk
     # A topic form arrives over the socket with htmx's own headers beside it
     submitted = {"topic_name": "plan", "topic_type": "GetPlanRequest", "HEADERS": {}, **form}
     assert _form_to_schema("GetPlanRequest", submitted) == nested
+
+
+@pytest.mark.parametrize("msg_type", ["PoseWithCovariance", "PoseWithCovarianceStamped"])
+def test_a_pose_with_covariance_input_can_be_picked_on_the_map(msg_type):
+    """It gets the pose widget, with the button that publishes a point clicked
+    on the map, instead of a generic form"""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from fasthtml.common import to_xml
+    from geometry_msgs import msg as geometry_msgs
+
+    from ros_sugar.ui_node.elements import input_topic_card
+
+    card = to_xml(
+        input_topic_card(
+            "initial_pose", msg_type, getattr(geometry_msgs, msg_type), ft_has_map_element=True
+        )
+    )
+
+    assert "togglePublishPoint(this)" in card
+    assert f'data-type="{msg_type}"' in card
+    assert 'name="ori_w"' in card
+    assert ('name="frame_id"' in card) == msg_type.endswith("Stamped")
+
+
+def test_a_pose_entered_by_hand_keeps_its_frame_and_gets_a_covariance():
+    """The manual entry of the pose widget, for every pose type it serves. The
+    frame the form asks for reaches the header, and a pose with covariance
+    gets the pose estimate one rather than zeros"""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from ros_sugar.ui_node.browser import _POSE_ESTIMATE_COVARIANCE, _form_to_schema
+
+    form = {"x": "1.5", "y": "-2", "z": "", "ori_w": "", "frame_id": "map"}
+    pose = {
+        "position": {"x": 1.5, "y": -2.0, "z": 0.0},
+        "orientation": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0},
+    }
+    header = {"frame_id": "map"}
+
+    assert _form_to_schema("Pose", form) == pose
+    assert _form_to_schema("PoseStamped", form) == {"header": header, "pose": pose}
+    assert _form_to_schema("PoseWithCovariance", form) == {
+        "pose": pose,
+        "covariance": _POSE_ESTIMATE_COVARIANCE,
+    }
+    assert _form_to_schema("PoseWithCovarianceStamped", form) == {
+        "header": header,
+        "pose": {"pose": pose, "covariance": _POSE_ESTIMATE_COVARIANCE},
+    }
+    assert _form_to_schema("PointStamped", form)["header"] == header
+    assert _POSE_ESTIMATE_COVARIANCE[0] == _POSE_ESTIMATE_COVARIANCE[7] == 0.25
+
+
+def test_the_orientation_toggle_shows_only_the_orientation_fields():
+    """It used to flip every field from the seventh on, which took in the frame
+    id and the form's Submit button"""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from fasthtml.common import to_xml
+
+    from ros_sugar.ui_node.elements import _in_pose_element
+
+    form = to_xml(_in_pose_element("goal", "PoseStamped", stamped=True, has_map=True))
+
+    assert "this.form.elements[name]" in form
+    assert "this.form.length" not in form

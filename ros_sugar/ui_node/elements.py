@@ -1050,11 +1050,12 @@ def _in_pose_element(
         ),
         DivHStacked(
             P("Orientation (Optional):"),
-            # Toggle button for only the orientation fields (skips the first 6 position fields of the form)
+            # Toggle button for only the orientation fields, found by name so the
+            # frame id and the form's buttons are left alone
             _toggle_button(
                 onclick="""
-                                for (let i = 6; i < this.form.length -1 ; i++)
-                                {{this.form[i].hidden = !this.form[i].hidden;}}
+                                for (const name of ['ori_w', 'ori_x', 'ori_y', 'ori_z'])
+                                {const field = this.form.elements[name]; field.hidden = !field.hidden;}
                                 """
             ),
             cls="space-x-0",
@@ -1092,7 +1093,8 @@ def _in_pose_element(
         ),
     )
     if stamped:
-        _pose_form_fields(
+        _pose_form_fields = (
+            *_pose_form_fields,
             Input(
                 placeholder="FrameId",
                 name="frame_id",
@@ -1186,6 +1188,8 @@ _INPUT_ELEMENTS: Dict = {
     "PointStamped": partial(_in_point_element, stamped=True),
     "Pose": partial(_in_pose_element, stamped=False),
     "PoseStamped": partial(_in_pose_element, stamped=True),
+    "PoseWithCovariance": partial(_in_pose_element, stamped=False),
+    "PoseWithCovarianceStamped": partial(_in_pose_element, stamped=True),
 }
 
 #: The card class of an action client, by the name of its action type. A
