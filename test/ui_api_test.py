@@ -1303,6 +1303,157 @@ def test_a_real_ui_node_reports_values_its_fields_cannot_hold():
         node.destroy_node()
 
 
+def test_a_map_click_publishes_a_pose_with_covariance():
+    """A point clicked on the map goes to a PoseWithCovariance(Stamped) input
+    as the body the map script posts: the clicked position, no rotation, the
+    map's frame on the stamped type, and RViz's pose estimate covariance rather
+    than zeros, which would claim total certainty"""
+    import time
+
+    import rclpy
+    from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.ui_node import UINode, UINodeConfig
+
+    if not rclpy.ok():
+        rclpy.init()
+    node = UINode(
+        component_name="ui_map_click",
+        config=UINodeConfig(),
+        inputs=[
+            Topic(name="ui_node_test/pose_guess", msg_type="PoseWithCovariance"),
+            Topic(name="ui_node_test/initial_pose", msg_type="PoseWithCovarianceStamped"),
+        ],
+        outputs=[Topic(name="ui_node_test/localized", msg_type="String")],
+    )
+    node.rclpy_init_node()
+    node.create_all_publishers()
+    node.custom_on_activate()
+    received = {}
+    node.create_subscription(
+        PoseWithCovariance,
+        "ui_node_test/pose_guess",
+        lambda msg: received.setdefault("pose_guess", msg),
+        10,
+    )
+    node.create_subscription(
+        PoseWithCovarianceStamped,
+        "ui_node_test/initial_pose",
+        lambda msg: received.setdefault("initial_pose", msg),
+        10,
+    )
+
+    # What clickedPoseCovariance() in ros_maps.js fills in
+    covariance = [0.0] * 36
+    covariance[0] = covariance[7] = 0.25
+    covariance[35] = 0.06853891945200942
+    # What publishPoint() in ros_maps.js posts for a click at (1.5, -2.0)
+    pose = {
+        "position": {"x": 1.5, "y": -2.0, "z": 0.0},
+        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+    }
+    bodies = {
+        "pose_guess": {"pose": pose, "covariance": covariance},
+        "initial_pose": {
+            "header": {"frame_id": "map"},
+            "pose": {"pose": pose, "covariance": covariance},
+        },
+    }
+    try:
+        client = TestClient(build_api_app(node))
+        deadline = time.time() + 5.0
+        while len(received) < 2 and time.time() < deadline:
+            for name, body in bodies.items():
+                if name not in received:
+                    resp = client.post(f"/api/inputs/ui_node_test/{name}", json=body)
+                    assert resp.status_code == 200, resp.json()
+            rclpy.spin_once(node, timeout_sec=0.05)
+        assert set(received) == {"pose_guess", "initial_pose"}, "nothing was published"
+
+        guess = received["pose_guess"]
+        assert (guess.pose.position.x, guess.pose.position.y) == (1.5, -2.0)
+        assert guess.pose.orientation.w == 1.0
+        assert list(guess.covariance) == covariance
+
+        initial = received["initial_pose"]
+        assert initial.header.frame_id == "map"
+        # The server stamps a header the click could not
+        assert initial.header.stamp.sec > 0
+        assert (initial.pose.pose.position.x, initial.pose.pose.position.y) == (1.5, -2.0)
+        assert list(initial.pose.covariance) == covariance
+    finally:
+        node.destroy_node()
+
+
+def test_a_real_ui_node_stamps_the_headers_a_client_left_unset():
+    """A client cannot know ROS time, so every header it leaves unstamped is
+    stamped when the UI node sends, nested ones and those in a sequence too. A
+    stamp the client set is kept"""
+    import time
+    from unittest.mock import MagicMock
+
+    import rclpy
+    from nav_msgs.msg import Path
+    from nav_msgs.srv import GetPlan
+    from starlette.testclient import TestClient
+
+    from ros_sugar.base_clients import ServiceClientConfig
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.ui_node import UINode, UINodeConfig
+
+    if not rclpy.ok():
+        rclpy.init()
+    node = UINode(
+        component_name="ui_header_stamps",
+        config=UINodeConfig(),
+        inputs=[
+            Topic(name="ui_node_test/route", msg_type="Path"),
+            ServiceClientConfig(srv_type=GetPlan, name="ui_node_test/plan_route"),
+        ],
+        outputs=[Topic(name="ui_node_test/route_status", msg_type="String")],
+    )
+    node.rclpy_init_node()
+    node.create_all_publishers()
+    node.custom_on_activate()
+    service = node._ros_service_clients["ui_node_test/plan_route"]
+    service.client.wait_for_service = MagicMock(return_value=True)
+    service.send_request = MagicMock(return_value=GetPlan.Response())
+    routes = []
+    node.create_subscription(Path, "ui_node_test/route", routes.append, 10)
+    try:
+        client = TestClient(build_api_app(node))
+
+        resp = client.post(
+            "/api/services/ui_node_test/plan_route",
+            json={
+                "start": {"header": {"frame_id": "map"}},
+                "goal": {"header": {"frame_id": "map", "stamp": {"sec": 5}}},
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        request = service.send_request.call_args.args[0]
+        assert request.start.header.frame_id == "map"
+        assert request.start.header.stamp.sec > 0
+        assert request.goal.header.stamp.sec == 5
+
+        deadline = time.time() + 5.0
+        while not routes and time.time() < deadline:
+            resp = client.post(
+                "/api/inputs/ui_node_test/route",
+                json={"header": {"frame_id": "map"}, "poses": [{}, {}]},
+            )
+            assert resp.status_code == 200, resp.json()
+            rclpy.spin_once(node, timeout_sec=0.05)
+        assert routes, "nothing was published"
+        route = routes[0]
+        assert route.header.stamp.sec > 0
+        assert all(pose.header.stamp.sec > 0 for pose in route.poses)
+    finally:
+        node.destroy_node()
+
+
 def test_a_second_goal_leaves_the_running_goal_alone(ui_node):
     """While a goal runs, another is refused before it can clear the running
     goal's state. Once the goal returns, or its feedback times out, goals are
@@ -1314,12 +1465,12 @@ def test_a_second_goal_leaves_the_running_goal_alone(ui_node):
     name = "ui_node_test/lookup"
     handler = ui_node._ros_action_clients[name]
     handler.client.wait_for_server = MagicMock(return_value=True)
-    handler.send_request_from_dict = MagicMock(return_value=True)
+    handler.send_request = MagicMock(return_value=True)
     handler.goal_accepted = True  # a running goal
 
     with pytest.raises(GoalInProgressError):
         ui_node.send_action_goal({"action_name": name})
-    handler.send_request_from_dict.assert_not_called()
+    handler.send_request.assert_not_called()
     assert handler.goal_accepted
 
     handler._feedback_timeout = True  # its server went quiet

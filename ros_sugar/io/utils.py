@@ -14,7 +14,6 @@ from rosidl_runtime_py.convert import message_to_ordereddict
 import std_msgs.msg as std_msg
 from nav_msgs.msg import Odometry
 
-import msgpack
 import msgpack_numpy as m_pack
 
 from ..config import ExternalProcessorType
@@ -584,6 +583,35 @@ def stamp_header(header, stamp: Optional[float], frame_id: str) -> None:
         seconds = int(stamp)
         header.stamp.sec = seconds
         header.stamp.nanosec = int((stamp - seconds) * 1e9)
+
+
+def stamp_unset_headers(msg: Any, stamp: Any) -> None:
+    """Stamp every header in ``msg`` whose stamp is unset, at any depth.
+
+    For messages built from a client's fields, which cannot know ROS time: a
+    header left without a stamp gets ``stamp``, one the client stamped is kept.
+    Headers inside nested messages and sequences of messages are found too, so
+    a goal's ``pose.header`` is stamped like a topic's own header.
+
+    :param msg: A ROS message
+    :param stamp: The ``builtin_interfaces/Time`` to set
+    """
+    #: The ROS type of a message header, as a message's field types name it
+    header_type = "std_msgs/Header"
+
+    if not hasattr(msg, "get_fields_and_field_types"):
+        return
+    for field_name, field_type in msg.get_fields_and_field_types().items():
+        base_type, is_sequence = _split_ros_field_type(field_type)
+        if "/" not in base_type:
+            continue
+        value = getattr(msg, field_name)
+        for item in value if is_sequence else (value,):
+            if base_type == header_type:
+                if item.stamp.sec == 0 and item.stamp.nanosec == 0:
+                    item.stamp = stamp
+            else:
+                stamp_unset_headers(item, stamp)
 
 
 #: Marks a serialized ROS message, and a binary value, so the value a caller

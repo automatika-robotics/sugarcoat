@@ -12,6 +12,26 @@ from .frontend import FHApp
 from ..supported_types import ros_msg_to_str
 
 
+def _nest_form_fields(form: Dict) -> Dict:
+    """Rebuild a submitted form into a nested field dict.
+
+    A generic message form names each input by its path in the message, so
+    ``{"pose.position.x": "1"}`` becomes ``{"pose": {"position": {"x": "1"}}}``.
+    Names without a dot are kept as they are.
+
+    :param form: The flat field dict submitted by the form
+    :return: A dict shaped like the message, for ``set_ros_msg_from_dict``
+    """
+    nested: Dict[str, Any] = {}
+    for name, value in form.items():
+        *parents, leaf = name.split(".")
+        level = nested
+        for parent in parents:
+            level = level.setdefault(parent, {})
+        level[leaf] = value
+    return nested
+
+
 def _form_to_schema(msg_type: str, form: Dict) -> Dict:
     """Translate a flat UI-form field dict into a schema-shaped dict for specific types
 
@@ -45,8 +65,14 @@ def _form_to_schema(msg_type: str, form: Dict) -> Dict:
             },
         }
         return pose if msg_type == "Pose" else {"pose": pose}
-    # String and any other single data field type
-    return {"data": form.get("data", "")}
+    # String and any message without a widget of its own, whose generic form
+    # names each input by its path in the message
+    fields = {
+        name: value
+        for name, value in form.items()
+        if name not in ("topic_name", "topic_type", "HEADERS")
+    }
+    return _nest_form_fields(fields)
 
 
 def _publish_from_form(ros_node, msg_type: str, form: Dict) -> None:
@@ -244,7 +270,7 @@ def build_browser_app(
     async def _(request, session):
         """Send a ROS2 service call from the client"""
         form_data = await request.form()
-        data_dict = dict(form_data.items())
+        data_dict = _nest_form_fields(dict(form_data.items()))
         # Add request to logging card
         elements.update_logging_card(
             fh.outputs_log,
@@ -285,7 +311,7 @@ def build_browser_app(
     async def _(request, session):
         """Send a ROS2 action goal from the client"""
         form_data = await request.form()
-        data_dict = dict(form_data.items())
+        data_dict = _nest_form_fields(dict(form_data.items()))
         action_name = data_dict.get("action_name", "")
         if (
             action_name in fh.action_clients_ft

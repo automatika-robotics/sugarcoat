@@ -24,6 +24,7 @@ from ..core.component import BaseComponent, BaseComponentConfig
 from ..core.monitor import Monitor
 from ..io import supported_types
 from ..io.topic import Topic
+from ..io.utils import stamp_unset_headers
 from .utils import GoalInProgressError
 
 #: What the UI can ask of a routine, each a Monitor method '<command>_routine'
@@ -563,7 +564,11 @@ class UINode(BaseComponent):
         # close to init
         if not client.client.wait_for_service(timeout_sec=1.0):
             raise RuntimeError(f"Service '{srv_name}' is not available")
-        return client.send_request_from_dict(request_fields=srv_call_data)
+        request = supported_types.set_ros_msg_from_dict(
+            client.config.srv_type.Request, srv_call_data
+        )
+        self._stamp_unset_headers(request)
+        return client.send_request(request)
 
     def send_action_goal(self, action_goal_data: Dict) -> Optional[bool]:
         """Send a goal to a declared action client.
@@ -593,9 +598,11 @@ class UINode(BaseComponent):
             raise GoalInProgressError(
                 f"Action '{action_name}' is still running a goal. Cancel it first"
             )
-        return client.send_request_from_dict(
-            request_fields=action_goal_data, wait_until_first_feedback=False
+        goal = supported_types.set_ros_msg_from_dict(
+            client.config.action_type.Goal, action_goal_data
         )
+        self._stamp_unset_headers(goal)
+        return client.send_request(goal, wait_until_first_feedback=False)
 
     def cancel_action(self, action_name: str) -> Tuple[bool, str]:
         """Cancel the ongoing goal of a declared action client.
@@ -608,6 +615,11 @@ class UINode(BaseComponent):
         if client is None:
             raise RuntimeError(f"Action client '{action_name}' is not ready")
         return client.cancel_request()
+
+    def _stamp_unset_headers(self, msg: Any) -> None:
+        """Stamp the headers a client left unset with the node's time now, at
+        any depth, since a client cannot know ROS time"""
+        stamp_unset_headers(msg, self.get_clock().now().to_msg())
 
     def publish_data(self, data: Dict) -> int:
         """Publish a message on a declared input topic from a field dict.
@@ -635,13 +647,7 @@ class UINode(BaseComponent):
                 f"Cannot build a {publisher.output_topic.msg_type.__name__} "
                 f"message from {data}: {e}"
             ) from e
-        # Stamp headers the client left unset because clients cant know ROS time
-        if (
-            hasattr(msg, "header")
-            and msg.header.stamp.sec == 0
-            and msg.header.stamp.nanosec == 0
-        ):
-            msg.header.stamp = self.get_clock().now().to_msg()
+        self._stamp_unset_headers(msg)
         publisher._publisher.publish(msg)
         return self.count_subscribers(topic_name)
 

@@ -1283,21 +1283,61 @@ def add_additional_ui_elements(
 # ---- GENERIC MESSAGES ELEMENTS ----
 
 
-def _generic_message_form(msg_fields: Dict[str, Dict[str, Dict]]) -> FT:
+def _is_header_schema(field_type: Any) -> bool:
+    """Whether a field schema is a std_msgs/Header's"""
+    return (
+        isinstance(field_type, Dict)
+        and set(field_type) == {"stamp", "frame_id"}
+        and isinstance(field_type["stamp"], Dict)
+        and set(field_type["stamp"]) == {"sec", "nanosec"}
+    )
+
+
+def _generic_message_form(
+    msg_fields: Dict[str, Dict[str, Dict]], field_path: str = ""
+) -> FT:
     """Creates an input UI element (form) for any ROS2 message
+
+    Each input is named by its full path in the message ("pose.position.x"),
+    so the submitted form can be rebuilt into the nested message. A header
+    shows only its frame_id: the UI node stamps headers when it sends
 
     :param msg_fields: Dictionary of the message fields {name: type | Dict}
     :type msg_fields: Dict[str, Dict[str, Dict]]
+    :param field_path: Path of the message these fields belong to, empty at the top
+    :type field_path: str
     :return: UI form input element
     :rtype: FT
     """
     ui_fields = Grid(cls="gap-2 m-1", cols=2)
     for field_name, field_type in msg_fields.items():
+        input_name = f"{field_path}{field_name}"
+        if _is_header_schema(field_type):
+            ui_fields(
+                DivVStacked(
+                    P(f"{field_name}", cls="cool-subtitle-mini-blue m-2"),
+                    Grid(
+                        LabelInput(
+                            label="frame_id",
+                            type="text",
+                            name=f"{input_name}.frame_id",
+                            placeholder="frame_id",
+                            required=False,
+                            value="",
+                            autocomplete="off",
+                        ),
+                        cls="gap-2 m-1",
+                        cols=2,
+                    ),
+                    cls="card-border",
+                ),
+            )
+            continue
         if isinstance(field_type, Dict):
             ui_fields(
                 DivVStacked(
                     P(f"{field_name}", cls="cool-subtitle-mini-blue m-2"),
-                    _generic_message_form(field_type),
+                    _generic_message_form(field_type, f"{input_name}."),
                     cls="card-border",
                 ),
             )
@@ -1329,7 +1369,7 @@ def _generic_message_form(msg_fields: Dict[str, Dict[str, Dict]]) -> FT:
             LabelInput(
                 label=field_name,
                 type=field_input_type,
-                name=field_name,
+                name=input_name,
                 placeholder=field_name,
                 required=False,
                 value=default_value,

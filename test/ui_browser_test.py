@@ -694,3 +694,61 @@ def test_a_routine_control_the_monitor_refuses_is_shown(tmp_path, monkeypatch):
     assert refused.status_code == 200 and "is not running" in refused.text
     assert unreachable.status_code == 200
     assert "The Monitor is not available" in unreachable.text
+
+
+def test_a_header_in_a_generic_form_shows_only_its_frame_id():
+    """The UI node stamps headers when it sends, so the form asks for the frame
+    alone. Every input is named by its path, so nested fields reach the message"""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from fasthtml.common import to_xml
+    from nav_msgs.srv import GetPlan
+
+    from ros_sugar.io.supported_types import get_ros_msg_fields_dict
+    from ros_sugar.ui_node.elements import _generic_message_form
+
+    form = to_xml(_generic_message_form(get_ros_msg_fields_dict(GetPlan.Request)))
+
+    assert 'name="start.header.frame_id"' in form
+    assert 'name="goal.pose.position.x"' in form
+    assert 'name="tolerance"' in form
+    assert "stamp" not in form and "nanosec" not in form
+
+
+def test_a_generic_form_reaches_the_ui_node_as_the_nested_message(tmp_path, monkeypatch):
+    """A service request, an action goal and a topic message submitted through a
+    generic form arrive shaped like the message, instead of losing every field
+    below the top level"""
+    pytest.importorskip("fasthtml")
+    pytest.importorskip("monsterui")
+    from nav_msgs.srv import GetPlan
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.browser import _form_to_schema, build_browser_app
+
+    monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+    node = _BrowserNode([])
+    node.actions = [{"name": "plan", "type": "PlanPath", "fields": {}}]
+    calls, goals = [], []
+    node.send_srv_call = lambda data: (calls.append(data), GetPlan.Response())[1]
+    node.send_action_goal = lambda data: (goals.append(data), False)[1]
+    client = TestClient(build_browser_app(node))
+
+    form = {
+        "start.header.frame_id": "map",
+        "start.pose.position.x": "1.5",
+        "tolerance": "0.1",
+    }
+    nested = {
+        "start": {"header": {"frame_id": "map"}, "pose": {"position": {"x": "1.5"}}},
+        "tolerance": "0.1",
+    }
+    assert client.post("/service/call", data={"srv_name": "plan", **form}).status_code == 200
+    assert calls == [{"srv_name": "plan", **nested}]
+
+    assert client.post("/action/goal", data={"action_name": "plan", **form}).status_code == 200
+    assert goals == [{"action_name": "plan", **nested}]
+
+    # A topic form arrives over the socket with htmx's own headers beside it
+    submitted = {"topic_name": "plan", "topic_type": "GetPlanRequest", "HEADERS": {}, **form}
+    assert _form_to_schema("GetPlanRequest", submitted) == nested
