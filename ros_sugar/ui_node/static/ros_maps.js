@@ -990,6 +990,18 @@ function notifyMapPublishError(topic, detail) {
     }
 }
 
+function clickedPoseCovariance() {
+    // A click gives no uncertainty, and zeros would claim total certainty.
+    // Uses the RViz '2D Pose Estimate' defaults: 0.25 on x and y, and
+    // 0.06853891945200942 (about (pi/12)^2) on yaw, row-major 6x6 over
+    // (x, y, z, roll, pitch, yaw)
+    const covariance = new Array(36).fill(0.0);
+    covariance[0] = 0.25;
+    covariance[7] = 0.25;
+    covariance[35] = 0.06853891945200942;
+    return covariance;
+}
+
 function publishPoint(container, targetTopic, rosPoint, msgType) {
     // Build the schema-shaped body the /api/inputs contract expects
     // then POST it like any third-party client.
@@ -1005,6 +1017,12 @@ function publishPoint(container, targetTopic, rosPoint, msgType) {
     } else if (msgType === 'Pose' || msgType === 'PoseStamped') {
         const pose = { position: pos, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } };
         body = (msgType === 'Pose') ? pose : { header: header, pose: pose };
+    } else if (msgType === 'PoseWithCovariance' || msgType === 'PoseWithCovarianceStamped') {
+        const pose = { position: pos, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } };
+        const withCovariance = { pose: pose, covariance: clickedPoseCovariance() };
+        body = (msgType === 'PoseWithCovariance')
+            ? withCovariance
+            : { header: header, pose: withCovariance };
     } else {
         console.warn(`Cannot publish point: unsupported type ${msgType}`);
         return;

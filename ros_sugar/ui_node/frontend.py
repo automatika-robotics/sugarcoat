@@ -16,6 +16,9 @@ except ModuleNotFoundError as e:
         "In order to use the dynamic web UI for your recipe, please install FastHTML & MonsterUI with `pip install python-fasthtml MonsterUI`"
     ) from e
 
+
+_POINT_LIKE_TYPES = ("Point", "PointStamped", "Pose", "PoseStamped", "PoseWithCovariance", "PoseWithCovarianceStamped")
+
 # Third-party scripts and styles
 _VENDOR = "/vendor"
 # The CDN files MonsterUI's theme loads
@@ -162,7 +165,7 @@ class FHApp:
         self.point_input_topics = [
             (t.name, t.msg_type.__name__)
             for t in (in_topics or [])
-            if t.msg_type.__name__ in ("Point", "PointStamped", "Pose", "PoseStamped")
+            if t.msg_type.__name__ in _POINT_LIKE_TYPES
         ]
         self.outputs = self._create_output_topics_ui(out_topics) if out_topics else None
         self.inputs = self._create_input_topics_ui(in_topics) if in_topics else None
