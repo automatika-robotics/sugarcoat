@@ -110,7 +110,7 @@ event = Event(event_condition=timeout_reached, check_rate=10.0)
 
 #### OnChange (Edge Detection)
 
-Setting `on_change=True` adds edge-detection semantics. The event fires only on the transition from `False` to `True`, not while the condition remains true:
+Setting `on_change=True` adds edge-detection semantics. The event fires only on the transition from `False` to `True`, not while the condition remains true. A condition that is already true the first time it is evaluated counts as such a transition, so an event installed while its condition holds fires once right away:
 
 ```python
 # Fires once when the robot enters the danger zone, not continuously
@@ -672,7 +672,7 @@ The blackboard uses **lazy expiration**: expired or already-processed entries ar
 
 The runtime trigger unit. Holds the condition (a `Condition` expression, a `Topic`, or a `Callable`), maintains trigger state, and executes registered actions. Key behavioral knobs:
 
-- `on_change`: Only fires on a rising edge (false → true transition).
+- `on_change`: Only fires on a rising edge (false → true transition). The first evaluation counts as one when the condition is already true.
 - `handle_once`: Fires at most once across the event's lifetime.
 - `keep_event_delay`: Throttles re-triggers by holding the "under processing" flag for a fixed duration after actions complete.
 
@@ -730,7 +730,7 @@ On every incoming message:
 Each callable-based event gets its own timer. On each tick:
 
 1. `event.check_action_condition(blackboard)` calls the user-supplied callable directly.
-2. If it returns `True` (accounting for `on_change` rising-edge logic), the registered actions are submitted to the thread pool.
+2. If it returns `True` (accounting for `on_change` rising-edge logic, where a first poll returning `True` is a rising edge), the registered actions are submitted to the thread pool.
 
 :::
 

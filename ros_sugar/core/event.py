@@ -228,7 +228,8 @@ class Event:
     Trigger behaviour can be further refined with:
 
     * ``on_change`` – fire only on a *rising edge* (condition transitions from
-      false to true), rather than every evaluation cycle.
+      false to true), rather than every evaluation cycle. A condition that is
+      already true at its first evaluation counts as a rising edge.
     * ``handle_once`` – fire at most once and then become inert.
     * ``keep_event_delay`` – hold the *under-processing* flag for a fixed
       duration after actions complete, throttling re-triggers.
@@ -258,7 +259,8 @@ class Event:
             polled at ``check_rate``.
         :type event_condition: Union[Topic, Condition, Callable]
         :param on_change: If True, trigger only on a rising edge (condition
-            transitions from False to True), defaults to False.
+            transitions from False to True). A condition already true at its
+            first evaluation counts as such a transition, defaults to False.
         :type on_change: bool, optional
         :param handle_once: If True, execute registered actions at most once
             across the lifetime of this event, defaults to False.
@@ -280,7 +282,9 @@ class Event:
         self._keep_event_delay: float = keep_event_delay
         self._on_change: bool = on_change
         self._on_any: bool = False
-        self._previous_trigger = None
+        # NOTE: What the condition last evaluated to. Starts as not met.
+        # Condition already true at its first evaluation counts as a rising edge
+        self._previous_trigger: bool = False
         self.__under_processing = False
 
         # NOTE: The event stays under processing until the last one of the actions reports, so it
@@ -382,7 +386,7 @@ class Event:
         self._processed_once = False
         self.under_processing = False
         self.trigger = False
-        self._previous_trigger = None
+        self._previous_trigger = False
 
     def clear(self) -> None:
         """
@@ -652,25 +656,12 @@ class Event:
             # This assumes self.event_condition is now the root Condition object
             triggered = self._condition.evaluate(topics_dict)
 
-            # If the event is to be checked only 'on_change' in the value
-            # then check if:
-            # 1. the event previous value is different from the event current value (there is a change)
-            # and 2. if the new_trigger is on
-            # If on_change and 1 and 2 -> activate the trigger
+            # On 'on_change' the event fires on a rising edge only: the
+            # condition is met now and was not at the previous evaluation,
+            # which includes the first evaluation when it is met right away
             if self._on_change:
-                if (
-                    self._previous_trigger is not None
-                    and not self._previous_trigger
-                    and triggered
-                ):
-                    self.trigger = True
-                else:
-                    self.trigger = False
+                self.trigger = triggered and not self._previous_trigger
             else:
-                # If:
-                # 1. on_change is not required
-                # or 2. the event previous value is the same as the current value (no change happened)
-                # then just directly update the trigger
                 self.trigger = triggered
             self._previous_trigger = copy(triggered)
 
@@ -705,7 +696,7 @@ class Event:
             logger.error(f"Error evaluating condition for event '{self}': {e}")
             triggered = False
 
-        if self._on_change and self._previous_trigger is not None:
+        if self._on_change:
             self.trigger = triggered and not self._previous_trigger
         else:
             self.trigger = triggered

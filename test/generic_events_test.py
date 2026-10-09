@@ -9,7 +9,9 @@ import launch_testing.actions
 import launch_testing.markers
 import pytest
 
+from std_msgs.msg import Float32
 from ros_sugar.core import BaseComponent, Event
+from ros_sugar.core.event import EventBlackboardEntry
 from ros_sugar import Launcher
 from ros_sugar.io import Topic
 from ros_sugar.actions import Action, LogInfo
@@ -230,21 +232,21 @@ class TestActionBasedEvents(unittest.TestCase):
 
     def test_basic_action_based_trigger(cls):
         """[Case 1] Consequence fires once the condition Action starts returning True."""
-        assert basic_trigger_py_event.wait(cls.wait_time), (
-            "Action-based event failed to trigger when condition became True"
-        )
+        assert basic_trigger_py_event.wait(
+            cls.wait_time
+        ), "Action-based event failed to trigger when condition became True"
 
     def test_on_change_action_based_trigger(cls):
         """[Case 2] Consequence fires on a False-to-True transition when on_change=True."""
-        assert on_change_py_event.wait(cls.wait_time), (
-            "Action-based event with on_change=True failed to trigger on False-to-True transition"
-        )
+        assert on_change_py_event.wait(
+            cls.wait_time
+        ), "Action-based event with on_change=True failed to trigger on False-to-True transition"
 
     def test_handle_once(cls):
         """[Case 3] Consequence fires exactly once even when the condition stays True."""
-        assert handle_once_first_py_event.wait(cls.wait_time), (
-            "handle_once action-based event never fired"
-        )
+        assert handle_once_first_py_event.wait(
+            cls.wait_time
+        ), "handle_once action-based event never fired"
         # Watch over several more check periods, failing on the first extra
         # firing rather than waiting out the whole window for it
         deadline = time.monotonic() + EXTRA_CHECKS / CHECK_RATE
@@ -259,15 +261,15 @@ class TestActionBasedEvents(unittest.TestCase):
 
     def test_dynamic_args_recipe_action_based_trigger(cls):
         """[Case 4]"""
-        assert dynamic_arg_recipe_py_event.wait(cls.wait_time), (
-            "Action-based event with dynamic args in the recipe failed to trigger"
-        )
+        assert dynamic_arg_recipe_py_event.wait(
+            cls.wait_time
+        ), "Action-based event with dynamic args in the recipe failed to trigger"
 
     def test_dynamic_args_comp_action_based_trigger(cls):
         """[Case 5]"""
-        assert dynamic_arg_comp_py_event.wait(cls.wait_time), (
-            "Action-based event with dynamic args in the component failed to trigger"
-        )
+        assert dynamic_arg_comp_py_event.wait(
+            cls.wait_time
+        ), "Action-based event with dynamic args in the component failed to trigger"
 
 
 # ==========================================================================
@@ -277,6 +279,52 @@ class TestActionBasedEvents(unittest.TestCase):
 # rebuilds them there, deep-copying each one. Anything an event carries that
 # cannot be copied stops that component from starting at all.
 # ==========================================================================
+
+
+class TestRisingEdge(unittest.TestCase):
+    """An on_change event fires when its condition turns true, counting a
+    condition already true at the first evaluation as having turned true"""
+
+    def _cache(self, value: float):
+        """A blackboard with one Float32 message on 'reading'"""
+        return {
+            "reading": EventBlackboardEntry(
+                msg=Float32(data=value), timestamp=time.time()
+            )
+        }
+
+    def test_a_condition_true_at_the_first_evaluation_fires_once(self):
+        reading = Topic(name="reading", msg_type="Float32")
+        event = Event(reading.msg.data > 1.0, on_change=True)
+
+        event.check_condition(self._cache(5.0))
+        assert event.trigger, "already true at the first evaluation, so a rising edge"
+        event.check_condition(self._cache(6.0))
+        assert not event.trigger, "still true, no new edge"
+        event.check_condition(self._cache(0.0))
+        assert not event.trigger
+        event.check_condition(self._cache(7.0))
+        assert event.trigger, "turned true again"
+
+    def test_a_polled_condition_true_at_the_first_poll_fires_once(self):
+        readings = iter([True, True, False, True])
+        event = Event(lambda: next(readings), check_rate=1.0, on_change=True)
+
+        fired = []
+        for _ in range(4):
+            event.check_action_condition({})
+            fired.append(event.trigger)
+        assert fired == [True, False, False, True]
+
+    def test_reset_arms_the_edge_again(self):
+        event = Event(lambda: True, check_rate=1.0, on_change=True)
+
+        event.check_action_condition({})
+        event.check_action_condition({})
+        assert not event.trigger
+        event.reset()
+        event.check_action_condition({})
+        assert event.trigger
 
 
 class TestEventTravels(unittest.TestCase):
