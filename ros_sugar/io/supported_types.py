@@ -11,6 +11,8 @@ import importlib
 from geometry_msgs.msg import Point as ROSPoint
 from geometry_msgs.msg import PointStamped as ROSPointStamped
 from geometry_msgs.msg import Pose as ROSPose
+from geometry_msgs.msg import PoseWithCovariance as ROSPoseWithCovariance
+from geometry_msgs.msg import PoseWithCovarianceStamped as ROSPoseWithCovarianceStamped
 from geometry_msgs.msg import PoseArray as ROSPoseArray
 from geometry_msgs.msg import PoseStamped as ROSPoseStamped
 from geometry_msgs.msg import Twist as ROSTwist
@@ -997,6 +999,56 @@ class Pose(SupportedType):
             msg.orientation.x = output[4]
             msg.orientation.y = output[5]
             msg.orientation.z = output[6]
+        return msg
+
+
+class PoseWithCovariance(Pose):
+    """PoseWithCovariance"""
+
+    _ros_type = ROSPoseWithCovariance
+    callback = callbacks.PoseWithCovarianceCallback
+
+    @classmethod
+    def convert(cls, output: np.ndarray, covariance: list = None, **_) -> ROSPoseWithCovariance:
+        """ROS message converter function for datatype Point.
+
+        :param output:
+        :type output: np.ndarray
+        :param covariance:
+        :type covariance: list
+        :param _:
+        :rtype: ROSPoseWithCovariance
+        """
+        pose_msg = Pose.convert(output)
+        msg = ROSPoseWithCovariance()
+        msg.pose = pose_msg
+        if covariance is not None and len(covariance) == 36:
+            msg.covariance = covariance
+        return msg
+
+
+class PoseWithCovarianceStamped(PoseWithCovariance):
+    """PoseWithCovarianceStamped"""
+
+    _ros_type = ROSPoseWithCovarianceStamped
+    callback = callbacks.PoseWithCovarianceStampedCallback
+
+    @classmethod
+    def convert(
+        cls, output: np.ndarray, covariance: list = None, **_
+    ) -> ROSPoseWithCovarianceStamped:
+        """ROS message converter function for datatype Point.
+
+        :param output:
+        :type output: np.ndarray
+        :param covariance:
+        :type covariance: list
+        :param _:
+        :rtype: ROSPoseWithCovarianceStamped
+        """
+        pose_w_cov_msg = PoseWithCovariance.convert(output, covariance)
+        msg = ROSPoseWithCovarianceStamped()
+        msg.pose = pose_w_cov_msg
         return msg
 
 

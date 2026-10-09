@@ -8,7 +8,7 @@ import base64
 
 import cv2
 import numpy as np
-from geometry_msgs.msg import Pose, PoseStamped
+from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovariance, PoseWithCovarianceStamped
 from jinja2.environment import Template
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from sensor_msgs.msg import LaserScan
@@ -881,6 +881,44 @@ class PoseCallback(GenericCallback):
         return {"data": output.tolist() if output is not None else None}
 
 
+class PoseWithCovarianceCallback(PoseCallback):
+    """
+    Ros PoseWithCovariance Callback Handler to get the robot state in 2D
+    """
+
+    def __init__(
+        self,
+        input_topic,
+        node_name: str = "",
+    ) -> None:
+        super().__init__(input_topic, node_name)
+
+    def _process(self, msg: PoseWithCovariance) -> np.ndarray:
+        """Takes PoseWithCovariance ROS object and converts it to a numpy array with [x, y, z, heading]
+
+        :param msg: Input ROS PoseWithCovariance message
+        :type msg: PoseWithCovariance
+
+        :return: [x, y, z, heading]
+        :rtype: np.ndarray
+        """
+        return PoseCallback._process(self, msg.pose)
+
+    def _transform(self, msg: PoseWithCovariance, transform: TransformStamped) -> Pose:
+        """
+        Applies a transform to a given Odometry message
+
+        :param msg: Pose message in source frame
+        :type msg: Pose
+        :param transform: Pose transform from current to goal frame
+        :type transform: TransformStamped
+
+        :return: Pose data in new frame
+        :rtype: Pose
+        """
+        return PoseCallback._transform(self, msg.pose, transform)
+
+
 class PoseStampedCallback(PoseCallback):
     """
     Ros PoseStamped Callback Handler to get the robot state in 2D
@@ -923,6 +961,44 @@ class PoseStampedCallback(PoseCallback):
             "frame_id": self.frame_id,
             "data": output.tolist() if output is not None else None,
         }
+
+
+class PoseWithCovarianceStampedCallback(PoseWithCovarianceCallback):
+    """
+    Ros PoseWithCovarianceStamped Callback Handler to get the robot state in 2D
+    """
+
+    def __init__(
+        self,
+        input_topic,
+        node_name: str = "",
+    ) -> None:
+        super().__init__(input_topic, node_name)
+
+    def _process(self, msg: PoseWithCovarianceStamped) -> np.ndarray:
+        """Takes PoseWithCovarianceStamped ROS object and converts it to a numpy array with [x, y, z, heading]
+
+        :param msg: Input ROS PoseWithCovarianceStamped message
+        :type msg: PoseWithCovarianceStamped
+
+        :return: [x, y, z, heading]
+        :rtype: np.ndarray
+        """
+        return PoseWithCovarianceCallback._process(self, msg.pose)
+
+    def _transform(self, msg: PoseWithCovarianceStamped, transform: TransformStamped) -> Pose:
+        """
+        Applies a transform to a given Odometry message
+
+        :param msg: Pose message in source frame
+        :type msg: Pose
+        :param transform: Pose transform from current to goal frame
+        :type transform: TransformStamped
+
+        :return: Pose data in new frame
+        :rtype: Pose
+        """
+        return PoseWithCovarianceCallback._transform(self, msg.pose, transform)
 
 
 class PoseArrayCallback(GenericCallback):
