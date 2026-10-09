@@ -286,15 +286,15 @@ class TestRisingEdge(unittest.TestCase):
     condition already true at the first evaluation as having turned true"""
 
     def _cache(self, value: float):
-        """A blackboard with one Float32 message on 'reading'"""
+        """A blackboard with one Float32 message on 'rising_edge_reading'"""
         return {
-            "reading": EventBlackboardEntry(
+            "rising_edge_reading": EventBlackboardEntry(
                 msg=Float32(data=value), timestamp=time.time()
             )
         }
 
     def test_a_condition_true_at_the_first_evaluation_fires_once(self):
-        reading = Topic(name="reading", msg_type="Float32")
+        reading = Topic(name="rising_edge_reading", msg_type="Float32")
         event = Event(reading.msg.data > 1.0, on_change=True)
 
         event.check_condition(self._cache(5.0))

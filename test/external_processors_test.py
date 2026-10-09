@@ -299,7 +299,10 @@ def test_a_connection_from_another_user_is_refused(launcher, monkeypatch):
     client = client_of(component, "add")
     assert client.call({"a": 1, "b": 2}) == 3
 
-    monkeypatch.setattr("ros_sugar.io.ipc.os.getuid", lambda: os.getuid() + 1)
+    # ipc's `os` is the os module itself, so the patched getuid must not call
+    # os.getuid or it calls itself: take the real uid before patching
+    other_user = os.getuid() + 1
+    monkeypatch.setattr("ros_sugar.io.ipc.os.getuid", lambda: other_user)
     client.close()
     with pytest.raises(ExternalProcessorError):
         client.call({"a": 1, "b": 2})
