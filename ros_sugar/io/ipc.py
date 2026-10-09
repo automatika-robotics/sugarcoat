@@ -143,6 +143,7 @@ class ExternalProcessorServer:
         self._server_sock: Optional[socket.socket] = None
         self._conns: List[socket.socket] = []
         self._stop = threading.Event()
+        self._accept_thread: Optional[threading.Thread] = None
 
     @property
     def endpoint(self) -> Optional[str]:
@@ -162,9 +163,10 @@ class ExternalProcessorServer:
         self._server_sock.listen(16)
         self._server_sock.settimeout(0.5)
         self._stop.clear()
-        threading.Thread(
+        self._accept_thread = threading.Thread(
             target=self._accept_loop, name="external-processors-accept", daemon=True
-        ).start()
+        )
+        self._accept_thread.start()
 
     def _accept_loop(self) -> None:
         while not self._stop.is_set():
@@ -221,18 +223,28 @@ class ExternalProcessorServer:
             return encode_frame(_OP_ERR, proc_id, str(e).encode("utf-8"))
 
     def close(self) -> None:
-        """Stop serving and close the socket"""
+        """Stop serving and close the socket. The socket's name is free when
+        this returns. The accept thread is woken and waited for.
+        """
         self._stop.set()
-        socks = [self._server_sock] if self._server_sock else []
+        server_sock, self._server_sock = self._server_sock, None
         with self._lock:
-            socks += self._conns
-            self._conns = []
-        for sock in socks:
+            conns, self._conns = self._conns, []
+        if server_sock is not None:
             try:
-                sock.close()
+                # Returns the accept thread from accept at once
+                server_sock.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
-        self._server_sock = None
+            server_sock.close()
+        for conn in conns:
+            try:
+                conn.close()
+            except OSError:
+                pass
+        thread, self._accept_thread = self._accept_thread, None
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
 
 
 class ExternalProcessorClient:
