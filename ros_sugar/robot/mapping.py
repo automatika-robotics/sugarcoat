@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import glob
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from attrs import define, field
 
@@ -151,6 +151,14 @@ class NativeMapping(BaseAttrs):
         Anything below is floor.
     :param z_max: Top of that band. Anything above cannot obstruct the robot.
     :param resolution: Grid cell size in metres.
+    :param imu_xyz: Position of the IMU in the LiDAR's frame, in metres, for
+        an IMU built into the LiDAR unit: the driver stamps both streams with
+        the LiDAR's frame, so nothing else carries this offset. From the
+        sensor's datasheet. ``None`` leaves the backend's default.
+    :param imu_rpy: Orientation of the IMU in the LiDAR's frame, in radians.
+    :param custom_settings: Mapping backend settings that can be sensor-specific. e.g.
+        ``{"preprocess": {"k_correspondences": 20}}`` for a 16-beam LiDAR. They win over EMOS's indoor and
+        outdoor defaults.
     """
 
     cloud: str = field()
@@ -158,6 +166,9 @@ class NativeMapping(BaseAttrs):
     z_min: float = field(default=0.15)
     z_max: float = field(default=0.80)
     resolution: float = field(default=0.05)
+    imu_xyz: Optional[Tuple[float, float, float]] = field(default=None)
+    imu_rpy: Tuple[float, float, float] = field(default=(0.0, 0.0, 0.0))
+    custom_settings: Dict[str, Dict[str, Any]] = field(factory=dict)
 
     # Default path for maps it built through native emos tools.
     store: str = field(default="~/emos/maps")

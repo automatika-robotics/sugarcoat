@@ -2,14 +2,12 @@
 
 from rclpy.clock import Clock, ClockType
 from typing import Any, Callable, Optional, Union, List
-from socket import socket
 
 from rclpy.logging import get_logger
 from rclpy.publisher import Publisher as ROSPublisher
 
-from std_msgs.msg import Header
-
 from . import utils
+from .ipc import ExternalProcessorClient
 
 
 class Publisher:
@@ -30,7 +28,11 @@ class Publisher:
         self.node_name: str = node_name
 
         self._publisher: Optional[ROSPublisher] = None
-        self._pre_processors: Optional[List[Union[Callable, socket]]] = None
+        # Clock of the owning node, so stamps follow use_sim_time
+        self._clock: Optional[Clock] = None
+        self._pre_processors: Optional[
+            List[Union[Callable, ExternalProcessorClient]]
+        ] = None
 
     def set_node_name(self, node_name: str) -> None:
         """Set node name.
@@ -41,19 +43,28 @@ class Publisher:
         """
         self.node_name = node_name
 
-    def set_publisher(self, publisher: ROSPublisher) -> None:
+    def set_publisher(
+        self, publisher: ROSPublisher, clock: Optional[Clock] = None
+    ) -> None:
         """set_publisher.
 
         :param publisher: Publisher
+        :param clock: Clock of the node owning the publisher, used to stamp
+            messages. Without it a standalone ROS_TIME clock is used, which
+            ignores use_sim_time
         :rtype: None
         """
         self._publisher = publisher
+        if clock is not None:
+            self._clock = clock
 
-    def add_pre_processors(self, processors: List[Union[Callable, socket]]):
+    def add_pre_processors(
+        self, processors: List[Union[Callable, ExternalProcessorClient]]
+    ):
         """Add a pre processor for publisher message
 
-        :param method: Pre processor methods or sockets
-        :type method: Callable
+        :param method: Pre processor methods or clients calling them in the launcher process
+        :type method: List[Union[Callable, ExternalProcessorClient]]
         """
         self._pre_processors = processors
 
@@ -113,8 +124,11 @@ class Publisher:
                     f"Cannot add a header to non-stamped message of type '{type(msg)}'"
                 )
             elif hasattr(msg, "header"):
-                # Add a header
-                msg.header = Header()
-                msg.header.frame_id = frame_id or msg.header.frame_id or ""
-                msg.header.stamp = Clock(clock_type=ClockType.ROS_TIME).now().to_msg()
+                # Fill the message's own header, so a frame set by convert is kept
+                if frame_id:
+                    msg.header.frame_id = frame_id
+                # A stamp asked for explicitly was already set by convert
+                if kwargs.get("stamp") is None:
+                    clock = self._clock or Clock(clock_type=ClockType.ROS_TIME)
+                    msg.header.stamp = clock.now().to_msg()
             self._publisher.publish(msg)

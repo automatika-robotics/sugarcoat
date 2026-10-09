@@ -990,10 +990,26 @@ function notifyMapPublishError(topic, detail) {
     }
 }
 
-function publishPoint(container, targetTopic, rosPoint, msgType) {
+function clickedPoseCovariance() {
+    // A click gives no uncertainty, and zeros would claim total certainty.
+    // Uses the RViz '2D Pose Estimate' defaults: 0.25 on x and y, and
+    // 0.06853891945200942 (about (pi/12)^2) on yaw, row-major 6x6 over
+    // (x, y, z, roll, pitch, yaw)
+    const covariance = new Array(36).fill(0.0);
+    covariance[0] = 0.25;
+    covariance[7] = 0.25;
+    covariance[35] = 0.06853891945200942;
+    return covariance;
+}
+
+function publishPoint(container, targetTopic, rosPoint, msgType, yaw = null) {
     // Build the schema-shaped body the /api/inputs contract expects
     // then POST it like any third-party client.
+    // `yaw` (radians, in the map frame) orients a pose; without one it faces +x
     const pos = { x: rosPoint.x, y: rosPoint.y, z: rosPoint.z };
+    const orientation = (yaw === null)
+        ? { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
+        : { x: 0.0, y: 0.0, z: Math.sin(yaw / 2), w: Math.cos(yaw / 2) };
     // Stamped messages carry the map's frame (the clicked coordinates are in
     // it); the server fills the timestamp on publish.
     const header = { frame_id: (container.mapHeader && container.mapHeader.frame_id) || '' };
@@ -1003,8 +1019,14 @@ function publishPoint(container, targetTopic, rosPoint, msgType) {
     } else if (msgType === 'PointStamped') {
         body = { header: header, point: pos };
     } else if (msgType === 'Pose' || msgType === 'PoseStamped') {
-        const pose = { position: pos, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } };
+        const pose = { position: pos, orientation: orientation };
         body = (msgType === 'Pose') ? pose : { header: header, pose: pose };
+    } else if (msgType === 'PoseWithCovariance' || msgType === 'PoseWithCovarianceStamped') {
+        const pose = { position: pos, orientation: orientation };
+        const withCovariance = { pose: pose, covariance: clickedPoseCovariance() };
+        body = (msgType === 'PoseWithCovariance')
+            ? withCovariance
+            : { header: header, pose: withCovariance };
     } else {
         console.warn(`Cannot publish point: unsupported type ${msgType}`);
         return;
@@ -1030,12 +1052,83 @@ function publishPoint(container, targetTopic, rosPoint, msgType) {
 };
 
 
+// Pose-like targets take a heading: pressed for the position, dragged and
+// released for the direction, as RViz's '2D Pose Estimate'. Points publish on
+// the press
+const POSE_TYPES = new Set([
+    'Pose', 'PoseStamped', 'PoseWithCovariance', 'PoseWithCovarianceStamped'
+]);
+// A release closer than this to the press (screen pixels) is a click, not a
+// drag, and publishes the pose facing +x
+const POSE_DRAG_MIN_PX = 5;
+const POSE_DRAG_COLOR = '#e53935';
+
+function readPublishTarget(container, state) {
+    // Standard button reads the settings dropdown LIVE so the latest selection
+    // always wins. Custom buttons keep their fixed data-attribute target.
+    if (state.btn && state.btn.id === `${container.topicName}-publish-btn`) {
+        const form = document.getElementById(`${container.topicName}-settings-form`);
+        return form ? readClickedPointTarget(form) : null;
+    }
+    if (state.btn && state[state.btn.id]) return state[state.btn.id];
+    return null;
+}
+
+function drawPoseDragArrow(container, arrow, start, end) {
+    // Drawn in map image pixels on the overlay layer, so it pans, zooms and
+    // rotates with the map
+    const from = transformRosToGridPixels(container, start.x, start.y);
+    const to = transformRosToGridPixels(container, end.x, end.y);
+    if (!from || !to) return;
+    const res = container.mapInfo.resolution;
+    const width = Math.max(0.05 / res, 1);
+    const head = Math.max(0.3 / res, 6);
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+
+    arrow.graphics.clear()
+        .setStrokeStyle(width, 'round', 'round')
+        .beginStroke(POSE_DRAG_COLOR)
+        .moveTo(from.x, from.y)
+        .lineTo(to.x, to.y)
+        .endStroke()
+        .beginFill(POSE_DRAG_COLOR)
+        .drawCircle(from.x, from.y, width * 2)
+        .moveTo(to.x, to.y)
+        .lineTo(to.x - head * Math.cos(angle - Math.PI / 6), to.y - head * Math.sin(angle - Math.PI / 6))
+        .lineTo(to.x - head * Math.cos(angle + Math.PI / 6), to.y - head * Math.sin(angle + Math.PI / 6))
+        .closePath()
+        .endFill();
+    container.mapViewer.scene.update();
+}
+
 function setupInteractions(viewer, container) {
     const canvas = viewer.scene.canvas;
     if (!canvas) return;
 
     let isDragging = false;
     let lastX, lastY;
+    // A pose being placed: { target, start, startX, startY, arrow, state }
+    let poseDrag = null;
+
+    const rosPointAt = (event) => {
+        const rect = canvas.getBoundingClientRect();
+        return transformScreenToRos(container, event.clientX - rect.left, event.clientY - rect.top);
+    };
+
+    const endPoseDrag = () => {
+        if (poseDrag.arrow) {
+            container.overlayLayer.removeChild(poseDrag.arrow);
+            viewer.scene.update();
+        }
+        const state = poseDrag.state;
+        poseDrag = null;
+        togglePublishPoint(state.btn);
+    };
+
+    // Escape drops a pose being placed, without publishing it
+    window.addEventListener('keydown', (event) => {
+        if (poseDrag && event.key === 'Escape') endPoseDrag();
+    });
 
     // --- MOUSE DOWN (No Changes needed here) ---
     canvas.addEventListener('mousedown', (event) => {
@@ -1044,27 +1137,28 @@ function setupInteractions(viewer, container) {
 
         // ... PUBLISH POINT LOGIC ...
         if (state && state.isPublishing && event.button === 0) {
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = event.clientX - rect.left;
-            const mouseY = event.clientY - rect.top;
-            const rosPoint = transformScreenToRos(container, mouseX, mouseY);
-
-            if (rosPoint) {
-                // Standard button reads the settings dropdown LIVE so the
-                // latest selection always wins. Custom buttons keep their
-                // fixed data-attribute target.
-                let target = null;
-                if (state.btn && state.btn.id === `${topicName}-publish-btn`) {
-                    const form = document.getElementById(`${topicName}-settings-form`);
-                    if (form) target = readClickedPointTarget(form);
-                } else if (state.btn && state[state.btn.id]) {
-                    target = state[state.btn.id];
-                }
-                if (target) {
-                    publishPoint(container, target.topic, rosPoint, target.type);
-                } else {
-                    notifyMapPublishError(topicName, 'no target topic selected in map settings');
-                }
+            event.preventDefault();
+            const rosPoint = rosPointAt(event);
+            const target = rosPoint ? readPublishTarget(container, state) : null;
+            if (rosPoint && !target) {
+                notifyMapPublishError(topicName, 'no target topic selected in map settings');
+            }
+            if (target && POSE_TYPES.has(target.type)) {
+                // The heading comes from the drag, so publish on release
+                const arrow = new createjs.Shape();
+                container.overlayLayer.addChild(arrow);
+                poseDrag = {
+                    target: target,
+                    start: rosPoint,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    arrow: arrow,
+                    state: state,
+                };
+                return;
+            }
+            if (target) {
+                publishPoint(container, target.topic, rosPoint, target.type);
             }
             togglePublishPoint(state.btn);
             return;
@@ -1082,6 +1176,11 @@ function setupInteractions(viewer, container) {
 
     // --- MOUSE MOVE (No Changes needed here) ---
     window.addEventListener('mousemove', (event) => {
+        if (poseDrag) {
+            const end = rosPointAt(event);
+            if (end) drawPoseDragArrow(container, poseDrag.arrow, poseDrag.start, end);
+            return;
+        }
         if (!isDragging) return;
         const dpr = window.devicePixelRatio || 1;
         const dx = (event.clientX - lastX) * dpr;
@@ -1093,7 +1192,20 @@ function setupInteractions(viewer, container) {
     });
 
     // --- MOUSE UP (UPDATED) ---
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', (event) => {
+        if (poseDrag) {
+            const { target, start, startX, startY } = poseDrag;
+            const moved = Math.hypot(event.clientX - startX, event.clientY - startY);
+            const end = rosPointAt(event);
+            // Measured in the map frame, so a rotated or flipped view is
+            // already accounted for
+            const yaw = (end && moved >= POSE_DRAG_MIN_PX)
+                ? Math.atan2(end.y - start.y, end.x - start.x)
+                : null;
+            publishPoint(container, target.topic, start, target.type, yaw);
+            endPoseDrag();
+            return;
+        }
         if (isDragging) {
             isDragging = false;
 

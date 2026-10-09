@@ -253,6 +253,18 @@ class RobotConfig(BaseAttrs):
         default=Factory(lambda: LinearCtrlLimits(max_vel=0.0, max_acc=0.0, max_decel=0.0))
     )  # Lateral motion is zero unless the robot is omnidirectional
 
+    @property
+    def height(self) -> float:
+        """The robot's extent along z, from its geometry."""
+        params = self.geometry_params
+        if self.geometry_type is RobotGeometryType.SPHERE:
+            return 2 * float(params[0])
+        if self.geometry_type is RobotGeometryType.ELLIPSOID:
+            return 2 * float(params[2])  # semi-axes
+        if self.geometry_type is RobotGeometryType.BOX:
+            return float(params[2])
+        return float(params[1])  # for cylinder, capsule and cone length is along z
+
     @geometry_params.validator
     def validate_params(self, _, value):
         """Validates geometry parameters against geometry type"""

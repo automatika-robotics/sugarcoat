@@ -9,13 +9,43 @@ from automatika_ros_sugar.msg import ComponentStatus
 from .action import Action
 from .event import EventBlackboardEntry
 from ..io import Topic
+from ..utils import logger
+
+
+def _not_monitored(instance, attribute, value) -> None:
+    """Refuse a monitored action as a component fallback.
+
+    A monitored action watches its own outcome: it waits on a success
+    condition, retries, and has to be preempted. A component fallback runs when
+    the component has already failed, from the fallback loop rather than from
+    the event machinery that gives an action somewhere to watch from, so a
+    monitored one cannot work there. Refused when the fallback is declared,
+    rather than failing at the moment it was supposed to save the component.
+
+    :raises TypeError: If any of the declared actions is monitored
+    """
+    declared = value if isinstance(value, list) else [value]
+    monitored = [
+        action.action_name
+        for action in declared
+        if isinstance(action, Action) and action.is_monitored
+    ]
+    if monitored:
+        raise TypeError(
+            f"A component fallback cannot be a monitored action: "
+            f"{', '.join(repr(name) for name in monitored)}. A fallback runs "
+            "when the component has already failed, and there is nothing there "
+            "to watch a success condition or run retries. Declare it as a plain "
+            "action, or drive the recovery from a Routine, whose steps may be "
+            "monitored and have a fallback of their own"
+        )
 
 
 @define
 class Fallback:
     """Fallback action and execution tracking"""
 
-    action: Union[List[Action], Action] = field()
+    action: Union[List[Action], Action] = field(validator=_not_monitored)
     max_retries: Optional[int] = field(default=None)
 
     # Internal values to keep track of retry attempts and the unique action index within a set of actions
@@ -196,30 +226,37 @@ class ComponentFallbacks:
             key: value.msg for key, value in topics_board.items()
         }
 
+    @property
+    def _all_fallbacks(self) -> List[Fallback]:
+        """Every fallback that is defined, give-up included"""
+        return [
+            fallback
+            for fallback in (
+                self.on_component_fail,
+                self.on_algorithm_fail,
+                self.on_system_fail,
+                self.on_giveup,
+                self.on_any_fail,
+            )
+            if fallback
+        ]
+
     def reset(self) -> None:
-        """Reset all fallback execution tracking indices to 0 and the retries tracking indices to 0"""
+        """Reset all fallback execution tracking indices and retries to 0, and
+        clear the give-up flag, so every fallback has its full budget again"""
         self.reset_execution_indices()
         self.reset_retries()
+        self.__giveup = False
 
     def reset_execution_indices(self) -> None:
         """Reset all fallback execution tracking indices to 0"""
-        # Indices to keep track of the executed fallback
-
-        if self.on_component_fail:
-            self.on_component_fail.reset_current_idx()
-        if self.on_algorithm_fail:
-            self.on_algorithm_fail.reset_current_idx()
-        if self.on_system_fail:
-            self.on_system_fail.reset_current_idx()
+        for fallback in self._all_fallbacks:
+            fallback.reset_current_idx()
 
     def reset_retries(self):
         """Reset all fallback retries tracking indices to 0"""
-        if self.on_component_fail:
-            self.on_component_fail.reset_retries()
-        if self.on_algorithm_fail:
-            self.on_algorithm_fail.reset_retries()
-        if self.on_system_fail:
-            self.on_system_fail.reset_retries()
+        for fallback in self._all_fallbacks:
+            fallback.reset_retries()
 
     def _execute_fallback(self, fallback: Fallback) -> None:
         """
@@ -241,12 +278,16 @@ class ComponentFallbacks:
                 or fallback.retry_idx < fallback.max_retries
             ):
                 try:
-                    success = fallback.action(topics=self.__topics_blackboard)
-                except Exception:
-                    success = False
+                    success, message = fallback.action(
+                        topics=self.__topics_blackboard
+                    )
+                except Exception as e:
+                    success, message = False, str(e)
                 if success:
                     # Fallback ran successfully -> reset the status to healthy
                     self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
+                else:
+                    logger.error(f"Fallback action failed: {message}")
                 fallback.retry_idx += 1
                 self.__giveup = False
             else:
@@ -267,14 +308,16 @@ class ComponentFallbacks:
 
         if fallback.action_idx < len(fallback.action):
             try:
-                success = fallback.action[fallback.action_idx](
+                success, message = fallback.action[fallback.action_idx](
                     topics=self.__topics_blackboard
                 )
-            except Exception:
-                success = False
+            except Exception as e:
+                success, message = False, str(e)
             if success:
                 # Fallback ran successfully -> reset the status to healthy
                 self.__latest_state_value = ComponentStatus.STATUS_HEALTHY
+            else:
+                logger.error(f"Fallback action failed: {message}")
             self.__giveup = False
         else:
             self.__giveup = True
