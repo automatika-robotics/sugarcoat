@@ -4,7 +4,7 @@ import os
 import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-from attr import Factory, define, field
+from attr import Factory, define, evolve, field
 from automatika_ros_sugar.srv import ChangeParameters, ExecuteMethod
 from rclpy.logging import get_logger
 from rclpy.qos import DurabilityPolicy
@@ -502,10 +502,12 @@ class UINode(BaseComponent):
                 client_node=self, config=inp
             )
 
-        # Initialize all input service clients (if any)
+        # Initialize all input action clients (if any)
         for inp in self._action_client_inputs:
             self._ros_action_clients[inp.name] = base_clients.ActionClientHandler(
-                client_node=self, config=inp
+                client_node=self,
+                # Do not allow the UI to cancel a goal on feedback timeout
+                config=evolve(inp, cancel_on_feedback_timeout=False),
             )
 
         self._follow_routines()
