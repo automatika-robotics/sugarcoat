@@ -3,6 +3,7 @@
 import asyncio
 from typing import Any, Callable, Dict, Optional
 
+from automatika_ros_sugar.srv import ExecuteMethod
 from starlette.websockets import WebSocketDisconnect
 
 from fasthtml.common import *  # noqa: F401,F403 -- FT components
@@ -203,7 +204,15 @@ def build_browser_app(
         ros_node_config.components,
         ros_node.out_topics,  # Inputs from the client to the ros node
         ros_node.in_topics,  # Outputs to the client from the ros node
-        srv_clients_configs=ros_node.srv_clients_inputs_dicts(),
+        # A component's method service is how cards run its actions, not
+        # something to fill in by hand: its request is a method name and JSON
+        # arguments. It stays in the API, so a card like the mission's finds it
+        # and pauses through it, but it gets no form of its own
+        srv_clients_configs=[
+            client
+            for client in ros_node.srv_clients_inputs_dicts()
+            if client["type"] != ExecuteMethod.__name__
+        ],
         action_clients_configs=ros_node.action_clients_inputs_dicts(),
         additional_input_elements=additional_input_elements,  # Additional UI input elements from derived packages
         additional_output_elements=additional_output_elements,  # Additional UI output elements from derived packages
