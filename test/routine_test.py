@@ -2584,6 +2584,48 @@ class TestFeedbackWatchdog(unittest.TestCase):
         assert goal_handle.cancel_calls == 1
 
 
+class TestClientClaim(unittest.TestCase):
+    """Who gets the client when a goal is already on the server"""
+
+    def setUp(self):
+        patcher = mock.patch(
+            "ros_sugar.base_clients.ActionClient", lambda *a, **k: SimpleNamespace()
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.handler = ActionClientHandler(
+            client_node=FakeNode(),
+            config=ActionClientConfig(action_type=SimpleNamespace, name="fake_action"),
+        )
+        self.handler.config.feedback_check_timeout = 1.0
+        self.handler.config.feedback_check_period = 0.01
+
+    def test_a_goal_is_refused_while_another_one_runs(self):
+        """Parking it would send it whenever that goal happens to end, which
+        for a navigation goal is minutes later and somewhere else"""
+        self.handler._goal_handle = FakeGoalHandle()
+        self.handler.goal_accepted = True
+        self.handler._goal_in_flight = True
+
+        started = time.time()
+        assert not self.handler.send_request(SimpleNamespace())
+        # Refused, not waited on
+        assert time.time() - started < 0.5
+
+    def test_a_goal_on_its_way_out_is_waited_for(self):
+        """A cancelled step re-sending is the ordinary case, and a cancel takes
+        as long as the server needs to notice it"""
+        self.handler._goal_handle = FakeGoalHandle()
+        self.handler.goal_accepted = True
+        self.handler._goal_in_flight = True
+        self.handler._cancel_requested = True
+
+        started = time.time()
+        assert not self.handler.send_request(SimpleNamespace())
+        # Waited for the goal to go, up to the feedback timeout
+        assert time.time() - started >= 1.0
+
+
 class TestGoalCancelling(unittest.TestCase):
     """Cancelling"""
 
