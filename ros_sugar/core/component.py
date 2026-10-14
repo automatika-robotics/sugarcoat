@@ -1452,8 +1452,10 @@ class BaseComponent(lifecycle.Node):
 
     def __create_event_listener(self, name: str, topic_obj: Topic) -> None:
         """Create the single subscription backing all events on a topic"""
-        # Handle events for non-ROS inputs served by the robot plugin
-        if name in self._external_topics:
+        # handle plugin fed topics (feedbacks)
+        if name in self._external_topics or (
+            topic_obj.use_plugin and name not in self.callbacks
+        ):
             self._subscribe_event_to_plugin_feedback(name, topic_obj)
             return
         listener = self.create_subscription(

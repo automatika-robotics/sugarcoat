@@ -86,7 +86,8 @@ class Feedback(BaseAttrs):
 
         For a ROS-topic-backed feedback this is the ROS topic the robot
         publishes on; for any other transport it is a synthetic topic whose name
-        is the feedback bus channel.
+        is the feedback bus channel and whose ``use_plugin`` names the owning
+        plugin.
         """
         if self._topic is None:
             # RosTopicTransport carries the real topic name + type; reference
@@ -99,7 +100,11 @@ class Feedback(BaseAttrs):
                     qos_profile=getattr(transport, "qos", None) or {},
                 )
             else:
-                self._topic = Topic(name=self.channel, msg_type=self.msg_type)
+                self._topic = Topic(
+                    name=self.channel,
+                    msg_type=self.msg_type,
+                    use_plugin=self.owner_id or False,  # leave False for tests when plugin is not attached
+                )
         return self._topic
 
     @property

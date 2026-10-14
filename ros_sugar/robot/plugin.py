@@ -489,7 +489,7 @@ class Plugin:
         # Exact key match, topic.name == plugin entry key.
         # NOTE: For ROS-typed entries we also verify the message types agree;
         # commands on non-ROS transports keep ``msg_type=None`` because the
-        # encoder, not a ROS type, defines the wire payload.
+        # encoder and not a ROS type, defines the wire payload.
         if topic_name in registry:
             entry = registry[topic_name]
             entry_type = entry.msg_type.__name__ if entry.msg_type else None
@@ -501,6 +501,11 @@ class Plugin:
                     "recipe and the plugin disagree on the message type."
                 )
             return entry
+
+        # Channel match for feedbacks used in plugin's own events
+        for entry in registry.values():
+            if entry.channel == topic_name:
+                return entry
 
         # Unique-type fallback, when topic.name is just a label
         # NOTE: Entries without a ``msg_type`` (non-ROS commands) participate in

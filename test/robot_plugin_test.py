@@ -1280,6 +1280,71 @@ def test_event_on_plugin_topic_fires_from_feedback_bus(rclpy_context):
         component.destroy_node()
 
 
+def test_event_built_by_the_plugin_fires_inside_a_component(rclpy_context):
+    """Regression: an event a plugin builds on its own feedback, as its event
+    registry does, named the feedback by channel without saying which plugin
+    it belongs to. A component given its action opened a ROS subscription on
+    the channel name, which nothing publishes, and the event never fired."""
+    from ros_sugar.core.action import Action
+    from ros_sugar.core.component import BaseComponent
+    from ros_sugar.core.event import Event
+
+    state_port = _free_port()
+    plugin = MockPlugin(state_port=state_port, cmd_port=_free_port())
+    plugin._bind_identity()  # as attaching it to a launcher does
+    host = RobotPluginHost(plugin, node=None, bus=InProcessFeedbackBus())
+    host.open()
+
+    topic = plugin.feedbacks["Int32"].as_topic()
+    component = BaseComponent(component_name="plugin_built_event")
+    component.rclpy_init_node()
+    component.add_plugin(plugin)
+    try:
+        component._use_robot_plugin()
+        component._add_event_action_pair(
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
+        )
+        component._turn_on_events_management()
+        assert component._BaseComponent__event_listeners == [], (
+            "a plugin-built event must not get a dead ROS subscription"
+        )
+
+        robot_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        robot_tx.sendto(b"55", ("127.0.0.1", state_port))
+        deadline = time.time() + 2.0
+        while (
+            topic.name not in component._events_topics_blackboard
+            and time.time() < deadline
+        ):
+            time.sleep(0.02)
+        robot_tx.close()
+
+        entry = component._events_topics_blackboard.get(topic.name)
+        assert entry is not None, "plugin feedback never reached the event handler"
+        assert entry.msg.data == 55
+    finally:
+        host.close()
+        component.destroy_node()
+
+
+def test_a_feedback_resolves_by_its_channel():
+    """A plugin's own events name a feedback by channel. The type fallback
+    cannot settle that when two feedbacks share a type."""
+    plugin = MockPlugin()
+    first = plugin.feedbacks["Int32"]
+    second = Feedback(
+        key="Int32_b",
+        msg_type=RobotInt32,
+        transport=plugin.transports["state"],
+        decoder=_decode_int32,
+    )
+    plugin.feedbacks["Int32_b"] = second
+    plugin._bind_identity()
+
+    assert plugin.resolve_feedback(first.channel, "Int32") is first
+    assert plugin.resolve_feedback(second.channel, "Int32") is second
+
+
 def test_event_on_a_sensor_topic_binds_to_that_sensor(rclpy_context):
     """Regression: the event path resolved against the robot plugin whatever
     the topic named, so a sensor's event fired on the robot's telemetry."""
