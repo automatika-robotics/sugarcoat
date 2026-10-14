@@ -277,6 +277,8 @@ class ActionClientHandler:
         # A cancel that arrived before the server answered, carried out as soon
         # as there is a goal handle to cancel
         self._cancel_pending = False
+        # A cancel has been asked for, so the goal in flight is on its way out
+        self._cancel_requested = False
         self._old_status = self._status
         self._start_time_secs = None
         self._stop_alive_timer()
@@ -356,10 +358,15 @@ class ActionClientHandler:
         This handler tracks one goal: its handle, its feedback and its result.
         Clearing that while a goal is still running used to lose the handle of
         a goal the server was still executing, so nothing could cancel it any
-        more. A goal on its way out is waited for - a cancelled step re-sending
-        is the ordinary case, and a cancel takes as long as the server needs to
-        notice it - and a goal still running past the feedback timeout, by
-        which point the server counts as unresponsive anyway, keeps the client.
+        more.
+
+        A goal on its way out is waited for: a cancelled step re-sending is the
+        ordinary case, and a cancel takes as long as the server needs to notice
+        it. A goal that is simply running is NOT waited for. Parking a new goal
+        behind it would send it whenever that goal happens to end, which for a
+        navigation goal is minutes later and somewhere else entirely - the
+        caller is told the client is busy instead, and the server takes one
+        goal at a time anyway.
 
         :param still_wanted: Asked while waiting. A caller that has stopped in
             the meantime gives up the wait rather than send once the client is
@@ -368,7 +375,11 @@ class ActionClientHandler:
         :rtype: bool
         """
         waited: float = 0.0
-        while self._goal_in_flight and waited < self.config.feedback_check_timeout:
+        while (
+            self._goal_in_flight
+            and (self._cancel_requested or self._cancel_pending)
+            and waited < self.config.feedback_check_timeout
+        ):
             if not still_wanted():
                 return False
             time.sleep(self.config.feedback_check_period)
@@ -414,6 +425,7 @@ class ActionClientHandler:
         with self._goal_lock:
             self._goal_in_flight = False
             self._cancel_pending = False
+            self._cancel_requested = False
 
     def send_request(
         self,
@@ -557,6 +569,7 @@ class ActionClientHandler:
             with self._goal_lock:
                 self._goal_in_flight = False
                 self._cancel_pending = False
+                self._cancel_requested = False
             self._stop_alive_timer()
             self._notify_feedback_listeners()
             return
@@ -594,6 +607,7 @@ class ActionClientHandler:
         self.action_returned = True
         with self._goal_lock:
             self._goal_in_flight = False
+            self._cancel_requested = False
         self._stop_alive_timer()
         # Notify listeners of the terminal transition (no further feedback).
         self._notify_feedback_listeners()
@@ -672,6 +686,7 @@ class ActionClientHandler:
             if not self._goal_in_flight:
                 # Nothing was sent, or it has already finished
                 return (True, "No ongoing action goal to cancel")
+            self._cancel_requested = True
             handle = self._goal_handle if self.goal_accepted else None
             if handle is None:
                 # Sent, but the server has not answered yet, so there is no
