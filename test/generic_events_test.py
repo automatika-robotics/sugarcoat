@@ -1,15 +1,21 @@
+import json
+import pickle
 import time
 import unittest
+from copy import deepcopy
 from threading import Event as ThreadingEvent
 import launch_testing
 import launch_testing.actions
 import launch_testing.markers
 import pytest
 
+from std_msgs.msg import Float32
 from ros_sugar.core import BaseComponent, Event
+from ros_sugar.core.event import EventBlackboardEntry
 from ros_sugar import Launcher
 from ros_sugar.io import Topic
 from ros_sugar.actions import Action, LogInfo
+from ros_sugar.utils import ActionReturnType
 
 # ------------------------------------------------------------------
 # Threading events used to signal that consequence actions fired
@@ -30,6 +36,12 @@ dynamic_arg_comp_py_event = ThreadingEvent()
 handle_once_invocations = []
 EXPECTED_VALUE = 45.0
 
+# Conditions here are counted polls, so the check rate sets how long the whole
+# test takes. Fast enough to keep it short, slow enough to stay a poll loop
+CHECK_RATE = 2.0
+#: Check periods to keep watching a handle_once event after it has fired
+EXTRA_CHECKS = 10
+
 # ------------------------------------------------------------------
 # Components
 # ------------------------------------------------------------------
@@ -45,19 +57,23 @@ class ComponentA(BaseComponent):
         pass
 
     # --- Component consequence methods ---
-    def on_change_trigger(self, **_) -> None:
+    def on_change_trigger(self, **_) -> ActionReturnType:
         global on_change_py_event
         on_change_py_event.set()
+        return True, "on_change trigger recorded"
 
-    def on_handle_once_trigger(self, **_) -> None:
+    def on_handle_once_trigger(self, **_) -> ActionReturnType:
         global handle_once_first_py_event
         handle_once_invocations.append(1)
         handle_once_first_py_event.set()
+        return True, "handle_once trigger recorded"
 
-    def on_dynamic_trigger(self, value, **_) -> None:
+    def on_dynamic_trigger(self, value, **_) -> ActionReturnType:
         global dynamic_arg_comp_py_event
-        if value == EXPECTED_VALUE:
-            dynamic_arg_comp_py_event.set()
+        if value != EXPECTED_VALUE:
+            return False, f"Expected {EXPECTED_VALUE}, got {value}"
+        dynamic_arg_comp_py_event.set()
+        return True, "dynamic arg trigger recorded"
 
 
 class PublisherComponent(BaseComponent):
@@ -89,26 +105,26 @@ def generate_test_description():
     )
     component_a = ComponentA(component_name="component_a")
 
-    global counter, toggler
-    counter = 0.0
+    global counters, toggler
+    # One counter per condition. Sharing one would make each event's timing
+    # depend on how often the others are polled, which is what made this test
+    # take anywhere between 5 and 23 seconds
+    counters = {"basic": 0, "handle_once": 0, "dynamic_recipe": 0, "dynamic_comp": 0}
     toggler = False
 
-    def becomes_true_condition(**_) -> bool:
-        global counter
-        counter += 1
-        return counter > 5
+    def _after(key: str, polls: int):
+        """False for the first `polls` checks, then true and staying true"""
 
-    def handle_once_condition(**_) -> bool:
-        global counter
-        return counter > 5
+        def _condition(**_) -> bool:
+            counters[key] += 1
+            return counters[key] > polls
 
-    def dynamic_args_recipe_condition(**_) -> bool:
-        global counter
-        return counter > 10
+        return _condition
 
-    def dynamic_args_comp_condition(**_) -> bool:
-        global counter
-        return counter > 8
+    becomes_true_condition = _after("basic", 3)
+    handle_once_condition = _after("handle_once", 3)
+    dynamic_args_recipe_condition = _after("dynamic_recipe", 3)
+    dynamic_args_comp_condition = _after("dynamic_comp", 3)
 
     def toggling_condition(**_) -> bool:
         global toggler
@@ -116,47 +132,58 @@ def generate_test_description():
         return toggler
 
     # ------ Actions --------
-    def on_basic_trigger(**_) -> None:
+    def on_basic_trigger(**_) -> ActionReturnType:
         global basic_trigger_py_event
         basic_trigger_py_event.set()
+        return True, "basic trigger recorded"
 
-    def on_dynamic_trigger(value, **_) -> None:
+    def on_dynamic_trigger(value, **_) -> ActionReturnType:
         global dynamic_arg_recipe_py_event
-        if value == EXPECTED_VALUE:
-            dynamic_arg_recipe_py_event.set()
+        if value != EXPECTED_VALUE:
+            return False, f"Expected {EXPECTED_VALUE}, got {value}"
+        dynamic_arg_recipe_py_event.set()
+        return True, "dynamic arg trigger recorded"
 
     # --- Case 1: recipe-level basic trigger ---
     # Condition starts False, becomes True after execution counter exceeds 5
     event_basic = Event(
         becomes_true_condition,
-        check_rate=1.0,
+        check_rate=CHECK_RATE,
+        # The condition stays true, so without this it re-fires every poll
+        handle_once=True,
     )
 
     # --- Case 2: on_change ---
     # Toggling condition with on_change=True fires only on False-to-True transition
     event_on_change = Event(
         toggling_condition,
-        check_rate=1.0,
+        check_rate=CHECK_RATE,
         on_change=True,
     )
 
     # --- Case 3: handle_once ---
     event_handle_once = Event(
         handle_once_condition,
-        check_rate=1.0,
+        check_rate=CHECK_RATE,
         handle_once=True,
     )
 
     # --- Case 4: dynamic arg (recipe action) ---
     event_dynamic_recipe = Event(
         dynamic_args_recipe_condition,
-        check_rate=1.0,
+        check_rate=CHECK_RATE,
+        # NOTE: no handle_once. The action's argument is read from a topic, so
+        # the first firing can land before anything has been published there;
+        # this event has to keep firing until a value exists
     )
 
     # --- Case 5: dynamic arg (component action) ---
     event_dynamic_comp = Event(
         dynamic_args_comp_condition,
-        check_rate=1.0,
+        check_rate=CHECK_RATE,
+        # NOTE: no handle_once. The action's argument is read from a topic, so
+        # the first firing can land before anything has been published there;
+        # this event has to keep firing until a value exists
     )
 
     launcher = Launcher()
@@ -205,36 +232,137 @@ class TestActionBasedEvents(unittest.TestCase):
 
     def test_basic_action_based_trigger(cls):
         """[Case 1] Consequence fires once the condition Action starts returning True."""
-        assert basic_trigger_py_event.wait(cls.wait_time), (
-            "Action-based event failed to trigger when condition became True"
-        )
+        assert basic_trigger_py_event.wait(
+            cls.wait_time
+        ), "Action-based event failed to trigger when condition became True"
 
     def test_on_change_action_based_trigger(cls):
         """[Case 2] Consequence fires on a False-to-True transition when on_change=True."""
-        assert on_change_py_event.wait(cls.wait_time), (
-            "Action-based event with on_change=True failed to trigger on False-to-True transition"
-        )
+        assert on_change_py_event.wait(
+            cls.wait_time
+        ), "Action-based event with on_change=True failed to trigger on False-to-True transition"
 
     def test_handle_once(cls):
         """[Case 3] Consequence fires exactly once even when the condition stays True."""
-        assert handle_once_first_py_event.wait(cls.wait_time), (
-            "handle_once action-based event never fired"
-        )
-        # Wait several more check periods (10 Hz -> 0.5 s covers ~5 additional checks)
-        time.sleep(5.0)
-        assert len(handle_once_invocations) == 1, (
-            f"handle_once action-based event fired {len(handle_once_invocations)} "
-            f"time(s), expected exactly 1"
-        )
+        assert handle_once_first_py_event.wait(
+            cls.wait_time
+        ), "handle_once action-based event never fired"
+        # Watch over several more check periods, failing on the first extra
+        # firing rather than waiting out the whole window for it
+        deadline = time.monotonic() + EXTRA_CHECKS / CHECK_RATE
+        while True:
+            assert len(handle_once_invocations) == 1, (
+                f"handle_once action-based event fired "
+                f"{len(handle_once_invocations)} time(s), expected exactly 1"
+            )
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
 
     def test_dynamic_args_recipe_action_based_trigger(cls):
         """[Case 4]"""
-        assert dynamic_arg_recipe_py_event.wait(cls.wait_time), (
-            "Action-based event with dynamic args in the recipe failed to trigger"
-        )
+        assert dynamic_arg_recipe_py_event.wait(
+            cls.wait_time
+        ), "Action-based event with dynamic args in the recipe failed to trigger"
 
     def test_dynamic_args_comp_action_based_trigger(cls):
         """[Case 5]"""
-        assert dynamic_arg_comp_py_event.wait(cls.wait_time), (
-            "Action-based event with dynamic args in the component failed to trigger"
-        )
+        assert dynamic_arg_comp_py_event.wait(
+            cls.wait_time
+        ), "Action-based event with dynamic args in the component failed to trigger"
+
+
+# ==========================================================================
+# Getting an event to a component in another process
+#
+# A multiprocess component is handed its events as JSON on the command line and
+# rebuilds them there, deep-copying each one. Anything an event carries that
+# cannot be copied stops that component from starting at all.
+# ==========================================================================
+
+
+class TestRisingEdge(unittest.TestCase):
+    """An on_change event fires when its condition turns true, counting a
+    condition already true at the first evaluation as having turned true"""
+
+    def _cache(self, value: float):
+        """A blackboard with one Float32 message on 'rising_edge_reading'"""
+        return {
+            "rising_edge_reading": EventBlackboardEntry(
+                msg=Float32(data=value), timestamp=time.time()
+            )
+        }
+
+    def test_a_condition_true_at_the_first_evaluation_fires_once(self):
+        reading = Topic(name="rising_edge_reading", msg_type="Float32")
+        event = Event(reading.msg.data > 1.0, on_change=True)
+
+        event.check_condition(self._cache(5.0))
+        assert event.trigger, "already true at the first evaluation, so a rising edge"
+        event.check_condition(self._cache(6.0))
+        assert not event.trigger, "still true, no new edge"
+        event.check_condition(self._cache(0.0))
+        assert not event.trigger
+        event.check_condition(self._cache(7.0))
+        assert event.trigger, "turned true again"
+
+    def test_a_polled_condition_true_at_the_first_poll_fires_once(self):
+        readings = iter([True, True, False, True])
+        event = Event(lambda: next(readings), check_rate=1.0, on_change=True)
+
+        fired = []
+        for _ in range(4):
+            event.check_action_condition({})
+            fired.append(event.trigger)
+        assert fired == [True, False, False, True]
+
+    def test_reset_arms_the_edge_again(self):
+        event = Event(lambda: True, check_rate=1.0, on_change=True)
+
+        event.check_action_condition({})
+        event.check_action_condition({})
+        assert not event.trigger
+        event.reset()
+        event.check_action_condition({})
+        assert event.trigger
+
+
+class TestEventTravels(unittest.TestCase):
+    """What an event has to survive to reach a component process"""
+
+    def test_an_event_can_be_deep_copied(self):
+        """A component copies every event it reads back from JSON"""
+        event = Event(Topic(name="clicked_point", msg_type="PointStamped"))
+
+        copied = deepcopy(event)
+
+        assert isinstance(copied, Event)
+        # Its own guards, not the original's, and both still usable
+        assert copied._evaluation_lock is not event._evaluation_lock
+        copied.check_condition({})
+        event.check_condition({})
+
+    def test_an_event_can_be_pickled(self):
+        event = Event(Topic(name="clicked_point", msg_type="PointStamped"))
+
+        restored = pickle.loads(pickle.dumps(event))
+
+        assert isinstance(restored, Event)
+        restored.check_condition({})
+
+    def test_a_component_rebuilds_the_events_it_is_handed(self):
+        """The path a multiprocess component takes at startup, which is where
+        an uncopyable event shows up as the component failing to launch"""
+
+        class _Component(BaseComponent):
+            def _execution_step(self):
+                pass
+
+        component = _Component(component_name="events_from_json")
+        event = Event(Topic(name="clicked_point", msg_type="PointStamped"))
+
+        component._events_json = json.dumps([event.to_json()])
+
+        rebuilt = component._BaseComponent__events
+        assert len(rebuilt) == 1
+        assert rebuilt[0].get_involved_topics()[0].name == "clicked_point"

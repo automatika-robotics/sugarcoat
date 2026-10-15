@@ -6,6 +6,8 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.utilities import try_shutdown
 
+from ..utils import InvalidHandle
+
 
 def _parse_args() -> Tuple[argparse.Namespace, List[str]]:
     """Parse arguments."""
@@ -246,7 +248,19 @@ def run_component(component: object):
     executor.add_node(component)
 
     try:
-        executor.spin()
+        while True:
+            try:
+                executor.spin()
+                # Returned on its own: the context is down and so is the node
+                break
+            except InvalidHandle:
+                # NOTE: A component that deactivates, restarts or reconfigures
+                # destroys the timers and subscriptions its executor is
+                # waiting on. Some rclpy versions raise from the wait set
+                # instead of dropping the entity, and letting that end the
+                # spin would leave the process alive with nothing running in
+                # it. The next spin builds the wait set without what is gone
+                continue
 
     except KeyboardInterrupt:
         pass

@@ -123,10 +123,17 @@ def classify_action(action) -> Dict[str, Any]:
 
 def serialize_event(event: Event, actions_list: list) -> Dict[str, Any]:
     """Serialize a single event and its associated actions for UI visualization."""
+    if event._condition is None:
+        # A callable-based event has no condition tree, only the callable it polls
+        readable = f"'{event._action_condition.action_name}' returns true"
+        condition_parts = []
+    else:
+        readable = event._condition._readable()
+        condition_parts = get_condition_parts(event._condition)
     return {
         "id": event.id,
-        "readable": event._condition._readable(),
-        "condition_parts": get_condition_parts(event._condition),
+        "readable": readable,
+        "condition_parts": condition_parts,
         "handle_once": event._handle_once,
         "on_change": event._on_change,
         "keep_event_delay": event._keep_event_delay,

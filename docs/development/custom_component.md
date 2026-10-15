@@ -86,6 +86,22 @@ def main_action_callback(self, goal_handle):
     return result
 ```
 
+**One goal at a time.** A new goal is rejected while another is ongoing, rather than replacing it: a component executing a motion should finish or be stopped, not have a second motion started on top of it. A goal counts as ongoing until its callback returns, not merely until it reaches a terminal state, so the cleanup of one goal never overlaps the start of the next.
+
+To stop the ongoing goal without holding its handle, the component offers `cancel_main_goal` as an ordinary component action. It is therefore reachable everywhere a component action is: from an event, as a routine step, over the runtime API, from the UI, and as an LLM tool.
+
+```python
+launcher.on(obstacle_detected, Action(my_component.cancel_main_goal))
+```
+
+The same operation is also served as a plain `std_srvs/Trigger` service, for a terminal or a node that knows nothing about this framework:
+
+```bash
+ros2 service call /my_component/cancel_main_action std_srvs/srv/Trigger
+```
+
+Finding nothing to cancel is a **success**: what the caller asked for is that no goal is running, and none is, so a routine step that stops a component does not fail because it had already stopped. A goal that has been cancelled but whose callback has not returned reports success with "the ongoing goal is already stopping": that is the window in which new goals are still refused. Only a component whose run type is `ACTION_SERVER` advertises the action.
+
 ### `main_service_callback()` — SERVER mode
 
 Called when a service request is received. Required when `run_type == ComponentRunType.SERVER`:
@@ -298,21 +314,24 @@ The validation runs during initialization and raises if required topics are miss
 Use the `@component_action` decorator to mark methods as dispatchable actions. These can be used as fallback targets or wired to events:
 
 ```python
-from ros_sugar.utils import component_action, component_fallback
+from ros_sugar.utils import ActionReturnType, component_action, component_fallback
 
 class MyComponent(BaseComponent):
     @component_action
-    def reset_buffer(self) -> bool:
+    def reset_buffer(self) -> ActionReturnType:
         self.buffer = []
-        return True
+        return True, "buffer reset"
 
     @component_fallback
-    def emergency_stop(self):
+    def emergency_stop(self) -> ActionReturnType:
         self.publishers_dict["velocity"].publish(0.0)
+        return True, "motors stopped"
 ```
 
-- `@component_action`: Validates lifecycle state before execution. Return type should be `bool` or `None`. When an action is invoked remotely through the `ExecuteMethod` service, `False` is reported as a failure and anything else as success; see the [built-in services](../advanced/srvs.md).
+- `@component_action`: Validates lifecycle state before execution. **Must be annotated to return `Tuple[bool, str]`** (aliased as `ActionReturnType`) — the bool reports success, the string carries a result or an error message. When an action is invoked remotely through the `ExecuteMethod` service, the bool becomes the response's `success`; see the [built-in services](../advanced/srvs.md).
 - `@component_fallback`: Validates the component is in a valid state (active, inactive, or activating).
+
+A fallback action is a **plain** action. Declaring one as a monitored `Action` — with `success`, `timeout`, `max_retries` or `cancel_method` — is refused where it is set, because a fallback runs from the fallback loop when the component has already failed, with nothing there to watch a success condition or to run retries. A recovery that needs those belongs in a `Routine`, whose steps can be monitored and can have fallbacks of their own.
 
 ### Tool Descriptions for LLM Orchestration
 
@@ -327,9 +346,9 @@ class MyComponent(BaseComponent):
             "description": "Clears the internal data buffer and resets processing state.",
         },
     })
-    def reset_buffer(self) -> bool:
+    def reset_buffer(self) -> ActionReturnType:
         self.buffer = []
-        return True
+        return True, "buffer reset"
 
     @component_fallback(description={
         "type": "function",
@@ -338,15 +357,16 @@ class MyComponent(BaseComponent):
             "description": "Immediately stops all motor output.",
         },
     })
-    def emergency_stop(self):
+    def emergency_stop(self) -> ActionReturnType:
         self.publishers_dict["velocity"].publish(0.0)
+        return True, "motors stopped"
 ```
 
 When `description` is omitted, the method's docstring is used as the description. The `active` parameter is also supported on `@component_action` to require the Active lifecycle state:
 
 ```python
 @component_action(description={...}, active=True)
-def move_forward(self) -> bool:
+def move_forward(self) -> ActionReturnType:
     ...
 ```
 
@@ -363,7 +383,8 @@ Every component inherits these actions that can be used directly in fallbacks or
 | `set_param(name, value, keep_alive=True)` | Change one parameter |
 | `set_params(names, values, keep_alive=True)` | Change multiple parameters |
 | `broadcast_status()` | Publish current health status |
-| `inspect_component()` | Return a string summary of the component's config, inputs, and outputs |
+
+All of them follow the action contract and return `ActionReturnType`. `inspect_component()`, which returns a string summary of the component's config, inputs and outputs, is **not** an action: it is an undecorated method returning `str`, so it cannot be used in an event or a fallback.
 
 ### Custom Action/Service Names
 
@@ -413,7 +434,7 @@ from ros_sugar.core import BaseComponent, Action
 from ros_sugar.io import Topic
 from ros_sugar.io.supported_types import Float64, String
 from ros_sugar.config import BaseComponentConfig, base_validators
-from ros_sugar.utils import component_action
+from ros_sugar.utils import ActionReturnType, component_action
 from ros_sugar.launch import Launcher
 
 
@@ -463,9 +484,9 @@ class ExponentialFilter(BaseComponent):
         self.publishers_dict["filtered_signal"].publish(self._filtered)
 
     @component_action
-    def reset_filter(self) -> bool:
+    def reset_filter(self) -> ActionReturnType:
         self._filtered = 0.0
-        return True
+        return True, "filter reset"
 
 
 # --- Usage ---

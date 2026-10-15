@@ -203,12 +203,15 @@ The routes, all under `/api`:
 | Route | Purpose |
 |:------|:--------|
 | `GET /api/health` | Liveness |
-| `GET /api/interfaces` | Discovery: declared inputs and outputs with their `msg_type` and field `schema` (outputs also report their `mode`), plus services and actions with their request and goal schemas |
+| `GET /api/interfaces` | Discovery: declared inputs and outputs with their `msg_type` and field `schema` (outputs also report their `mode`), services and actions with their request and goal schemas, and the routines with their routes |
 | `POST /api/inputs/{name}` | Publish to a UI input; the body is the message in the schema `GET /api/interfaces` describes |
 | `WS /api/inputs/{name}/audio` | Stream base64 audio chunks to an `Audio` input |
 | `WS /api/outputs/{name}` | Stream an output's UI content as `{"topic": ..., "payload": ...}` |
 | `POST /api/services/{name}` | Call a declared service client |
 | `POST /api/actions/{name}`, `POST /api/actions/{name}/cancel`, `WS /api/actions/{name}/feedback` | Send a goal, cancel it, and follow its feedback |
+| `GET /api/routines`, `GET /api/routines/{name}` | The routines given to `enable_ui(routines=...)` and their latest state |
+| `POST /api/routines/{name}/{command}` | `start`, `pause`, `resume` or `abort` a routine; an abort takes an optional `{"reason": ...}`. `409` when the routine cannot take the command, with the Monitor's reason |
+| `WS /api/routines/{name}/state` | Follow a routine's state, pushed on connect and on every change |
 | `WS /api/world/{grid}` | An occupancy grid plus the declared point, pose, odometry and path outputs as overlay and path markers |
 
 The browser's input forms still submit over the FastHTML `/ws` route shown above, but its video, map and action-feedback panes are plain API clients of the WebSocket routes in this table.

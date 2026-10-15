@@ -5,23 +5,36 @@ OnShutdown handler that stops a component's executor runs on launch's asyncio
 loop, behind every event already queued there. A node firing events at rate
 kept that queue full, so the handler starved and the node kept spinning,
 feeding it further -- and launch never shut down.
+
+Also covers how `Launcher.bringup` ends a recipe whose launch failed.
 """
 
+import os
+import subprocess
+import sys
+import textwrap
 import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 import rclpy
 from launch import LaunchContext
 
+import ros_sugar
 from ros_sugar.core.component import BaseComponent
 from ros_sugar.launch.launch_actions import ComponentLaunchAction
+from ros_sugar.utils import InvalidHandle
 
 
 @pytest.fixture
-def running_action():
-    """A component spinning in its executor thread, the way launch runs it."""
-    component = BaseComponent(component_name="launch_action_component")
+def running_action(request):
+    """A component spinning in its executor thread, the way launch runs it.
+
+    Named after the test: a lifecycle node stays in the graph once destroyed,
+    so each test's component is apart from the one before
+    """
+    component = BaseComponent(component_name=f"launch_action_{request.node.name}")
     action = ComponentLaunchAction(node=component, name=component.node_name)
     context = LaunchContext()
     action.execute(context)
@@ -55,6 +68,37 @@ def test_spin_loop_stops_when_launch_requests_shutdown(running_action):
     action.shutdown()
 
 
+def test_spin_loop_survives_a_destroyed_entity(running_action):
+    """A component that deactivates, restarts or reconfigures destroys the
+    timers and subscriptions its executor is waiting on. Some rclpy versions
+    raise from the wait set instead of dropping them, and the thread must not
+    die with it: the node would stay up with nothing spinning it, so nothing
+    it creates afterwards would ever run."""
+    action, _ = running_action
+    executor = action._ComponentLaunchAction__ros_executor
+    spin_once = executor.spin_once
+    calls = []
+
+    def raise_once(timeout_sec=None):
+        calls.append(timeout_sec)
+        if len(calls) == 1:
+            raise InvalidHandle(
+                "cannot use Destroyable because destruction was requested"
+            )
+        return spin_once(timeout_sec=timeout_sec)
+
+    executor.spin_once = raise_once
+
+    deadline = time.time() + 5.0
+    while len(calls) < 3 and time.time() < deadline:
+        time.sleep(0.05)
+
+    assert _spin_thread(action).is_alive(), (
+        "the executor thread died on a destroyed entity"
+    )
+    assert len(calls) >= 3, "the loop stopped spinning after the exception"
+
+
 def test_spin_loop_keeps_running_until_asked(running_action):
     action, _ = running_action
     time.sleep(0.2)
@@ -73,3 +117,59 @@ def test_internal_events_are_dropped_once_shutdown_is_requested(running_action):
     context._set_is_shutdown(True)
     action._on_internal_event("some_event")
     assert loop.call_soon_threadsafe.call_count == 1, "event queued after shutdown"
+
+
+def test_a_failed_launch_exits_non_zero(tmp_path):
+    """Launch logs a failed action and returns 1 instead of raising, so the
+    recipe must exit with that code rather than 0 (issue #66)"""
+    recipe = tmp_path / "recipe.py"
+    recipe.write_text(
+        textwrap.dedent(
+            """
+            from launch.actions import OpaqueFunction
+            from ros_sugar import Launcher
+            from ros_sugar.core import BaseComponent
+
+
+            class Probe(BaseComponent):
+                def _execution_step(self):
+                    pass
+
+
+            def fail(context):
+                raise RuntimeError("probe: a launch action failed")
+
+
+            launcher = Launcher()
+            launcher.add_pkg(
+                components=[Probe(component_name="bringup_exit_probe")],
+                package_name="automatika_ros_sugar",
+                multiprocessing=False,
+            )
+            launcher._description.add_action(OpaqueFunction(function=fail))
+            launcher.bringup()
+            """
+        )
+    )
+    # The recipe imports this checkout, on a ROS domain apart from the suite's,
+    # where the nodes earlier tests left in the graph cannot reach it
+    repo = str(Path(ros_sugar.__file__).parents[1])
+    suite_domain = int(os.environ.get("ROS_DOMAIN_ID", "0"))
+    env = dict(
+        os.environ,
+        PYTHONPATH=os.pathsep.join(filter(None, [repo, os.environ.get("PYTHONPATH")])),
+        ROS_DOMAIN_ID=str(suite_domain % 101 + 1),
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(recipe)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    output = proc.stdout + proc.stderr
+    assert proc.returncode == 1, output[-3000:]
+    assert "ALL COMPONENTS EXITED SUCCESSFULLY" not in output

@@ -2,8 +2,10 @@
 
 import inspect
 import json
+import threading
 import time
 import uuid
+from functools import partial
 from attrs import define, field
 from typing import Any, Callable, Dict, List, Union, Optional
 from launch.event import Event as ROSLaunchEvent
@@ -12,7 +14,12 @@ from copy import copy
 from concurrent.futures import ThreadPoolExecutor
 
 from ..io.topic import Topic
-from .action import Action, OpaqueCoroutine, OpaqueFunction
+
+# NOTE: events build on BaseAction, never on the full Action: the full class
+# watches its success condition *as* an Event, so importing it here would be a
+# cycle. Everything an event does with an action is base surface, and a
+# condition wrapped in BaseAction structurally cannot carry a retry policy
+from .base_action import BaseAction, OpaqueCoroutine, OpaqueFunction
 from ..condition import Condition
 from ..utils import SomeEntitiesType
 from ..utils import logger
@@ -221,7 +228,8 @@ class Event:
     Trigger behaviour can be further refined with:
 
     * ``on_change`` – fire only on a *rising edge* (condition transitions from
-      false to true), rather than every evaluation cycle.
+      false to true), rather than every evaluation cycle. A condition that is
+      already true at its first evaluation counts as a rising edge.
     * ``handle_once`` – fire at most once and then become inert.
     * ``keep_event_delay`` – hold the *under-processing* flag for a fixed
       duration after actions complete, throttling re-triggers.
@@ -251,7 +259,8 @@ class Event:
             polled at ``check_rate``.
         :type event_condition: Union[Topic, Condition, Callable]
         :param on_change: If True, trigger only on a rising edge (condition
-            transitions from False to True), defaults to False.
+            transitions from False to True). A condition already true at its
+            first evaluation counts as such a transition, defaults to False.
         :type on_change: bool, optional
         :param handle_once: If True, execute registered actions at most once
             across the lifetime of this event, defaults to False.
@@ -273,36 +282,39 @@ class Event:
         self._keep_event_delay: float = keep_event_delay
         self._on_change: bool = on_change
         self._on_any: bool = False
-        self._previous_trigger = None
+        # NOTE: What the condition last evaluated to. Starts as not met.
+        # Condition already true at its first evaluation counts as a rising edge
+        self._previous_trigger: bool = False
         self.__under_processing = False
+
+        # NOTE: The event stays under processing until the last one of the actions reports, so it
+        # does not fire again on top of an action still running
+        self.__outstanding = (
+            0  # Monitored actions dispatched for this trigger and not settled yet.
+        )
+        self._outstanding_lock = threading.Lock()
+        # One evaluation of this event at a time, whichever topic arrived
+        self._evaluation_lock = threading.Lock()
         self._processed_once: bool = False
 
         # Case 1: Init from Condition Expression (topic.msg.data > 5)
         if isinstance(event_condition, Condition):
             self._condition = event_condition
-            self._action_condition: Optional[Action] = None
+            self._action_condition: Optional[BaseAction] = None
             self._is_action_based: bool = False
             self.check_rate: Optional[float] = None
 
         # Case 2: Topics are passed for on_any event
         elif isinstance(event_condition, Topic):
-            self._action_condition: Optional[Action] = None
+            self._action_condition: Optional[BaseAction] = None
             self._is_action_based: bool = False
             self.check_rate: Optional[float] = None
-            self._condition = Condition(
-                topic_name=event_condition.name,
-                topic_msg_type=event_condition.msg_type.__name__,
-                topic_qos_config=event_condition.qos_profile.to_dict(),
-                topic_use_plugin=event_condition.use_plugin,
-                attribute_path=[],
-                operator_func=None,
-                ref_value=None,
-            )
+            self._condition = Condition.on_any(event_condition)
             self._on_any = True
         # Case 3: Callable-based polling: action return value is the boolean condition
         elif isinstance(event_condition, Callable):
             self._condition = None
-            self._action_condition = Action(method=event_condition)
+            self._action_condition = BaseAction(method=event_condition)
             self._is_action_based = True
             self.check_rate = check_rate
             # Validate: must not be a @component_action (bound to a component lifecycle)
@@ -327,7 +339,7 @@ class Event:
         self.trigger: bool = False
 
         # Register for on trigger actions
-        self._registered_on_trigger_actions: List[Union[Callable, Action]] = []
+        self._registered_on_trigger_actions: List[Union[Callable, BaseAction]] = []
 
         # Required topics registry
         self.__required_topics: List[Topic] = []
@@ -374,7 +386,7 @@ class Event:
         self._processed_once = False
         self.under_processing = False
         self.trigger = False
-        self._previous_trigger = None
+        self._previous_trigger = False
 
     def clear(self) -> None:
         """
@@ -466,7 +478,7 @@ class Event:
         """
         return self.__last_processed_ids.get(topic_name, None)
 
-    def verify_required_action_topics(self, action: Action) -> None:
+    def verify_required_action_topics(self, action: BaseAction) -> None:
         """Verify the action topic parsers (if present) against an event.
            Raises a 'ValueError' if there is a mismatch.
 
@@ -500,15 +512,51 @@ class Event:
                 self._async_action_wrapper, global_topic_cache
             )
 
+    def __getstate__(self) -> Dict:
+        """What of this event travels, leaving its locks behind.
+
+        An event is deep-copied when a component reads its events back from
+        JSON, and carried to a component in another process. A lock is neither
+        copyable nor picklable, and means nothing on the other side anyway.
+        """
+        state = self.__dict__.copy()
+        state.pop("_outstanding_lock", None)
+        state.pop("_evaluation_lock", None)
+        return state
+
+    def __setstate__(self, state: Dict) -> None:
+        """Rebuild the copy's own locks, which guard only its own state"""
+        self.__dict__.update(state)
+        self._outstanding_lock = threading.Lock()
+        self._evaluation_lock = threading.Lock()
+
     def _async_action_wrapper(self, global_topic_cache: Dict) -> None:
         """
         The actual execution logic running in the background thread.
         Handles the execution, delay, and flag resetting.
         """
+        monitored: List[BaseAction] = []
         try:
             # Execute all actions
             for action in self._registered_on_trigger_actions:
-                action(topics=global_topic_cache)
+                if isinstance(action, BaseAction) and getattr(
+                    action, "is_monitored", False
+                ):
+                    # Waiting here for its verdict would park this worker, and
+                    # the verdict itself arrives through this same pool
+                    monitored.append(action)
+                    continue
+                result = action(topics=global_topic_cache)
+                # This is the one funnel every event-triggered action passes
+                # through, so it is where a reported failure finally gets
+                # surfaced.
+                if isinstance(action, BaseAction) and result:
+                    succeeded, message = result
+                    if not succeeded:
+                        logger.error(
+                            f"Action '{action.action_name}' failed for event "
+                            f"'{self}': {message}"
+                        )
 
             # Handle the blocking delay inside the thread (so main loop isn't blocked)
             if self._keep_event_delay > 0:
@@ -519,25 +567,53 @@ class Event:
         except Exception as e:
             logger.error(f"Error executing actions for event '{self}': {e}")
         finally:
-            # Reset the flag only after work + delay are done
-            self.under_processing = False
             # NOTE: We set this to true even if the consequent action failed
             # with an error
             self._processed_once = True
+            if not monitored:
+                # Reset the flag only after work + delay are done
+                self.under_processing = False
+
+        # Counted before any of them starts: one that settles at once must not
+        # clear the flag while the rest are still being dispatched
+        with self._outstanding_lock:
+            self.__outstanding = len(monitored)
+        for action in monitored:
+            action.start(
+                partial(self.__on_monitored_settled, action),
+                topics=global_topic_cache,
+            )
+
+    def __on_monitored_settled(self, action, result, _outcome) -> None:
+        """Report what a dispatched action ended up doing, and free the event.
+
+        The event is under processing until the last of them reports, so a
+        repeating trigger cannot start an action that is still running.
+        """
+        succeeded, message = result
+        if not succeeded:
+            logger.error(
+                f"Action '{action.action_name}' failed for event '{self}': {message}"
+            )
+        with self._outstanding_lock:
+            self.__outstanding -= 1
+            done = self.__outstanding <= 0
+        if done:
+            self.under_processing = False
 
     def register_actions(
-        self, actions: Union[Action, Callable, List[Union[Action, Callable]]]
+        self, actions: Union[BaseAction, Callable, List[Union[BaseAction, Callable]]]
     ) -> None:
         """Register an Action or a set of Actions to execute on trigger
 
         :param actions: Action or a list of Actions
-        :type actions: Union[Action, List[Action]]
+        :type actions: Union[BaseAction, List[BaseAction]]
         """
         actions = actions if isinstance(actions, List) else [actions]
         # If it is a simple condition
         topics = self.get_involved_topics()
         for act in actions:
-            if len(topics) == 1 and isinstance(act, Action):
+            if len(topics) == 1 and isinstance(act, BaseAction):
                 # Setup any required automatic conversion from the event message type to the action inputs
                 act._setup_conversions(topics[0].name, topics[0].ros_msg_type)
             self._registered_on_trigger_actions.append(act)
@@ -552,7 +628,19 @@ class Event:
         """
         Replaces existing trigger logic.
         Evaluates the root Condition tree against the global cache.
+
+        Serialized per event: its host no longer holds one lock across every
+        event it owns, so two topics of this event's own can arrive at once,
+        and deciding whether it fires reads and writes state that only makes
+        sense one evaluation at a time.
         """
+        with self._evaluation_lock:
+            self.__check_condition(global_topic_cache)
+
+    def __check_condition(
+        self, global_topic_cache: Dict[str, EventBlackboardEntry]
+    ) -> None:
+        """Decide whether this event fires on what its topics currently hold"""
         # Dont keep on checking for handle once events after they have been processed
         if self._handle_once and self._processed_once:
             return
@@ -568,25 +656,12 @@ class Event:
             # This assumes self.event_condition is now the root Condition object
             triggered = self._condition.evaluate(topics_dict)
 
-            # If the event is to be checked only 'on_change' in the value
-            # then check if:
-            # 1. the event previous value is different from the event current value (there is a change)
-            # and 2. if the new_trigger is on
-            # If on_change and 1 and 2 -> activate the trigger
+            # On 'on_change' the event fires on a rising edge only: the
+            # condition is met now and was not at the previous evaluation,
+            # which includes the first evaluation when it is met right away
             if self._on_change:
-                if (
-                    self._previous_trigger is not None
-                    and not self._previous_trigger
-                    and triggered
-                ):
-                    self.trigger = True
-                else:
-                    self.trigger = False
+                self.trigger = triggered and not self._previous_trigger
             else:
-                # If:
-                # 1. on_change is not required
-                # or 2. the event previous value is the same as the current value (no change happened)
-                # then just directly update the trigger
                 self.trigger = triggered
             self._previous_trigger = copy(triggered)
 
@@ -609,9 +684,19 @@ class Event:
         if self._handle_once and self._processed_once:
             return
 
-        triggered = bool(self._action_condition())
+        # NOTE: the condition callable is invoked directly rather than through
+        # Action.__call__. A condition is a predicate returning bool, not an
+        # action returning (success, message)
+        try:
+            call_args, call_kwargs = self._action_condition._prepare_call()
+            triggered = bool(
+                self._action_condition.executable(*call_args, **call_kwargs)
+            )
+        except Exception as e:
+            logger.error(f"Error evaluating condition for event '{self}': {e}")
+            triggered = False
 
-        if self._on_change and self._previous_trigger is not None:
+        if self._on_change:
             self.trigger = triggered and not self._previous_trigger
         else:
             self.trigger = triggered
