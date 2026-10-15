@@ -1454,6 +1454,189 @@ def test_event_on_a_sensor_topic_binds_with_no_robot_plugin(rclpy_context):
         component.destroy_node()
 
 
+def _wait_for(predicate, node=None, timeout: float = 3.0, each=None) -> None:
+    """Poll until ``predicate()``, spinning ``node`` and calling ``each`` per turn"""
+    deadline = time.time() + timeout
+    while not predicate() and time.time() < deadline:
+        if each is not None:
+            each()
+        if node is not None:
+            rclpy.spin_once(node, timeout_sec=0.05)
+        else:
+            time.sleep(0.02)
+
+
+@pytest.mark.parametrize("as_input", [True, False])
+def test_event_on_a_plugin_ros_topic_listens_where_the_plugin_publishes(
+    rclpy_context, as_input
+):
+    """Regression: an event on a topic the plugin carries over ROS subscribed
+    under the recipe's name when the topic was an input, and waited on the
+    feedback bus, where ROS-carried feedback never goes, when it was not.
+    Either way it never fired. Messages are filed under the recipe's name,
+    which is what the condition reads"""
+    from sensor_msgs.msg import LaserScan as RosLaserScan
+
+    from ros_sugar.core.action import Action
+    from ros_sugar.core.component import BaseComponent
+    from ros_sugar.core.event import Event
+
+    topic = Topic(name="lidar_front", msg_type="LaserScan", use_plugin=True)
+    component = BaseComponent(
+        component_name=f"plugin_ros_event_{'input' if as_input else 'only'}",
+        inputs=[topic] if as_input else None,
+    )
+    component.rclpy_init_node()
+    component.add_plugin(_RosCloudPlugin())
+    try:
+        component._use_robot_plugin()
+        component._add_event_action_pair(
+            Event(topic.msg.range_max > 1.0), Action(method=lambda: (True, ""))
+        )
+        component._turn_on_events_management()
+        listeners = component._BaseComponent__event_listeners
+        assert [listener.topic_name for listener in listeners] == ["/rs/front/points"]
+
+        publisher = component.create_publisher(RosLaserScan, "rs/front/points", 10)
+        board = component._events_topics_blackboard
+        _wait_for(
+            lambda: "lidar_front" in board,
+            node=component,
+            each=lambda: publisher.publish(RosLaserScan(range_max=5.0)),
+        )
+        assert "lidar_front" in board, "the plugin's scans never reached the event"
+        assert board["lidar_front"].msg.range_max == 5.0
+    finally:
+        component.destroy_node()
+
+
+def _monitor_watching(event, plugins, name):
+    """A real Monitor evaluating ``event``, given the recipe's plugins"""
+    from ros_sugar.core.monitor import Monitor
+
+    monitor = Monitor(components_names=[], events_to_emit=[event], component_name=name)
+    monitor.rclpy_init_node()
+    monitor.set_plugins({plugin.id: plugin for plugin in plugins})
+    monitor._activate_event_monitoring()
+    return monitor
+
+
+def test_monitor_event_on_a_plugin_topic_is_fed_by_the_plugin(rclpy_context):
+    """Regression: the Monitor read event topics by name alone, so an event on a
+    recipe topic the plugin serves over its own transport subscribed to a ROS
+    topic nothing publishes, and never fired"""
+    from ros_sugar.core.event import Event
+
+    state_port = _free_port()
+    plugin = MockPlugin(state_port=state_port, cmd_port=_free_port())
+    plugin._bind_identity()
+    topic = Topic(name="robot_state", msg_type="Int32", use_plugin=True)
+    monitor = _monitor_watching(Event(topic.msg.data > 10), [plugin], "plugin_monitor_one")
+    host = RobotPluginHost(
+        plugin,
+        node=None,
+        bus=InProcessFeedbackBus(),
+        monitor_feed=monitor.feed_external_topic,
+    )
+    host.open()
+    try:
+        assert monitor._Monitor__event_listeners == {}, (
+            "a plugin-fed event topic must not get a dead ROS subscription"
+        )
+        board = monitor._events_topics_blackboard
+        robot_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        _wait_for(
+            lambda: "robot_state" in board,
+            each=lambda: robot_tx.sendto(b"55", ("127.0.0.1", state_port)),
+        )
+        robot_tx.close()
+        assert "robot_state" in board, "plugin feedback never reached the event"
+        assert board["robot_state"].msg.data == 55
+    finally:
+        host.close()
+        monitor.destroy_node()
+
+
+def test_monitor_event_over_several_plugin_topics_reads_each_from_its_plugin(
+    rclpy_context,
+):
+    """One condition over a topic the robot carries on ROS and one a sensor
+    serves over its own transport: each is bound to its own plugin, and both
+    arrive under the recipe's names"""
+    from sensor_msgs.msg import LaserScan as RosLaserScan
+
+    from ros_sugar.core.event import Event
+
+    robot = _RosCloudPlugin()
+    robot._bind_identity()
+    cam_port = _free_port()
+    camera = MockUdpSensor(state_port=cam_port, id="front_cam")
+    camera._bind_identity()
+    lidar = Topic(name="lidar_front", msg_type="LaserScan", use_plugin=True)
+    cam = Topic(name="cam_state", msg_type="Int32", use_plugin=camera.id)
+    monitor = _monitor_watching(
+        Event((lidar.msg.range_max > 1.0) & (cam.msg.data > 10)),
+        [robot, camera],
+        "plugin_monitor_two",
+    )
+    host = RobotPluginHost(
+        camera,
+        node=None,
+        bus=InProcessFeedbackBus(),
+        monitor_feed=monitor.feed_external_topic,
+    )
+    host.open()
+    try:
+        listeners = monitor._Monitor__event_listeners
+        assert list(listeners) == ["lidar_front"]
+        assert listeners["lidar_front"].topic_name == "/rs/front/points"
+
+        board = monitor._events_topics_blackboard
+        publisher = monitor.create_publisher(RosLaserScan, "rs/front/points", 10)
+        cam_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        def _send():
+            publisher.publish(RosLaserScan(range_max=5.0))
+            cam_tx.sendto(b"22", ("127.0.0.1", cam_port))
+
+        _wait_for(
+            lambda: "lidar_front" in board and "cam_state" in board,
+            node=monitor,
+            each=_send,
+        )
+        cam_tx.close()
+        assert board.get("lidar_front") is not None, "the robot's scans never arrived"
+        assert board.get("cam_state") is not None, "the camera's feedback never arrived"
+        assert board["lidar_front"].msg.range_max == 5.0
+        assert board["cam_state"].msg.data == 22
+    finally:
+        host.close()
+        monitor.destroy_node()
+
+
+def test_the_launcher_checks_and_requests_the_plugin_topics_events_read():
+    """An event's plugin topic is checked against the attached plugins like a
+    component's, and the plugin is asked to serve it"""
+    from ros_sugar import Launcher
+    from ros_sugar.core.action import Action
+    from ros_sugar.core.event import Event
+
+    topic = Topic(name="lidar_front", msg_type="LaserScan", use_plugin=True)
+    event = Event(topic.msg.range_max > 1.0)
+
+    without = Launcher()
+    without._events_actions[event] = [Action(method=lambda: (True, ""))]
+    with pytest.raises(ValueError, match="Event .* asks for the robot plugin"):
+        without._validate_plugin_references()
+
+    robot = _RosCloudPlugin()
+    launcher = Launcher(robot_plugin=robot)
+    launcher._events_actions[event] = [Action(method=lambda: (True, ""))]
+    launcher._validate_plugin_references()
+    launcher._resolve_plugin_demand()
+    assert robot.requested_feedbacks == {"lidar_front"}
+
+
 # ---------------------------------------------------------------------------
 # plugin-supplied robot description
 # ---------------------------------------------------------------------------

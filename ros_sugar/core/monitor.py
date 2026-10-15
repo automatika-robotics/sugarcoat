@@ -375,6 +375,11 @@ class Monitor(Node):
         # instead of a ROS subscription, plus a lock so plugin ingress threads
         # and ROS executor callbacks do not race on the event blackboard.
         self._external_topics: set = set()
+        # The recipe's plugins, by id, to resolve event topics declared with
+        # use_plugin. Handed over by the Launcher, see `set_plugins`
+        self._plugins: Dict[str, Any] = {}
+        # Event topic names fed from a plugin's feedback bus channel, by channel
+        self.__plugin_feed_aliases: Dict[str, set] = {}
         self._blackboard_lock = threading.Lock()
         self._events_topics_blackboard: Dict[str, EventBlackboardEntry] = {}
         self.__events_per_topic: Dict[str, List[Event]] = {}
@@ -1662,12 +1667,62 @@ class Monitor(Node):
 
         Called by a robot plugin HOST when it decodes a telemetry packet, so
         that Events and Conditions over plugin feedback topics are evaluated
-        exactly as if a ROS message had arrived.
+        exactly as if a ROS message had arrived. Event topics declared with
+        ``use_plugin`` and served by this feedback receive it under their own
+        name too.
 
         :param topic_name: Synthetic topic name (the feedback's bus channel).
         :param msg: The decoded ROS message instance.
         """
         self.__event_topic_callback(topic_name, msg)
+        for alias in tuple(self.__plugin_feed_aliases.get(topic_name, ())):
+            self.__event_topic_callback(alias, msg)
+
+    def set_plugins(self, plugins: Dict[str, Any]) -> None:
+        """Hand the Monitor the recipe's plugins, by id, so events on topics
+        declared with ``use_plugin`` are fed from what the plugin serves. Must be
+        called before the Monitor is activated.
+
+        NOTE: An attribute rather than a constructor argument, as downstream
+        packages override `Launcher._init_monitor_node` to build their own
+
+        :param plugins: The attached plugins, by id
+        """
+        self._plugins = dict(plugins)
+
+    def __plugin_feedback_for(self, name: str, topic: Topic) -> Optional[Any]:
+        """The plugin feedback serving an event topic declared with
+        ``use_plugin``, or ``None`` with the reason logged"""
+        from ..robot.plugin import AmbiguousPluginEntryError, PluginRole
+
+        if topic.use_plugin is True:
+            plugin = next(
+                (p for p in self._plugins.values() if p.role is PluginRole.ROBOT),
+                None,
+            )
+        else:
+            plugin = self._plugins.get(topic.use_plugin)
+        reason = None
+        feedback = None
+        if plugin is None:
+            reason = f"no attached plugin serves it (use_plugin={topic.use_plugin!r})"
+        else:
+            try:
+                feedback = plugin.resolve_feedback(name, topic.msg_type.__name__)
+            except (TypeError, AmbiguousPluginEntryError) as e:
+                reason = f"it could not be bound to plugin '{plugin.id}': {e}"
+            if feedback is None and reason is None:
+                reason = f"plugin '{plugin.id}' has no matching feedback"
+            elif feedback is not None and feedback.msg_type is not topic.msg_type:
+                # Conditions read attributes off the declared type
+                reason = (
+                    f"the plugin publishes '{feedback.msg_type.__name__}' but the "
+                    f"event expects '{topic.msg_type.__name__}'"
+                )
+                feedback = None
+        if feedback is None:
+            self.get_logger().error(f"Events on '{name}' will never trigger: {reason}.")
+        return feedback
 
     def __reconstruct_monitor_actions(self):
         self.__events: List[Event] = []
@@ -2524,6 +2579,23 @@ class Monitor(Node):
                 "no ROS subscription created"
             )
             return
+        if topic_obj.use_plugin:
+            feedback = self.__plugin_feedback_for(name, topic_obj)
+            if feedback is None:
+                return
+            if not feedback.is_ros_topic:
+                # The plugin host feeds it in under the feedback's channel
+                self.__plugin_feed_aliases.setdefault(feedback.channel, set()).add(name)
+                self.get_logger().info(
+                    f"Events on '{name}' bound to plugin feedback '{feedback.key}'"
+                )
+                return
+            # Subscribe where the plugin publishes, filed under the event's name
+            topic_obj = feedback.as_topic()
+            self.get_logger().info(
+                f"Events on '{name}' bound to plugin feedback '{feedback.key}' "
+                f"via ROS topic '{topic_obj.name}'"
+            )
         listener = self.create_subscription(
             msg_type=topic_obj.ros_msg_type,
             topic=topic_obj.name,
@@ -2601,6 +2673,8 @@ class Monitor(Node):
                 self.__events_per_topic.pop(name, None)
                 # A later subscription must not start from this one's last message
                 self._events_topics_blackboard.pop(name, None)
+                for aliases in self.__plugin_feed_aliases.values():
+                    aliases.discard(name)
                 listener = self.__event_listeners.pop(name, None)
                 if listener is not None:
                     released.append(listener)

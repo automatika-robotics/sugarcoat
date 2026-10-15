@@ -859,28 +859,35 @@ class Launcher:
         :raises ValueError: If a topic names a plugin that is not attached, or
             asks for the robot plugin when none is.
         """
-        for component in self._components:
+        owned_topics = [
             # A component declares outputs only if it has any
-            topics = list(getattr(component, "in_topics", None) or []) + list(
-                getattr(component, "out_topics", None) or []
+            (
+                f"Component '{component.node_name}' topic",
+                list(getattr(component, "in_topics", None) or [])
+                + list(getattr(component, "out_topics", None) or []),
             )
+            for component in self._components
+        ] + [
+            (f"Event '{event.id}' topic", event.get_involved_topics())
+            for event in self._events_actions
+        ]
+        for owner, topics in owned_topics:
             for topic in topics:
                 if not topic.use_plugin:
                     continue
                 if topic.use_plugin is True:
                     if self._robot_plugin is None:
                         raise ValueError(
-                            f"Component '{component.node_name}' topic "
-                            f"'{topic.name}' asks for the robot plugin "
+                            f"{owner} '{topic.name}' asks for the robot plugin "
                             "(use_plugin=True) but no robot plugin is attached "
                             "to this recipe."
                         )
                     continue
                 if topic.use_plugin not in self._plugins:
                     raise ValueError(
-                        f"Component '{component.node_name}' topic '{topic.name}' "
-                        f"is bound to plugin '{topic.use_plugin}', which is not "
-                        "attached to this recipe. Attached plugins: "
+                        f"{owner} '{topic.name}' is bound to plugin "
+                        f"'{topic.use_plugin}', which is not attached to this "
+                        "recipe. Attached plugins: "
                         f"{', '.join(self._plugins) or 'none'}."
                     )
 
@@ -937,6 +944,20 @@ class Launcher:
                         continue
                     if entry is not None:
                         target[plugin.id].add(entry.key)
+
+        # Events on a topic a plugin serves read its feedback too
+        for event in self._events_actions:
+            for topic in event.get_involved_topics():
+                plugin = self._plugin_for_topic(topic)
+                if plugin is None:
+                    continue
+                try:
+                    feedback = plugin.resolve_feedback(topic.name, topic.msg_type.__name__)
+                except (TypeError, AmbiguousPluginEntryError):
+                    # Whoever evaluates the event logs it
+                    continue
+                if feedback is not None:
+                    feedbacks[plugin.id].add(feedback.key)
 
         for plugin_id, plugin in self._plugins.items():
             plugin._set_requested(
@@ -1887,6 +1908,9 @@ class Launcher:
             all_components_to_activate_on_start=all_components_to_activate_on_start,
         )
         self._hand_registry_to_monitor()
+        # Events the Monitor evaluates may read topics a plugin serves
+        if self._plugins and hasattr(self.monitor_node, "set_plugins"):
+            self.monitor_node.set_plugins(self._plugins)
 
         # Started by name from the UI, so an event may never route them
         for routine in self._ui_routines:

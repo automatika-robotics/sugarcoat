@@ -342,10 +342,11 @@ class Plugin:
     # what the recipe asked for
     @property
     def requested_feedbacks(self) -> FrozenSet[str]:
-        """Keys of the feedbacks this recipe's components actually consume.
+        """Keys of the feedbacks this recipe's components and events actually
+        consume.
 
-        Populated by the launcher at bringup from every component's
-        ``Topic(use_plugin=...)`` reference, resolved through
+        Populated by the launcher at bringup from every component's and every
+        event's ``Topic(use_plugin=...)`` reference, resolved through
         `resolve_feedback`, and available before `on_attached` runs.
 
         A plugin may expose far more than any one recipe uses. This is how a

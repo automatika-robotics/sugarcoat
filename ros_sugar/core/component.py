@@ -1453,11 +1453,14 @@ class BaseComponent(lifecycle.Node):
     def __create_event_listener(self, name: str, topic_obj: Topic) -> None:
         """Create the single subscription backing all events on a topic"""
         # handle plugin fed topics (feedbacks)
-        if name in self._external_topics or (
-            topic_obj.use_plugin and name not in self.callbacks
-        ):
-            self._subscribe_event_to_plugin_feedback(name, topic_obj)
-            return
+        if name in self._external_topics or topic_obj.use_plugin:
+            if self._subscribe_event_to_plugin_feedback(name, topic_obj):
+                return
+            # An input the plugin could not serve fell back to an ordinary ROS
+            # subscription, and its events follow it there
+            if name in self._external_topics or name not in self.callbacks:
+                self.get_logger().error(f"Events on '{name}' will never trigger.")
+                return
         listener = self.create_subscription(
             msg_type=topic_obj.ros_msg_type,
             topic=topic_obj.name,
@@ -1487,16 +1490,21 @@ class BaseComponent(lifecycle.Node):
                 self.__events_per_topic[topic.name] = [event]
                 self.__create_event_listener(topic.name, topic)
 
-    def _subscribe_event_to_plugin_feedback(self, topic_name: str, topic_obj) -> None:
-        """Drive an event from the robot plugin's feedback bus.
+    def _subscribe_event_to_plugin_feedback(self, topic_name: str, topic_obj) -> bool:
+        """Drive an event from the plugin feedback serving its topic.
 
-        For a topic the plugin serves over its own transport there is no ROS
-        traffic to subscribe to, so the event is fed from the feedback bus instead.
+        For a feedback the plugin carries on a ROS topic, the event subscribes
+        to that topic. For one it serves over its own transport there is no ROS
+        traffic to subscribe to, so the event is fed from the feedback bus
+        instead. Either way messages arrive under the event's own topic name.
 
         :param topic_name: Name of the event topic
         :type topic_name: str
         :param topic_obj: The event's declared topic
         :type topic_obj: Topic
+        :return: Whether the event was bound to a plugin feedback; the reason is
+            logged when it was not
+        :rtype: bool
         """
         from ..robot.plugin import AmbiguousPluginEntryError
 
@@ -1505,34 +1513,50 @@ class BaseComponent(lifecycle.Node):
         plugin = self._plugin_for_topic(topic_obj)
         if plugin is None:
             self.get_logger().error(
-                f"Events on '{topic_name}' will never trigger: no attached "
+                f"Events on '{topic_name}' are not bound to a plugin: no attached "
                 f"plugin serves it (use_plugin={topic_obj.use_plugin!r})."
             )
-            return
+            return False
         try:
             feedback = plugin.resolve_feedback(topic_name, topic_obj.msg_type.__name__)
         except (TypeError, AmbiguousPluginEntryError) as e:
             self.get_logger().error(
-                f"Events on '{topic_name}' will never trigger: the topic could not "
-                f"be bound to plugin '{plugin.id}': {e}"
+                f"Events on '{topic_name}' are not bound to a plugin: the topic "
+                f"could not be bound to plugin '{plugin.id}': {e}"
             )
-            return
+            return False
         if feedback is None:
             self.get_logger().error(
-                f"Events on '{topic_name}' will never trigger: the topic is served by "
-                "the robot plugin but no matching feedback was found."
+                f"Events on '{topic_name}' are not bound to a plugin: plugin "
+                f"'{plugin.id}' has no matching feedback."
             )
-            return
+            return False
         # NOTE: The plugin may decode to a different message type than the recipe
         # declared. Event conditions read attributes off the declared type, so
         # a mismatched stream would misfire rather than simply not fire.
         if feedback.msg_type is not topic_obj.msg_type:
             self.get_logger().error(
-                f"Events on '{topic_name}' will never trigger: the plugin publishes "
-                f"'{feedback.msg_type.__name__}' but the event expects "
+                f"Events on '{topic_name}' are not bound to a plugin: the plugin "
+                f"publishes '{feedback.msg_type.__name__}' but the event expects "
                 f"'{topic_obj.msg_type.__name__}'."
             )
-            return
+            return False
+        if feedback.is_ros_topic:
+            # Subscribe where the plugin publishes, filed under the event's name
+            ros_topic = feedback.as_topic()
+            listener = self.create_subscription(
+                msg_type=ros_topic.ros_msg_type,
+                topic=ros_topic.name,
+                callback=partial(self.__event_topic_callback, topic_name),
+                qos_profile=ros_topic.qos_profile.to_ros(),
+                callback_group=MutuallyExclusiveCallbackGroup(),
+            )
+            self.__event_listeners.append(listener)
+            self.get_logger().info(
+                f"Events on '{topic_name}' bound to plugin feedback "
+                f"'{feedback.key}' via ROS topic '{ros_topic.name}'"
+            )
+            return True
         # The event handler is the bus subscriber and decoded messages land in
         # __event_topic_callback exactly as they would from a ROS subscription
         handle = plugin.subscribe_feedback(
@@ -1543,6 +1567,7 @@ class BaseComponent(lifecycle.Node):
         self.get_logger().info(
             f"Events on '{topic_name}' bound to robot plugin feedback '{feedback.key}'"
         )
+        return True
 
     def _turn_on_fallbacks_subscribers(self):
         # Create ONE subscription per Topic
