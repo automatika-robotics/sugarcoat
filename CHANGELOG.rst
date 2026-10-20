@@ -2,8 +2,8 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.8.2 (2026-10-20)
+------------------
 * (fix) Broadcasts recipe frames to all components regardless of the addition order in the recipe
 * (fix) prevents UI node from crashing in only inputs or only outputs are provided in the recipe
 * (fix) Serializes and deserializes action args/kwargs in the action dict
