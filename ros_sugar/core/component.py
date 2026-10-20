@@ -177,7 +177,9 @@ class BaseComponent(lifecycle.Node):
         self.service_type = main_srv_type
         self._external_processors: Dict[
             str,
-            Tuple[List[Union[Callable, ExternalProcessorClient]], ExternalProcessorType],
+            Tuple[
+                List[Union[Callable, ExternalProcessorClient]], ExternalProcessorType
+            ],
         ] = {}
         # Socket of the launcher's external processor server, set by the launcher
         self._external_processors_endpoint: Optional[str] = None
@@ -266,6 +268,9 @@ class BaseComponent(lifecycle.Node):
 
         return ok()
 
+    # TODO: The two methods below write the selected callback/converter onto the
+    # message type class, which every component in the process shares, so the
+    # first component to select decides for all the others (problem only in threaded launch). Fix this and do not write to the class.
     def _reparse_inputs_callbacks(self, inputs: Sequence[Topic]) -> Sequence[Topic]:
         """Select inputs callbacks. Selects a callback for each input from the same component package if it exists. Otherwise, the first available callback will be assigned. Note: This method is added to enable using components from multiple packages in the same script, where each component prioritizes using callbacks from its own package.
 
@@ -770,7 +775,9 @@ class BaseComponent(lifecycle.Node):
         :type callback: GenericCallback
         """
         name = callback.input_topic.name
-        topic = self._plugin_ros_topics.get(name, name)  # for topics coming from plugins
+        topic = self._plugin_ros_topics.get(
+            name, name
+        )  # for topics coming from plugins
         _subscriber = self.create_subscription(
             msg_type=callback.input_topic.ros_msg_type,
             topic=topic,
