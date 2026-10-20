@@ -2097,6 +2097,10 @@ class Monitor(Node):
             halt = getattr(action, "halt", None)
             if callable(halt):
                 halt()
+            # If the event has a monitored action -> stop watching
+            stop_watching = getattr(action, "stop_watching", None)
+            if callable(stop_watching):
+                stop_watching()
 
         logger.info(f"Stopped watching runtime event '{event_id}'")
         return True, f"Stopped watching event '{event_id}'"
