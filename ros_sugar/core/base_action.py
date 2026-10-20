@@ -36,7 +36,8 @@ from launch.actions import LogInfo as LogInfoROSAction
 from ..launch import logger
 from ..condition import MsgConditionBuilder
 from ..io import Topic, get_msg_type
-from ..io.supported_types import SupportedType
+from ..io.supported_types import SupportedType, from_jsonable
+from ..io.utils import to_jsonable
 from ..utils import (
     ActionReturnType,
     InvalidAction,
@@ -634,8 +635,8 @@ class BaseAction:
         dict_value = {
             "action_name": self.action_name,
             "parent_name": self.parent_component,
-            "args": self._args,
-            "kwargs": self._kwargs,
+            "args": to_jsonable(self._args),
+            "kwargs": to_jsonable(self._kwargs),
             "input_topics": {
                 key: value.to_json() for key, value in self.__input_topics.items()
             },
@@ -682,8 +683,8 @@ class BaseAction:
 
         # Set the args/kwargs/input_topics
         reconstructed_action._reset_args_kwargs(
-            serialized_action_dict["args"],
-            serialized_action_dict["kwargs"],
+            from_jsonable(serialized_action_dict["args"]),
+            from_jsonable(serialized_action_dict["kwargs"]),
             input_topics,
         )
 
