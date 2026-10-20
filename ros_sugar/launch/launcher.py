@@ -225,6 +225,8 @@ class Launcher:
         # added after it was set get it too
         self._explicit_robot_config: Any = None
         self._frames_explicitly_set: bool = False
+        # Frame settings from the recipe
+        self._frame_settings: List[Tuple[str, Any]] = []
 
         # Components list and package/executable
         self._components: List[BaseComponent] = []
@@ -1159,6 +1161,11 @@ class Launcher:
         :type frames_config: RobotFrames
         """
         self._frames_explicitly_set = True
+        self._frame_settings.append(("frames", frames_config))
+        self._broadcast_frames(frames_config)
+
+    def _broadcast_frames(self, frames_config) -> None:
+        """Assign a frames configuration to every component that has one"""
         for component in self._components:
             if hasattr(component.config, "frames"):
                 try:
@@ -1172,9 +1179,23 @@ class Launcher:
         """Set one frame on every component that has a frames configuration."""
         if not isinstance(frame, str) or not frame:
             raise ValueError(f"Frame name must be a non-empty string, got {frame!r}")
+        self._frame_settings.append((attribute, frame))
+        self._broadcast_frame(attribute, frame)
+
+    def _broadcast_frame(self, attribute: str, frame: str) -> None:
+        """Set one frame on every component that has a frames configuration"""
         for component in self._components:
             if hasattr(component.config, "frames"):
                 setattr(component.config.frames, attribute, frame)
+
+    def _apply_recipe_frames(self) -> None:
+        """Apply the recipe's frame settings again, in the order they were made,
+        to reach the components added after them"""
+        for attribute, value in self._frame_settings:
+            if attribute == "frames":
+                self._broadcast_frames(value)
+            else:
+                self._broadcast_frame(attribute, value)
 
     @property
     def robot_frame(self) -> Dict[str, str]:
@@ -2606,6 +2627,9 @@ class Launcher:
         self._distribute_plugins()
 
         self._apply_plugin_robot_config()
+
+        # Before the plugin's body frame, which takes precedence over the recipe's
+        self._apply_recipe_frames()
 
         self._apply_plugin_base_frame()
 
