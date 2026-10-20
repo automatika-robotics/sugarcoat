@@ -1454,6 +1454,44 @@ def test_a_real_ui_node_stamps_the_headers_a_client_left_unset():
         node.destroy_node()
 
 
+@pytest.mark.parametrize("shown", ["inputs", "outputs"])
+def test_a_real_ui_node_may_show_only_inputs_or_only_outputs(shown, tmp_path, monkeypatch):
+    """A UI with nothing to show on one side used to fail to start: the node
+    had no topics list for that side at all"""
+    import rclpy
+    from starlette.testclient import TestClient
+
+    from ros_sugar.ui_node.api import build_api_app
+    from ros_sugar.ui_node.ui_node import UINode, UINodeConfig
+
+    if not rclpy.ok():
+        rclpy.init()
+    topic = Topic(name=f"ui_node_test/only_{shown}", msg_type="Bool")
+    node = UINode(
+        component_name=f"ui_only_{shown}",
+        config=UINodeConfig(),
+        **{shown: [topic]},
+    )
+    node.rclpy_init_node()
+    node.create_all_publishers()
+    node.custom_on_activate()
+    try:
+        interfaces = TestClient(build_api_app(node)).get("/api/interfaces").json()
+        assert [t["name"] for t in interfaces[shown]] == [topic.name]
+        other = "outputs" if shown == "inputs" else "inputs"
+        assert interfaces[other] == []
+
+        # The browser front end is built from both lists too
+        pytest.importorskip("fasthtml")
+        pytest.importorskip("monsterui")
+        from ros_sugar.ui_node.browser import build_browser_app
+
+        monkeypatch.chdir(tmp_path)  # FastHTML writes its session key to the cwd
+        assert TestClient(build_browser_app(node)).get("/").status_code == 200
+    finally:
+        node.destroy_node()
+
+
 def test_a_second_goal_leaves_the_running_goal_alone(ui_node):
     """While a goal runs, another is refused before it can clear the running
     goal's state. Once the goal returns, or its feedback times out, goals are

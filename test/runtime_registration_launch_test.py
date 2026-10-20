@@ -309,6 +309,34 @@ class TestRuntimeRegistration(unittest.TestCase):
             "the event kept firing after being removed"
         )
 
+    def test_removing_an_event_releases_what_its_actions_watch(self):
+        """A monitored action watches its success condition until told
+        otherwise. Removing its event has to say so, or the condition's topic
+        stays subscribed and the condition evaluated for the life of the node"""
+        reading = Topic(name=READING_TOPIC, msg_type="Float32")
+        done_topic = "removed_event_done"
+        action = Action(
+            monitor_node._executable_for(
+                monitor_node._action_registry.get("registration_driver/note")
+            ),
+            kwargs={"value": "watched"},
+            name="watched",
+            # Never published, so the action is still watching when removed
+            success=Topic(name=done_topic, msg_type="Bool").msg.data.is_true(),
+            timeout=60.0,
+        )
+        assert monitor_node.add_event(
+            Event(reading.msg.data > 1.0, handle_once=True), action, event_id="watched"
+        )[0]
+        assert wait_for(lambda: monitor_node.count_subscribers(done_topic) == 1), (
+            "the action never started watching its success condition"
+        )
+
+        assert monitor_node.remove_event("watched")[0]
+        assert wait_for(lambda: monitor_node.count_subscribers(done_topic) == 0), (
+            "the success condition is still watched after its event was removed"
+        )
+
     def test_a_duplicate_event_id_is_refused(self):
         reading = Topic(name=READING_TOPIC, msg_type="Float32")
 

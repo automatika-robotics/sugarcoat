@@ -366,3 +366,28 @@ class TestEventTravels(unittest.TestCase):
         rebuilt = component._BaseComponent__events
         assert len(rebuilt) == 1
         assert rebuilt[0].get_involved_topics()[0].name == "clicked_point"
+
+    def test_a_component_rebuilds_an_action_with_a_message_argument(self):
+        """A component's actions travel as JSON too, and a ROS message is not
+        JSON: sent as is, an action holding one stopped its component from
+        starting. It arrives as the message it was"""
+        from geometry_msgs.msg import Pose
+
+        class _Component(BaseComponent):
+            def _execution_step(self):
+                pass
+
+            def go_to(self, pose, **_) -> ActionReturnType:
+                return True, "going"
+
+        goal = Pose()
+        goal.position.x = 1.5
+        recipe_side = _Component(component_name="message_arg_recipe_side")
+        action = Action(method=recipe_side.go_to, args=(goal,))
+
+        component = _Component(component_name="message_arg_process_side")
+        component._actions_json = json.dumps({"go": [action.dictionary]})
+
+        rebuilt = component._BaseComponent__actions[0][0]
+        assert isinstance(rebuilt._args[0], Pose)
+        assert rebuilt._args[0].position.x == 1.5

@@ -1761,6 +1761,47 @@ def test_world_frame_setter_leaves_the_robot_frame_alone():
     assert launcher.world_frame == {"world_setter_component": "odom"}
 
 
+def test_frames_set_before_a_component_is_added_still_reach_it():
+    """A recipe may name its frames before adding its components. Those
+    added later get every setting at bringup, applied in the order the recipe
+    made them, and the plugin's body frame still wins"""
+    from ros_sugar import Launcher
+    from ros_sugar.config import RobotFrames
+
+    launcher = Launcher(robot_plugin=_DescribingPlugin())
+    early = _FakeComponent("frames_early_component")
+    launcher._components = [early]
+    launcher.robot_frame = "chassis"
+    launcher.frames = RobotFrames(robot_base="from_recipe", world="office")
+    launcher.world_frame = "odom"
+
+    late = _FakeComponent("frames_late_component")
+    launcher._components.append(late)
+    # What bringup runs, in its order
+    launcher._apply_recipe_frames()
+    launcher._apply_plugin_base_frame()
+
+    for component in (early, late):
+        assert component.config.frames.world == "odom", component.node_name
+        assert component.config.frames.robot_base == "lite3_base", component.node_name
+
+
+def test_frames_set_before_a_component_is_added_without_a_plugin():
+    from ros_sugar import Launcher
+    from ros_sugar.config import RobotFrames
+
+    launcher = Launcher()
+    launcher.frames = RobotFrames(world="odom")
+    launcher.robot_frame = "chassis"
+
+    late = _FakeComponent("frames_late_no_plugin_component")
+    launcher._components = [late]
+    launcher._apply_recipe_frames()
+
+    assert late.config.frames.world == "odom"
+    assert late.config.frames.robot_base == "chassis"
+
+
 def test_robot_frame_setter_applies_without_a_plugin():
     from ros_sugar import Launcher
 
