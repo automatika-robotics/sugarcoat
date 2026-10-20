@@ -98,6 +98,10 @@ class UINode(BaseComponent):
             outputs=topic_inputs,  # create publishers for inputs
             **kwargs,
         )
+        if not hasattr(self, "in_topics"):
+            self.in_topics = []
+        if not hasattr(self, "out_topics"):
+            self.out_topics = []
 
         self._ros_service_clients: Dict[str, ServiceClientHandler] = {}
         self._ros_action_clients: Dict[str, ActionClientHandler] = {}
