@@ -2,6 +2,191 @@
 Changelog for package automatika_ros_sugar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* (fix) Broadcasts recipe frames to all components regardless of the addition order in the recipe
+* (fix) prevents UI node from crashing in only inputs or only outputs are provided in the recipe
+* (fix) Serializes and deserializes action args/kwargs in the action dict
+* (fix) Calls stop_watching on event removal
+* (fix) Fixes using plugin feedbacks as Event sources in Monitor and Component
+* (chore) Updates routine tests
+* (fix) Adds a flag to track if a cencel request is sent to the client to avoid handling multiple requests
+* (fix) Fixes handling plugin feedbacks for plugin defined events when used with component defined actions so components subscribe to them correctly
+* (fix) Execuldes 'Execute Method" service from the Browser UI
+* (fix) Forbids UI of cancelling ongoing goals automatically
+* (feature) Adds custom_settings to NativeMapping to allow robot plugins to pass custom mapping parameters
+* (fix) Gives the UI node the plugins its topics use, so they bind to the plugin's ROS topics
+* (fix) Allows setting pose heading in the UI by dragging on the map when publishing pose-like types
+* (fix) Gives PoseWithCovariance(Stamped) inputs the pose widget with map picking, and fixes stamped pose widgets
+* (feature) Adds automatic ros message header stamp for UI inputs and handles nested headers
+* (feature) Allows using UI clicked points to publish to PoseWithCovariance(Stamped) types
+* (feature) Adds geometry_msgs PoseWithCovariance(Stamped) to supported types
+* (fix) Fixes shutting down of external process server by correctly waking and joining the accept thread
+* (chore) Fixes misbehaving tests
+* (refactor) Initial true condition evaluates for rising edge conditions
+* (fix) Passes kwargs only in the decorator as the action itself would hold and apply the static arguments
+* (fix) Fixes parsing event info for callable events which have no condition
+* (fix) Fixes resetting Fallbacks retries counter
+* (fix) Resets component fallbacks on activation
+* (fix) Limites ExecuteMethod service to public methods and component actions/fallbacks
+* (fix) Uses normalized topic name in ReplaceTopic action
+* (fix) Ensures robot config is passed to all components in launcher regardless of the setting order in the Recipe
+* (fix) Sets additional arguments to the executable in launcher regradless of the log_level setting
+* (featue) Adds remove functions for runtime removal from the action registry
+* (fix) Sets the clock to a publisher from the component and fixes setting the frame_id
+* (fix) Check for the right initial state flag in component configure/unconfigure
+* (fix) Fixes parsing Bool attributes in config update from str
+* (fix) Allows setting float attributes with int values, and fixes setting bool attributes
+* (fix) Parses reconfigure action response as tuple
+* (feature) Uses abstract sockets instead of sock files for external processors and adds a user check for them when connecting
+* (feature) Adds correct SIGTERM handling based on `ros2/launch#712 <https://github.com/ros2/launch/issues/712>`_ upstream
+* (fix) Adds destroying external processor clients during node teardown
+* (refactor) Adds correct types for external processors
+* (feature) Adds external processor type to the config module
+* (feature) Adds server/client for running external processors
+* (feature) Adds a generic function as an external processor type
+* (fix) Stops plugin feedback ROS outputs quietly when the host node is destroyed on teardown
+* (feature) Adds helper in mount to get one mount in anothers frame
+* (feature) Adds a method in Launcher to publish a plugin feedback on ROS
+* (fix) Lets launch own the process signals
+* (fix) Keeps a component executor alive when a restart destroys what it is waiting on
+* (chore) Adds test to ensure unique names usage across tests
+* (chore) Adds timed component test
+* (fix) Fixes laserscan transform and updates tests
+* (fix) Clears exec_once flag on deactivation to allow a clean re-activation of the component
+* (fix) Defaults QoS durability to the middleware default
+* (feature) Gives every plugin action a whole tool schema in the action registry
+* (feature) Adds a Plugin Actions/Events to the Monitor's registery to enable usage in Routines
+* (chore) Updates UI tests
+* (fix) Adds a warning in the Launcher about unregistered routines passed to the UI
+* (chore) Refactors test
+* (docs) Documents on_pause in the event system guide
+* (fix) Stamps a decoded feedback before handing it to anyone
+* (feature) Allows extendiong/customizing UI Task cards in child packages
+* (chore) Updates docs
+* (feature) Enables feedback publishing from plugin to ros
+* (chore) Exports the action registry entry type and kinds from ros_sugar.core
+* (refactor) Uses new routine feedback field name
+* (refactor) Uses new routine feedback fields in tests
+* (feature) Keeps each finished step's message on its routine
+* (chore) Updates dev docs
+* (chore) Updates tests
+* (feature) Adds Routine card to the front end elements and enables it in the browser UI and the API
+* (feature) Allows passing Routines to UI elements
+* (feature) Adds on_pause action to Routine
+* (feature) Adds method to get routines in Monitor
+* (refactor) Refactor routine registration flow to combine event-based and standalone routines
+* (fix) Makes Routine description non-optional
+* (fix) Adds a description to the cancel_main_goal action
+* (fix) Maintains the complete action description inside the Monito action registery
+* (chore) Updates tests and docs
+* (feature) Adds a wait Action usuable at the Recipe level
+* (fix) Ends a routine's wait step immediately when the routine is aborted or paused
+* (chore) Updates tests and docs
+* (fix) Hands the action registry to a monitor that an override built without it
+* (chore) Updates tests to use unique node names
+* (fix) Fixes goal dispatching and setteling
+* (fix) Makes routine_test independent of timing and of other test modules nodes
+* (fix) Adds explicit destruction for action clients not handled by rclpy
+* (chore) Updates dev docs
+* (fix) Adds rosidl_runtime_py to dependencies
+* (chore) Adds more tests to cover edge cases
+* (fix) Handles 'no response' case when updating a component's config from the UI
+* (fix) Fixes parsing returned Action response message
+* (fix) Adds a separate threading lock for Event evaluation
+* (fix) Adds a validator to block using a monitored action as a component fallback
+* (feature) Adds component action and service to cancel ongoing main action goal
+* (fix) Adds cancel method to action client and fixes feedback listener
+* (fix) Adds all possible spelling options for ActionReturnType contract
+* (refactor) Adds on_any method to construct a Topic Condition
+* (fix) Handles the case of a cancelled goal before the execution started
+* (fix) Adds check for all routine actions including fallback policies
+* (fix) Handles parsing actions for Routines added in Recipes to execute steps in multi-processing
+* (fix) Uses new helper to re-build argument in execute method service
+* (fix) Fixes Routine pause/resume
+* (feature) Adds methods to serialize/deserialize action arguments parsed by a routine in Monitor
+* (fix) Adds a timeout to base client send request
+* (fix) Changes component ExecuteMethod service callback group in order not to block cancel
+* (feature) Adds a callback group option to ServiceClientHandler
+* (fix) Adds method in routine to stop watching all steps events
+* (feature) Adds method in Monitor to Remove an event at runtime
+* (feature) Adds method in Action to ask the host to stop monitoring the success event
+* (feature) Declares the IMU's place in the LiDAR for native mapping in the plugins
+* (feature) Adds publishing of robot footprint frame based on the robot height
+* (feature) Vendors the js loaded from cdns for offline robots
+* (feature) Adds api security keys and browser session management to the UI along with a security management executable
+* (feature) Adds secure as the default enable_ui param to serve UI with a minted certificate over https
+* (fix) Fixes check for data type ranges when converting to ros msgs from dicts and return actual errors from service calls to be caught by callers
+* (feature) Resolves a todo for msg field name validation for msgs in lists and dicts
+* (fix) Corrects checking of bool values in the api and browser and makes bools checkboxes in the UI
+* (feature) Adds clickjacking prevention through the middleware and refactors api code
+* (feature) Adds a same origin guard for browsers
+* (fix) Adds reporting ros launch exit code on recipe exit for accurate management by third party recipe launchers (`#66 <https://github.com/automatika-robotics/sugarcoat/issues/66>`_)
+* (fix) Registers additional types passed to a component process so its topics can use them
+* (fix) Fixes refusing actions in the UI when an action is already running
+* (fix) Fixes action result logging in the browser and updates tests
+* (fix) Guards against types that dont have a callback to show a clear message when passed to ui
+* (fix) Fixes ui callback for jointstate
+* (feature) Adds faster converter for audio msgs
+* (feature) Encodes messages in different thread than the async loop
+* (fix) Fixes action duration in UI with fractional seconds
+* (fix) Fixes crash of log element for unknown output types
+* (fix) Fixes handling requests when action or service clients dont exist
+* (fix) Fixes destroying clients during deactivation of ui node
+* (feature) Adds action result to its ui output through the API
+* (fix) Fixes truthiness check for falsy values
+* (feature) Makes sampled streams skip sending if the message has not changed
+* (fix) Fixes closing websockets with correct errors instead of 403
+* (chore) Adds todo for verification in supported types
+* (feature) Adds verification for known fields in topics, services and action services for the ui
+* (fix) Adds rejecting malformed json with 400
+* (fix) Fixes route name in api so that same named topics cannot redirect to wrong publisher
+* (fix) Fixes aborting routines on exit
+* (chore) Exports SystemActionRegistery in core
+* (fix) Removes duplicate imports after rebase
+* (chore) Fixes testing action server to avoid sending multiple goals at the same time
+* (fix) Replaces test message package with exisiting dependency
+* (fix) Adds std_srv dependency
+* (chore) Adds tests for action server cancelling
+* (fix) Reject new action goals while main server has an ongoing goal and add a cancel goal service to BaseComponent
+* (chore) Ignores FastHTML session key file
+* (refactor) Removes pure pytest tests and uses launch_testing in all files
+* (refactor) Updates tests to use ActionReturnType annotation
+* (fix) Publishes Routine state with TRANSIENT_LOCAL to make sure late subscribers get the current state
+* (feature) Updates launcher to register and pass all system Action
+* (refactor) Renamed ActionResult to ActionReturnType
+* (refactor) Renamed ActionResult to ActionReturnType
+* (feature) Updates monitor to add event/action/routine at runtime
+* (feature) Adds utility to check for valid ROS message fields
+* (feature) Updates Routine to handle setting steps from spec
+* (feature) Adds action registery to be used by the MOnitor for system actions auto-discovery
+* (feature) Adds ActioonServerGoal class to handle dispatching and executing ros ation goals
+* (feature) Uses missing action execption in base action class
+* (feature) Adds Exception for missing action arguments
+* (fix) Fixes action client feedback timer stop/reset
+* (fix) Move action args/kwargs resolve inside the try/except guard
+* (docs) Adds Routine to docs
+* (docs) Adds Routine tests and updates Action tests
+* (feature) Adds Routine control to Monitor and Launcher
+* (feature) Adds Routine primitive that allows recipe-level definition of a set of Action steps
+* (refactor) Updates module to use new BaseAction/Action classes
+* (refactor) Deletes MonitoedAction module
+* (refactor) Moves old Action class into BaseAction and deletes MonitoredAction.
+  Action class now has both monitored and non-monitored options based on init config
+* (chore) Adds regression tests for Action return values
+* (refactor) Uses ActionResult in all action calls
+* (Refactor) Adds ActionResult return type to enforce [bool, str] return for all actions
+* (feature) Adds MonitoredAction tests
+* (docs) Adds MonitoredAction to developer docs
+* (feature) Handles MonitoredAction routing in Launcher
+* (feature) Adds MonitoredAction handling to BaseComponent and Monitor
+* (fix) Adds event lock guard to component
+* (feature) Adds MonitoredAction class
+* (refactor) Prepares Action class for subclassing into MonitoredAction
+* (fix) Fixes ActionServer canceling of feedback timeout
+* (docs) Adds major docs update
+* Contributors: ahr, mkabtoul
+
 0.8.1 (2026-09-13)
 ------------------
 * (fix) Swaps package used in test to avoid new dependencies
