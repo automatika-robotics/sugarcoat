@@ -538,6 +538,14 @@ def test_native_mapping_reaches_describe():
     assert mapping["resolution"] == 0.05
 
 
+def test_native_mapping_declares_where_the_imu_sits_in_the_lidar():
+    decl = NativeMapping(cloud="lidar", imu="lidar_imu", imu_xyz=(0.011, 0.023, -0.044))
+    spec = decl.spec()
+    assert list(spec["imu_xyz"]) == [0.011, 0.023, -0.044]
+    assert list(spec["imu_rpy"]) == [0.0, 0.0, 0.0]
+    assert NativeMapping(cloud="lidar").spec()["imu_xyz"] is None
+
+
 def test_mapping_spec_is_json_serializable():
     """``describe`` crosses into the CLI as JSON, so the mapping block must
     survive the trip with nothing exotic in it."""
@@ -1217,7 +1225,7 @@ def _event_component(plugin, topic, name):
     component._robot_plugin = plugin
     component._use_robot_plugin()
     component._add_event_action_pair(
-        Event(topic.msg.data > 10), Action(method=lambda: None)
+        Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
     )
     return component
 
@@ -1272,6 +1280,71 @@ def test_event_on_plugin_topic_fires_from_feedback_bus(rclpy_context):
         component.destroy_node()
 
 
+def test_event_built_by_the_plugin_fires_inside_a_component(rclpy_context):
+    """Regression: an event a plugin builds on its own feedback, as its event
+    registry does, named the feedback by channel without saying which plugin
+    it belongs to. A component given its action opened a ROS subscription on
+    the channel name, which nothing publishes, and the event never fired."""
+    from ros_sugar.core.action import Action
+    from ros_sugar.core.component import BaseComponent
+    from ros_sugar.core.event import Event
+
+    state_port = _free_port()
+    plugin = MockPlugin(state_port=state_port, cmd_port=_free_port())
+    plugin._bind_identity()  # as attaching it to a launcher does
+    host = RobotPluginHost(plugin, node=None, bus=InProcessFeedbackBus())
+    host.open()
+
+    topic = plugin.feedbacks["Int32"].as_topic()
+    component = BaseComponent(component_name="plugin_built_event")
+    component.rclpy_init_node()
+    component.add_plugin(plugin)
+    try:
+        component._use_robot_plugin()
+        component._add_event_action_pair(
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
+        )
+        component._turn_on_events_management()
+        assert component._BaseComponent__event_listeners == [], (
+            "a plugin-built event must not get a dead ROS subscription"
+        )
+
+        robot_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        robot_tx.sendto(b"55", ("127.0.0.1", state_port))
+        deadline = time.time() + 2.0
+        while (
+            topic.name not in component._events_topics_blackboard
+            and time.time() < deadline
+        ):
+            time.sleep(0.02)
+        robot_tx.close()
+
+        entry = component._events_topics_blackboard.get(topic.name)
+        assert entry is not None, "plugin feedback never reached the event handler"
+        assert entry.msg.data == 55
+    finally:
+        host.close()
+        component.destroy_node()
+
+
+def test_a_feedback_resolves_by_its_channel():
+    """A plugin's own events name a feedback by channel. The type fallback
+    cannot settle that when two feedbacks share a type."""
+    plugin = MockPlugin()
+    first = plugin.feedbacks["Int32"]
+    second = Feedback(
+        key="Int32_b",
+        msg_type=RobotInt32,
+        transport=plugin.transports["state"],
+        decoder=_decode_int32,
+    )
+    plugin.feedbacks["Int32_b"] = second
+    plugin._bind_identity()
+
+    assert plugin.resolve_feedback(first.channel, "Int32") is first
+    assert plugin.resolve_feedback(second.channel, "Int32") is second
+
+
 def test_event_on_a_sensor_topic_binds_to_that_sensor(rclpy_context):
     """Regression: the event path resolved against the robot plugin whatever
     the topic named, so a sensor's event fired on the robot's telemetry."""
@@ -1301,7 +1374,7 @@ def test_event_on_a_sensor_topic_binds_to_that_sensor(rclpy_context):
     try:
         component._use_robot_plugin()
         component._add_event_action_pair(
-            Event(topic.msg.data > 10), Action(method=lambda: None)
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
         )
         component._turn_on_events_management()
 
@@ -1358,7 +1431,7 @@ def test_event_on_a_sensor_topic_binds_with_no_robot_plugin(rclpy_context):
         assert component._robot_plugin is None, "no robot plugin in this recipe"
         component._use_robot_plugin()
         component._add_event_action_pair(
-            Event(topic.msg.data > 10), Action(method=lambda: None)
+            Event(topic.msg.data > 10), Action(method=lambda: (True, ""))
         )
         component._turn_on_events_management()
 
@@ -1379,6 +1452,189 @@ def test_event_on_a_sensor_topic_binds_with_no_robot_plugin(rclpy_context):
         host.close()
         bus.close()
         component.destroy_node()
+
+
+def _wait_for(predicate, node=None, timeout: float = 3.0, each=None) -> None:
+    """Poll until ``predicate()``, spinning ``node`` and calling ``each`` per turn"""
+    deadline = time.time() + timeout
+    while not predicate() and time.time() < deadline:
+        if each is not None:
+            each()
+        if node is not None:
+            rclpy.spin_once(node, timeout_sec=0.05)
+        else:
+            time.sleep(0.02)
+
+
+@pytest.mark.parametrize("as_input", [True, False])
+def test_event_on_a_plugin_ros_topic_listens_where_the_plugin_publishes(
+    rclpy_context, as_input
+):
+    """Regression: an event on a topic the plugin carries over ROS subscribed
+    under the recipe's name when the topic was an input, and waited on the
+    feedback bus, where ROS-carried feedback never goes, when it was not.
+    Either way it never fired. Messages are filed under the recipe's name,
+    which is what the condition reads"""
+    from sensor_msgs.msg import LaserScan as RosLaserScan
+
+    from ros_sugar.core.action import Action
+    from ros_sugar.core.component import BaseComponent
+    from ros_sugar.core.event import Event
+
+    topic = Topic(name="lidar_front", msg_type="LaserScan", use_plugin=True)
+    component = BaseComponent(
+        component_name=f"plugin_ros_event_{'input' if as_input else 'only'}",
+        inputs=[topic] if as_input else None,
+    )
+    component.rclpy_init_node()
+    component.add_plugin(_RosCloudPlugin())
+    try:
+        component._use_robot_plugin()
+        component._add_event_action_pair(
+            Event(topic.msg.range_max > 1.0), Action(method=lambda: (True, ""))
+        )
+        component._turn_on_events_management()
+        listeners = component._BaseComponent__event_listeners
+        assert [listener.topic_name for listener in listeners] == ["/rs/front/points"]
+
+        publisher = component.create_publisher(RosLaserScan, "rs/front/points", 10)
+        board = component._events_topics_blackboard
+        _wait_for(
+            lambda: "lidar_front" in board,
+            node=component,
+            each=lambda: publisher.publish(RosLaserScan(range_max=5.0)),
+        )
+        assert "lidar_front" in board, "the plugin's scans never reached the event"
+        assert board["lidar_front"].msg.range_max == 5.0
+    finally:
+        component.destroy_node()
+
+
+def _monitor_watching(event, plugins, name):
+    """A real Monitor evaluating ``event``, given the recipe's plugins"""
+    from ros_sugar.core.monitor import Monitor
+
+    monitor = Monitor(components_names=[], events_to_emit=[event], component_name=name)
+    monitor.rclpy_init_node()
+    monitor.set_plugins({plugin.id: plugin for plugin in plugins})
+    monitor._activate_event_monitoring()
+    return monitor
+
+
+def test_monitor_event_on_a_plugin_topic_is_fed_by_the_plugin(rclpy_context):
+    """Regression: the Monitor read event topics by name alone, so an event on a
+    recipe topic the plugin serves over its own transport subscribed to a ROS
+    topic nothing publishes, and never fired"""
+    from ros_sugar.core.event import Event
+
+    state_port = _free_port()
+    plugin = MockPlugin(state_port=state_port, cmd_port=_free_port())
+    plugin._bind_identity()
+    topic = Topic(name="robot_state", msg_type="Int32", use_plugin=True)
+    monitor = _monitor_watching(Event(topic.msg.data > 10), [plugin], "plugin_monitor_one")
+    host = RobotPluginHost(
+        plugin,
+        node=None,
+        bus=InProcessFeedbackBus(),
+        monitor_feed=monitor.feed_external_topic,
+    )
+    host.open()
+    try:
+        assert monitor._Monitor__event_listeners == {}, (
+            "a plugin-fed event topic must not get a dead ROS subscription"
+        )
+        board = monitor._events_topics_blackboard
+        robot_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        _wait_for(
+            lambda: "robot_state" in board,
+            each=lambda: robot_tx.sendto(b"55", ("127.0.0.1", state_port)),
+        )
+        robot_tx.close()
+        assert "robot_state" in board, "plugin feedback never reached the event"
+        assert board["robot_state"].msg.data == 55
+    finally:
+        host.close()
+        monitor.destroy_node()
+
+
+def test_monitor_event_over_several_plugin_topics_reads_each_from_its_plugin(
+    rclpy_context,
+):
+    """One condition over a topic the robot carries on ROS and one a sensor
+    serves over its own transport: each is bound to its own plugin, and both
+    arrive under the recipe's names"""
+    from sensor_msgs.msg import LaserScan as RosLaserScan
+
+    from ros_sugar.core.event import Event
+
+    robot = _RosCloudPlugin()
+    robot._bind_identity()
+    cam_port = _free_port()
+    camera = MockUdpSensor(state_port=cam_port, id="front_cam")
+    camera._bind_identity()
+    lidar = Topic(name="lidar_front", msg_type="LaserScan", use_plugin=True)
+    cam = Topic(name="cam_state", msg_type="Int32", use_plugin=camera.id)
+    monitor = _monitor_watching(
+        Event((lidar.msg.range_max > 1.0) & (cam.msg.data > 10)),
+        [robot, camera],
+        "plugin_monitor_two",
+    )
+    host = RobotPluginHost(
+        camera,
+        node=None,
+        bus=InProcessFeedbackBus(),
+        monitor_feed=monitor.feed_external_topic,
+    )
+    host.open()
+    try:
+        listeners = monitor._Monitor__event_listeners
+        assert list(listeners) == ["lidar_front"]
+        assert listeners["lidar_front"].topic_name == "/rs/front/points"
+
+        board = monitor._events_topics_blackboard
+        publisher = monitor.create_publisher(RosLaserScan, "rs/front/points", 10)
+        cam_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        def _send():
+            publisher.publish(RosLaserScan(range_max=5.0))
+            cam_tx.sendto(b"22", ("127.0.0.1", cam_port))
+
+        _wait_for(
+            lambda: "lidar_front" in board and "cam_state" in board,
+            node=monitor,
+            each=_send,
+        )
+        cam_tx.close()
+        assert board.get("lidar_front") is not None, "the robot's scans never arrived"
+        assert board.get("cam_state") is not None, "the camera's feedback never arrived"
+        assert board["lidar_front"].msg.range_max == 5.0
+        assert board["cam_state"].msg.data == 22
+    finally:
+        host.close()
+        monitor.destroy_node()
+
+
+def test_the_launcher_checks_and_requests_the_plugin_topics_events_read():
+    """An event's plugin topic is checked against the attached plugins like a
+    component's, and the plugin is asked to serve it"""
+    from ros_sugar import Launcher
+    from ros_sugar.core.action import Action
+    from ros_sugar.core.event import Event
+
+    topic = Topic(name="lidar_front", msg_type="LaserScan", use_plugin=True)
+    event = Event(topic.msg.range_max > 1.0)
+
+    without = Launcher()
+    without._events_actions[event] = [Action(method=lambda: (True, ""))]
+    with pytest.raises(ValueError, match="Event .* asks for the robot plugin"):
+        without._validate_plugin_references()
+
+    robot = _RosCloudPlugin()
+    launcher = Launcher(robot_plugin=robot)
+    launcher._events_actions[event] = [Action(method=lambda: (True, ""))]
+    launcher._validate_plugin_references()
+    launcher._resolve_plugin_demand()
+    assert robot.requested_feedbacks == {"lidar_front"}
 
 
 # ---------------------------------------------------------------------------
@@ -1503,6 +1759,47 @@ def test_world_frame_setter_leaves_the_robot_frame_alone():
     assert comp.config.frames.world == "odom"
     assert comp.config.frames.robot_base == "lite3_base"
     assert launcher.world_frame == {"world_setter_component": "odom"}
+
+
+def test_frames_set_before_a_component_is_added_still_reach_it():
+    """A recipe may name its frames before adding its components. Those
+    added later get every setting at bringup, applied in the order the recipe
+    made them, and the plugin's body frame still wins"""
+    from ros_sugar import Launcher
+    from ros_sugar.config import RobotFrames
+
+    launcher = Launcher(robot_plugin=_DescribingPlugin())
+    early = _FakeComponent("frames_early_component")
+    launcher._components = [early]
+    launcher.robot_frame = "chassis"
+    launcher.frames = RobotFrames(robot_base="from_recipe", world="office")
+    launcher.world_frame = "odom"
+
+    late = _FakeComponent("frames_late_component")
+    launcher._components.append(late)
+    # What bringup runs, in its order
+    launcher._apply_recipe_frames()
+    launcher._apply_plugin_base_frame()
+
+    for component in (early, late):
+        assert component.config.frames.world == "odom", component.node_name
+        assert component.config.frames.robot_base == "lite3_base", component.node_name
+
+
+def test_frames_set_before_a_component_is_added_without_a_plugin():
+    from ros_sugar import Launcher
+    from ros_sugar.config import RobotFrames
+
+    launcher = Launcher()
+    launcher.frames = RobotFrames(world="odom")
+    launcher.robot_frame = "chassis"
+
+    late = _FakeComponent("frames_late_no_plugin_component")
+    launcher._components = [late]
+    launcher._apply_recipe_frames()
+
+    assert late.config.frames.world == "odom"
+    assert late.config.frames.robot_base == "chassis"
 
 
 def test_robot_frame_setter_applies_without_a_plugin():
@@ -2112,6 +2409,33 @@ def test_use_plugin_true_without_a_robot_plugin_is_caught_at_bringup(rclpy_conte
         component.destroy_node()
 
 
+def test_plugin_resources_are_released_when_setup_fails(monkeypatch):
+    """Setup opens the plugin hosts, bus and shared memory, so a failure after
+    that must still close them (issue #66)"""
+    from unittest.mock import MagicMock
+
+    from ros_sugar.core.component import BaseComponent
+
+    launcher = _launcher_with([BaseComponent(component_name="setup_fails_component")])
+    host, bus, shm = MagicMock(), MagicMock(), MagicMock()
+
+    def _failing_setup():
+        launcher._plugin_hosts.append(host)
+        launcher._plugin_bus, launcher._plugin_shm = bus, shm
+        raise RuntimeError("setup failed after opening the plugins")
+
+    monkeypatch.setattr(launcher, "setup_launch_description", _failing_setup)
+
+    with pytest.raises(RuntimeError, match="setup failed"):
+        launcher.bringup()
+
+    host.close.assert_called_once()
+    bus.close.assert_called_once()
+    shm.close.assert_called_once()
+    assert not launcher._plugin_hosts
+    assert launcher._plugin_bus is None and launcher._plugin_shm is None
+
+
 # ---------------------------------------------------------------------------
 # sensor frames and mounts
 # ---------------------------------------------------------------------------
@@ -2217,11 +2541,11 @@ def test_a_decoder_that_stamps_its_own_frame_is_never_overridden(rclpy_context):
 
     msg = Imu()
     msg.header.frame_id = "author_stamped"
-    host._stamp_frame(feedback, msg)
+    host._stamp_header(feedback, msg)
     assert msg.header.frame_id == "author_stamped"
 
     fresh = Imu()
-    host._stamp_frame(feedback, fresh)
+    host._stamp_header(feedback, fresh)
     assert fresh.header.frame_id == "declared_frame", "per-feedback frame wins"
 
 
@@ -2270,6 +2594,55 @@ def test_euler_to_quaternion_matches_known_rotations():
     assert abs(w - 0.7071067811865476) < 1e-9
 
 
+def test_a_pose_in_another_mounts_frame():
+    """Sensors are mounted on the body, but what reads one of them often wants
+    another in its own frame -- a LiDAR-inertial mapper wants the IMU in the
+    LiDAR's."""
+    import math
+
+    from ros_sugar.robot.mount import pose_relative_to
+
+    origin = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+    # In its own frame, a pose is the origin
+    xyz, rpy = pose_relative_to(origin, origin)
+    assert xyz == pytest.approx((0.0, 0.0, 0.0))
+    assert rpy == pytest.approx((0.0, 0.0, 0.0))
+
+    # From a frame a metre ahead, the parent's origin is a metre behind
+    xyz, rpy = pose_relative_to(origin, ((1.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+    assert xyz == pytest.approx((-1.0, 0.0, 0.0))
+    assert rpy == pytest.approx((0.0, 0.0, 0.0))
+
+    # A frame turned a quarter turn about Z: what lies ahead of the parent is
+    # off to that frame's right, and its own heading is turned back
+    xyz, rpy = pose_relative_to(
+        ((1.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ((0.0, 0.0, 0.0), (0.0, 0.0, math.pi / 2)),
+    )
+    assert xyz == pytest.approx((0.0, -1.0, 0.0))
+    assert rpy == pytest.approx((0.0, 0.0, -math.pi / 2))
+
+
+def test_a_relative_pose_is_the_transform_composed():
+    """Placing the result back through the frame lands where the pose was, for
+    a translation and a rotation neither of which is an easy case."""
+    import numpy as np
+
+    from ros_sugar.robot.mount import _rotation_from_euler, pose_relative_to
+
+    pose = ((0.31, -0.12, 0.08), (0.2, -0.4, 1.1))
+    frame = ((0.12, 0.03, 0.22), (-0.1, 0.5, -0.7))
+
+    xyz, rpy = pose_relative_to(pose, frame)
+
+    rotation = _rotation_from_euler(*frame[1])
+    assert rotation @ np.array(xyz) + np.array(frame[0]) == pytest.approx(pose[0])
+    assert rotation @ _rotation_from_euler(*rpy) == pytest.approx(
+        _rotation_from_euler(*pose[1])
+    )
+
+
 def test_launcher_collects_mounts_from_add_plugin(rclpy_context):
     from ros_sugar.robot import Mount
 
@@ -2286,6 +2659,58 @@ def test_launcher_collects_mounts_from_add_plugin(rclpy_context):
     assert mount.parent_frame == "base_link"
     # the child is filled in from the plugin, so a recipe never repeats it
     assert mount.child_frame == "front_cam_frame"
+
+
+class _StaticTransforms:
+    """Receives what the launcher publishes to /tf_static."""
+
+    def __init__(self):
+        self.transforms = []
+
+    def set_static_transforms(self, transforms):
+        self.transforms = transforms
+
+
+def test_the_launcher_places_the_base_frame_on_its_footprint(rclpy_context):
+    """The geometry is centred on the base frame, so the footprint is half the
+    robot's height below it: what Kompass's collision checking assumes, made
+    visible on TF for everything else."""
+    import numpy as np
+
+    from ros_sugar.config import RobotConfig, RobotGeometryType, RobotType
+    from ros_sugar.config.robot import AngularCtrlLimits, LinearCtrlLimits
+
+    robot = MockPlugin(state_port=_free_port(), cmd_port=_free_port(), id="lite3")
+    robot.base_frame = "body"
+    robot.robot_config = RobotConfig(
+        model_type=RobotType.DIFFERENTIAL_DRIVE,
+        geometry_type=RobotGeometryType.BOX,
+        geometry_params=np.array([0.61, 0.37, 0.4]),
+        ctrl_vx_limits=LinearCtrlLimits(max_vel=1.0, max_acc=2.5, max_decel=7.5),
+        ctrl_omega_limits=AngularCtrlLimits(max_omega=1.5, max_acc=2.5, max_decel=4.0, max_ang=1.57),
+    )
+    assert robot.base_height == 0.2
+
+    launcher = _launcher_with([])
+    launcher.add_plugin(robot)
+    launcher.monitor_node = _StaticTransforms()
+    launcher._publish_mounts()
+
+    (footprint,) = launcher.monitor_node.transforms
+    assert (footprint.header.frame_id, footprint.child_frame_id) == ("base_footprint", "body")
+    assert footprint.transform.translation.z == 0.2
+    assert footprint.transform.rotation.w == 1.0
+
+
+def test_a_robot_without_a_geometry_gets_no_footprint(rclpy_context):
+    robot = MockPlugin(state_port=_free_port(), cmd_port=_free_port(), id="lite3")
+    robot.base_frame = "body"
+    assert robot.base_height is None
+    launcher = _launcher_with([])
+    launcher.add_plugin(robot)
+    launcher.monitor_node = _StaticTransforms()
+    launcher._publish_mounts()
+    assert launcher.monitor_node.transforms == []
 
 
 def test_a_sensor_needs_no_mount_when_tf_already_has_its_frame(rclpy_context):

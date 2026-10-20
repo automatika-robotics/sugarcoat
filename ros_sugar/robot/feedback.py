@@ -63,6 +63,13 @@ class Feedback(BaseAttrs):
     #: plugin's frame when unset; a decoder that stamps its own is never
     #: overridden.
     frame_id: str = field(default="")
+    #: Whenever the plugin host publishes this feedback on ROS (see
+    #: ``ProcessSpec.inputs``), also broadcast its pose on TF as
+    #: ``header.frame_id -> child_frame_id``. For an odometry feedback, whose
+    #: message names both frames: it makes the plugin the owner of the
+    #: ``odom -> base`` transform that a localizer such as robot_localization
+    #: expects something else to provide.
+    publish_tf: bool = field(default=False)
     #: Id of the owning plugin, stamped by ``Plugin._bind_identity`` when the
     #: plugin is attached.
     owner_id: str = field(default="", init=False, repr=False)
@@ -79,7 +86,8 @@ class Feedback(BaseAttrs):
 
         For a ROS-topic-backed feedback this is the ROS topic the robot
         publishes on; for any other transport it is a synthetic topic whose name
-        is the feedback bus channel.
+        is the feedback bus channel and whose ``use_plugin`` names the owning
+        plugin.
         """
         if self._topic is None:
             # RosTopicTransport carries the real topic name + type; reference
@@ -92,7 +100,11 @@ class Feedback(BaseAttrs):
                     qos_profile=getattr(transport, "qos", None) or {},
                 )
             else:
-                self._topic = Topic(name=self.channel, msg_type=self.msg_type)
+                self._topic = Topic(
+                    name=self.channel,
+                    msg_type=self.msg_type,
+                    use_plugin=self.owner_id or False,  # leave False for tests when plugin is not attached
+                )
         return self._topic
 
     @property

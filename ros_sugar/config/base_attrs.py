@@ -608,6 +608,16 @@ class BaseAttrs:
                 f"Class '{self.__class__.__name__}' attribute '{attr_name}' type unknown"
             )
 
+        # NOTE: A bool is an int to isinstance
+        if attribute_type in (int, float) and isinstance(attr_value, bool):
+            raise TypeError(
+                f"Class '{self.__class__.__name__}' attribute '{attr_name}' expecting type '{attribute_type}', got {type(attr_value)}"
+            )
+
+        # Allow to pass int values to float attributes
+        if attribute_type is float and isinstance(attr_value, int):
+            attr_value = float(attr_value)
+
         if not isinstance(attr_value, attribute_type):
             raise TypeError(
                 f"Class '{self.__class__.__name__}' attribute '{attr_name}' expecting type '{attribute_type}', got {type(attr_value)}"

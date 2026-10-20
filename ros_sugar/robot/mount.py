@@ -11,6 +11,8 @@ and the two compose in the TF tree.
 import math
 from typing import Any, Optional, Tuple
 
+import numpy as np
+
 from attrs import define, field
 
 from ..config import BaseAttrs
@@ -40,6 +42,55 @@ def quaternion_from_euler(
         cr * sp * cy + sr * cp * sy,
         cr * cp * sy - sr * sp * cy,
         cr * cp * cy + sr * sp * sy,
+    )
+
+
+def _rotation_from_euler(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    """The rotation matrix of a mount's roll/pitch/yaw.
+
+    Convention: yaw about Z, then pitch about Y, then roll about X.
+    """
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    return np.array([
+        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+        [-sp, cp * sr, cp * cr],
+    ])
+
+
+def _euler_from_rotation(rotation: np.ndarray) -> Tuple[float, float, float]:
+    """The roll, pitch and yaw a rotation matrix was built from."""
+    return (
+        float(np.arctan2(rotation[2, 1], rotation[2, 2])),
+        float(np.arctan2(-rotation[2, 0], np.hypot(rotation[0, 0], rotation[1, 0]))),
+        float(np.arctan2(rotation[1, 0], rotation[0, 0])),
+    )
+
+
+def pose_relative_to(
+    pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
+    frame: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
+) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    """Where one mounted thing sits in another's frame.
+
+    A robot knows where each of its sensors sits on its body, while whatever
+    reads one of them usually wants another in its own frame. Both
+    arguments and the result are ``(xyz, rpy)`` against the same parent.
+
+    :param pose: What is being placed, as ``(xyz, rpy)`` on the parent
+    :param frame: Whose frame to place it in, as ``(xyz, rpy)`` on the parent
+    :return: ``(xyz, rpy)`` of ``pose`` in ``frame``
+    """
+    (pose_xyz, pose_rpy), (frame_xyz, frame_rpy) = pose, frame
+    # The frame's rotation inverted is its transpose
+    into = _rotation_from_euler(*frame_rpy).T
+    xyz = into @ (np.array(pose_xyz) - np.array(frame_xyz))
+    rotation = into @ _rotation_from_euler(*pose_rpy)
+    return (
+        (float(xyz[0]), float(xyz[1]), float(xyz[2])),
+        _euler_from_rotation(rotation),
     )
 
 

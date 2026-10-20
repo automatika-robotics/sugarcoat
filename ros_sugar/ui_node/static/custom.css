@@ -728,7 +728,8 @@ body {
 }
 
 .status-badge.inactive,
-.status-badge.unknown {
+.status-badge.unknown,
+.status-badge.idle {
     background-color: rgba(136, 136, 136, 0.15);
     color: var(--text-muted);
 }
@@ -780,6 +781,60 @@ html.light .status-badge.aborted {
 html.light .status-badge.canceled {
     background-color: #b8860b25;
     color: #b8860b;
+}
+
+.status-badge.paused {
+    background-color: #e67e2233;
+    color: #e67e22;
+}
+
+html.light .status-badge.paused {
+    background-color: #d3540025;
+    color: #d35400;
+}
+
+/* ROUTINE STEPS */
+.routine-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    width: 100%;
+}
+
+.routine-step {
+    font-size: 0.9rem;
+}
+
+.routine-step-mark {
+    font-weight: 700;
+    width: 1rem;
+    text-align: center;
+}
+
+.routine-step.done .routine-step-mark {
+    color: #33a06f;
+}
+
+.routine-step.active {
+    font-weight: 600;
+}
+
+.routine-step.active .routine-step-mark {
+    color: #219da4;
+}
+
+.routine-step.stopped .routine-step-mark {
+    color: #e74c3c;
+}
+
+.routine-step.pending {
+    color: var(--text-muted);
+}
+
+.routine-step-feedback,
+.routine-waiting {
+    color: var(--text-muted);
+    font-size: 0.8rem;
 }
 
 /* TASK TIMER */
